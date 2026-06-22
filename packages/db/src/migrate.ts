@@ -238,6 +238,9 @@ CREATE TABLE IF NOT EXISTS data_quality_events (
 
 CREATE INDEX IF NOT EXISTS data_quality_events_observed_idx
   ON data_quality_events(observed_at);
+
+ALTER TABLE vehicle_snapshots ADD COLUMN IF NOT EXISTS charge_schedule_time text;
+ALTER TABLE vehicle_snapshots ADD COLUMN IF NOT EXISTS charge_schedule_type text;
 `;
 
 export async function migrateDatabase(databaseUrl: string) {

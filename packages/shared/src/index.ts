@@ -31,6 +31,8 @@ export interface OverviewSnapshot {
   batteryLevel: number | null;
   estimatedRangeKm: number | null;
   chargeLimit: number | null;
+  chargeScheduleTime: string | null;
+  chargeScheduleType: string | null;
   powerState: VehiclePowerState;
   chargingState: string | null;
   latitude: number | null;
