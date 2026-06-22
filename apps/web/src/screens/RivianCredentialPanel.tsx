@@ -4,9 +4,13 @@ import type { RivianAuthStartResult } from "../types/index.js";
 
 interface RivianCredentialPanelProps {
   onComplete: () => void;
+  embedded?: boolean;
 }
 
-export function RivianCredentialPanel({ onComplete }: RivianCredentialPanelProps) {
+export function RivianCredentialPanel({
+  onComplete,
+  embedded = false,
+}: RivianCredentialPanelProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -58,15 +62,23 @@ export function RivianCredentialPanel({ onComplete }: RivianCredentialPanelProps
   }
 
   return (
-    <section className="credentialBand">
-      <div>
-        <p className="eyebrow">Rivian Account</p>
-        <h2>{challengeId ? "Enter MFA code" : "Connect your Rivian account"}</h2>
-        <p>
+    <div className={embedded ? "settingsPanelContent" : "credentialBand"}>
+      {!embedded && (
+        <div>
+          <p className="eyebrow">Rivian Account</p>
+          <h2>{challengeId ? "Enter MFA code" : "Connect your Rivian account"}</h2>
+          <p>
+            RivianMate stores tokens encrypted in local Postgres and uses read-only API access for
+            logging.
+          </p>
+        </div>
+      )}
+      {embedded && !challengeId && (
+        <p className="settingsCopy">
           RivianMate stores tokens encrypted in local Postgres and uses read-only API access for
           logging.
         </p>
-      </div>
+      )}
       {challengeId ? (
         <form className="inlineForm" onSubmit={handleMfa}>
           <label>
@@ -112,6 +124,6 @@ export function RivianCredentialPanel({ onComplete }: RivianCredentialPanelProps
       )}
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
-    </section>
+    </div>
   );
 }

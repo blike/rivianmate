@@ -4,8 +4,6 @@ import { LocationMap } from "../components/maps/LocationMap.js";
 import { EmptyOrList } from "../components/ui/EmptyOrList.js";
 import { MetricCard } from "../components/ui/MetricCard.js";
 import { Panel } from "../components/ui/Panel.js";
-import { RivianConnectedPanel } from "../screens/RivianConnectedPanel.js";
-import { RivianCredentialPanel } from "../screens/RivianCredentialPanel.js";
 import type { AppData, UnitPrefs } from "../types/index.js";
 import {
   formatDateTime,
@@ -20,19 +18,11 @@ import {
 interface OverviewPageProps {
   data: AppData;
   unitPrefs: UnitPrefs;
-  onRefresh: () => void;
 }
 
-export function OverviewPage({ data, unitPrefs, onRefresh }: OverviewPageProps) {
+export function OverviewPage({ data, unitPrefs }: OverviewPageProps) {
   return (
     <>
-      {data.rivianCredentials &&
-        (data.rivianCredentials.configured ? (
-          <RivianConnectedPanel email={data.rivianCredentials.email} onDiscover={onRefresh} />
-        ) : (
-          <RivianCredentialPanel onComplete={onRefresh} />
-        ))}
-
       <section className="metricGrid" aria-label="Current vehicle metrics">
         <MetricCard
           label="Battery"

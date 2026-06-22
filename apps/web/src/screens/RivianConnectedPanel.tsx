@@ -5,9 +5,14 @@ import type { RivianVehicleDiscoveryResult } from "../types/index.js";
 interface RivianConnectedPanelProps {
   email: string | null;
   onDiscover: () => void;
+  embedded?: boolean;
 }
 
-export function RivianConnectedPanel({ email, onDiscover }: RivianConnectedPanelProps) {
+export function RivianConnectedPanel({
+  email,
+  onDiscover,
+  embedded = false,
+}: RivianConnectedPanelProps) {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,12 +38,19 @@ export function RivianConnectedPanel({ email, onDiscover }: RivianConnectedPanel
   }
 
   return (
-    <section className="credentialBand">
-      <div>
-        <p className="eyebrow">Rivian Account</p>
-        <h2>Rivian account connected</h2>
-        <p>{email ? `Signed in as ${email}.` : "Credentials are stored encrypted locally."}</p>
-      </div>
+    <div className={embedded ? "settingsPanelContent" : "credentialBand"}>
+      {!embedded && (
+        <div>
+          <p className="eyebrow">Rivian Account</p>
+          <h2>Rivian account connected</h2>
+          <p>{email ? `Signed in as ${email}.` : "Credentials are stored encrypted locally."}</p>
+        </div>
+      )}
+      {embedded && (
+        <p className="settingsCopy">
+          {email ? `Signed in as ${email}.` : "Credentials are stored encrypted locally."}
+        </p>
+      )}
       <div className="buttonRow">
         <button
           className="primaryButton"
@@ -51,6 +63,6 @@ export function RivianConnectedPanel({ email, onDiscover }: RivianConnectedPanel
       </div>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
-    </section>
+    </div>
   );
 }
