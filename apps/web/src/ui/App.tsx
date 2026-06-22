@@ -65,62 +65,70 @@ export function App() {
         </div>
 
         <nav className="sideNav" aria-label="Main navigation">
-          <NavItem
-            current={page}
-            icon={<Car size={16} aria-hidden />}
-            id="overview"
-            label="Overview"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<Route size={16} aria-hidden />}
-            id="drives"
-            label="Drives"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<PlugZap size={16} aria-hidden />}
-            id="charging"
-            label="Charging"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<BatteryCharging size={16} aria-hidden />}
-            id="battery"
-            label="Battery"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<Map size={16} aria-hidden />}
-            id="locations"
-            label="Locations"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<Heart size={16} aria-hidden />}
-            id="health"
-            label="Health"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<Activity size={16} aria-hidden />}
-            id="data-quality"
-            label="Data Quality"
-            onClick={setPage}
-          />
-          <NavItem
-            current={page}
-            icon={<Settings size={16} aria-hidden />}
-            id="settings"
-            label="Settings"
-            onClick={setPage}
-          />
+          <NavSection label="Vehicle">
+            <NavItem
+              current={page}
+              icon={<Car size={16} aria-hidden />}
+              id="overview"
+              label="Overview"
+              onClick={setPage}
+            />
+            <NavItem
+              current={page}
+              icon={<Route size={16} aria-hidden />}
+              id="drives"
+              label="Drives"
+              onClick={setPage}
+            />
+            <NavItem
+              current={page}
+              icon={<PlugZap size={16} aria-hidden />}
+              id="charging"
+              label="Charging"
+              onClick={setPage}
+            />
+            <NavItem
+              current={page}
+              icon={<BatteryCharging size={16} aria-hidden />}
+              id="battery"
+              label="Battery"
+              onClick={setPage}
+            />
+          </NavSection>
+
+          <NavSection label="Insights">
+            <NavItem
+              current={page}
+              icon={<Map size={16} aria-hidden />}
+              id="locations"
+              label="Locations"
+              onClick={setPage}
+            />
+            <NavItem
+              current={page}
+              icon={<Heart size={16} aria-hidden />}
+              id="health"
+              label="Health"
+              onClick={setPage}
+            />
+            <NavItem
+              current={page}
+              icon={<Activity size={16} aria-hidden />}
+              id="data-quality"
+              label="Data Quality"
+              onClick={setPage}
+            />
+          </NavSection>
+
+          <NavSection label="System">
+            <NavItem
+              current={page}
+              icon={<Settings size={16} aria-hidden />}
+              id="settings"
+              label="Settings"
+              onClick={setPage}
+            />
+          </NavSection>
         </nav>
 
         <div className="sidebarFooter">
@@ -138,7 +146,7 @@ export function App() {
         </header>
 
         {page === "overview" && (
-          <OverviewPage data={data} unitPrefs={unitPrefs} onRefresh={refresh} />
+          <OverviewPage data={data} unitPrefs={unitPrefs} />
         )}
         {page === "drives" && <DrivesPage drives={data.drives} unitPrefs={unitPrefs} />}
         {page === "charging" && <ChargingPage sessions={data.charging} />}
@@ -150,6 +158,7 @@ export function App() {
           <SettingsPage
             rivianCredentials={data.rivianCredentials}
             unitPrefs={unitPrefs}
+            username={data.auth.username ?? "admin"}
             vehicles={data.vehicles}
             onRefresh={refresh}
             onUnitPrefsChange={updateUnitPrefs}
@@ -162,6 +171,20 @@ export function App() {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
+interface NavSectionProps {
+  label: string;
+  children: React.ReactNode;
+}
+
+function NavSection({ label, children }: NavSectionProps) {
+  return (
+    <div className="navSection">
+      <span className="navSectionLabel">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 interface NavItemProps {
   id: Page;
   label: string;
@@ -171,14 +194,16 @@ interface NavItemProps {
 }
 
 function NavItem({ id, label, icon, current, onClick }: NavItemProps) {
+  const isActive = current === id;
+
   return (
     <button
-      aria-current={current === id ? "page" : undefined}
-      className={`navItem ${current === id ? "active" : ""}`}
+      aria-current={isActive ? "page" : undefined}
+      className={`navItem ${isActive ? "active" : ""}`}
       onClick={() => onClick(id)}
     >
-      {icon}
-      {label}
+      <span className="navItemIcon">{icon}</span>
+      <span className="navItemLabel">{label}</span>
     </button>
   );
 }

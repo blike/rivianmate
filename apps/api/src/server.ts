@@ -74,13 +74,26 @@ await app.register(cors, {
 
 await app.register(cookie);
 
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(3, "Username must be at least 3 characters.")
+  .max(32, "Username must be at most 32 characters.")
+  .regex(/^[a-zA-Z0-9_-]+$/, "Username may only contain letters, numbers, underscores, and hyphens.");
+
 const createAdminBodySchema = z.object({
+  username: usernameSchema,
   password: z.string().min(12).max(256)
 });
 
 const changePasswordBodySchema = z.object({
   currentPassword: z.string().min(1).max(256),
   newPassword: z.string().min(12).max(256)
+});
+
+const changeUsernameBodySchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newUsername: usernameSchema
 });
 
 const loginBodySchema = z.object({
@@ -133,13 +146,13 @@ app.post("/api/setup/admin", async (request, reply): Promise<SetupStatus> => {
   if (!parsed.success) {
     return reply.code(400).send({
       adminConfigured: false,
-      message: "Password must be at least 12 characters."
+      message: parsed.error.issues[0]?.message ?? "Invalid username or password."
     });
   }
 
   const passwordHash = await hashPassword(parsed.data.password);
   await database.db.insert(localAdminUsers).values({
-    username: "admin",
+    username: parsed.data.username,
     passwordHash
   });
 
@@ -513,6 +526,35 @@ app.post("/api/auth/change-password", async (request, reply) => {
     .where(eq(localAdminUsers.id, admin.id));
 
   return { ok: true };
+});
+
+app.post("/api/auth/change-username", async (request, reply) => {
+  const parsed = changeUsernameBodySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({
+      message: parsed.error.issues[0]?.message ?? "Current password and a valid username are required."
+    });
+  }
+
+  const admin = await getAdminUser();
+  if (!admin) {
+    return reply.code(409).send({ message: "Local admin is not configured." });
+  }
+
+  if (!(await verifyPassword(parsed.data.currentPassword, admin.passwordHash))) {
+    return reply.code(401).send({ message: "Current password is incorrect." });
+  }
+
+  if (parsed.data.newUsername === admin.username) {
+    return { ok: true, username: admin.username };
+  }
+
+  await database.db
+    .update(localAdminUsers)
+    .set({ username: parsed.data.newUsername, updatedAt: new Date() })
+    .where(eq(localAdminUsers.id, admin.id));
+
+  return { ok: true, username: parsed.data.newUsername };
 });
 
 app.get("/api/data-quality/events", async (): Promise<DataQualityEvent[]> => {

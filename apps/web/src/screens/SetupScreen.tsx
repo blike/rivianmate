@@ -8,6 +8,7 @@ interface SetupScreenProps {
 }
 
 export function SetupScreen({ onComplete }: SetupScreenProps) {
+  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -16,6 +17,15 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const trimmedUsername = username.trim();
+    if (trimmedUsername.length < 3) {
+      setError("Username must be at least 3 characters.");
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedUsername)) {
+      setError("Username may only contain letters, numbers, underscores, and hyphens.");
+      return;
+    }
     if (password.length < 12) {
       setError("Use at least 12 characters.");
       return;
@@ -26,7 +36,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
     }
     setSubmitting(true);
     try {
-      await postJson<SetupStatus>("/api/setup/admin", { password });
+      await postJson<SetupStatus>("/api/setup/admin", {
+        username: trimmedUsername,
+        password,
+      });
       onComplete();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create local admin.");
@@ -49,13 +62,24 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
         </div>
         <div>
           <p className="eyebrow">Local Admin</p>
-          <h1>Create your admin password</h1>
+          <h1>Create your local account</h1>
           <p className="setupCopy">
-            This password protects the local RivianMate dashboard on this machine. Rivian account
-            setup comes next.
+            Choose a username and password for this RivianMate dashboard. Rivian account setup
+            comes next in Settings.
           </p>
         </div>
         <form className="setupForm" onSubmit={handleSubmit}>
+          <label>
+            Username
+            <input
+              autoComplete="username"
+              maxLength={32}
+              minLength={3}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              value={username}
+            />
+          </label>
           <label>
             Password
             <input
