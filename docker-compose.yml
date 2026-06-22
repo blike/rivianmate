@@ -1,0 +1,31 @@
+services:
+  rivianmate:
+    image: mitchvitale/rivianmate:latest
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://rivianmate:${POSTGRES_PASSWORD:-rivianmate}@postgres:5432/rivianmate
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET to at least 32 random characters}
+      NODE_ENV: production
+    ports:
+      - "${APP_PORT:-4000}:4000"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: rivianmate
+      POSTGRES_USER: rivianmate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rivianmate}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rivianmate -d rivianmate"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

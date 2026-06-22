@@ -1,0 +1,36 @@
+# Local development — builds image from source instead of pulling from Docker Hub.
+# Usage: docker compose -f docker-compose.dev.yml up --build
+
+services:
+  rivianmate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://rivianmate:rivianmate@postgres:5432/rivianmate
+      APP_SECRET: ${APP_SECRET:-dev-secret-replace-with-32-random-chars}
+      NODE_ENV: production
+    ports:
+      - "${APP_PORT:-4000}:4000"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rivianmate
+      POSTGRES_USER: rivianmate
+      POSTGRES_PASSWORD: rivianmate
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rivianmate -d rivianmate"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
