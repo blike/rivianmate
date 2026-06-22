@@ -1,0 +1,19 @@
+{
+  "name": "rivianmate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
+    "dev": "pnpm -r --parallel dev",
+    "format": "prettier --write .",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@10.20.0"
+}
