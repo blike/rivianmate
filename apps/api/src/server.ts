@@ -97,6 +97,7 @@ const changeUsernameBodySchema = z.object({
 });
 
 const loginBodySchema = z.object({
+  username: z.string().min(1).max(32),
   password: z.string().min(1).max(256)
 });
 
@@ -174,7 +175,7 @@ app.post("/api/auth/login", async (request, reply): Promise<AuthSession> => {
     return reply.code(400).send({
       authenticated: false,
       username: null,
-      message: "Password is required."
+      message: "Username and password are required."
     });
   }
 
@@ -187,11 +188,13 @@ app.post("/api/auth/login", async (request, reply): Promise<AuthSession> => {
     });
   }
 
-  if (!(await verifyPassword(parsed.data.password, admin.passwordHash))) {
+  const usernameMatch = admin.username.toLowerCase() === parsed.data.username.toLowerCase();
+  const passwordMatch = await verifyPassword(parsed.data.password, admin.passwordHash);
+  if (!usernameMatch || !passwordMatch) {
     return reply.code(401).send({
       authenticated: false,
       username: null,
-      message: "Invalid password."
+      message: "Invalid username or password."
     });
   }
 
@@ -654,7 +657,7 @@ app.patch("/api/vehicles/:id/enabled", async (request, reply) => {
   return toVehicleSummary(updated[0]);
 });
 
-app.delete("/api/rivian/credentials", async (request, reply) => {
+app.delete("/api/rivian/credentials", async () => {
   const account = await getDefaultAccount();
   await database.db.delete(rivianCredentials).where(eq(rivianCredentials.accountId, account.id));
   return { ok: true };

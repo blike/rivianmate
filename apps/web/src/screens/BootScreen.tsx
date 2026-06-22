@@ -1,4 +1,4 @@
-import { Car } from "lucide-react";
+import { Mountain } from "lucide-react";
 
 interface BootScreenProps {
   error?: string;
@@ -10,7 +10,7 @@ export function BootScreen({ error }: BootScreenProps) {
       <section className="bootPanel">
         <div className="brand setupBrand">
           <div className="brandMark">
-            <Car size={22} aria-hidden />
+            <Mountain size={22} aria-hidden />
           </div>
           <div>
             <strong>RivianMate</strong>

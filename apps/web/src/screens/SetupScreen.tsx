@@ -1,4 +1,4 @@
-import { Car } from "lucide-react";
+import { Mountain } from "lucide-react";
 import { useState } from "react";
 import { postJson } from "../api/client.js";
 import type { SetupStatus } from "../types/index.js";
@@ -53,7 +53,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
       <section className="setupPanel">
         <div className="brand setupBrand">
           <div className="brandMark">
-            <Car size={22} aria-hidden />
+            <Mountain size={22} aria-hidden />
           </div>
           <div>
             <strong>RivianMate</strong>
