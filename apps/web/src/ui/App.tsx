@@ -5,11 +5,14 @@ import {
   Database,
   Heart,
   Map,
+  Menu,
+  Mountain,
   PlugZap,
   Route,
   Settings,
+  X,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "../styles.css";
 import { logout } from "../api/client.js";
 import { StatusPill } from "../components/ui/StatusPill.js";
@@ -28,8 +31,16 @@ import { LoginScreen } from "../screens/LoginScreen.js";
 import { SetupScreen } from "../screens/SetupScreen.js";
 import type { Page } from "../types/index.js";
 
+const PAGES = new Set<Page>(["overview", "drives", "charging", "battery", "locations", "health", "data-quality", "settings"]);
+
+function parsePage(): Page {
+  const hash = window.location.hash.slice(1);
+  return PAGES.has(hash as Page) ? (hash as Page) : "overview";
+}
+
 export function App() {
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>(parsePage);
+  const [navOpen, setNavOpen] = useState(false);
   const { unitPrefs, update: updateUnitPrefs } = useUnitPrefs();
   const data = useAppData();
 
@@ -37,8 +48,34 @@ export function App() {
     window.location.reload();
   }, []);
 
+  const navigate = useCallback((p: Page) => {
+    window.location.hash = p;
+    setPage(p);
+    setNavOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => setPage(parsePage());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    document.body.style.overflow = navOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [navOpen]);
+
+  // Only show the boot screen after a short delay so fast loads (e.g. a
+  // page refresh with an active session) never produce a visible flash.
+  const [showLoader, setShowLoader] = useState(false);
+  useEffect(() => {
+    if (!data.loading) { setShowLoader(false); return; }
+    const t = setTimeout(() => setShowLoader(true), 300);
+    return () => clearTimeout(t);
+  }, [data.loading]);
+
   // ── Boot / loading ────────────────────────────────────────────────────────
-  if (data.loading) return <BootScreen />;
+  if (data.loading) return showLoader ? <BootScreen /> : null;
   if (data.error) return <BootScreen error={data.error} />;
 
   // ── First-run setup ───────────────────────────────────────────────────────
@@ -52,11 +89,33 @@ export function App() {
 
   return (
     <div className="appShell">
+      {/* ── Mobile header ────────────────────────────────────────────── */}
+      <div className="mobileHeader">
+        <div className="mobileBrand">
+          <div className="brandMark"><Mountain size={16} aria-hidden /></div>
+          <strong>RivianMate</strong>
+        </div>
+        <button
+          className="hamburger"
+          aria-label={navOpen ? "Close navigation" : "Open navigation"}
+          onClick={() => setNavOpen((v) => !v)}
+        >
+          {navOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </div>
+
+      {/* ── Nav backdrop ─────────────────────────────────────────────── */}
+      <div
+        className={`backdrop${navOpen ? " open" : ""}`}
+        aria-hidden="true"
+        onClick={() => setNavOpen(false)}
+      />
+
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
-      <aside className="sidebar">
+      <aside className={`sidebar${navOpen ? " open" : ""}`}>
         <div className="brand">
           <div className="brandMark">
-            <Car size={18} aria-hidden />
+            <Mountain size={18} aria-hidden />
           </div>
           <div>
             <strong>RivianMate</strong>
@@ -71,28 +130,28 @@ export function App() {
               icon={<Car size={16} aria-hidden />}
               id="overview"
               label="Overview"
-              onClick={setPage}
+              onClick={navigate}
             />
             <NavItem
               current={page}
               icon={<Route size={16} aria-hidden />}
               id="drives"
               label="Drives"
-              onClick={setPage}
+              onClick={navigate}
             />
             <NavItem
               current={page}
               icon={<PlugZap size={16} aria-hidden />}
               id="charging"
               label="Charging"
-              onClick={setPage}
+              onClick={navigate}
             />
             <NavItem
               current={page}
               icon={<BatteryCharging size={16} aria-hidden />}
               id="battery"
               label="Battery"
-              onClick={setPage}
+              onClick={navigate}
             />
           </NavSection>
 
@@ -102,21 +161,21 @@ export function App() {
               icon={<Map size={16} aria-hidden />}
               id="locations"
               label="Locations"
-              onClick={setPage}
+              onClick={navigate}
             />
             <NavItem
               current={page}
               icon={<Heart size={16} aria-hidden />}
               id="health"
               label="Health"
-              onClick={setPage}
+              onClick={navigate}
             />
             <NavItem
               current={page}
               icon={<Activity size={16} aria-hidden />}
               id="data-quality"
               label="Data Quality"
-              onClick={setPage}
+              onClick={navigate}
             />
           </NavSection>
 
@@ -126,7 +185,7 @@ export function App() {
               icon={<Settings size={16} aria-hidden />}
               id="settings"
               label="Settings"
-              onClick={setPage}
+              onClick={navigate}
             />
           </NavSection>
         </nav>

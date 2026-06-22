@@ -1,4 +1,4 @@
-import { Car } from "lucide-react";
+import { Mountain } from "lucide-react";
 import { useState } from "react";
 import { postJson } from "../api/client.js";
 import type { AuthSession } from "../types/index.js";
@@ -8,6 +8,7 @@ interface LoginScreenProps {
 }
 
 export function LoginScreen({ onComplete }: LoginScreenProps) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,9 +18,9 @@ export function LoginScreen({ onComplete }: LoginScreenProps) {
     setError(null);
     setSubmitting(true);
     try {
-      const session = await postJson<AuthSession>("/api/auth/login", { password });
+      const session = await postJson<AuthSession>("/api/auth/login", { username, password });
       if (!session.authenticated) {
-        setError("Invalid password.");
+        setError("Invalid username or password.");
         return;
       }
       onComplete();
@@ -35,7 +36,7 @@ export function LoginScreen({ onComplete }: LoginScreenProps) {
       <section className="setupPanel">
         <div className="brand setupBrand">
           <div className="brandMark">
-            <Car size={22} aria-hidden />
+            <Mountain size={22} aria-hidden />
           </div>
           <div>
             <strong>RivianMate</strong>
@@ -43,11 +44,19 @@ export function LoginScreen({ onComplete }: LoginScreenProps) {
           </div>
         </div>
         <div>
-          <p className="eyebrow">Admin Login</p>
-          <h1>Unlock RivianMate</h1>
-          <p className="setupCopy">Enter your local admin password to continue.</p>
+          <h1>Sign in</h1>
         </div>
         <form className="setupForm" onSubmit={handleSubmit}>
+          <label>
+            Username
+            <input
+              autoComplete="username"
+              maxLength={32}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              value={username}
+            />
+          </label>
           <label>
             Password
             <input
@@ -60,7 +69,7 @@ export function LoginScreen({ onComplete }: LoginScreenProps) {
           </label>
           {error && <div className="notice error">{error}</div>}
           <button className="primaryButton" disabled={submitting} type="submit">
-            {submitting ? "Logging in..." : "Log In"}
+            {submitting ? "Signing in..." : "Sign In"}
           </button>
         </form>
       </section>
