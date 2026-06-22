@@ -66,6 +66,7 @@ const vehicleStateFields = [
   "batteryLevel",
   "batteryLimit",
   "cabinClimateInteriorTemperature",
+  "chargeSchedule",
   "chargerState",
   "chargerStatus",
   "cloudConnection",
@@ -91,6 +92,7 @@ const vehicleStateFields = [
 ];
 
 const vehicleStateTemplateMap: Record<string, string> = {
+  chargeSchedule: "{ startTime type }",
   cloudConnection: "{ lastSync isOnline }",
   gnssLocation: "{ latitude longitude timeStamp isAuthorized }"
 };

@@ -427,6 +427,8 @@ app.get("/api/overview", async (): Promise<OverviewSnapshot> => {
     batteryLevel: snapshot?.batteryLevel ?? null,
     estimatedRangeKm: snapshot?.estimatedRangeKm ?? null,
     chargeLimit: snapshot?.chargeLimit ?? null,
+    chargeScheduleTime: snapshot?.chargeScheduleTime ?? null,
+    chargeScheduleType: snapshot?.chargeScheduleType ?? null,
     powerState: toPowerState(snapshot?.powerState),
     chargingState: snapshot?.chargingState ?? null,
     latitude: snapshot?.latitude ?? null,

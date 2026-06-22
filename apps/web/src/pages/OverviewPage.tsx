@@ -1,4 +1,4 @@
-import { BatteryCharging, Database, Gauge, Map, Route } from "lucide-react";
+import { BatteryCharging, Gauge, Map, Route, Zap } from "lucide-react";
 import { HistoryChart } from "../components/charts/HistoryChart.js";
 import { LocationMap } from "../components/maps/LocationMap.js";
 import { EmptyOrList } from "../components/ui/EmptyOrList.js";
@@ -55,19 +55,19 @@ export function OverviewPage({ data, unitPrefs }: OverviewPageProps) {
           />
         </Panel>
 
-        <Panel title="Collector Health" icon={<Database size={18} aria-hidden />}>
+        <Panel title="Charging Settings" icon={<Zap size={18} aria-hidden />}>
           <dl className="detailsList">
             <div>
-              <dt>Vehicle events</dt>
-              <dd>{formatDateTime(data.dataQuality?.lastVehicleEventAt)}</dd>
+              <dt>Charge limit</dt>
+              <dd>{formatPercent(data.overview?.chargeLimit)}</dd>
             </div>
             <div>
-              <dt>Charging fetch</dt>
-              <dd>{formatDateTime(data.dataQuality?.lastChargingFetchAt)}</dd>
+              <dt>Schedule</dt>
+              <dd>{data.overview?.chargeScheduleTime ?? "—"}</dd>
             </div>
             <div>
-              <dt>Raw events, 24h</dt>
-              <dd>{data.dataQuality?.rawEventCount24h ?? 0}</dd>
+              <dt>Schedule type</dt>
+              <dd>{data.overview?.chargeScheduleType ? titleCase(data.overview.chargeScheduleType.replace(/_/g, " ")) : "—"}</dd>
             </div>
           </dl>
         </Panel>

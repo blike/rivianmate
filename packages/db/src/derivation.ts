@@ -25,6 +25,8 @@ export function parseVehicleSnapshot(raw: Record<string, unknown>) {
     bearing: numberValue(raw.gnssBearing),
     cabinTemperatureC: numberValue(raw.cabinClimateInteriorTemperature),
     chargeLimit: numberValue(raw.batteryLimit),
+    chargeScheduleTime: parseChargeScheduleTime(raw.chargeSchedule),
+    chargeScheduleType: parseChargeScheduleType(raw.chargeSchedule),
     chargingState: stringValue(raw.chargerState) ?? stringValue(raw.chargerStatus),
     driveMode: stringValue(raw.driveMode),
     estimatedRangeKm: numberValue(raw.distanceToEmpty),
@@ -35,6 +37,26 @@ export function parseVehicleSnapshot(raw: Record<string, unknown>) {
     powerState: stringValue(raw.powerState),
     speedMps: numberValue(raw.gnssSpeed)
   };
+}
+
+function parseChargeScheduleTime(value: unknown) {
+  const schedule = recordValue(value);
+  if (!schedule) return null;
+  const startTime = schedule.startTime;
+  // startTime is minutes since midnight (e.g. 1320 = 22:00)
+  if (typeof startTime === "number") {
+    const hours = Math.floor(startTime / 60);
+    const mins = startTime % 60;
+    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+  }
+  if (typeof startTime === "string") return startTime;
+  return null;
+}
+
+function parseChargeScheduleType(value: unknown) {
+  const schedule = recordValue(value);
+  if (!schedule) return null;
+  return typeof schedule.type === "string" ? schedule.type : null;
 }
 
 export function parseChargingSessionData(raw: Record<string, unknown>) {

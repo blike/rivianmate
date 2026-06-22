@@ -144,6 +144,8 @@ export const vehicleSnapshots = pgTable(
     batteryLevel: doublePrecision("battery_level"),
     estimatedRangeKm: doublePrecision("estimated_range_km"),
     chargeLimit: doublePrecision("charge_limit"),
+    chargeScheduleTime: text("charge_schedule_time"),
+    chargeScheduleType: text("charge_schedule_type"),
     powerState: text("power_state"),
     chargingState: text("charging_state"),
     latitude: doublePrecision("latitude"),
