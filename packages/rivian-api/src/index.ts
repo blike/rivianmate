@@ -293,7 +293,8 @@ export class RivianApiClient {
     tokens: RivianTokens,
     vehicleId: string,
     onEvent: (event: VehicleStateEvent) => void,
-    onClose?: () => void
+    onClose?: () => void,
+    onConnectionEvent?: (type: "connected" | "closed" | "error", detail: Record<string, unknown>) => void
   ): Promise<VehicleStateSubscription> {
     const client = createClient({
       connectionParams: {
@@ -303,14 +304,20 @@ export class RivianApiClient {
         "u-sess": tokens.userSessionToken
       },
       lazy: false,
-      retryAttempts: 1000,
-      retryWait: async (retries) => {
-        // Exponential backoff: 5s, 10s, 20s … capped at 5 min
-        const delay = Math.min(5000 * Math.pow(2, retries - 1), 300_000);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      },
+      retryAttempts: 0,
       url: graphqlWebSocket,
       webSocketImpl: WebSocket
+    });
+
+    client.on("connected", () => {
+      onConnectionEvent?.("connected", {});
+    });
+    client.on("closed", (event) => {
+      const e = event as { code?: number; reason?: string };
+      onConnectionEvent?.("closed", { code: e.code ?? null, reason: e.reason ?? null });
+    });
+    client.on("error", (error) => {
+      onConnectionEvent?.("error", { message: error instanceof Error ? error.message : String(error) });
     });
 
     let disposed = false;
