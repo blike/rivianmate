@@ -485,6 +485,7 @@ app.get("/api/history/snapshots", async (): Promise<SnapshotHistoryPoint[]> => {
 
 app.get("/api/data-quality", async (): Promise<DataQualitySummary> => {
   const lastChargingFetch = await latestDataQualityEvent("charging_fetch_success");
+  const lastCollectorHeartbeat = await latestDataQualityEvent("collector_heartbeat");
   const lastVehicleEventRows = await database.db
     .select({ receivedAt: vehicleRawEvents.receivedAt })
     .from(vehicleRawEvents)
@@ -500,6 +501,8 @@ app.get("/api/data-quality", async (): Promise<DataQualitySummary> => {
 
   return {
     collectorStatus,
+    vehicleCollectionMode: lastCollectorHeartbeat?.raw?.liveWebSocketEnabled === true ? "websocket" : "disabled",
+    chargingCollectionMode: lastCollectorHeartbeat?.raw?.liveChargingFetchEnabled === true ? "live_fetch" : "disabled",
     lastVehicleEventAt: lastVehicleEventRows[0]?.receivedAt.toISOString() ?? null,
     lastChargingFetchAt: lastChargingFetch?.observedAt.toISOString() ?? null,
     currentBackoffSeconds: null,
@@ -819,7 +822,7 @@ async function isAdminConfigured() {
 
 async function latestDataQualityEvent(category: string) {
   const rows = await database.db
-    .select({ observedAt: dataQualityEvents.observedAt })
+    .select({ observedAt: dataQualityEvents.observedAt, raw: dataQualityEvents.raw })
     .from(dataQualityEvents)
     .where(eq(dataQualityEvents.category, category))
     .orderBy(desc(dataQualityEvents.observedAt))

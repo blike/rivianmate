@@ -33,12 +33,12 @@ export function DataQualityPage({ summary }: DataQualityPageProps) {
         <MetricCard
           label="Last Vehicle Event"
           value={formatDateTime(summary?.lastVehicleEventAt)}
-          detail="Subscription"
+          detail={summary?.vehicleCollectionMode === "websocket" ? "WebSocket subscription" : "Collection disabled"}
         />
         <MetricCard
           label="Last Charging Fetch"
           value={formatDateTime(summary?.lastChargingFetchAt)}
-          detail="Live session"
+          detail={summary?.chargingCollectionMode === "live_fetch" ? "Live session" : "Collection disabled"}
         />
         <MetricCard
           label="Raw Events 24h"

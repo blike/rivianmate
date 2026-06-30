@@ -82,6 +82,8 @@ export interface ChargingSessionSummary {
 
 export interface DataQualitySummary {
   collectorStatus: CollectorStatus;
+  vehicleCollectionMode: "disabled" | "websocket";
+  chargingCollectionMode: "disabled" | "live_fetch";
   lastVehicleEventAt: string | null;
   lastChargingFetchAt: string | null;
   currentBackoffSeconds: number | null;
