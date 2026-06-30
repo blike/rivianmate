@@ -19,13 +19,15 @@ import { decryptText } from "./encryption.js";
 const config = z
   .object({
     APP_SECRET: z.string().min(32),
+    CHARGING_LIVE_FETCH_ENABLED: z.coerce.boolean().default(false),
     CHARGING_PLUGGED_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     CHARGING_UNPLUGGED_INTERVAL_SECONDS: z.coerce.number().int().positive().default(900),
     COLLECTOR_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     DATABASE_URL: z
       .string()
       .url()
-      .default("postgres://rivianmate:rivianmate@localhost:5432/rivianmate")
+      .default("postgres://rivianmate:rivianmate@localhost:5432/rivianmate"),
+    RIVIAN_LIVE_WEBSOCKET_ENABLED: z.coerce.boolean().default(false)
   })
   .parse(process.env);
 
@@ -38,6 +40,8 @@ const chargingLiveUnsupportedVehicleIds = new Set<string>();
 const nextChargingFetchByVehicleId = new Map<string, number>();
 const subscriptions = new Map<string, VehicleStateSubscription>();
 const subscriptionClosedVehicleIds = new Set<string>(); // vehicles whose sub closed unexpectedly
+const lastEventReceivedByVehicleId = new Map<string, Date>();
+const eventsThisTickByVehicleId = new Map<string, number>();
 
 let interval: NodeJS.Timeout | undefined;
 let shuttingDown = false;
@@ -116,8 +120,7 @@ async function tick() {
   for (const vehicle of collectableVehicles) {
     const tokens = credentialsByAccountId.get(vehicle.accountId)!;
 
-    // Subscribe if not subscribed, or re-subscribe if it closed unexpectedly
-    if (!subscriptions.has(vehicle.id) || subscriptionClosedVehicleIds.has(vehicle.id)) {
+    if (config.RIVIAN_LIVE_WEBSOCKET_ENABLED && (!subscriptions.has(vehicle.id) || subscriptionClosedVehicleIds.has(vehicle.id))) {
       if (subscriptionClosedVehicleIds.has(vehicle.id)) {
         subscriptionClosedVehicleIds.delete(vehicle.id);
         subscriptions.delete(vehicle.id);
@@ -133,15 +136,42 @@ async function tick() {
       await openSubscription(vehicle, tokens);
     }
 
-    await fetchChargingIfDue(vehicle, tokens);
+    if (config.CHARGING_LIVE_FETCH_ENABLED) {
+      await fetchChargingIfDue(vehicle, tokens);
+    }
+
+    const eventsThisTick = eventsThisTickByVehicleId.get(vehicle.id) ?? 0;
+    eventsThisTickByVehicleId.set(vehicle.id, 0);
+    const lastEventAt = lastEventReceivedByVehicleId.get(vehicle.id) ?? null;
+    const minutesSinceLastEvent = lastEventAt != null
+      ? Math.round((Date.now() - lastEventAt.getTime()) / 60000)
+      : null;
 
     await database.db.insert(dataQualityEvents).values({
       category: "collector_heartbeat",
       message: "collector_ready",
-      raw: { vehicleName: vehicle.name },
+      raw: {
+        eventsThisTick,
+        liveChargingFetchEnabled: config.CHARGING_LIVE_FETCH_ENABLED,
+        liveWebSocketEnabled: config.RIVIAN_LIVE_WEBSOCKET_ENABLED,
+        lastEventAt: lastEventAt?.toISOString() ?? null,
+        minutesSinceLastEvent,
+        vehicleName: vehicle.name
+      },
       severity: "info",
       vehicleId: vehicle.id
     });
+
+    if (subscriptions.has(vehicle.id) && minutesSinceLastEvent != null && minutesSinceLastEvent >= 10) {
+      await database.db.insert(dataQualityEvents).values({
+        category: "vehicle_subscription",
+        message: "stale_subscription",
+        raw: { minutesSinceLastEvent, vehicleName: vehicle.name },
+        severity: "warning",
+        vehicleId: vehicle.id
+      });
+      console.warn(`[${vehicle.name}] No events received in ${minutesSinceLastEvent} minutes — subscription may be stale.`);
+    }
   }
 
   console.log(`Collector heartbeat: ${collectableVehicles.length} vehicle(s) ready.`);
@@ -159,19 +189,48 @@ async function openSubscription(
       tokens,
       vehicle.rivianVehicleId,
       (event) => {
+        lastEventReceivedByVehicleId.set(vehicle.id, new Date());
+        eventsThisTickByVehicleId.set(vehicle.id, (eventsThisTickByVehicleId.get(vehicle.id) ?? 0) + 1);
         const dedupeHash = createHash("sha256")
           .update(stableStringify({ observedAt: event.observedAt.toISOString(), raw: event.raw, vehicleId: vehicle.id }))
           .digest("hex");
-        void persistVehicleStateEvent(database.db, vehicle.id, event.observedAt, event.raw, dedupeHash).catch((error) => {
-          console.error("Failed to persist vehicle-state event.", error);
+        void persistVehicleStateEvent(database.db, vehicle.id, event.observedAt, event.raw, dedupeHash).then((isNew) => {
+          const powerState = (event.raw.powerState as { value?: string } | undefined)?.value ?? null;
+          const gearStatus = (event.raw.gearStatus as { value?: string } | undefined)?.value ?? null;
+          if (isNew) {
+            console.log(`[${vehicle.name}] Event stored: powerState=${powerState ?? "—"}, gear=${gearStatus ?? "—"}, observedAt=${event.observedAt.toISOString()}`);
+          } else {
+            console.log(`[${vehicle.name}] Duplicate event skipped: observedAt=${event.observedAt.toISOString()}`);
+          }
+        }).catch((error) => {
+          console.error(`[${vehicle.name}] Failed to persist vehicle-state event.`, error);
         });
       },
       () => {
         // onClose — mark for re-subscribe on next tick
         if (!shuttingDown) {
           subscriptionClosedVehicleIds.add(vehicle.id);
-          console.warn(`Subscription closed unexpectedly for ${vehicle.name}.`);
+          console.warn(`[${vehicle.name}] Subscription closed unexpectedly.`);
         }
+      },
+      (type, detail) => {
+        if (type === "connected") {
+          console.log(`[${vehicle.name}] WebSocket connected.`);
+          return;
+        }
+        const message = type === "closed" ? "connection_closed" : "connection_error";
+        const severity = type === "error" ? "error" : "warning";
+        const logDetail = type === "closed"
+          ? `code=${detail.code ?? "—"}, reason=${detail.reason ?? "—"}`
+          : `error=${detail.message ?? "—"}`;
+        console.warn(`[${vehicle.name}] WebSocket ${type}: ${logDetail}`);
+        void database.db.insert(dataQualityEvents).values({
+          category: "vehicle_subscription",
+          message,
+          raw: { ...detail, vehicleName: vehicle.name },
+          severity,
+          vehicleId: vehicle.id
+        }).catch((err) => console.error(`[${vehicle.name}] Failed to log connection event.`, err));
       }
     );
 

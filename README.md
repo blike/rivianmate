@@ -22,3 +22,5 @@ docker compose up -d
 ```
 
 The production app is exposed on `http://localhost:4000`.
+
+By default, RivianMate does not open the live Rivian vehicle-state WebSocket. In local testing, the current WebSocket collector can cause the official Rivian phone app to report that no cloud connection is available. Keep `RIVIAN_LIVE_WEBSOCKET_ENABLED=false` unless you are actively testing collector behavior.
