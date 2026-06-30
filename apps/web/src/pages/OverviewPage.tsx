@@ -21,8 +21,17 @@ interface OverviewPageProps {
 }
 
 export function OverviewPage({ data, unitPrefs }: OverviewPageProps) {
+  const vehicleCollectionDisabled = data.dataQuality?.vehicleCollectionMode === "disabled";
+
   return (
     <>
+      {vehicleCollectionDisabled && (
+        <div className="notice">
+          Vehicle telemetry collection is disabled. RivianMate can show the connected vehicle, but it will not ingest battery,
+          location, charging, or drive data until a safe collection mode is enabled.
+        </div>
+      )}
+
       <section className="metricGrid" aria-label="Current vehicle metrics">
         <MetricCard
           label="Battery"

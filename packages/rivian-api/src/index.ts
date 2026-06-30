@@ -1,4 +1,3 @@
-import { createClient } from "graphql-ws";
 import { randomUUID } from "node:crypto";
 
 export interface RivianTokens {
@@ -28,6 +27,14 @@ export interface RivianAuthResult {
 export interface VehicleStateSubscription {
   unsubscribe(): Promise<void>;
 }
+
+export type VehicleStateConnectionEvent =
+  | "connected"
+  | "closed"
+  | "error"
+  | "quiet_resubscribe"
+  | "reconnecting"
+  | "resubscribed";
 
 export interface VehicleStateEvent {
   vehicleId: string;
@@ -129,6 +136,8 @@ const baseHeaders = {
 };
 
 export class RivianApiClient {
+  private readonly vehicleStateMonitors = new Map<string, RivianWebSocketMonitor>();
+
   async createSession(): Promise<{ csrfToken: string; appSessionToken: string }> {
     const response = await this.graphql<{
       createCsrfToken: {
@@ -294,35 +303,11 @@ export class RivianApiClient {
     vehicleId: string,
     onEvent: (event: VehicleStateEvent) => void,
     onClose?: () => void,
-    onConnectionEvent?: (type: "connected" | "closed" | "error", detail: Record<string, unknown>) => void
+    onConnectionEvent?: (type: VehicleStateConnectionEvent, detail: Record<string, unknown>) => void
   ): Promise<VehicleStateSubscription> {
-    const client = createClient({
-      connectionParams: {
-        "client-name": apolloClientName,
-        "client-version": rivianClientVersion,
-        "dc-cid": `m-ios-${randomUUID()}`,
-        "u-sess": tokens.userSessionToken
-      },
-      lazy: false,
-      retryAttempts: 0,
-      url: graphqlWebSocket,
-      webSocketImpl: WebSocket
-    });
-
-    client.on("connected", () => {
-      onConnectionEvent?.("connected", {});
-    });
-    client.on("closed", (event) => {
-      const e = event as { code?: number; reason?: string };
-      onConnectionEvent?.("closed", { code: e.code ?? null, reason: e.reason ?? null });
-    });
-    client.on("error", (error) => {
-      onConnectionEvent?.("error", { message: error instanceof Error ? error.message : String(error) });
-    });
-
-    let disposed = false;
-
-    const dispose = client.subscribe(
+    const monitor = this.getVehicleStateMonitor(tokens, onConnectionEvent);
+    let active = true;
+    const unsubscribe = await monitor.startSubscription(
       {
         operationName: "VehicleState",
         query: `subscription VehicleState($vehicleID: String!) { vehicleState(id: $vehicleID) ${buildVehicleStateFragment()} }`,
@@ -330,35 +315,33 @@ export class RivianApiClient {
           vehicleID: vehicleId
         }
       },
-      {
-        complete: () => {
-          if (!disposed) onClose?.();
-        },
-        error: () => {
-          if (!disposed) onClose?.();
-        },
-        next: (payload) => {
-          const data = payload.data as { vehicleState?: Record<string, unknown> } | undefined;
-          if (!data?.vehicleState) {
-            return;
-          }
-
-          onEvent({
-            observedAt: inferObservedAt(data.vehicleState),
-            raw: data.vehicleState,
-            vehicleId
-          });
+      (payload) => {
+        const data = payload.data as { vehicleState?: Record<string, unknown> } | undefined;
+        if (!data?.vehicleState) {
+          return;
         }
+
+        onEvent({
+          observedAt: inferObservedAt(data.vehicleState),
+          raw: data.vehicleState,
+          vehicleId
+        });
       }
     );
 
     return {
       async unsubscribe() {
-        disposed = true;
-        dispose();
-        await client.dispose();
+        active = false;
+        await unsubscribe();
+        if (!active) return;
+        onClose?.();
       }
     };
+  }
+
+  async closeVehicleStateConnections() {
+    await Promise.all([...this.vehicleStateMonitors.values()].map((monitor) => monitor.close()));
+    this.vehicleStateMonitors.clear();
   }
 
   async fetchLiveChargingSession(
@@ -430,6 +413,261 @@ export class RivianApiClient {
     }
 
     return payload.data;
+  }
+
+  private getVehicleStateMonitor(
+    tokens: RivianTokens,
+    onConnectionEvent?: (type: VehicleStateConnectionEvent, detail: Record<string, unknown>) => void
+  ) {
+    const existing = this.vehicleStateMonitors.get(tokens.userSessionToken);
+    if (existing) {
+      existing.addConnectionListener(onConnectionEvent);
+      return existing;
+    }
+
+    const monitor = new RivianWebSocketMonitor(tokens.userSessionToken);
+    monitor.addConnectionListener(onConnectionEvent);
+    this.vehicleStateMonitors.set(tokens.userSessionToken, monitor);
+    return monitor;
+  }
+}
+
+type GraphqlPayload = {
+  data?: unknown;
+};
+
+type SubscriptionRecord = {
+  onMessage(payload: GraphqlPayload): void;
+  payload: Record<string, unknown>;
+};
+
+class RivianWebSocketMonitor {
+  private acked = false;
+  private ackWaiters: Array<() => void> = [];
+  private connectPromise: Promise<void> | null = null;
+  private disconnectRequested = false;
+  private lastReceivedAt = 0;
+  private quietTimer: NodeJS.Timeout | undefined;
+  private reconnectAttempt = 0;
+  private reconnectTimer: NodeJS.Timeout | undefined;
+  private readonly subscriptions = new Map<string, SubscriptionRecord>();
+  private readonly connectionListeners = new Set<
+    (type: VehicleStateConnectionEvent, detail: Record<string, unknown>) => void
+  >();
+  private socket: WebSocket | undefined;
+
+  constructor(private readonly userSessionToken: string) {}
+
+  addConnectionListener(listener?: (type: VehicleStateConnectionEvent, detail: Record<string, unknown>) => void) {
+    if (listener) {
+      this.connectionListeners.add(listener);
+    }
+  }
+
+  async startSubscription(
+    payload: Record<string, unknown>,
+    onMessage: (payload: GraphqlPayload) => void
+  ): Promise<() => Promise<void>> {
+    await this.connect();
+    await this.waitForAck();
+
+    const id = randomUUID();
+    this.subscriptions.set(id, { onMessage, payload });
+    this.send({ id, payload, type: "subscribe" });
+
+    return async () => {
+      this.subscriptions.delete(id);
+      if (this.isOpen()) {
+        this.send({ id, type: "complete" });
+      }
+      if (this.subscriptions.size === 0) {
+        await this.close();
+      }
+    };
+  }
+
+  async close() {
+    this.disconnectRequested = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.quietTimer) clearInterval(this.quietTimer);
+    this.reconnectTimer = undefined;
+    this.quietTimer = undefined;
+    this.acked = false;
+    this.ackWaiters.splice(0).forEach((resolve) => resolve());
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      this.socket.close();
+    }
+    this.socket = undefined;
+  }
+
+  private async connect() {
+    if (this.isOpen() && this.acked) return;
+    if (this.connectPromise) return this.connectPromise;
+
+    this.disconnectRequested = false;
+    this.connectPromise = new Promise((resolve, reject) => {
+      const socket = new WebSocket(graphqlWebSocket, "graphql-transport-ws");
+      let settled = false;
+      const settle = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        this.connectPromise = null;
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      };
+
+      this.socket = socket;
+      this.acked = false;
+
+      socket.addEventListener("open", () => {
+        this.lastReceivedAt = Date.now();
+        this.send({
+          payload: {
+            "client-name": apolloClientName,
+            "client-version": rivianClientVersion,
+            "dc-cid": `m-ios-${randomUUID()}`,
+            "u-sess": this.userSessionToken
+          },
+          type: "connection_init"
+        });
+        this.startQuietTimer();
+        settle();
+      });
+
+      socket.addEventListener("message", (event) => {
+        this.lastReceivedAt = Date.now();
+        this.handleMessage(event.data);
+      });
+
+      socket.addEventListener("error", () => {
+        this.emit("error", {});
+        settle(new RivianApiError("Rivian vehicle-state WebSocket failed to connect."));
+      });
+
+      socket.addEventListener("close", (event) => {
+        this.acked = false;
+        this.ackWaiters.splice(0).forEach((resolve) => resolve());
+        this.emit("closed", { code: event.code, reason: event.reason || null });
+        settle(new RivianApiError("Rivian vehicle-state WebSocket closed before it was ready."));
+        if (!this.disconnectRequested && event.reason !== "Unauthenticated") {
+          this.scheduleReconnect();
+        }
+      });
+    });
+
+    return this.connectPromise;
+  }
+
+  private handleMessage(rawData: unknown) {
+    const text = typeof rawData === "string" ? rawData : rawData instanceof Buffer ? rawData.toString("utf8") : String(rawData);
+    let message: {
+      id?: string;
+      payload?: GraphqlPayload;
+      type?: string;
+    };
+
+    try {
+      message = JSON.parse(text) as typeof message;
+    } catch (error) {
+      this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    if (message.type === "connection_ack") {
+      this.acked = true;
+      this.reconnectAttempt = 0;
+      this.emit("connected", {});
+      this.ackWaiters.splice(0).forEach((resolve) => resolve());
+      return;
+    }
+
+    if (message.type !== "next" || !message.id) {
+      return;
+    }
+
+    this.subscriptions.get(message.id)?.onMessage(message.payload ?? {});
+  }
+
+  private async waitForAck(timeoutMs = 10000) {
+    if (this.acked) return;
+
+    await new Promise<void>((resolve, reject) => {
+      const waiter = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(() => {
+        this.ackWaiters = this.ackWaiters.filter((candidate) => candidate !== waiter);
+        reject(new RivianApiError("Timed out waiting for Rivian WebSocket connection_ack."));
+      }, timeoutMs);
+
+      this.ackWaiters.push(waiter);
+    });
+
+    if (!this.acked) {
+      throw new RivianApiError("Rivian WebSocket closed before connection_ack.");
+    }
+  }
+
+  private startQuietTimer() {
+    if (this.quietTimer) return;
+    this.quietTimer = setInterval(() => {
+      if (!this.isOpen() || !this.acked || this.subscriptions.size === 0) return;
+      if (Date.now() - this.lastReceivedAt < 60000) return;
+      this.resubscribeAll("quiet_resubscribe");
+    }, 60000);
+  }
+
+  private scheduleReconnect() {
+    if (this.disconnectRequested || this.reconnectTimer || this.subscriptions.size === 0) return;
+    const delaySeconds = Math.min(2 ** this.reconnectAttempt + Math.random(), 300);
+    this.reconnectAttempt += 1;
+    this.emit("reconnecting", { delaySeconds });
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.reconnect();
+    }, delaySeconds * 1000);
+  }
+
+  private async reconnect() {
+    if (this.disconnectRequested || this.subscriptions.size === 0) return;
+    try {
+      await this.connect();
+      await this.waitForAck();
+      this.resubscribeAll("resubscribed");
+    } catch (error) {
+      this.emit("error", { message: error instanceof Error ? error.message : String(error) });
+      this.scheduleReconnect();
+    }
+  }
+
+  private resubscribeAll(event: "quiet_resubscribe" | "resubscribed") {
+    for (const [id, subscription] of this.subscriptions) {
+      this.send({ id, payload: subscription.payload, type: "subscribe" });
+    }
+    this.lastReceivedAt = Date.now();
+    this.emit(event, { subscriptionCount: this.subscriptions.size });
+  }
+
+  private send(message: Record<string, unknown>) {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      throw new RivianApiError("Rivian vehicle-state WebSocket is not open.");
+    }
+    socket.send(JSON.stringify(message));
+  }
+
+  private isOpen() {
+    return this.socket?.readyState === WebSocket.OPEN;
+  }
+
+  private emit(type: VehicleStateConnectionEvent, detail: Record<string, unknown>) {
+    for (const listener of this.connectionListeners) {
+      listener(type, detail);
+    }
   }
 }
 

@@ -9,17 +9,30 @@ import {
   stableStringify,
   vehicles
 } from "@rivianmate/db";
-import { RivianApiClient, type RivianTokens, type VehicleStateSubscription } from "@rivianmate/rivian-api";
+import { RivianApiClient, type RivianTokens, type VehicleStateConnectionEvent, type VehicleStateSubscription } from "@rivianmate/rivian-api";
 import { and, eq, lt } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { decryptText } from "./encryption.js";
 
+const envBoolean = (defaultValue = false) => z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((value) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (!value) {
+      return defaultValue;
+    }
+    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+  });
+
 const config = z
   .object({
     APP_SECRET: z.string().min(32),
-    CHARGING_LIVE_FETCH_ENABLED: z.coerce.boolean().default(false),
+    CHARGING_LIVE_FETCH_ENABLED: envBoolean(false),
     CHARGING_PLUGGED_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     CHARGING_UNPLUGGED_INTERVAL_SECONDS: z.coerce.number().int().positive().default(900),
     COLLECTOR_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
@@ -27,7 +40,7 @@ const config = z
       .string()
       .url()
       .default("postgres://rivianmate:rivianmate@localhost:5432/rivianmate"),
-    RIVIAN_LIVE_WEBSOCKET_ENABLED: z.coerce.boolean().default(false)
+    RIVIAN_LIVE_WEBSOCKET_ENABLED: envBoolean(true)
   })
   .parse(process.env);
 
@@ -39,7 +52,6 @@ const chargingBackoffByVehicleId = new Map<string, number>();
 const chargingLiveUnsupportedVehicleIds = new Set<string>();
 const nextChargingFetchByVehicleId = new Map<string, number>();
 const subscriptions = new Map<string, VehicleStateSubscription>();
-const subscriptionClosedVehicleIds = new Set<string>(); // vehicles whose sub closed unexpectedly
 const lastEventReceivedByVehicleId = new Map<string, Date>();
 const eventsThisTickByVehicleId = new Map<string, number>();
 
@@ -67,6 +79,7 @@ async function shutdown() {
   shuttingDown = true;
   if (interval) clearInterval(interval);
   await Promise.allSettled([...subscriptions.values()].map((s) => s.unsubscribe()));
+  await rivianApi.closeVehicleStateConnections();
   console.log("Stopping RivianMate collector.");
   await database.client.end();
   process.exit(0);
@@ -120,19 +133,7 @@ async function tick() {
   for (const vehicle of collectableVehicles) {
     const tokens = credentialsByAccountId.get(vehicle.accountId)!;
 
-    if (config.RIVIAN_LIVE_WEBSOCKET_ENABLED && (!subscriptions.has(vehicle.id) || subscriptionClosedVehicleIds.has(vehicle.id))) {
-      if (subscriptionClosedVehicleIds.has(vehicle.id)) {
-        subscriptionClosedVehicleIds.delete(vehicle.id);
-        subscriptions.delete(vehicle.id);
-        await database.db.insert(dataQualityEvents).values({
-          category: "vehicle_subscription",
-          message: "reconnecting",
-          raw: { vehicleName: vehicle.name },
-          severity: "warning",
-          vehicleId: vehicle.id
-        });
-        console.warn(`Re-subscribing to ${vehicle.name} after unexpected close.`);
-      }
+    if (config.RIVIAN_LIVE_WEBSOCKET_ENABLED && !subscriptions.has(vehicle.id)) {
       await openSubscription(vehicle, tokens);
     }
 
@@ -207,28 +208,22 @@ async function openSubscription(
         });
       },
       () => {
-        // onClose — mark for re-subscribe on next tick
         if (!shuttingDown) {
-          subscriptionClosedVehicleIds.add(vehicle.id);
           console.warn(`[${vehicle.name}] Subscription closed unexpectedly.`);
         }
       },
       (type, detail) => {
-        if (type === "connected") {
-          console.log(`[${vehicle.name}] WebSocket connected.`);
-          return;
+        const event = toSubscriptionLifecycleEvent(type, detail);
+        if (event.logLevel === "info") {
+          console.log(`[${vehicle.name}] ${event.logMessage}`);
+        } else {
+          console.warn(`[${vehicle.name}] ${event.logMessage}`);
         }
-        const message = type === "closed" ? "connection_closed" : "connection_error";
-        const severity = type === "error" ? "error" : "warning";
-        const logDetail = type === "closed"
-          ? `code=${detail.code ?? "—"}, reason=${detail.reason ?? "—"}`
-          : `error=${detail.message ?? "—"}`;
-        console.warn(`[${vehicle.name}] WebSocket ${type}: ${logDetail}`);
         void database.db.insert(dataQualityEvents).values({
           category: "vehicle_subscription",
-          message,
+          message: event.message,
           raw: { ...detail, vehicleName: vehicle.name },
-          severity,
+          severity: event.severity,
           vehicleId: vehicle.id
         }).catch((err) => console.error(`[${vehicle.name}] Failed to log connection event.`, err));
       }
@@ -252,6 +247,56 @@ async function openSubscription(
       vehicleId: vehicle.id
     });
     console.error(`Vehicle subscription failed for ${vehicle.name}.`, error);
+  }
+}
+
+function toSubscriptionLifecycleEvent(
+  type: VehicleStateConnectionEvent,
+  detail: Record<string, unknown>
+): { logLevel: "info" | "warning"; logMessage: string; message: string; severity: "info" | "warning" | "error" } {
+  switch (type) {
+    case "connected":
+      return {
+        logLevel: "info",
+        logMessage: "WebSocket monitor connected.",
+        message: "monitor_connected",
+        severity: "info"
+      };
+    case "closed":
+      return {
+        logLevel: "warning",
+        logMessage: `WebSocket monitor closed: code=${detail.code ?? "—"}, reason=${detail.reason ?? "—"}`,
+        message: "monitor_closed",
+        severity: "warning"
+      };
+    case "error":
+      return {
+        logLevel: "warning",
+        logMessage: `WebSocket monitor error: ${detail.message ?? "unknown"}`,
+        message: "monitor_error",
+        severity: "error"
+      };
+    case "quiet_resubscribe":
+      return {
+        logLevel: "info",
+        logMessage: "WebSocket monitor resubscribed after a quiet interval.",
+        message: "monitor_quiet_resubscribe",
+        severity: "info"
+      };
+    case "reconnecting":
+      return {
+        logLevel: "warning",
+        logMessage: `WebSocket monitor reconnecting in ${detail.delaySeconds ?? "?"} seconds.`,
+        message: "monitor_reconnecting",
+        severity: "warning"
+      };
+    case "resubscribed":
+      return {
+        logLevel: "info",
+        logMessage: "WebSocket monitor reconnected and resubscribed.",
+        message: "monitor_resubscribed",
+        severity: "info"
+      };
   }
 }
 

@@ -12,7 +12,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "graphql-ws": "^6.0.4",
     "undici": "^7.1.0"
   }
 }
