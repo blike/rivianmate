@@ -1,34 +1,25 @@
-FROM node:22-alpine AS base
-WORKDIR /app
+FROM node:22-alpine AS build
 RUN corepack enable
-
-# ── Install dependencies ───────────────────────────────────────────────────────
-FROM base AS deps
+WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY apps/api/package.json       apps/api/package.json
-COPY apps/collector/package.json apps/collector/package.json
-COPY apps/web/package.json       apps/web/package.json
-COPY packages/db/package.json          packages/db/package.json
-COPY packages/rivian-api/package.json  packages/rivian-api/package.json
-COPY packages/shared/package.json      packages/shared/package.json
+COPY server/package.json server/
+COPY web/package.json web/
 RUN pnpm install --frozen-lockfile
+COPY eslint.config.mjs ./
+COPY server ./server
+COPY web ./web
+RUN pnpm -r build
+RUN pnpm --filter @rivianmate/server deploy --prod --legacy /prod/server
 
-# ── Build everything ───────────────────────────────────────────────────────────
-FROM deps AS build
-COPY . .
-RUN pnpm build
-
-# ── Lean runtime image ─────────────────────────────────────────────────────────
-FROM base AS runtime
-
-ENV NODE_ENV=production \
-    APP_PORT=4000 \
-    WEB_DIST_DIR=/app/apps/web/dist
-
-COPY --from=build /app /app
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=4000
+COPY --from=build /prod/server/node_modules ./node_modules
+COPY --from=build /prod/server/package.json ./package.json
+COPY --from=build /app/server/dist ./dist
+COPY --from=build /app/server/drizzle ./drizzle
+COPY --from=build /app/web/dist ./web-dist
 EXPOSE 4000
-
-ENTRYPOINT ["/docker-entrypoint.sh"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+  CMD wget -qO- http://localhost:4000/api/status || exit 1
+CMD ["node", "dist/index.js"]

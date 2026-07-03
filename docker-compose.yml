@@ -1,5 +1,6 @@
 services:
   rivianmate:
+    build: .
     image: mitchvitale/rivianmate:latest
     restart: always
     depends_on:
@@ -8,12 +9,11 @@ services:
     environment:
       DATABASE_URL: postgres://rivianmate:${POSTGRES_PASSWORD:-rivianmate}@postgres:5432/rivianmate
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET to at least 32 random characters}
-      NODE_ENV: production
     ports:
       - "${APP_PORT:-4000}:4000"
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: always
     environment:
       POSTGRES_DB: rivianmate
@@ -24,8 +24,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
 
 volumes:
   postgres_data:
