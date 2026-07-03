@@ -1,0 +1,210 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { api } from "../api/client.js";
+import { useLiveCharging } from "../api/hooks.js";
+import { Panel, Row, StatCard } from "../components/panels.js";
+import { fmt, fmtDuration, kmToMi, titleCase } from "../lib/state.js";
+
+export function Charging(props: { vehicleId: string }) {
+  const queryClient = useQueryClient();
+  const { data: live } = useLiveCharging(props.vehicleId);
+
+  const { data: sessions } = useQuery({
+    queryKey: ["chargingSessions", props.vehicleId],
+    queryFn: () => api.chargingSessions(props.vehicleId),
+    refetchInterval: 60_000,
+  });
+
+  const { data: wallboxes } = useQuery({
+    queryKey: ["wallboxes"],
+    queryFn: api.wallboxes,
+    refetchInterval: 60_000,
+  });
+
+  const costMutation = useMutation({
+    mutationFn: ({ id, cost }: { id: number; cost: string | null }) =>
+      api.updateSessionCost(id, cost),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ["chargingSessions", props.vehicleId],
+      }),
+  });
+
+  const isLive = live?.vehicleChargerState?.value === "charging_active";
+
+  return (
+    <div className="space-y-4">
+      {isLive && live && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatCard label="Power" value={`${fmt(num(live.power?.value), 1)} kW`} />
+          <StatCard label="State of charge" value={`${fmt(num(live.soc?.value), 0)}%`} />
+          <StatCard
+            label="Energy added"
+            value={`${fmt(num(live.totalChargedEnergy?.value), 1)} kWh`}
+          />
+          <StatCard
+            label="Time remaining"
+            value={
+              live.timeRemaining?.value != null
+                ? `${fmt(num(live.timeRemaining.value)! / 60, 0)} min`
+                : "—"
+            }
+          />
+        </div>
+      )}
+
+      <Panel title="Charging sessions">
+        {!sessions?.length ? (
+          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
+            No charging sessions recorded yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[42rem] text-sm">
+              <thead className="text-left text-xs text-[var(--text-muted)]">
+                <tr>
+                  <th className="pb-2 font-normal">Started</th>
+                  <th className="pb-2 font-normal">Duration</th>
+                  <th className="pb-2 font-normal">Charger</th>
+                  <th className="pb-2 text-right font-normal">SOC</th>
+                  <th className="pb-2 text-right font-normal">Energy</th>
+                  <th className="pb-2 text-right font-normal">Range added</th>
+                  <th className="pb-2 text-right font-normal">Peak</th>
+                  <th className="pb-2 text-right font-normal">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.id} className="border-t border-[var(--border)]">
+                    <td className="py-2">
+                      {new Date(s.startedAt).toLocaleString([], {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {!s.endedAt && (
+                        <span className="ml-2 text-xs text-[var(--status-good)]">
+                          charging
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2">{fmtDuration(s.startedAt, s.endedAt)}</td>
+                    <td className="py-2">
+                      {s.chargerType === "rivian_charger"
+                        ? "Rivian Adventure Network"
+                        : (s.chargerId ?? titleCase(s.chargerType))}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {s.startSoc != null && s.endSoc != null
+                        ? `${fmt(s.startSoc, 0)}→${fmt(s.endSoc, 0)}%`
+                        : "—"}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : "—"}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {s.rangeAddedKm != null
+                        ? `${fmt(kmToMi(s.rangeAddedKm), 0)} mi`
+                        : "—"}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {s.maxPowerKw != null ? `${fmt(s.maxPowerKw, 1)} kW` : "—"}
+                    </td>
+                    <td className="py-2 text-right">
+                      <CostCell
+                        cost={s.cost}
+                        currency={s.currency}
+                        onSave={(cost) => costMutation.mutate({ id: s.id, cost })}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {wallboxes && wallboxes.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {wallboxes.map((wb) => (
+            <Panel key={wb.wallboxId} title={wb.name ?? wb.wallboxId}>
+              <dl className="space-y-1 text-sm">
+                <Row label="Status" value={titleCase(wb.latest?.chargingStatus ?? null)} />
+                <Row
+                  label="Power"
+                  value={
+                    wb.latest?.power != null
+                      ? `${fmt(wb.latest.power, 1)} kW / ${fmt(wb.maxPower, 1)} kW`
+                      : "—"
+                  }
+                />
+                <Row
+                  label="Output"
+                  value={
+                    wb.latest?.currentAmps != null
+                      ? `${fmt(wb.latest.currentAmps, 0)} A @ ${fmt(wb.latest.currentVoltage, 0)} V`
+                      : "—"
+                  }
+                />
+                <Row label="Model" value={wb.model ?? "—"} />
+                <Row label="Firmware" value={wb.softwareVersion ?? "—"} />
+              </dl>
+            </Panel>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CostCell(props: {
+  cost: string | null;
+  currency: string | null;
+  onSave: (cost: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(props.cost ?? "");
+
+  if (!editing) {
+    return (
+      <button
+        className="tabular-nums text-[var(--text-secondary)] underline decoration-dotted underline-offset-2 hover:text-[var(--text-primary)]"
+        onClick={() => {
+          setValue(props.cost ?? "");
+          setEditing(true);
+        }}
+        title="Edit cost"
+      >
+        {props.cost != null
+          ? `${props.currency === "USD" || !props.currency ? "$" : `${props.currency} `}${fmt(Number(props.cost), 2)}`
+          : "add"}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        const trimmed = value.trim();
+        if (trimmed === "") props.onSave(null);
+        else if (!Number.isNaN(Number(trimmed))) props.onSave(trimmed);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setEditing(false);
+      }}
+      className="w-20 rounded border border-[var(--border)] bg-[var(--surface-2)] px-1 py-0.5 text-right text-sm"
+    />
+  );
+}
+
+function num(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}

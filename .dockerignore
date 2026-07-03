@@ -1,11 +1,7 @@
-.git/
+home-assistant-rivian/
 node_modules/
-**/node_modules/
 dist/
-**/dist/
 .env
-.DS_Store
+.env.local
 *.log
-coverage/
-.turbo/
-.vite/
+.DS_Store
