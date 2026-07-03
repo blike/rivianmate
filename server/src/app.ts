@@ -11,6 +11,7 @@ import { rivianRoutes } from "./routes/rivian.js";
 import { vehicleRoutes } from "./routes/vehicles.js";
 
 const PUBLIC_PATHS = new Set(["/api/status", "/api/setup", "/api/auth/login"]);
+const ASSET_PATH_PATTERN = /\/[^/]+\.[^/]+$/;
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({
@@ -47,7 +48,13 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   if (ctx.config.WEB_DIST && existsSync(ctx.config.WEB_DIST)) {
     await app.register(fastifyStatic, { root: ctx.config.WEB_DIST });
     app.setNotFoundHandler((request, reply) => {
-      if (request.method === "GET" && !request.url.startsWith("/api/")) {
+      const path = request.url.split("?")[0] ?? "";
+      if (
+        request.method === "GET" &&
+        !path.startsWith("/api/") &&
+        !path.startsWith("/assets/") &&
+        !ASSET_PATH_PATTERN.test(path)
+      ) {
         return reply.sendFile("index.html");
       }
       return reply.code(404).send({ error: "Not found" });
