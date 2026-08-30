@@ -1,0 +1,760 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_RIVIANMATE",
+      "label": "RivianMate Postgres",
+      "description": "The Postgres datasource pointing at rivianmate's own database (same DATABASE_URL the app itself uses).",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "description": "Every field in the raw Rivian API state snapshot that doesn't have a dedicated column: tires, doors, windows, closures, climate, OTA, gear guard, and misc vehicle status.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "rivianmate"
+      ],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'driveMode'->>'value' AS \"value\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Drive Mode",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'gearStatus'->>'value' AS \"value\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Gear Status",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'chargerState'->>'value' AS \"value\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Charger Connection",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (data->'timeToEndOfCharge'->>'value')::numeric AS value FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Time to End of Charge",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'twelveVoltBatteryHealth'->>'value' AS \"value\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "12V Battery Health",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [
+            {
+              "options": {
+                "locked": {
+                  "color": "green",
+                  "text": "Locked"
+                },
+                "unlocked": {
+                  "color": "orange",
+                  "text": "Unlocked"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'gearGuardLocked'->>'value' AS \"value\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Gear Guard",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "decimals": 1,
+          "unit": "pressurepsi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (data->'tirePressureFrontLeft'->>'value')::numeric * 14.5038 AS value FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Tire FL",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "decimals": 1,
+          "unit": "pressurepsi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 4
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (data->'tirePressureFrontRight'->>'value')::numeric * 14.5038 AS value FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Tire FR",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "decimals": 1,
+          "unit": "pressurepsi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 4
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (data->'tirePressureRearLeft'->>'value')::numeric * 14.5038 AS value FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Tire RL",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "decimals": 1,
+          "unit": "pressurepsi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 4
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (data->'tirePressureRearRight'->>'value')::numeric * 14.5038 AS value FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Tire RR",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'tirePressureStatusFrontLeft'->>'value' AS \"FL\", data->'tirePressureStatusFrontRight'->>'value' AS \"FR\", data->'tirePressureStatusRearLeft'->>'value' AS \"RL\", data->'tirePressureStatusRearRight'->>'value' AS \"RR\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Tire Pressure Status",
+      "type": "table"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 12,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'doorFrontLeftClosed'->>'value' AS \"FL Closed\", data->'doorFrontLeftLocked'->>'value' AS \"FL Locked\", data->'doorFrontRightClosed'->>'value' AS \"FR Closed\", data->'doorFrontRightLocked'->>'value' AS \"FR Locked\", data->'doorRearLeftClosed'->>'value' AS \"RL Closed\", data->'doorRearLeftLocked'->>'value' AS \"RL Locked\", data->'doorRearRightClosed'->>'value' AS \"RR Closed\", data->'doorRearRightLocked'->>'value' AS \"RR Locked\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Doors & Locks",
+      "type": "table"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 13,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'windowFrontLeftClosed'->>'value' AS \"FL\", data->'windowFrontRightClosed'->>'value' AS \"FR\", data->'windowRearLeftClosed'->>'value' AS \"RL\", data->'windowRearRightClosed'->>'value' AS \"RR\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Windows",
+      "type": "table"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 14,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'closureFrunkClosed'->>'value' AS \"Frunk Closed\", data->'closureFrunkLocked'->>'value' AS \"Frunk Locked\", data->'closureTailgateClosed'->>'value' AS \"Tailgate Closed\", data->'closureTailgateLocked'->>'value' AS \"Tailgate Locked\", data->'closureTonneauClosed'->>'value' AS \"Tonneau Closed\", data->'closureTonneauLocked'->>'value' AS \"Tonneau Locked\", data->'closureSideBinLeftClosed'->>'value' AS \"L Bin Closed\", data->'closureSideBinLeftLocked'->>'value' AS \"L Bin Locked\", data->'closureSideBinRightClosed'->>'value' AS \"R Bin Closed\", data->'closureSideBinRightLocked'->>'value' AS \"R Bin Locked\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Closures (Frunk / Tailgate / Tonneau / Bins)",
+      "type": "table"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 15,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'cabinClimateDriverTemperature'->>'value' AS \"Driver Temp\", data->'cabinPreconditioningStatus'->>'value' AS \"Preconditioning\", data->'defrostDefogStatus'->>'value' AS \"Defrost\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Climate",
+      "type": "table"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 16,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'otaCurrentVersion'->>'value' AS \"Current Version\", data->'otaAvailableVersion'->>'value' AS \"Available Version\", data->'otaInstallProgress'->>'value' AS \"Install Progress %\", data->'otaStatus'->>'value' AS \"Status\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Software (OTA)",
+      "type": "table"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 17,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'brakeFluidLow'->>'value' AS \"Brake Fluid Low\", data->'wiperFluidState'->>'value' AS \"Wiper Fluid\", data->'alarmSoundStatus'->>'value' AS \"Alarm\", data->'cloudConnection'->>'value' AS \"Cloud Conn.\", data->'serviceMode'->>'value' AS \"Service Mode\", data->'trailerStatus'->>'value' AS \"Trailer\", data->'petModeStatus'->>'value' AS \"Pet Mode\", data->'carWashMode'->>'value' AS \"Car Wash Mode\", data->'rearHitchStatus'->>'value' AS \"Rear Hitch\", data->'seatFrontLeftHeat'->>'value' AS \"Seat Heat FL\", data->'seatFrontRightHeat'->>'value' AS \"Seat Heat FR\", data->'steeringWheelHeat'->>'value' AS \"Steering Wheel Heat\" FROM (SELECT * FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1) s",
+          "refId": "A"
+        }
+      ],
+      "title": "Other Vehicle Status",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "rivianmate"
+  ],
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - Vehicle Health",
+  "uid": "rivianmate-vehicle-health",
+  "version": 1
+}

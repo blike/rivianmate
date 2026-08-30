@@ -1,0 +1,349 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_RIVIANMATE",
+      "label": "RivianMate Postgres",
+      "description": "The Postgres datasource pointing at rivianmate's own database (same DATABASE_URL the app itself uses).",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "grafana-postgresql-datasource",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    }
+  ],
+  "description": "Projected range at 100% charge over time \u2014 a proxy for battery degradation.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "rivianmate"
+      ],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "kwatth"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 801,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (data->'batteryCapacity'->>'value')::numeric AS value FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Battery Capacity (spec)",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 802,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (range_km*0.621371) / (battery_level/100.0) AS value FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND battery_level > 10 ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Current Est. Range @100%",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 803,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH r AS (SELECT (range_km*0.621371) / (battery_level/100.0) AS range100, ts FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND battery_level > 10) SELECT (SELECT range100 FROM r ORDER BY ts DESC LIMIT 1) - (SELECT range100 FROM r ORDER BY ts ASC LIMIT 1) AS value",
+          "refId": "A"
+        }
+      ],
+      "title": "Change vs First Record",
+      "type": "stat"
+    },
+    {
+      "datasource": "${DS_RIVIANMATE}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "points",
+            "fillOpacity": 0,
+            "pointSize": 6,
+            "spanNulls": false
+          },
+          "unit": "lengthmi"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "<30% SoC"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "30-60% SoC"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "60-90% SoC"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "90-100% SoC"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trend"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 804,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS time, CASE WHEN battery_level < 30 THEN range100 END AS \"<30% SoC\", CASE WHEN battery_level >= 30 AND battery_level < 60 THEN range100 END AS \"30-60% SoC\", CASE WHEN battery_level >= 60 AND battery_level < 90 THEN range100 END AS \"60-90% SoC\", CASE WHEN battery_level >= 90 THEN range100 END AS \"90-100% SoC\" FROM (SELECT ts, battery_level, (range_km*0.621371) / (battery_level/100.0) AS range100 FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND battery_level > 10 AND $__timeFilter(ts)) x ORDER BY ts",
+          "refId": "A"
+        },
+        {
+          "datasource": "${DS_RIVIANMATE}",
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH pts AS (SELECT ts, battery_level, (range_km*0.621371) / (battery_level/100.0) AS range100 FROM vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND battery_level > 10 AND $__timeFilter(ts)), reg AS (SELECT regr_slope(range100, extract(epoch from ts)) AS slope, regr_intercept(range100, extract(epoch from ts)) AS intercept FROM pts) SELECT pts.ts AS time, reg.intercept + reg.slope * extract(epoch from pts.ts) AS \"Trend\" FROM pts, reg ORDER BY pts.ts",
+          "refId": "B"
+        }
+      ],
+      "title": "Estimated Range @ 100% Charge (Battery Health Trend)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "rivianmate"
+  ],
+  "time": {
+    "from": "now-180d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - Battery Health",
+  "uid": "rivianmate-battery-health",
+  "version": 1
+}
