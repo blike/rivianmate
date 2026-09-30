@@ -7,7 +7,8 @@ import type { AppContext, RivianFactory } from "./context.js";
 import { TokenCrypto, hashPassword } from "./crypto.js";
 import { createDb, runMigrations } from "./db/client.js";
 import { appSettings } from "./db/schema.js";
-import { RivianClient } from "./rivian/client.js";
+import { RivianClient, type RivianApi } from "./rivian/client.js";
+import { RivianGovernor } from "./rivian/governor.js";
 import { MockRivian } from "./rivian/mock.js";
 import { RivianSubscriptionManager } from "./rivian/subscription.js";
 import { LiveBus } from "./services/live-bus.js";
@@ -37,9 +38,10 @@ async function main(): Promise<void> {
   const tokenStore = new TokenStore(db, crypto);
   const bus = new LiveBus();
 
+  const governor = new RivianGovernor();
   const rivianFactory: RivianFactory = config.MOCK_RIVIAN
     ? mockFactory()
-    : realFactory();
+    : realFactory(governor);
 
   const monitor = new VehicleMonitor(
     db,
@@ -60,6 +62,7 @@ async function main(): Promise<void> {
     bus,
     monitor,
     rivianFactory,
+    governor,
     pendingConnect: null,
   };
 
@@ -94,16 +97,19 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown());
 }
 
-function realFactory(): RivianFactory {
+function realFactory(governor: RivianGovernor): RivianFactory {
   return {
-    createApi: (tokens) => new RivianClient({ tokens }),
-    createConnection: (tokens) => {
-      const api = new RivianClient({ tokens });
-      const stream = new RivianSubscriptionManager(
-        () => api.userSessionToken,
-        undefined,
-        (msg) => console.log(`[ws] ${msg}`),
-      );
+    createApi: (tokens) => new RivianClient({ tokens, governor }),
+    createConnection: (tokens, existing?: RivianApi) => {
+      const api = existing ?? new RivianClient({ tokens, governor });
+      const stream = new RivianSubscriptionManager({
+        getCredentials: () => ({
+          userSessionToken: api.userSessionToken,
+          appSession: api.appSession,
+        }),
+        governor,
+        log: (msg) => console.log(`[ws] ${msg}`),
+      });
       return { api, stream };
     },
   };

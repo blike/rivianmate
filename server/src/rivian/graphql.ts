@@ -245,3 +245,9 @@ export function buildLiveSessionQuery(
     .join(" ");
   return `query getLiveSessionData($vehicleId: ID!) { getLiveSessionData(vehicleId: $vehicleId) { __typename ${fragment} } }`;
 }
+
+/**
+ * Live charging data pushed over the same WebSocket as vehicle state. This
+ * replaces periodic getLiveSessionData polling while the socket is healthy.
+ */
+export const CHARGING_SESSION_SUBSCRIPTION = `subscription chargingSession($vehicleID: String!) { chargingSession(vehicleId: $vehicleID) { chartData { soc powerKW startTime endTime timeEstimationValidityStatus vehicleChargerState } liveData { powerKW kilometersChargedPerHour rangeAddedThisSession totalChargedEnergy timeElapsed timeRemaining price currency isFreeSession vehicleChargerState startTime } } }`;

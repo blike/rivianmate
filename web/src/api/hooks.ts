@@ -57,6 +57,14 @@ export function useLiveCharging(vehicleId: string | undefined) {
   });
 }
 
+export function useRivianDiagnostics() {
+  return useQuery({
+    queryKey: ["rivianDiagnostics"],
+    queryFn: api.rivianDiagnostics,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useRivianDisconnect() {
   const queryClient = useQueryClient();
   return useMutation({

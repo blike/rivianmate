@@ -2,7 +2,9 @@
  * REST API response shapes. The web app imports these types (types only —
  * erased at compile time) so both sides stay in sync.
  */
+import type { RivianTrafficSnapshot } from "./rivian/governor.js";
 import type { LiveSessionData, VehicleState } from "./rivian/types.js";
+import type { MonitorDiagnostics } from "./services/vehicle-monitor.js";
 
 export type { LiveSessionData, VehicleState };
 
@@ -22,6 +24,11 @@ export interface VehicleDto {
   make: string | null;
   model: string | null;
   modelYear: number | null;
+}
+
+export interface RivianDiagnosticsResponse {
+  monitor: MonitorDiagnostics;
+  traffic: RivianTrafficSnapshot;
 }
 
 export interface ConnectResponse {

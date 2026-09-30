@@ -13,12 +13,17 @@ import {
   buildLiveSessionQuery,
   buildVehicleStateQuery,
 } from "./graphql.js";
+import { RivianGovernor, parseRetryAfter } from "./governor.js";
 import {
   LiveSessionData,
   LoginResult,
   RivianApiError,
+  RivianAppSession,
+  RivianCooldownError,
+  RivianRateLimitError,
   RivianSessionManagerError,
   RivianTokens,
+  RivianUnauthenticatedError,
   UserInfo,
   VehicleState,
   Wallbox,
@@ -28,13 +33,22 @@ import {
 export interface RivianClientOptions {
   tokens?: RivianTokens;
   timeoutMs?: number;
+  /** Shared across every client and stream so limits apply per process. */
+  governor?: RivianGovernor;
 }
 
 /** Minimal interface the rest of the app depends on (real + mock implement it). */
 export interface RivianApi {
   readonly tokens: RivianTokens | undefined;
   readonly userSessionToken: string | undefined;
+  /** Current CSRF/app session, also used for the WebSocket handshake. */
+  readonly appSession: RivianAppSession | undefined;
   createCsrfToken(): Promise<void>;
+  /**
+   * Rotates the short-lived CSRF/app session. Concurrent callers share one
+   * rotation, so an auth error seen by several consumers costs one request.
+   */
+  refreshSession(): Promise<void>;
   login(email: string, password: string): Promise<LoginResult>;
   loginWithOtp(email: string, otpCode: string, otpToken?: string): Promise<RivianTokens>;
   getUserInfo(): Promise<UserInfo>;
@@ -54,11 +68,19 @@ export class RivianClient implements RivianApi {
   private appSessionToken?: string;
   private _tokens?: RivianTokens;
   private otpTokenPending?: string;
+  private sessionRefresh?: Promise<void>;
   private readonly timeoutMs: number;
+  private readonly governor: RivianGovernor;
 
   constructor(options: RivianClientOptions = {}) {
     this._tokens = options.tokens;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.governor = options.governor ?? new RivianGovernor();
+  }
+
+  get appSession(): RivianAppSession | undefined {
+    if (!this.csrfToken || !this.appSessionToken) return undefined;
+    return { csrfToken: this.csrfToken, appSessionToken: this.appSessionToken };
   }
 
   get tokens(): RivianTokens | undefined {
@@ -79,6 +101,18 @@ export class RivianClient implements RivianApi {
     });
     this.csrfToken = data.createCsrfToken.csrfToken;
     this.appSessionToken = data.createCsrfToken.appSessionToken;
+  }
+
+  refreshSession(): Promise<void> {
+    this.sessionRefresh ??= (async () => {
+      try {
+        this.governor.count("sessionRefreshes");
+        await this.createCsrfToken();
+      } finally {
+        this.sessionRefresh = undefined;
+      }
+    })();
+    return this.sessionRefresh;
   }
 
   async login(email: string, password: string): Promise<LoginResult> {
@@ -163,7 +197,7 @@ export class RivianClient implements RivianApi {
       operationName: "getLiveSessionData",
       query: buildLiveSessionQuery(),
       variables: { vehicleId: vin },
-    }, { "U-Sess": this._tokens?.userSessionToken ?? "" });
+    });
     return data.getLiveSessionData;
   }
 
@@ -174,7 +208,7 @@ export class RivianClient implements RivianApi {
       operationName: "getRegisteredWallboxes",
       query: GET_REGISTERED_WALLBOXES,
       variables: null,
-    }, this.csrfSessionHeaders());
+    });
     return data.getRegisteredWallboxes ?? [];
   }
 
@@ -185,33 +219,37 @@ export class RivianClient implements RivianApi {
     };
   }
 
+  /** Headers the mobile app sends on authenticated calls. */
   private sessionHeaders(): Record<string, string> {
-    return {
-      "A-Sess": this.appSessionToken ?? "",
+    const headers: Record<string, string> = {
+      ...this.csrfHeaders(),
       "U-Sess": this._tokens?.userSessionToken ?? "",
     };
-  }
-
-  private csrfSessionHeaders(): Record<string, string> {
-    return { ...this.csrfHeaders(), "U-Sess": this._tokens?.userSessionToken ?? "" };
+    if (this._tokens?.accessToken) {
+      headers.Authorization = `Bearer ${this._tokens.accessToken}`;
+    }
+    return headers;
   }
 
   /**
-   * Authenticated call with the HA-style recovery: on a session-manager /
-   * expired-CSRF error, recreate the CSRF token once and retry.
+   * Authenticated call. An expired CSRF/app session surfaces as either
+   * SESSION_MANAGER_ERROR or UNAUTHENTICATED; rotate the session once and
+   * retry. Only a failure after that rotation is reported to the caller.
    */
   private async authenticatedRequest<T>(
     url: string,
     body: GraphqlRequest,
-    headers?: Record<string, string>,
   ): Promise<T> {
-    if (!this.appSessionToken) await this.createCsrfToken();
+    if (!this.appSessionToken) await this.refreshSession();
     try {
-      return await this.request<T>(url, body, headers ?? this.sessionHeaders());
+      return await this.request<T>(url, body, this.sessionHeaders());
     } catch (err) {
-      if (err instanceof RivianSessionManagerError) {
-        await this.createCsrfToken();
-        return await this.request<T>(url, body, headers ?? this.sessionHeaders());
+      if (
+        err instanceof RivianSessionManagerError ||
+        err instanceof RivianUnauthenticatedError
+      ) {
+        await this.refreshSession();
+        return await this.request<T>(url, body, this.sessionHeaders());
       }
       throw err;
     }
@@ -221,6 +259,30 @@ export class RivianClient implements RivianApi {
     url: string,
     body: GraphqlRequest,
     extraHeaders: Record<string, string> = {},
+  ): Promise<T> {
+    try {
+      const data = await this.governor.schedule(body.operationName, () =>
+        this.send<T>(url, body, extraHeaders),
+      );
+      this.governor.noteSuccess();
+      return data;
+    } catch (err) {
+      if (err instanceof RivianCooldownError) {
+        // Local fast-fail during a cooldown: nothing was sent.
+      } else if (err instanceof RivianRateLimitError) {
+        const cooldown = this.governor.noteRateLimited(err.retryAfterMs);
+        err.retryAfterMs = cooldown;
+      } else {
+        this.governor.count("httpErrors");
+      }
+      throw err;
+    }
+  }
+
+  private async send<T>(
+    url: string,
+    body: GraphqlRequest,
+    extraHeaders: Record<string, string>,
   ): Promise<T> {
     let response: Response;
     try {
@@ -240,6 +302,17 @@ export class RivianClient implements RivianApi {
       );
     }
 
+    if (response.status === 429) {
+      const err = new RivianRateLimitError(
+        `Rivian rate limited ${body.operationName} (HTTP 429)`,
+        "RATE_LIMIT",
+        undefined,
+        429,
+      );
+      err.retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+      throw err;
+    }
+
     let json: {
       data?: T;
       errors?: { message?: string; extensions?: { code?: string; reason?: string } }[];
@@ -256,7 +329,11 @@ export class RivianClient implements RivianApi {
     }
 
     if (json.errors?.length) {
-      throw mapGraphqlError(json.errors, response.status, json);
+      const err = mapGraphqlError(json.errors, response.status, json);
+      if (err instanceof RivianRateLimitError) {
+        err.retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+      }
+      throw err;
     }
     if (!response.ok || json.data === undefined) {
       throw new RivianApiError(

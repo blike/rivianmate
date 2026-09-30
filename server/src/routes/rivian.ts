@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { ConnectResponse } from "../api-types.js";
+import type {
+  ConnectResponse,
+  RivianDiagnosticsResponse,
+} from "../api-types.js";
 import type { AppContext } from "../context.js";
 import {
   RivianInvalidCredentialsError,
@@ -30,7 +33,9 @@ export async function rivianRoutes(
       }
       ctx.pendingConnect = null;
       await ctx.tokenStore.save(body.email, result.tokens);
-      await ctx.monitor.start(ctx.rivianFactory.createConnection(result.tokens));
+      await ctx.monitor.start(
+        ctx.rivianFactory.createConnection(result.tokens, api),
+      );
       return { ok: true } satisfies ConnectResponse;
     } catch (err) {
       return sendRivianError(reply, err);
@@ -47,7 +52,9 @@ export async function rivianRoutes(
       const tokens = await pending.api.loginWithOtp(pending.email, body.code);
       ctx.pendingConnect = null;
       await ctx.tokenStore.save(pending.email, tokens);
-      await ctx.monitor.start(ctx.rivianFactory.createConnection(tokens));
+      await ctx.monitor.start(
+        ctx.rivianFactory.createConnection(tokens, pending.api),
+      );
       return { ok: true } satisfies ConnectResponse;
     } catch (err) {
       if (err instanceof RivianInvalidOtpError) {
@@ -57,6 +64,14 @@ export async function rivianRoutes(
       return sendRivianError(reply, err);
     }
   });
+
+  app.get(
+    "/api/rivian/diagnostics",
+    async (): Promise<RivianDiagnosticsResponse> => ({
+      monitor: ctx.monitor.diagnostics(),
+      traffic: ctx.governor.snapshot(),
+    }),
+  );
 
   app.post("/api/rivian/disconnect", async () => {
     await ctx.monitor.stop();
