@@ -31,6 +31,13 @@ export interface StatusResponse {
   mockMode: boolean;
 }
 
+export interface VersionResponse {
+  /** Package version, e.g. "0.3.0". */
+  version: string | null;
+  /** Full git commit SHA the image was built from; null outside Docker builds. */
+  commit: string | null;
+}
+
 export interface VehicleDto {
   id: string;
   vin: string;

@@ -16,6 +16,7 @@ import type {
   TirePressurePointDto,
   UnitPreferences,
   VehicleDto,
+  VersionResponse,
   VehicleState,
   WallboxDto,
 } from "@server/api-types.js";
@@ -95,6 +96,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
+  version: () => request<VersionResponse>("/api/version"),
   units: () => request<UnitPreferences>("/api/settings/units"),
   setUnits: (units: UnitPreferences) =>
     request<UnitPreferences>("/api/settings/units", {

@@ -83,6 +83,10 @@ export function useSetUnits() {
   });
 }
 
+export function useVersion() {
+  return useQuery({ queryKey: ["version"], queryFn: api.version, staleTime: Infinity });
+}
+
 export function useRivianDiagnostics() {
   return useQuery({
     queryKey: ["rivianDiagnostics"],

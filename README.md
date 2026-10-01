@@ -84,17 +84,25 @@ Open `http://<host>:4000`, set the app password, then sign in with your Rivian
 account (email, password, and the emailed OTP code). Tokens are encrypted and
 persisted, so the tracker resumes automatically after restarts.
 
-Images are published to Docker Hub as `mitchvitale/rivianmate:latest` by the
-GitHub Actions workflow after validation on every push to `main`
+Images are published to Docker Hub as `mitchvitale/rivianmate`. Every push to
+`main` is validated, built, and published as `edge`
 ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)).
-Release tags (`v*`) add version tags to the already-built commit image without
+Release tags (`v1.2.3`) add version tags to that already-built image without
 rebuilding it ([.github/workflows/release-image.yml](.github/workflows/release-image.yml)).
 To update a deployment: `docker compose pull && docker compose up -d`.
 
-Choose the version directly in `docker-compose.yml`: use
-`image: mitchvitale/rivianmate:latest` to track main, or
-`image: mitchvitale/rivianmate:0.3` to pin v0.3. Back up
-Postgres first: migrations run automatically at startup. Keep `APP_SECRET`
+Choose the version with the `image:` tag in `docker-compose.yml`:
+
+| Tag | Tracks |
+|---|---|
+| `latest` | The newest stable release (the default) |
+| `0` / `0.3` | The newest release in that major / minor line |
+| `0.3.1` | Exactly that release |
+| `edge` | Every commit on `main`, including unreleased changes |
+
+Pre-releases (e.g. `0.4.0-beta.1`) are published under their exact tag only.
+
+Before updating, back up Postgres: migrations run automatically at startup. Keep `APP_SECRET`
 unchanged so existing Rivian tokens remain readable. See [CHANGELOG.md](CHANGELOG.md)
 for release highlights and [RELEASING.md](RELEASING.md) for the release process.
 

@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { UnitPreferences } from "../api-types.js";
+import type { UnitPreferences, VersionResponse } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { appSettings } from "../db/schema.js";
+import { loadVersion } from "../version.js";
 
 const UNITS_KEY = "display_units";
 
@@ -32,6 +33,9 @@ export async function settingsRoutes(
   app: FastifyInstance,
   ctx: AppContext,
 ): Promise<void> {
+  const version = loadVersion();
+  app.get("/api/version", async (): Promise<VersionResponse> => version);
+
   app.get("/api/settings/units", async (): Promise<UnitPreferences> =>
     getUnitPreferences(ctx),
   );

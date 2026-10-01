@@ -7,11 +7,13 @@ import {
   useStatus,
   useUnits,
   useVehicles,
+  useVersion,
 } from "../api/hooks.js";
 import { LoadingScope, Skeleton } from "../components/loading.js";
 import { Panel, Row } from "../components/panels.js";
 import { passwordProblem } from "@server/password-policy.js";
 import { TextField } from "../components/AuthCard.js";
+import { REPO_URL, shortCommit, versionLabel } from "../lib/version.js";
 import { PasswordHint } from "../components/PasswordHint.js";
 
 export function Settings() {
@@ -21,6 +23,8 @@ export function Settings() {
   const { data: vehicles } = useVehicles();
   const { units } = useUnits();
   const setUnits = useSetUnits();
+  const { data: versionInfo, isPending: versionPending } = useVersion();
+  const commit = shortCommit(versionInfo?.commit);
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -200,6 +204,39 @@ export function Settings() {
             Change password
           </button>
         </div>
+      </Panel>
+
+      <Panel title="About">
+        <LoadingScope loading={versionPending}>
+          <dl className="space-y-1 text-sm">
+            <Row label="Version" value={versionLabel(versionInfo)} />
+            <Row
+              label="Build"
+              value={
+                commit ? (
+                  <a
+                    href={`${REPO_URL}/commit/${versionInfo!.commit}`}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="font-mono text-xs text-[var(--series-1)] hover:underline"
+                  >
+                    {commit}
+                  </a>
+                ) : (
+                  "Development"
+                )
+              }
+            />
+          </dl>
+        </LoadingScope>
+        <a
+          href={`${REPO_URL}/blob/main/CHANGELOG.md`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="mt-3 inline-block text-xs text-[var(--series-1)] hover:underline"
+        >
+          Changelog ↗
+        </a>
       </Panel>
 
       <Panel title="Session">

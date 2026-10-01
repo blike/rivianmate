@@ -30,6 +30,9 @@ COPY --from=runtime-deps /prod/server/package.json ./package.json
 COPY --from=build /app/server/dist ./dist
 COPY --from=build /app/server/drizzle ./drizzle
 COPY --from=build /app/web/dist ./web-dist
+# Shown in Settings → About; declared last so a new commit only changes this layer.
+ARG GIT_COMMIT=""
+ENV GIT_COMMIT=$GIT_COMMIT
 EXPOSE 4000
 # 127.0.0.1, not localhost: in Alpine "localhost" may resolve to ::1 first,
 # but the server listens on IPv4 only.

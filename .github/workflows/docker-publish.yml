@@ -36,8 +36,11 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+          # `latest` is reserved for releases (release-image.yml retags this image).
           tags: |
-            mitchvitale/rivianmate:latest
+            mitchvitale/rivianmate:edge
             mitchvitale/rivianmate:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/blike/rivianmate

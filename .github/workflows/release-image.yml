@@ -13,6 +13,46 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # All tags, to tell whether this is the newest release.
+          fetch-depth: 0
+
+      - name: Compute image tags
+        id: tags
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          semver='^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$'
+          if [[ ! "$RELEASE_TAG" =~ $semver ]]; then
+            echo "::error::Release tags must look like v1.2.3 or v1.2.3-beta.1 (got $RELEASE_TAG)."
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]}
+          minor=${BASH_REMATCH[2]}
+          version=${RELEASE_TAG#v}
+
+          package_version=$(node -p 'require("./package.json").version')
+          if [[ "$package_version" != "$version" ]]; then
+            echo "::error::Tag $RELEASE_TAG does not match package.json version $package_version."
+            exit 1
+          fi
+
+          tags="$version"
+          if [[ "$version" == *-* ]]; then
+            echo "Pre-release: publishing only $version."
+          else
+            # Floating tags only move forward: a patch to an older line
+            # (e.g. 0.2.5 after 0.3.0) must not take over `latest` or `0`.
+            newest() {
+              git tag -l "$1" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
+            }
+            [[ "$(newest "v$major.$minor.*")" == "$RELEASE_TAG" ]] && tags="$tags $major.$minor"
+            [[ "$(newest "v$major.*")" == "$RELEASE_TAG" ]] && tags="$tags $major"
+            [[ "$(newest 'v*')" == "$RELEASE_TAG" ]] && tags="$tags latest"
+          fi
+          echo "Publishing: $tags"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -25,24 +65,19 @@ jobs:
 
       - name: Tag the validated commit image
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          TAGS: ${{ steps.tags.outputs.tags }}
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9][a-zA-Z0-9_.-]*$ ]]; then
-            echo "::error::Release tag must start with v and a version number."
-            exit 1
-          fi
           image=mitchvitale/rivianmate
           commit=$(git rev-parse HEAD)
           source="$image:$commit"
+          args=()
+          for tag in $TAGS; do args+=(--tag "$image:$tag"); done
           # A simultaneous main/tag push can reach this job before main finishes.
           # Only the validated main build publishes the commit image.
           for attempt in $(seq 1 30); do
             if docker buildx imagetools inspect "$source" > /dev/null 2>&1; then
-              docker buildx imagetools create \
-                --tag "$image:$RELEASE_TAG" \
-                --tag "$image:${RELEASE_TAG#v}" \
-                "$source"
+              docker buildx imagetools create "${args[@]}" "$source"
               exit 0
             fi
             echo "Waiting for the main build to publish $source ($attempt/30)"
