@@ -80,6 +80,15 @@ export interface DriveDetailDto extends DriveDto {
   points: LocationPointDto[];
 }
 
+/** Average tire pressures per time bucket, in bar. */
+export interface TirePressurePointDto {
+  ts: string;
+  frontLeft: number | null;
+  frontRight: number | null;
+  rearLeft: number | null;
+  rearRight: number | null;
+}
+
 export interface PhantomDrainDto {
   days: { day: string; lossPct: number; parkedHours: number; pctPerDay: number }[];
   /** Average %/day over all parked time in the window; null if too little data. */

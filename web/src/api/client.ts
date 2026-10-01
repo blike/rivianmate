@@ -11,6 +11,7 @@ import type {
   RivianDiagnosticsResponse,
   PhantomDrainDto,
   StatusResponse,
+  TirePressurePointDto,
   UnitPreferences,
   VehicleDto,
   VehicleState,
@@ -125,6 +126,8 @@ export const api = {
   wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
   phantomDrain: (vehicleId: string, days: number) =>
     request<PhantomDrainDto>(`/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}`),
+  tirePressures: (vehicleId: string, days: number) =>
+    request<TirePressurePointDto[]>(`/api/vehicles/${vehicleId}/health/tires?days=${days}`),
   batteryHealth: (vehicleId: string) =>
     request<BatteryHealthDto>(`/api/vehicles/${vehicleId}/health/battery`),
   chargingCurve: (sessionId: number) =>

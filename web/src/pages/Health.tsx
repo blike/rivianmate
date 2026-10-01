@@ -1,21 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
+import { useUnits } from "../api/hooks.js";
 import { Panel, StatCard } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { fmt } from "../lib/state.js";
 
-const DRAIN_WINDOWS = [7, 30, 90] as const;
+const WINDOWS = [7, 30, 90] as const;
 
 const shortDate = (ms: number) =>
   new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
 
 export function Health(props: { vehicleId: string }) {
   const [drainDays, setDrainDays] = useState<number>(30);
+  const [tireDays, setTireDays] = useState<number>(30);
+  const u = useUnits();
 
   const { data: drain } = useQuery({
     queryKey: ["phantomDrain", props.vehicleId, drainDays],
     queryFn: () => api.phantomDrain(props.vehicleId, drainDays),
+    refetchInterval: 15 * 60_000,
+  });
+  const { data: tires } = useQuery({
+    queryKey: ["tirePressures", props.vehicleId, tireDays],
+    queryFn: () => api.tirePressures(props.vehicleId, tireDays),
     refetchInterval: 15 * 60_000,
   });
   const { data: battery } = useQuery({
@@ -31,6 +39,18 @@ export function Health(props: { vehicleId: string }) {
         rate: d.pctPerDay,
       })),
     [drain],
+  );
+
+  const tireData = useMemo(
+    () =>
+      (tires ?? []).map((t) => ({
+        ts: Date.parse(t.ts),
+        fl: u.pressure(t.frontLeft),
+        fr: u.pressure(t.frontRight),
+        rl: u.pressure(t.rearLeft),
+        rr: u.pressure(t.rearRight),
+      })),
+    [tires, u],
   );
 
   const capacityData = useMemo(() => {
@@ -82,21 +102,7 @@ export function Health(props: { vehicleId: string }) {
           <p className="text-xs text-[var(--text-muted)]">
             Battery lost per day while parked and unplugged. Time spent driving or charging is excluded.
           </p>
-          <div className="flex rounded-md border border-[var(--border)] p-0.5">
-            {DRAIN_WINDOWS.map((d) => (
-              <button
-                key={d}
-                onClick={() => setDrainDays(d)}
-                className={`rounded px-2.5 py-1 text-xs ${
-                  d === drainDays
-                    ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {d}d
-              </button>
-            ))}
-          </div>
+          <WindowPicker value={drainDays} onChange={setDrainDays} />
         </div>
         {drainData.length > 0 ? (
           <TrendChart
@@ -109,6 +115,34 @@ export function Health(props: { vehicleId: string }) {
         ) : (
           <p className="py-6 text-center text-sm text-[var(--text-muted)]">
             Not enough parked time recorded yet.
+          </p>
+        )}
+      </Panel>
+
+      <Panel title="Tire pressure">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-[var(--text-muted)]">
+            A tire that keeps drifting below the others usually has a slow leak.
+          </p>
+          <WindowPicker value={tireDays} onChange={setTireDays} />
+        </div>
+        {tireData.length > 0 ? (
+          <TrendChart
+            data={tireData}
+            xKey="ts"
+            height={220}
+            xFormatter={shortDate}
+            tooltipLabel={(ms) => new Date(ms).toLocaleString()}
+            series={[
+              { key: "fl", label: "Front left", color: "var(--series-1)", mark: "line", unit: u.pressureUnit, digits: u.pressureUnit === "psi" ? 1 : 2 },
+              { key: "fr", label: "Front right", color: "var(--series-2)", mark: "line", unit: u.pressureUnit, digits: u.pressureUnit === "psi" ? 1 : 2 },
+              { key: "rl", label: "Rear left", color: "var(--accent)", mark: "line", unit: u.pressureUnit, digits: u.pressureUnit === "psi" ? 1 : 2 },
+              { key: "rr", label: "Rear right", color: "var(--status-critical)", mark: "line", unit: u.pressureUnit, digits: u.pressureUnit === "psi" ? 1 : 2 },
+            ]}
+          />
+        ) : (
+          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
+            No tire pressure readings in this window yet.
           </p>
         )}
       </Panel>
@@ -136,6 +170,26 @@ export function Health(props: { vehicleId: string }) {
           </p>
         )}
       </Panel>
+    </div>
+  );
+}
+
+function WindowPicker(props: { value: number; onChange: (days: number) => void }) {
+  return (
+    <div className="flex shrink-0 rounded-md border border-[var(--border)] p-0.5">
+      {WINDOWS.map((d) => (
+        <button
+          key={d}
+          onClick={() => props.onChange(d)}
+          className={`rounded px-2.5 py-1 text-xs ${
+            d === props.value
+              ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          }`}
+        >
+          {d}d
+        </button>
+      ))}
     </div>
   );
 }

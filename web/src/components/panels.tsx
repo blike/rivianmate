@@ -103,6 +103,7 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
 
 export function TirePanel(props: { state: VehicleState | undefined }) {
   const s = props.state;
+  const u = useUnits();
   const corners = [
     { label: "Front left", status: "tirePressureStatusFrontLeft", pressure: "tirePressureFrontLeft" },
     { label: "Front right", status: "tirePressureStatusFrontRight", pressure: "tirePressureFrontRight" },
@@ -120,7 +121,7 @@ export function TirePanel(props: { state: VehicleState | undefined }) {
             <div className="mt-1 flex items-center gap-2">
               <StatusDot ok={status == null ? null : status === "OK"} />
               <span className="tabular-nums">
-                {bar != null ? `${fmt(bar * 14.5038, 0)} psi` : (status ?? "—")}
+                {bar != null ? u.formatPressure(bar) : (status ?? "—")}
               </span>
             </div>
           </div>

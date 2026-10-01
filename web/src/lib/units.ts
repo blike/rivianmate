@@ -23,6 +23,10 @@ export function unitFormatter(units: UnitPreferences) {
 
   const distanceUnit = miles ? "mi" : "km";
   const elevationUnit = miles ? "ft" : "m";
+  const pressureUnit = miles ? "psi" : "bar";
+  /** Tire pressure: Rivian reports bar. */
+  const pressure = (bar: number | null | undefined): number | null =>
+    bar == null ? null : miles ? bar * 14.5038 : bar;
   const speedUnit = miles ? "mph" : "km/h";
   const temperatureUnit = fahrenheit ? "°F" : "°C";
 
@@ -30,17 +34,21 @@ export function unitFormatter(units: UnitPreferences) {
     units,
     distanceUnit,
     elevationUnit,
+    pressureUnit,
     speedUnit,
     temperatureUnit,
     distance,
     temperature,
     elevation,
+    pressure,
     /** e.g. "212 mi" — `km` in kilometres. */
     formatDistance: (km: number | null | undefined, digits = 0) =>
       km == null ? "—" : `${fmt(distance(km), digits)} ${distanceUnit}`,
     /** `kmh` in km/h (same conversion factor as distance). */
     formatSpeed: (kmh: number | null | undefined, digits = 0) =>
       kmh == null ? "—" : `${fmt(distance(kmh), digits)} ${speedUnit}`,
+    formatPressure: (bar: number | null | undefined) =>
+      bar == null ? "—" : `${fmt(pressure(bar), miles ? 0 : 2)} ${pressureUnit}`,
     /** `m` in metres; feet when distances are in miles. */
     formatElevation: (m: number | null | undefined) =>
       m == null ? "—" : `${fmt(elevation(m), 0)} ${elevationUnit}`,
