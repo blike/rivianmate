@@ -6,7 +6,8 @@ import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.
 import { Panel, Row, StatCard } from "../components/panels.js";
 import { SchedulesPanel } from "../components/SchedulesPanel.js";
 import { TrendChart } from "../components/TrendChart.js";
-import { fmt, fmtDuration, sv, titleCase } from "../lib/state.js";
+import { chargingSecondsNow, socRange } from "../lib/charging.js";
+import { fmt, fmtDuration, fmtSeconds, sv, titleCase } from "../lib/state.js";
 
 export function Charging(props: { vehicleId: string }) {
   const queryClient = useQueryClient();
@@ -56,14 +57,22 @@ export function Charging(props: { vehicleId: string }) {
     // Keep the previous curve on screen (dimmed) while the next one loads.
     placeholderData: keepPreviousData,
   });
+  // Minutes since plug-in (or the first point, if earlier).
   const curveData = useMemo(() => {
-    const first = curve?.[0] ? Date.parse(curve[0].ts) : 0;
-    return (curve ?? []).map((p) => ({
-      minutes: (Date.parse(p.ts) - first) / 60_000,
+    const points = curve ?? [];
+    const plugIn = curveSession ? Date.parse(curveSession.startedAt) : Number.POSITIVE_INFINITY;
+    const origin = Math.min(plugIn, points[0] ? Date.parse(points[0].ts) : plugIn);
+    return points.map((p) => ({
+      minutes: (Date.parse(p.ts) - origin) / 60_000,
       power: p.powerKw,
       soc: p.soc,
     }));
-  }, [curve]);
+  }, [curve, curveSession]);
+  // Without power, the curve is battery level from recorded vehicle state.
+  const curveHasPower = curveData.some((p) => p.power != null);
+  const curveMinutes = curveData.at(-1)?.minutes ?? 0;
+  const formatCurveTime = (m: number) =>
+    curveMinutes >= 120 ? fmtSeconds(m * 60) : `${fmt(m, curveMinutes < 10 ? 1 : 0)} min`;
 
   return (
     <div className="space-y-4">
@@ -103,7 +112,7 @@ export function Charging(props: { vehicleId: string }) {
               <thead className="text-left text-xs text-[var(--text-muted)]">
                 <tr>
                   <th className="pb-2 font-normal">Started</th>
-                  <th className="pb-2 font-normal">Duration</th>
+                  <th className="pb-2 font-normal">Plugged in</th>
                   <th className="pb-2 font-normal">Charger</th>
                   <th className="pb-2 text-right font-normal">SOC</th>
                   <th className="pb-2 text-right font-normal">Energy</th>
@@ -128,13 +137,17 @@ export function Charging(props: { vehicleId: string }) {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
-                      {!s.endedAt && (
-                        <span className="ml-2 text-xs text-[var(--status-good)]">
-                          charging
-                        </span>
-                      )}
+                      {!s.endedAt &&
+                        (s.chargingSince ? (
+                          <span className="ml-2 text-xs text-[var(--status-good)]">charging</span>
+                        ) : (
+                          <span className="ml-2 text-xs text-[var(--text-muted)]">plugged in</span>
+                        ))}
                     </td>
-                    <td className="py-2">{fmtDuration(s.startedAt, s.endedAt)}</td>
+                    <td className="py-2">
+                      <div className="tabular-nums">{fmtDuration(s.startedAt, s.endedAt)}</div>
+                      <ChargingTime session={s} />
+                    </td>
                     <td className="py-2">
                       <div className="flex items-center gap-2">
                         <span>{chargerLabel(s)}</span>
@@ -152,9 +165,7 @@ export function Charging(props: { vehicleId: string }) {
                       )}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {s.startSoc != null && s.endSoc != null
-                        ? `${fmt(s.startSoc, 0)}→${fmt(s.endSoc, 0)}%`
-                        : "—"}
+                      {socRange(s.startSoc, s.endSoc)}
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : "—"}
@@ -199,20 +210,39 @@ export function Charging(props: { vehicleId: string }) {
               height={240}
               loading={sessionsPending || curvePending}
               empty={curveData.length <= 1}
-              emptyText="No curve recorded for this session. Curves are kept for sessions charged while RivianMate was running."
+              emptyText="No charging data for this session: Rivian didn't provide a power curve, and RivianMate wasn't recording while it charged."
             >
-              <TrendChart
-                data={curveData}
-                xKey="minutes"
-                height={240}
-                xFormatter={(m) => `${fmt(m, curveData.at(-1)!.minutes < 10 ? 1 : 0)} min`}
-                rightDomain={[0, 100]}
-                series={[
-                  { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
-                  { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
-                ]}
-              />
+              {curveHasPower ? (
+                <TrendChart
+                  data={curveData}
+                  xKey="minutes"
+                  height={240}
+                  xFormatter={formatCurveTime}
+                  rightDomain={[0, 100]}
+                  series={[
+                    { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
+                    { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
+                  ]}
+                />
+              ) : (
+                <TrendChart
+                  data={curveData}
+                  xKey="minutes"
+                  height={240}
+                  xFormatter={formatCurveTime}
+                  leftDomain={[0, 100]}
+                  series={[
+                    { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", unit: "%", digits: 0, dots: true },
+                  ]}
+                />
+              )}
             </ContentFrame>
+            {!curveHasPower && curveData.length > 1 && (
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                Battery level from recorded vehicle state. Rivian didn't provide power data for this
+                session.
+              </p>
+            )}
           </div>
         </Panel>
       )}
@@ -247,6 +277,15 @@ export function Charging(props: { vehicleId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Time actually charging within the plug-in, when RivianMate watched it. */
+function ChargingTime(props: { session: ChargingSessionDto }) {
+  const seconds = chargingSecondsNow(props.session);
+  if (seconds == null) return null;
+  return (
+    <div className="text-xs tabular-nums text-[var(--text-muted)]">{fmtSeconds(seconds)} charging</div>
   );
 }
 

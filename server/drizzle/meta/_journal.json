@@ -43,6 +43,13 @@
       "when": 1790819076461,
       "tag": "0005_charge_history",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790859334681,
+      "tag": "0006_charging_time",
+      "breakpoints": true
     }
   ]
 }

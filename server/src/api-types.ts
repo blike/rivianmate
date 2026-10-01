@@ -149,6 +149,12 @@ export interface ChargingSessionDto {
   chargerType: string | null;
   startSoc: number | null;
   endSoc: number | null;
+  /**
+   * startedAt → endedAt spans the plug-in. Within it, seconds spent charging
+   * (null when unknown), not counting a stretch running since `chargingSince`.
+   */
+  chargingSeconds: number | null;
+  chargingSince: string | null;
   energyKwh: number | null;
   rangeAddedKm: number | null;
   avgPowerKw: number | null;

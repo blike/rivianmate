@@ -19,6 +19,12 @@ export function formatDuration(minutes: number | null | undefined): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
+/** Rivian seat levels: "Heat2" → "Heat 2", "Off" → "Off". */
+export function formatSeatLevel(level: string | number | null | undefined): string {
+  if (level == null || level === "") return "—";
+  return String(level).replace(/([a-z])(\d)/gi, "$1 $2");
+}
+
 /** ["Monday", …] → "Weekdays", "Every day", or "Mon, Wed, Fri". */
 export function formatWeekDays(days: string[] | null | undefined): string {
   if (!days?.length) return "—";

@@ -1,11 +1,12 @@
-import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, between, eq, gte, isNotNull, isNull, min } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { chargingCurvePoints, chargingSessions } from "../db/schema.js";
+import { chargingSessions, vehicleStateSnapshots } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
-import { assignCurvePoints } from "./curve-history.js";
+import { deriveChargingStats } from "./charging-time.js";
 import {
   type ChargeSessionSummary,
   RivianUnauthenticatedError,
+  type VehicleState,
   describeRivianError,
   isGraphqlValidationError,
 } from "../rivian/types.js";
@@ -77,6 +78,8 @@ export function parseDate(value: string | null | undefined): Date | null {
 
 const DAILY_MS = 24 * 3600_000;
 const AFTER_SESSION_DELAY_MS = 15 * 60_000;
+/** Snapshot rows are stamped on write, which can trail the readings inside. */
+const SNAPSHOT_MARGIN_MS = 2 * 3600_000;
 
 /**
  * Imports Rivian's completed-session history: backfills sessions charged
@@ -88,7 +91,6 @@ export class ChargeHistoryImporter {
   private timer?: NodeJS.Timeout;
   private pending?: NodeJS.Timeout;
   private unsupported = false;
-  private curveUnsupported = false;
   private running = false;
 
   onAuthFailure?: () => void;
@@ -126,8 +128,7 @@ export class ChargeHistoryImporter {
     this.running = true;
     try {
       const result = this.unsupported ? null : await this.importHistory();
-      // After the import, so a session that ran while we were away exists.
-      if (!this.curveUnsupported) await this.syncLatestCurves();
+      await this.fillFromStateHistory();
       return result;
     } finally {
       this.running = false;
@@ -166,60 +167,69 @@ export class ChargeHistoryImporter {
   }
 
   /**
-   * Rivian keeps the power curve of each vehicle's most recent session.
-   * Fill it into the matching session: gaps from a restart or socket
-   * outage, or a whole curve for a session charged while we were away.
-   * Existing points (which also carry SoC) are left untouched.
+   * Charging time and SOC for finished sessions that lack them (typically
+   * imported from Rivian), rebuilt from the vehicle states RivianMate
+   * recorded during the session. Sessions from before recording began are
+   * skipped.
    */
-  private async syncLatestCurves(): Promise<void> {
-    for (const vehicleId of this.vehicleIds()) {
-      try {
-        const raw = await this.api.getLatestSessionCurve(vehicleId);
-        const points = raw
-          .map((p) => ({ ts: new Date(p.ts), powerKw: p.powerKw }))
-          .filter((p) => Number.isFinite(p.ts.getTime()));
-        if (points.length === 0) continue;
-        const first = new Date(Math.min(...points.map((p) => p.ts.getTime())));
-        const last = new Date(Math.max(...points.map((p) => p.ts.getTime())));
+  private async fillFromStateHistory(): Promise<void> {
+    try {
+      for (const vehicleId of this.vehicleIds()) {
+        const [first] = await this.db
+          .select({ ts: min(vehicleStateSnapshots.ts) })
+          .from(vehicleStateSnapshots)
+          .where(eq(vehicleStateSnapshots.vehicleId, vehicleId));
+        if (!first?.ts) continue;
         const sessions = await this.db
-          .select({
-            id: chargingSessions.id,
-            startedAt: chargingSessions.startedAt,
-            endedAt: chargingSessions.endedAt,
-          })
+          .select()
           .from(chargingSessions)
           .where(
             and(
               eq(chargingSessions.vehicleId, vehicleId),
-              lte(chargingSessions.startedAt, new Date(last.getTime() + 2 * 60_000)),
-              or(
-                isNull(chargingSessions.endedAt),
-                gte(chargingSessions.endedAt, new Date(first.getTime() - 2 * 60_000)),
-              ),
+              isNull(chargingSessions.chargingSeconds),
+              isNotNull(chargingSessions.endedAt),
+              gte(chargingSessions.endedAt, first.ts),
             ),
           );
-        let added = 0;
-        for (const [sessionId, assigned] of assignCurvePoints(points, sessions, Date.now())) {
+        let filled = 0;
+        for (const session of sessions) {
+          const start = session.startedAt.getTime();
+          const end = session.endedAt!.getTime();
           const rows = await this.db
-            .insert(chargingCurvePoints)
-            .values(assigned.map((p) => ({ sessionId, ts: p.ts, powerKw: p.powerKw })))
-            .onConflictDoNothing()
-            .returning({ id: chargingCurvePoints.id });
-          added += rows.length;
+            .select({ data: vehicleStateSnapshots.data })
+            .from(vehicleStateSnapshots)
+            .where(
+              and(
+                eq(vehicleStateSnapshots.vehicleId, vehicleId),
+                between(
+                  vehicleStateSnapshots.ts,
+                  new Date(start - SNAPSHOT_MARGIN_MS),
+                  new Date(end + SNAPSHOT_MARGIN_MS),
+                ),
+              ),
+            )
+            .orderBy(asc(vehicleStateSnapshots.ts))
+            .limit(5000);
+          const stats = deriveChargingStats(
+            rows.map((r) => r.data as VehicleState),
+            start,
+            end,
+          );
+          if (stats.chargingSeconds === null) continue;
+          await this.db
+            .update(chargingSessions)
+            .set({
+              chargingSeconds: stats.chargingSeconds,
+              startSoc: session.startSoc ?? stats.startSoc,
+              endSoc: session.endSoc ?? stats.endSoc,
+            })
+            .where(eq(chargingSessions.id, session.id));
+          filled += 1;
         }
-        if (added) this.log(`charge curve: ${added} points filled in for ${vehicleId}`);
-      } catch (err) {
-        if (isGraphqlValidationError(err)) {
-          this.curveUnsupported = true;
-          this.log(`latest session curve query not supported: ${describeRivianError(err)}`);
-          return;
-        }
-        if (err instanceof RivianUnauthenticatedError) {
-          this.onAuthFailure?.();
-          return;
-        }
-        this.log(`charge curve sync failed: ${describeRivianError(err)}`);
+        if (filled) this.log(`charge history: filled charging time for ${filled} sessions`);
       }
+    } catch (err) {
+      this.log(`charging time backfill failed: ${(err as Error).message}`);
     }
   }
 
@@ -262,7 +272,10 @@ export class ChargeHistoryImporter {
             isHomeCharger: row.isHomeCharger ?? s.isHomeCharger ?? null,
             energyKwh: row.energyKwh ?? s.totalEnergyKwh ?? null,
             rangeAddedKm: row.rangeAddedKm ?? s.rangeAddedKm ?? null,
-            endedAt: row.endedAt ?? endedAt,
+            // Rivian's span runs from plug-in to unplug, which we may have
+            // only partly seen (e.g. started while already plugged in).
+            startedAt: startedAt < row.startedAt ? startedAt : row.startedAt,
+            endedAt: endedAt ?? row.endedAt,
             cost: row.cost ?? cost,
             currency: row.currency ?? s.currencyCode ?? null,
           })

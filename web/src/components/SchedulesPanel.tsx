@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
-import { formatDuration, formatTimeOfDay, formatWeekDays } from "../lib/schedules.js";
-import { fmt, titleCase } from "../lib/state.js";
+import { formatDuration, formatSeatLevel, formatTimeOfDay, formatWeekDays } from "../lib/schedules.js";
+import { fmt } from "../lib/state.js";
 import { SkeletonBlock } from "./loading.js";
 import { Panel } from "./panels.js";
 
@@ -91,7 +91,7 @@ export function SchedulesPanel(props: { vehicleId: string }) {
                     {d.comfortSettings?.cabinClimateSetTemp != null &&
                       ` · Cabin ${u.formatTemperature(d.comfortSettings.cabinClimateSetTemp)}`}
                     {d.comfortSettings?.seatFrontLeftHeat != null &&
-                      ` · Driver seat ${titleCase(String(d.comfortSettings.seatFrontLeftHeat))}`}
+                      ` · Driver seat ${formatSeatLevel(d.comfortSettings.seatFrontLeftHeat)}`}
                   </div>
                 </li>
               ))}

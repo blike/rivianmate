@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatTimeOfDay, formatWeekDays } from "./schedules.js";
+import { formatDuration, formatSeatLevel, formatTimeOfDay, formatWeekDays } from "./schedules.js";
 
 describe("schedule formatting", () => {
   it("formats minutes after midnight as a clock time", () => {
@@ -19,5 +19,13 @@ describe("schedule formatting", () => {
     expect(formatWeekDays(["Friday", "Monday", "Wednesday"])).toBe("Mon, Wed, Fri");
     expect(formatWeekDays(["monday","tuesday","wednesday","thursday","friday","saturday","sunday"])).toBe("Every day");
     expect(formatWeekDays(["MON_ODD"])).toBe("MON_ODD");
+  });
+});
+
+describe("formatSeatLevel", () => {
+  it("spaces Rivian's level names", () => {
+    expect(formatSeatLevel("Heat2")).toBe("Heat 2");
+    expect(formatSeatLevel("Off")).toBe("Off");
+    expect(formatSeatLevel(null)).toBe("—");
   });
 });

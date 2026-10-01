@@ -5,7 +5,6 @@ import {
   CREATE_CSRF_TOKEN,
   GET_CHARGING_SCHEDULE,
   GET_COMPLETED_SESSION_SUMMARIES,
-  GET_LIVE_SESSION_HISTORY,
   GET_OTA_UPDATE_DETAILS,
   GET_REGISTERED_WALLBOXES,
   GET_USER_INFO,
@@ -14,14 +13,12 @@ import {
   LOGIN,
   LOGIN_WITH_OTP,
   VEHICLE_STATE_PROPERTIES,
-  buildLiveSessionQuery,
   buildVehicleStateQuery,
 } from "./graphql.js";
 import { RivianGovernor, parseRetryAfter } from "./governor.js";
 import {
   ChargeSessionSummary,
   ChargingSchedule,
-  LiveSessionData,
   LoginResult,
   RivianApiError,
   RivianAppSession,
@@ -63,15 +60,12 @@ export interface RivianApi {
     vehicleId: string,
     properties?: readonly string[],
   ): Promise<VehicleState>;
-  getLiveSessionData(vehicleId: string): Promise<LiveSessionData | null>;
   getRegisteredWallboxes(): Promise<Wallbox[]>;
   /** Release-notes link for the vehicle's current/pending OTA update. */
   getOtaReleaseNotesUrl(vehicleId: string): Promise<string | null>;
   getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]>;
   /** Completed charging sessions for the whole account. */
   getChargeHistory(): Promise<ChargeSessionSummary[]>;
-  /** Power curve (kW over time) of the most recent charging session. */
-  getLatestSessionCurve(vehicleId: string): Promise<{ ts: string; powerKw: number | null }[]>;
 }
 
 interface GraphqlRequest {
@@ -210,16 +204,6 @@ export class RivianClient implements RivianApi {
     return data.vehicleState;
   }
 
-  async getLiveSessionData(vehicleId: string): Promise<LiveSessionData | null> {
-    const data = await this.authenticatedRequest<{
-      getLiveSessionData: LiveSessionData | null;
-    }>(GRAPHQL_CHARGING, {
-      operationName: "getLiveSessionData",
-      query: buildLiveSessionQuery(),
-      variables: { vehicleId: vehicleId },
-    });
-    return data.getLiveSessionData;
-  }
 
   async getRegisteredWallboxes(): Promise<Wallbox[]> {
     const data = await this.authenticatedRequest<{
@@ -254,20 +238,6 @@ export class RivianClient implements RivianApi {
     return data.getVehicle?.chargingSchedules ?? [];
   }
 
-  async getLatestSessionCurve(
-    vehicleId: string,
-  ): Promise<{ ts: string; powerKw: number | null }[]> {
-    const data = await this.authenticatedRequest<{
-      getLiveSessionHistory: { chartData: { kw: number | null; time: string | null }[] | null } | null;
-    }>(GRAPHQL_CHARGING, {
-      operationName: "getLiveSessionHistory",
-      query: GET_LIVE_SESSION_HISTORY,
-      variables: { vehicleId },
-    });
-    return (data.getLiveSessionHistory?.chartData ?? [])
-      .filter((p): p is { kw: number | null; time: string } => typeof p.time === "string")
-      .map((p) => ({ ts: p.time, powerKw: p.kw }));
-  }
 
   async getChargeHistory(): Promise<ChargeSessionSummary[]> {
     const data = await this.authenticatedRequest<{

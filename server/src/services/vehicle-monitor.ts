@@ -3,6 +3,7 @@ import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { VehicleStateStream } from "../rivian/subscription.js";
 import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
+import { RVM_CHARGING_GRAPH } from "../rivian/parallax.js";
 import type { SchedulesDto } from "../api-types.js";
 import {
   ChargingSchedule,
@@ -35,6 +36,13 @@ const AUTH_FAILURE_THRESHOLD = 3;
 const ASLEEP_POWER_STATES = new Set(["sleep", "standby"]);
 /** Charging schedules rarely change; a few checks a day is plenty. */
 const SCHEDULE_REFRESH_MS = 6 * 3600_000;
+/**
+ * Rivian pushes departure schedules on subscribe only when there are some,
+ * so a connected socket that stays silent this long means none are set.
+ */
+const DEPARTURES_SILENCE_MS = 30_000;
+/** State fields that shape a charging session (plug, charging, SOC). */
+const CHARGING_FIELDS = ["chargerStatus", "chargerState", "batteryLevel"];
 
 interface VehicleSchedules {
   charging: ChargingSchedule[] | null;
@@ -85,6 +93,7 @@ export class VehicleMonitor {
   private fallbackPollTimer?: NodeJS.Timeout;
   private running = false;
   private streamConnected = false;
+  private streamConnectedAt: number | null = null;
   private authFailures = 0;
   /** Set once Rivian rejects the full state query; sticky for the process. */
   private coreStateQuery = false;
@@ -253,6 +262,9 @@ export class VehicleMonitor {
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
       });
+      stream.subscribeParallax?.(vehicle.id, [RVM_CHARGING_GRAPH], (_vehicleId, message) => {
+        void chargingMonitor.ingestParallax(vehicle.id, message);
+      });
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
         const entry = this.scheduleEntry(vehicle.id);
         entry.departures = departures;
@@ -262,14 +274,12 @@ export class VehicleMonitor {
 
     await chargingMonitor.start();
     if (superseded()) return;
-    // Plug state from the seed poll, so a session already in progress is tracked.
+    // Plug state from the seed poll, so a plug-in already under way is
+    // tracked. An unknown plug state (seed poll failed) is ignored, so it
+    // can't close a session left open by a restart.
     for (const vehicle of this.vehicles) {
       const state = this.states.get(vehicle.id);
-      // Only act on a known plug state: an unknown one (seed poll failed)
-      // must not close a session left open by a restart.
-      if (state && stateString(state, "chargerStatus") !== null) {
-        chargingMonitor.setPluggedIn(vehicle.id, isPluggedIn(state));
-      }
+      if (state) chargingMonitor.noteState(vehicle.id, state);
     }
     stream.start();
     await this.refreshChargingSchedules();
@@ -295,6 +305,7 @@ export class VehicleMonitor {
     this.driveDetector.stop();
     this.clearFallbackTimers();
     this.streamConnected = false;
+    this.streamConnectedAt = null;
     this.connection = undefined;
   }
 
@@ -314,8 +325,8 @@ export class VehicleMonitor {
       void this.otaNotes?.check(vehicleId, cached);
     }
 
-    if (changed.includes("chargerStatus")) {
-      this.chargingMonitor?.setPluggedIn(vehicleId, isPluggedIn(cached));
+    if (CHARGING_FIELDS.some((f) => changed.includes(f))) {
+      this.chargingMonitor?.noteState(vehicleId, cached);
     }
 
     try {
@@ -328,11 +339,13 @@ export class VehicleMonitor {
 
   getSchedules(vehicleId: string): SchedulesDto {
     const entry = this.schedules.get(vehicleId);
+    const unavailable = this.connection?.stream.isUnsupported?.("departureSchedules") ?? false;
+    const silentLongEnough =
+      this.streamConnectedAt !== null && Date.now() - this.streamConnectedAt >= DEPARTURES_SILENCE_MS;
     return {
       charging: entry?.charging ?? null,
-      departures: entry?.departures ?? null,
-      departuresUnavailable:
-        this.connection?.stream.isUnsupported?.("departureSchedules") ?? false,
+      departures: entry?.departures ?? (!unavailable && silentLongEnough ? [] : null),
+      departuresUnavailable: unavailable,
       chargingUpdatedAt: entry?.chargingAt?.toISOString() ?? null,
       departuresUpdatedAt: entry?.departuresAt?.toISOString() ?? null,
     };
@@ -405,6 +418,7 @@ export class VehicleMonitor {
 
   private handleStreamConnection(connected: boolean): void {
     this.streamConnected = connected;
+    this.streamConnectedAt = connected ? (this.streamConnectedAt ?? Date.now()) : null;
     if (connected) {
       this.clearFallbackTimers();
       return;
@@ -477,7 +491,3 @@ export class VehicleMonitor {
   }
 }
 
-function isPluggedIn(state: VehicleState): boolean {
-  const status = stateString(state, "chargerStatus");
-  return status !== null && status !== "chrgr_sts_not_connected";
-}

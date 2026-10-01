@@ -166,6 +166,12 @@ export const chargingSessions = pgTable(
     wallboxId: text("wallbox_id").references(() => wallboxes.wallboxId),
     startSoc: real("start_soc"),
     endSoc: real("end_soc"),
+    /**
+     * A session spans one plug-in (started_at → ended_at). Within it, total
+     * time actually charging, and the start of the stretch running now.
+     */
+    chargingSeconds: integer("charging_seconds"),
+    chargingSince: timestamp("charging_since", { withTimezone: true }),
     energyKwh: real("energy_kwh"),
     rangeAddedKm: real("range_added_km"),
     avgPowerKw: real("avg_power_kw"),

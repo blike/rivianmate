@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   CORE_VEHICLE_STATE_PROPERTIES,
-  buildLiveSessionQuery,
   buildVehicleStateQuery,
   buildVehicleStateSubscription,
   SUBSCRIPTION_PROPERTIES,
@@ -36,12 +35,6 @@ describe("graphql builders", () => {
     ).toContain("tirePressureFrontLeft { timeStamp value }");
   });
 
-  it("selects value records for live session metrics", () => {
-    const query = buildLiveSessionQuery();
-    expect(query).toContain("soc { __typename value updatedAt }");
-    expect(query).toContain(" chargerId ");
-    expect(query).toContain("$vehicleId: ID!");
-  });
 });
 
 describe("field lists", () => {
