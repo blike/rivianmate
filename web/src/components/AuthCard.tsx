@@ -18,9 +18,12 @@ export function AuthCard(props: {
     <div className="flex min-h-full items-center justify-center p-4">
       <form onSubmit={handleSubmit} className="card w-full max-w-sm space-y-4 p-6">
         <div>
-          <h1 className="text-lg font-semibold">
-            Rivian<span className="text-[var(--accent)]">Mate</span>
-          </h1>
+          <div className="flex items-center gap-3">
+            <img src="/icon.svg" alt="" width={40} height={40} className="h-10 w-10" />
+            <h1 className="text-lg font-semibold">
+              Rivian<span className="text-[var(--accent)]">Mate</span>
+            </h1>
+          </div>
           <h2 className="mt-2 text-base font-medium">{props.title}</h2>
           {props.subtitle && (
             <p className="mt-1 text-sm text-[var(--text-secondary)]">

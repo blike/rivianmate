@@ -6,6 +6,7 @@ import {
   useSetUnits,
   useStatus,
   useUnits,
+  useVehicles,
 } from "../api/hooks.js";
 import { Panel, Row } from "../components/panels.js";
 import { TextField } from "../components/AuthCard.js";
@@ -14,6 +15,7 @@ export function Settings() {
   const { data: status, refetch } = useStatus();
   const disconnect = useRivianDisconnect();
   const { data: diagnostics } = useRivianDiagnostics();
+  const { data: vehicles } = useVehicles();
   const { units } = useUnits();
   const setUnits = useSetUnits();
 
@@ -105,6 +107,29 @@ export function Settings() {
                 .join(" · ")}
             </p>
           )}
+        </Panel>
+      )}
+
+      {vehicles && vehicles.length > 0 && (
+        <Panel title={vehicles.length > 1 ? "Vehicles" : "Vehicle"}>
+          <ul className="space-y-3 text-sm">
+            {vehicles.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium">{v.name ?? v.model ?? "Vehicle"}</div>
+                  <div className="text-xs text-[var(--text-muted)]">
+                    {[v.modelYear, v.model].filter(Boolean).join(" ") || "—"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs tracking-wide text-[var(--text-secondary)] select-all">
+                    {v.vin}
+                  </span>
+                  <CopyButton text={v.vin} label="Copy VIN" />
+                </div>
+              </li>
+            ))}
+          </ul>
         </Panel>
       )}
 
@@ -201,5 +226,27 @@ function UnitToggle<T extends string>(props: {
         ))}
       </div>
     </div>
+  );
+}
+
+function CopyButton(props: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={props.label}
+      className="rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(props.text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // Clipboard unavailable (e.g. plain http); the VIN is still selectable.
+        }
+      }}
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 }

@@ -39,10 +39,7 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
             </span>
           )}
         </h2>
-        <span className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-          <FreshnessBadge state={state} />
-          {props.vehicle?.vin}
-        </span>
+        <FreshnessBadge state={state} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
