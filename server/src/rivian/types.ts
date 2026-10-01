@@ -92,6 +92,23 @@ export interface DepartureSchedule {
   } | null;
 }
 
+/** A completed session from Rivian's charging history (account-wide). */
+export interface ChargeSessionSummary {
+  transactionId: string | null;
+  startInstant: string | null;
+  endInstant: string | null;
+  totalEnergyKwh: number | null;
+  rangeAddedKm: number | null;
+  vendor: string | null;
+  paidTotal: number | null;
+  chargerType: string | null;
+  currencyCode: string | null;
+  city: string | null;
+  vehicleId: string | null;
+  isPublic: boolean | null;
+  isHomeCharger: boolean | null;
+}
+
 /** One observed point on a session's charging curve. */
 export interface ChargingCurveSample {
   ts: string;

@@ -13,6 +13,7 @@ import {
   describeRivianError,
   isGraphqlValidationError,
 } from "../rivian/types.js";
+import { ChargeHistoryImporter } from "./charge-history.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { DriveDetector } from "./drive-detector.js";
 import { OtaNotesTracker } from "./ota-notes.js";
@@ -76,6 +77,7 @@ export class VehicleMonitor {
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
   private otaNotes?: OtaNotesTracker;
+  private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
   private scheduleTimer?: NodeJS.Timeout;
   private chargingScheduleUnsupported = false;
@@ -203,6 +205,15 @@ export class VehicleMonitor {
     this.chargingMonitor = chargingMonitor;
     chargingMonitor.onAuthFailure = () => void this.handleAuthFailure();
     chargingMonitor.onAuthOk = () => this.handleAuthOk();
+    const chargeHistory = new ChargeHistoryImporter(
+      this.db,
+      connection.api,
+      () => this.vehicles.map((v) => v.id),
+      this.log,
+    );
+    chargeHistory.onAuthFailure = () => void this.handleAuthFailure();
+    this.chargeHistory = chargeHistory;
+    chargingMonitor.onSessionEnded = () => chargeHistory.scheduleAfterSession();
     chargingMonitor.setVehicles(
       this.vehicles.map((v) => v.id),
     );
@@ -237,6 +248,7 @@ export class VehicleMonitor {
     }
     stream.start();
     await this.refreshChargingSchedules();
+    chargeHistory.start();
     this.scheduleTimer = setInterval(
       () => void this.refreshChargingSchedules(),
       SCHEDULE_REFRESH_MS,
@@ -251,6 +263,8 @@ export class VehicleMonitor {
     this.chargingMonitor?.stop();
     this.chargingMonitor = undefined;
     this.otaNotes = undefined;
+    this.chargeHistory?.stop();
+    this.chargeHistory = undefined;
     if (this.scheduleTimer) clearInterval(this.scheduleTimer);
     this.scheduleTimer = undefined;
     this.driveDetector.stop();

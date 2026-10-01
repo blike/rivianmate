@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { api } from "../api/client.js";
+import { api, type ChargingSessionDto } from "../api/client.js";
 import { useLiveCharging, useUnits } from "../api/hooks.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
 import { SchedulesPanel } from "../components/SchedulesPanel.js";
@@ -120,9 +120,20 @@ export function Charging(props: { vehicleId: string }) {
                     </td>
                     <td className="py-2">{fmtDuration(s.startedAt, s.endedAt)}</td>
                     <td className="py-2">
-                      {s.chargerType === "rivian_charger"
-                        ? "Rivian Adventure Network"
-                        : (s.chargerId ?? titleCase(s.chargerType))}
+                      <div className="flex items-center gap-2">
+                        <span>{chargerLabel(s)}</span>
+                        {s.source === "rivian" && (
+                          <span
+                            className="rounded-full border border-[var(--border)] px-1.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]"
+                            title="Imported from Rivian's charging history"
+                          >
+                            Rivian
+                          </span>
+                        )}
+                      </div>
+                      {s.city && (
+                        <div className="text-xs text-[var(--text-muted)]">{s.city}</div>
+                      )}
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {s.startSoc != null && s.endSoc != null
@@ -264,4 +275,11 @@ function num(value: string | number | null | undefined): number | null {
   if (value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function chargerLabel(s: ChargingSessionDto): string {
+  if (s.chargerType === "rivian_charger") return "Rivian Adventure Network";
+  if (s.chargerType === "wallbox") return "Home";
+  if (s.vendor) return titleCase(s.vendor.toLowerCase());
+  return s.chargerId ?? titleCase(s.chargerType);
 }

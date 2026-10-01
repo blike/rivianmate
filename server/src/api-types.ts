@@ -148,6 +148,11 @@ export interface ChargingSessionDto {
   currency: string | null;
   lat: number | null;
   lon: number | null;
+  /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
+  source: "live" | "rivian" | "live+rivian";
+  vendor: string | null;
+  city: string | null;
+  isPublic: boolean | null;
 }
 
 export interface WallboxDto {

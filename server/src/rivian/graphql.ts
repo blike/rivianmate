@@ -33,6 +33,9 @@ export const GET_CHARGING_SCHEDULE = `query GetChargingSchedule($vehicleId: Stri
 /** Departure schedules are only exposed as a subscription. */
 export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSchedules($vehicleID: String!) { vehicleDepartureSchedules(vehicleId: $vehicleID) { id name enabled occurrence { type weekDays timeOfDayMinutes } comfortSettings { seatFrontLeftHeat seatFrontRightHeat cabinClimateSetTemp defrost } } }`;
 
+/** Account-wide completed charging sessions (charging gateway). */
+export const GET_COMPLETED_SESSION_SUMMARIES = `query getCompletedSessionSummaries { getCompletedSessionSummaries { transactionId startInstant endInstant totalEnergyKwh rangeAddedKm vendor paidTotal chargerType currencyCode city vehicleId isPublic isHomeCharger } }`;
+
 export const GET_REGISTERED_WALLBOXES = `query getRegisteredWallboxes { getRegisteredWallboxes { __typename wallboxId userId wifiId name linked latitude longitude chargingStatus power currentVoltage currentAmps softwareVersion model serialNumber maxAmps maxVoltage maxPower } }`;
 
 /**

@@ -4,6 +4,7 @@ import {
   BASE_HEADERS,
   CREATE_CSRF_TOKEN,
   GET_CHARGING_SCHEDULE,
+  GET_COMPLETED_SESSION_SUMMARIES,
   GET_OTA_UPDATE_DETAILS,
   GET_REGISTERED_WALLBOXES,
   GET_USER_INFO,
@@ -17,6 +18,7 @@ import {
 } from "./graphql.js";
 import { RivianGovernor, parseRetryAfter } from "./governor.js";
 import {
+  ChargeSessionSummary,
   ChargingSchedule,
   LiveSessionData,
   LoginResult,
@@ -65,6 +67,8 @@ export interface RivianApi {
   /** Release-notes link for the vehicle's current/pending OTA update. */
   getOtaReleaseNotesUrl(vehicleId: string): Promise<string | null>;
   getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]>;
+  /** Completed charging sessions for the whole account. */
+  getChargeHistory(): Promise<ChargeSessionSummary[]>;
 }
 
 interface GraphqlRequest {
@@ -245,6 +249,17 @@ export class RivianClient implements RivianApi {
       variables: { vehicleId },
     });
     return data.getVehicle?.chargingSchedules ?? [];
+  }
+
+  async getChargeHistory(): Promise<ChargeSessionSummary[]> {
+    const data = await this.authenticatedRequest<{
+      getCompletedSessionSummaries: ChargeSessionSummary[] | null;
+    }>(GRAPHQL_CHARGING, {
+      operationName: "getCompletedSessionSummaries",
+      query: GET_COMPLETED_SESSION_SUMMARIES,
+      variables: null,
+    });
+    return data.getCompletedSessionSummaries ?? [];
   }
 
   private csrfHeaders(): Record<string, string> {

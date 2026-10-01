@@ -54,6 +54,8 @@ export class ChargingMonitor {
   onAuthFailure?: () => void;
   /** A REST call succeeded with the current credentials. */
   onAuthOk?: () => void;
+  /** A recorded session just ended (e.g. to sync Rivian's history). */
+  onSessionEnded?: (vehicleId: string) => void;
 
   constructor(
     private readonly db: Db,
@@ -237,6 +239,7 @@ export class ChargingMonitor {
         .where(eq(chargingSessions.id, open.id));
       this.openSessions.delete(vehicleId);
       this.log(`charging session ended for ${vehicleId}`);
+      this.onSessionEnded?.(vehicleId);
     }
   }
 

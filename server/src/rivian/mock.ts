@@ -6,6 +6,7 @@ import type {
   VehicleStateStream,
 } from "./subscription.js";
 import {
+  ChargeSessionSummary,
   ChargingSchedule,
   LiveSessionData,
   LoginResult,
@@ -184,6 +185,16 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         maxVoltage: 240,
         maxPower: 11.5,
       },
+    ];
+  }
+
+  async getChargeHistory(): Promise<ChargeSessionSummary[]> {
+    const daysAgo = (d: number, h = 0) => new Date(Date.now() - d * 86_400_000 + h * 3_600_000).toISOString();
+    const base = { vehicleId: MOCK_VEHICLE_ID, chargerType: null };
+    return [
+      { ...base, transactionId: "mock-tx-1", startInstant: daysAgo(12), endInstant: daysAgo(12, 0.6), totalEnergyKwh: 62.4, rangeAddedKm: 210, vendor: "RIVIAN", paidTotal: 24.96, currencyCode: "USD", city: "Bloomington", isPublic: true, isHomeCharger: false },
+      { ...base, transactionId: "mock-tx-2", startInstant: daysAgo(9), endInstant: daysAgo(9, 1.1), totalEnergyKwh: 48.1, rangeAddedKm: 160, vendor: "Electrify America", paidTotal: 23.57, currencyCode: "USD", city: "Champaign", isPublic: true, isHomeCharger: false },
+      { ...base, transactionId: "mock-tx-3", startInstant: daysAgo(5), endInstant: daysAgo(5, 6), totalEnergyKwh: 55.0, rangeAddedKm: 185, vendor: null, paidTotal: null, currencyCode: null, city: null, isPublic: false, isHomeCharger: true },
     ];
   }
 

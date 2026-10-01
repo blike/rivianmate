@@ -175,9 +175,19 @@ export const chargingSessions = pgTable(
     lat: doublePrecision("lat"),
     lon: doublePrecision("lon"),
     rawFinal: jsonb("raw_final"),
+    /** live = recorded by RivianMate; rivian = imported; live+rivian = both. */
+    source: text("source", { enum: ["live", "rivian", "live+rivian"] })
+      .notNull()
+      .default("live"),
+    rivianTransactionId: text("rivian_transaction_id"),
+    vendor: text("vendor"),
+    city: text("city"),
+    isPublic: boolean("is_public"),
+    isHomeCharger: boolean("is_home_charger"),
   },
   (t) => [
     index("charging_vehicle_started_idx").on(t.vehicleId, t.startedAt),
+    uniqueIndex("charging_vehicle_rivian_tx_idx").on(t.vehicleId, t.rivianTransactionId),
   ],
 );
 

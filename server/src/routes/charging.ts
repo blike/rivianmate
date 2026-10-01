@@ -117,5 +117,9 @@ function toSessionDto(
     currency: row.currency,
     lat: row.lat,
     lon: row.lon,
+    source: row.source,
+    vendor: row.vendor,
+    city: row.city,
+    isPublic: row.isPublic,
   };
 }

@@ -36,6 +36,13 @@
       "when": 1790818800207,
       "tag": "0004_ota_release_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790819076461,
+      "tag": "0005_charge_history",
+      "breakpoints": true
     }
   ]
 }

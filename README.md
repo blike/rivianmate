@@ -52,6 +52,11 @@ traffic low:
   checked over REST every 5 minutes, and only if pushed charging data has
   stopped arriving. Wallboxes are refreshed at startup and every 15 minutes
   while charging.
+- **Occasional extras.** Charging schedules are fetched at startup and every
+  6 hours. Rivian's charging history is synced at startup, 15 minutes after a
+  charge ends, and daily. Release notes are fetched once per software
+  version. Departure schedules ride on the existing socket. Each of these
+  turns itself off for the run if Rivian rejects it.
 - **Backing off.** All requests go through one process-wide queue, spaced at
   least 2 seconds apart. A rate-limit response (HTTP 429 or `RATE_LIMIT`)
   pauses *all* traffic for at least 5 minutes, doubling up to 1 hour, or for
