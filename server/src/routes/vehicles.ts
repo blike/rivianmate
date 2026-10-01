@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { VehicleDto } from "../api-types.js";
+import type { SchedulesDto, VehicleDto } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { vehicles } from "../db/schema.js";
 
@@ -28,6 +28,11 @@ export async function vehicleRoutes(
       if (!state) return reply.code(404).send({ error: "No state yet" });
       return state;
     },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/vehicles/:id/schedules",
+    async (request): Promise<SchedulesDto> => ctx.monitor.getSchedules(request.params.id),
   );
 
   /** SSE stream of merged full-state updates + live charging session. */

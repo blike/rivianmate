@@ -3,10 +3,24 @@
  * erased at compile time) so both sides stay in sync.
  */
 import type { RivianTrafficSnapshot } from "./rivian/governor.js";
-import type { LiveSessionData, VehicleState } from "./rivian/types.js";
+import type {
+  ChargingSchedule,
+  DepartureSchedule,
+  LiveSessionData,
+  VehicleState,
+} from "./rivian/types.js";
 import type { MonitorDiagnostics } from "./services/vehicle-monitor.js";
 
-export type { LiveSessionData, VehicleState };
+export type { ChargingSchedule, DepartureSchedule, LiveSessionData, VehicleState };
+
+export interface SchedulesDto {
+  /** null when not fetched yet or Rivian didn't provide it. */
+  charging: ChargingSchedule[] | null;
+  departures: DepartureSchedule[] | null;
+  departuresUnavailable: boolean;
+  chargingUpdatedAt: string | null;
+  departuresUpdatedAt: string | null;
+}
 
 export interface StatusResponse {
   needsSetup: boolean;

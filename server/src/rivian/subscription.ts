@@ -7,12 +7,18 @@ import {
   APOLLO_CLIENT_NAME,
   APOLLO_CLIENT_VERSION,
   CHARGING_SESSION_SUBSCRIPTION,
+  DEPARTURE_SCHEDULES_SUBSCRIPTION,
   GRAPHQL_WEBSOCKET,
   CORE_VEHICLE_STATE_PROPERTIES,
   SUBSCRIPTION_PROPERTIES,
   buildVehicleStateSubscription,
 } from "./graphql.js";
-import type { LiveSessionData, RivianAppSession, VehicleState } from "./types.js";
+import type {
+  DepartureSchedule,
+  LiveSessionData,
+  RivianAppSession,
+  VehicleState,
+} from "./types.js";
 
 export type VehicleStateCallback = (vehicleId: string, state: VehicleState) => void;
 export type ChargingSessionCallback = (
@@ -20,11 +26,20 @@ export type ChargingSessionCallback = (
   session: LiveSessionData | null,
 ) => void;
 
+export type DepartureSchedulesCallback = (
+  vehicleId: string,
+  schedules: DepartureSchedule[],
+) => void;
+
 export interface VehicleStateStream {
   /** `vehicleId` is getUserInfo's vehicles[].id, not the VIN. */
   subscribe(vehicleId: string, callback: VehicleStateCallback): void;
   /** Live charging data; optional so simple streams can omit it. */
   subscribeCharging?(vehicleId: string, callback: ChargingSessionCallback): void;
+  /** Departure schedules (subscription-only in Rivian's API). */
+  subscribeDepartureSchedules?(vehicleId: string, callback: DepartureSchedulesCallback): void;
+  /** True once Rivian has refused an optional subscription. */
+  isUnsupported?(kind: "chargingSession" | "departureSchedules"): boolean;
   start(): void;
   stop(): void;
   /**
@@ -61,7 +76,7 @@ export interface SubscriptionManagerOptions {
   heartbeatIntervalMs?: number;
 }
 
-type SubKind = "vehicleState" | "chargingSession";
+type SubKind = "vehicleState" | "chargingSession" | "departureSchedules";
 
 interface Subscription {
   id: string;
@@ -69,6 +84,7 @@ interface Subscription {
   vehicleId: string;
   onState?: VehicleStateCallback;
   onCharging?: ChargingSessionCallback;
+  onDepartures?: DepartureSchedulesCallback;
 }
 
 type DisconnectReason =
@@ -98,7 +114,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private coreFieldsOnly = false;
   /** Whether the current socket has delivered any vehicle state yet. */
   private gotVehicleData = false;
-  private chargingUnsupported = false;
+  /** Optional subscriptions Rivian refused; not re-sent for this process. */
+  private unsupported = new Set<SubKind>();
   private started = false;
   private connected = false;
   private everConnected = false;
@@ -145,6 +162,20 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       vehicleId,
       onCharging: callback,
     });
+  }
+
+  subscribeDepartureSchedules(vehicleId: string, callback: DepartureSchedulesCallback): void {
+    this.addSubscription({
+      id: `departureSchedules:${vehicleId}`,
+      kind: "departureSchedules",
+      vehicleId,
+      onDepartures: callback,
+    });
+  }
+
+  /** Optional subscriptions Rivian refused (for diagnostics/UI). */
+  isUnsupported(kind: "chargingSession" | "departureSchedules"): boolean {
+    return this.unsupported.has(kind);
   }
 
   start(): void {
@@ -320,8 +351,11 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             }
             sub.onState?.(sub.vehicleId, state);
           }
-        } else if (data && "chargingSession" in data) {
+        } else if (sub.kind === "chargingSession" && data && "chargingSession" in data) {
           sub.onCharging?.(sub.vehicleId, mapChargingSession(data.chargingSession));
+        } else if (sub.kind === "departureSchedules" && data && "vehicleDepartureSchedules" in data) {
+          const list = data.vehicleDepartureSchedules;
+          sub.onDepartures?.(sub.vehicleId, Array.isArray(list) ? (list as DepartureSchedule[]) : []);
         }
         return undefined;
       }
@@ -350,12 +384,12 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       return { kind: "rateLimited" };
     }
 
-    if (sub?.kind === "chargingSession") {
-      // Optional feature: if Rivian refuses it, keep the socket and let the
-      // charging monitor's REST safety net cover sessions instead.
+    if (sub && sub.kind !== "vehicleState") {
+      // Optional feature: if Rivian refuses it, keep the socket (charging
+      // falls back to the REST safety net; schedules show as unavailable).
       if (msg.type === "error") {
-        this.chargingUnsupported = true;
-        this.log(`charging subscription rejected: ${summarize(errors)}`);
+        this.unsupported.add(sub.kind);
+        this.log(`${sub.kind} subscription rejected: ${summarize(errors)}`);
       }
       return undefined;
     }
@@ -379,7 +413,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private sendSubscribe(sub: Subscription): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     if (this.sentIds.has(sub.id)) return;
-    if (sub.kind === "chargingSession" && this.chargingUnsupported) return;
+    if (this.unsupported.has(sub.kind)) return;
     this.sentIds.add(sub.id);
     const payload =
       sub.kind === "vehicleState"
@@ -393,11 +427,17 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             ),
             variables: { vehicleID: sub.vehicleId },
           }
-        : {
-            operationName: "chargingSession",
-            query: CHARGING_SESSION_SUBSCRIPTION,
-            variables: { vehicleID: sub.vehicleId },
-          };
+        : sub.kind === "chargingSession"
+          ? {
+              operationName: "chargingSession",
+              query: CHARGING_SESSION_SUBSCRIPTION,
+              variables: { vehicleID: sub.vehicleId },
+            }
+          : {
+              operationName: "vehicleDepartureSchedules",
+              query: DEPARTURE_SCHEDULES_SUBSCRIPTION,
+              variables: { vehicleID: sub.vehicleId },
+            };
     this.ws.send(JSON.stringify({ id: sub.id, type: "subscribe", payload }));
   }
 

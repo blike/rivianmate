@@ -1,10 +1,12 @@
 import type { RivianApi } from "./client.js";
 import type {
   ChargingSessionCallback,
+  DepartureSchedulesCallback,
   VehicleStateCallback,
   VehicleStateStream,
 } from "./subscription.js";
 import {
+  ChargingSchedule,
   LiveSessionData,
   LoginResult,
   RivianInvalidOtpError,
@@ -183,6 +185,31 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         maxPower: 11.5,
       },
     ];
+  }
+
+  async getChargingSchedules(_vehicleId: string): Promise<ChargingSchedule[]> {
+    return [
+      {
+        enabled: true,
+        startTime: 23 * 60,
+        duration: 7 * 60,
+        amperage: 48,
+        weekDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        location: { latitude: 40.5142, longitude: -88.9906 },
+      },
+    ];
+  }
+
+  subscribeDepartureSchedules(vehicleId: string, callback: DepartureSchedulesCallback): void {
+    callback(vehicleId, [
+      {
+        id: "mock-departure-1",
+        name: "Work",
+        enabled: true,
+        occurrence: { type: "weekly", weekDays: ["Monday", "Wednesday", "Friday"], timeOfDayMinutes: 7 * 60 + 30 },
+        comfortSettings: { seatFrontLeftHeat: "level_2", seatFrontRightHeat: null, cabinClimateSetTemp: 21, defrost: false },
+      },
+    ]);
   }
 
   async getOtaReleaseNotesUrl(_vehicleId: string): Promise<string | null> {

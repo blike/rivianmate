@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useLiveCharging, useUnits } from "../api/hooks.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
+import { SchedulesPanel } from "../components/SchedulesPanel.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { fmt, fmtDuration, titleCase } from "../lib/state.js";
 
@@ -72,6 +73,8 @@ export function Charging(props: { vehicleId: string }) {
           />
         </div>
       )}
+
+      <SchedulesPanel vehicleId={props.vehicleId} />
 
       <Panel title="Charging sessions">
         {!sessions?.length ? (

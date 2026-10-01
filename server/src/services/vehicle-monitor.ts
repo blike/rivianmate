@@ -3,7 +3,10 @@ import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { VehicleStateStream } from "../rivian/subscription.js";
 import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
+import type { SchedulesDto } from "../api-types.js";
 import {
+  ChargingSchedule,
+  DepartureSchedule,
   RivianTokens,
   RivianUnauthenticatedError,
   VehicleState,
@@ -29,6 +32,15 @@ const FALLBACK_POLL_ASLEEP_MS = 30 * 60_000;
  */
 const AUTH_FAILURE_THRESHOLD = 3;
 const ASLEEP_POWER_STATES = new Set(["sleep", "standby"]);
+/** Charging schedules rarely change; a few checks a day is plenty. */
+const SCHEDULE_REFRESH_MS = 6 * 3600_000;
+
+interface VehicleSchedules {
+  charging: ChargingSchedule[] | null;
+  chargingAt: Date | null;
+  departures: DepartureSchedule[] | null;
+  departuresAt: Date | null;
+}
 
 export interface MonitorDiagnostics {
   running: boolean;
@@ -64,6 +76,9 @@ export class VehicleMonitor {
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
   private otaNotes?: OtaNotesTracker;
+  private schedules = new Map<string, VehicleSchedules>();
+  private scheduleTimer?: NodeJS.Timeout;
+  private chargingScheduleUnsupported = false;
   private wsDownTimer?: NodeJS.Timeout;
   private fallbackPollTimer?: NodeJS.Timeout;
   private running = false;
@@ -206,6 +221,11 @@ export class VehicleMonitor {
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
       });
+      stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
+        const entry = this.scheduleEntry(vehicle.id);
+        entry.departures = departures;
+        entry.departuresAt = new Date();
+      });
     }
 
     await chargingMonitor.start();
@@ -216,6 +236,11 @@ export class VehicleMonitor {
       if (state) chargingMonitor.setPluggedIn(vehicle.id, isPluggedIn(state));
     }
     stream.start();
+    await this.refreshChargingSchedules();
+    this.scheduleTimer = setInterval(
+      () => void this.refreshChargingSchedules(),
+      SCHEDULE_REFRESH_MS,
+    );
     this.log(`monitoring ${this.vehicles.length} vehicle(s)`);
   }
 
@@ -226,6 +251,8 @@ export class VehicleMonitor {
     this.chargingMonitor?.stop();
     this.chargingMonitor = undefined;
     this.otaNotes = undefined;
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer);
+    this.scheduleTimer = undefined;
     this.driveDetector.stop();
     this.clearFallbackTimers();
     this.streamConnected = false;
@@ -257,6 +284,51 @@ export class VehicleMonitor {
       await this.snapshotWriter.onState(vehicleId, cached);
     } catch (err) {
       this.log(`persistence error: ${(err as Error).message}`);
+    }
+  }
+
+  getSchedules(vehicleId: string): SchedulesDto {
+    const entry = this.schedules.get(vehicleId);
+    return {
+      charging: entry?.charging ?? null,
+      departures: entry?.departures ?? null,
+      departuresUnavailable:
+        this.connection?.stream.isUnsupported?.("departureSchedules") ?? false,
+      chargingUpdatedAt: entry?.chargingAt?.toISOString() ?? null,
+      departuresUpdatedAt: entry?.departuresAt?.toISOString() ?? null,
+    };
+  }
+
+  private scheduleEntry(vehicleId: string): VehicleSchedules {
+    let entry = this.schedules.get(vehicleId);
+    if (!entry) {
+      entry = { charging: null, chargingAt: null, departures: null, departuresAt: null };
+      this.schedules.set(vehicleId, entry);
+    }
+    return entry;
+  }
+
+  private async refreshChargingSchedules(): Promise<void> {
+    const api = this.connection?.api;
+    if (!api || !this.running || this.chargingScheduleUnsupported) return;
+    for (const vehicle of this.vehicles) {
+      try {
+        const schedules = await api.getChargingSchedules(vehicle.id);
+        const entry = this.scheduleEntry(vehicle.id);
+        entry.charging = schedules;
+        entry.chargingAt = new Date();
+      } catch (err) {
+        if (isGraphqlValidationError(err)) {
+          this.chargingScheduleUnsupported = true;
+          this.log(`charging schedule query not supported: ${describeRivianError(err)}`);
+          return;
+        }
+        if (err instanceof RivianUnauthenticatedError) {
+          await this.handleAuthFailure();
+          return;
+        }
+        this.log(`charging schedule fetch failed: ${describeRivianError(err)}`);
+      }
     }
   }
 

@@ -301,6 +301,32 @@ describe("RivianSubscriptionManager", () => {
     expect(lastGap).toBeLessThan(200);
   });
 
+  it("delivers departure schedules and survives Rivian refusing them", async () => {
+    manager = createManager();
+    const received: unknown[][] = [];
+    manager.subscribe("VIN1", () => {});
+    manager.subscribeDepartureSchedules("VIN1", (_id, list) => received.push(list));
+    manager.start();
+    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2);
+    const conn = server.conns[0]!;
+    conn.socket.send(
+      JSON.stringify({
+        id: "departureSchedules:VIN1",
+        type: "next",
+        payload: { data: { vehicleDepartureSchedules: [{ id: "d1", name: "Work", enabled: true }] } },
+      }),
+    );
+    await server.until(() => received.length === 1);
+    expect(received[0]).toEqual([{ id: "d1", name: "Work", enabled: true }]);
+
+    conn.socket.send(
+      JSON.stringify({ id: "departureSchedules:VIN1", type: "error", payload: [{ message: "nope" }] }),
+    );
+    await new Promise((r) => setTimeout(r, 150));
+    expect(server.conns).toHaveLength(1);
+    expect(manager.isUnsupported("departureSchedules")).toBe(true);
+  });
+
   it("keeps the socket when only the charging subscription is refused", async () => {
     manager = createManager();
     manager.subscribe("VIN1", () => {});

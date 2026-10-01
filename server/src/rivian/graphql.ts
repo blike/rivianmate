@@ -28,6 +28,11 @@ export const GET_USER_INFO = `query getUserInfo { currentUser { __typename id ve
 
 export const GET_OTA_UPDATE_DETAILS = `query getOTAUpdateDetails($vehicleId: String!) { getOTAUpdateDetails(vehicleId: $vehicleId) { releaseNotesUrl } }`;
 
+export const GET_CHARGING_SCHEDULE = `query GetChargingSchedule($vehicleId: String!) { getVehicle(id: $vehicleId) { chargingSchedules { enabled startTime duration amperage location { latitude longitude } weekDays } } }`;
+
+/** Departure schedules are only exposed as a subscription. */
+export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSchedules($vehicleID: String!) { vehicleDepartureSchedules(vehicleId: $vehicleID) { id name enabled occurrence { type weekDays timeOfDayMinutes } comfortSettings { seatFrontLeftHeat seatFrontRightHeat cabinClimateSetTemp defrost } } }`;
+
 export const GET_REGISTERED_WALLBOXES = `query getRegisteredWallboxes { getRegisteredWallboxes { __typename wallboxId userId wifiId name linked latitude longitude chargingStatus power currentVoltage currentAmps softwareVersion model serialNumber maxAmps maxVoltage maxPower } }`;
 
 /**

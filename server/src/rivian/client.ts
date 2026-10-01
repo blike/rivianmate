@@ -3,6 +3,7 @@ import {
   APOLLO_CLIENT_NAME,
   BASE_HEADERS,
   CREATE_CSRF_TOKEN,
+  GET_CHARGING_SCHEDULE,
   GET_OTA_UPDATE_DETAILS,
   GET_REGISTERED_WALLBOXES,
   GET_USER_INFO,
@@ -16,6 +17,7 @@ import {
 } from "./graphql.js";
 import { RivianGovernor, parseRetryAfter } from "./governor.js";
 import {
+  ChargingSchedule,
   LiveSessionData,
   LoginResult,
   RivianApiError,
@@ -62,6 +64,7 @@ export interface RivianApi {
   getRegisteredWallboxes(): Promise<Wallbox[]>;
   /** Release-notes link for the vehicle's current/pending OTA update. */
   getOtaReleaseNotesUrl(vehicleId: string): Promise<string | null>;
+  getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]>;
 }
 
 interface GraphqlRequest {
@@ -231,6 +234,17 @@ export class RivianClient implements RivianApi {
       variables: { vehicleId },
     });
     return data.getOTAUpdateDetails?.releaseNotesUrl ?? null;
+  }
+
+  async getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]> {
+    const data = await this.authenticatedRequest<{
+      getVehicle: { chargingSchedules: ChargingSchedule[] | null } | null;
+    }>(GRAPHQL_GATEWAY, {
+      operationName: "GetChargingSchedule",
+      query: GET_CHARGING_SCHEDULE,
+      variables: { vehicleId },
+    });
+    return data.getVehicle?.chargingSchedules ?? [];
   }
 
   private csrfHeaders(): Record<string, string> {

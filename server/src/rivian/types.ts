@@ -68,6 +68,30 @@ export interface LiveSessionValueRecord {
   updatedAt: string;
 }
 
+/** A charging schedule set in the Rivian app. Times are minutes after midnight. */
+export interface ChargingSchedule {
+  enabled: boolean | null;
+  startTime: number | null;
+  duration: number | null;
+  amperage: number | null;
+  weekDays: string[] | null;
+  location: { latitude: number | null; longitude: number | null } | null;
+}
+
+/** A departure (precondition) schedule. */
+export interface DepartureSchedule {
+  id: string;
+  name: string | null;
+  enabled: boolean | null;
+  occurrence: { type: string | null; weekDays: string[] | null; timeOfDayMinutes: number | null } | null;
+  comfortSettings: {
+    seatFrontLeftHeat: string | number | null;
+    seatFrontRightHeat: string | number | null;
+    cabinClimateSetTemp: number | null;
+    defrost: boolean | string | null;
+  } | null;
+}
+
 /** One observed point on a session's charging curve. */
 export interface ChargingCurveSample {
   ts: string;
