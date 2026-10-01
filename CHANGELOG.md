@@ -14,6 +14,9 @@
 - New app and home-screen icons, plus VIN display and copying in Settings.
 - Corrected chart precision, mock drive completion, historical speed units,
   container healthchecks, and startup behavior when Rivian is unavailable.
+- Restored session-based Rivian authentication when reusing stored credentials
+  after an upgrade or restart. Failed monitor startup now reports disconnected
+  and prompts for re-login when Rivian rejects the session.
 - Automated validation and versioned Docker images for amd64 and arm64.
 
 ### Upgrading

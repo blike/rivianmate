@@ -130,7 +130,12 @@ export class VehicleMonitor {
     const account = await this.tokenStore.load();
     if (!account) return "no_account";
     if (account.authState !== "ok") return "needs_login";
-    await this.start(this.createConnection(account.tokens));
+    try {
+      await this.start(this.createConnection(account.tokens));
+    } catch (err) {
+      if (err instanceof RivianUnauthenticatedError) return "needs_login";
+      throw err;
+    }
     return "started";
   }
 
@@ -138,11 +143,26 @@ export class VehicleMonitor {
   async start(connection: RivianConnection): Promise<void> {
     await this.stop();
     const generation = ++this.generation;
-    const superseded = () => generation !== this.generation;
     this.connection = connection;
     this.running = true;
     this.authFailures = 0;
 
+    try {
+      await this.initialize(connection, generation);
+    } catch (err) {
+      // A failed older start must not stop a newer connection.
+      if (generation === this.generation) {
+        await this.stop();
+        if (err instanceof RivianUnauthenticatedError) {
+          await this.tokenStore.setAuthState("unauthenticated");
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async initialize(connection: RivianConnection, generation: number): Promise<void> {
+    const superseded = () => generation !== this.generation;
     const info = await connection.api.getUserInfo();
     if (superseded()) return;
     this.vehicles = info.vehicles.map((uv) => ({

@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe("RivianClient", () => {
-  it("sends the full authenticated header set", async () => {
+  it("restores session authentication without sending the stored access token as Bearer", async () => {
     const calls = stubFetch((op) =>
       op === "CreateCSRFToken" ? csrf() : json({ data: { currentUser: { id: "u", vehicles: [] } } }),
     );
@@ -58,7 +58,7 @@ describe("RivianClient", () => {
     expect(headers["U-Sess"]).toBe("usess");
     expect(headers["A-Sess"]).toMatch(/^asess-/);
     expect(headers["Csrf-Token"]).toMatch(/^csrf-/);
-    expect(headers.Authorization).toBe("Bearer access");
+    expect(headers).not.toHaveProperty("Authorization");
   });
 
   it("rotates the session once on UNAUTHENTICATED and retries", async () => {

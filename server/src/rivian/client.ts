@@ -269,16 +269,14 @@ export class RivianClient implements RivianApi {
     };
   }
 
-  /** Headers the mobile app sends on authenticated calls. */
+  /** Authenticate with the user session, as in the original connection flow. */
   private sessionHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
+    // Do not attach the separately stored access token as a Bearer token:
+    // rotating the app session does not renew that token.
+    return {
       ...this.csrfHeaders(),
       "U-Sess": this._tokens?.userSessionToken ?? "",
     };
-    if (this._tokens?.accessToken) {
-      headers.Authorization = `Bearer ${this._tokens.accessToken}`;
-    }
-    return headers;
   }
 
   /**
