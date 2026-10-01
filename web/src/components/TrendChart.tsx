@@ -101,10 +101,10 @@ export function TrendChart(props: {
               color: "var(--text-primary)",
               fontSize: 12,
             }}
-            labelFormatter={(x: number) => (props.tooltipLabel ?? xFormatter)(x)}
-            formatter={(value: number, _name, item) => {
+            labelFormatter={(x) => (props.tooltipLabel ?? xFormatter)(Number(x))}
+            formatter={(value, _name, item) => {
               const s = props.series.find((x) => x.key === item.dataKey);
-              return [`${fmt(value, s?.digits ?? 1)}${s?.unit ? ` ${s.unit}` : ""}`, s?.label ?? ""];
+              return [`${fmt(typeof value === "number" ? value : null, s?.digits ?? 1)}${s?.unit ? ` ${s.unit}` : ""}`, s?.label ?? ""];
             }}
           />
           {props.series.length > 1 && (

@@ -155,9 +155,9 @@ export function History(props: { vehicleId: string }) {
                     color: "var(--text-primary)",
                     fontSize: 12,
                   }}
-                  labelFormatter={(ts: number) => new Date(ts).toLocaleString()}
-                  formatter={(value: number) => [
-                    `${fmt(value, 1)} ${unit}`,
+                  labelFormatter={(ts) => new Date(Number(ts)).toLocaleString()}
+                  formatter={(value) => [
+                    `${fmt(typeof value === "number" ? value : null, 1)} ${unit}`,
                     metric.label,
                   ]}
                 />

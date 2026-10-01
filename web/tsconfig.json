@@ -10,7 +10,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "baseUrl": ".",
+    "types": ["vite/client"],
     "paths": {
       "@server/*": ["../server/src/*"]
     }

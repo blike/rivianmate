@@ -1,3 +1,7 @@
 packages:
   - server
   - web
+
+overrides:
+  # drizzle-kit's legacy @esbuild-kit loader pins a vulnerable esbuild (GHSA-67mh-4wv8-2f99).
+  '@esbuild-kit/core-utils>esbuild': ^0.25.0
