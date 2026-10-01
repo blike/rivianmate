@@ -118,7 +118,7 @@ interface HomeContext {
   spots: Spot[];
 }
 
-async function homeContext(ctx: AppContext): Promise<HomeContext> {
+export async function homeContext(ctx: AppContext): Promise<HomeContext> {
   const settings = await getHomeChargingSettings(ctx);
   const boxes = await ctx.db
     .select({ latitude: wallboxes.latitude, longitude: wallboxes.longitude })

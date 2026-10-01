@@ -25,6 +25,31 @@ const dotIcon = L.divIcon({
   iconAnchor: [5, 5],
 });
 
+/** Frames the whole trail (with a little padding), once per trail. */
+function FitTrail(props: { trail: [number, number][] }) {
+  const map = useMap();
+  const first = props.trail[0];
+  const last = props.trail.at(-1);
+  const key = `${props.trail.length}|${first}|${last}`;
+  useEffect(() => {
+    if (props.trail.length > 1) map.fitBounds(L.latLngBounds(props.trail), { padding: [24, 24] });
+    // Re-fit only when the trail itself changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
+  return null;
+}
+
+/** Leaflet sizes itself once; this keeps it right when its container resizes. */
+function AutoResize() {
+  const map = useMap();
+  useEffect(() => {
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
+  return null;
+}
+
 function Recenter(props: { lat: number; lon: number }) {
   const map = useMap();
   useEffect(() => {
@@ -60,6 +85,8 @@ export function VehicleMap(props: {
         icon={props.bearing != null ? vehicleIcon(props.bearing) : dotIcon}
       />
       {props.follow !== false && <Recenter lat={props.lat} lon={props.lon} />}
+      {props.follow === false && props.trail && <FitTrail trail={props.trail} />}
+      <AutoResize />
     </MapContainer>
   );
 }

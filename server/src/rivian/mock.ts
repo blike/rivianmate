@@ -29,6 +29,12 @@ import {
 } from "./parallax.js";
 import { b64, double, float, int, message, string } from "./protobuf-encode.js";
 
+/** Made-up addresses for mock drives (no real lookups in mock mode). */
+export const mockGeocode = async (lat: number, lon: number) => {
+  const number = 100 + (Math.round(Math.abs(lat * lon) * 1000) % 900);
+  return { place: `${number} Prairie Road, Normal`, address: `${number} Prairie Road, Normal, Illinois, United States` };
+};
+
 export const MOCK_VIN = "7FCTGAAA0MN000001";
 export const MOCK_VEHICLE_ID = "mock-vehicle-1";
 export const MOCK_OTP = "000000";

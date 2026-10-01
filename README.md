@@ -151,6 +151,7 @@ If the API server must run on a different port, point the web proxy at it:
 | `DATABASE_URL` | yes (compose sets it) | Postgres connection string |
 | `PORT` / `APP_PORT` | no | API port (default 4000) / published host port |
 | `MOCK_RIVIAN` | no | `1` = simulated vehicle, OTP `000000` |
+| `REVERSE_GEOCODING` | no | `false` turns off drive start/end address lookups. When on (the default), each drive's start and end coordinates are sent to OpenStreetMap's [Nominatim](https://nominatim.org) service, at most one request a second, and results are cached |
 | `APP_PASSWORD` | no | Seed the app password on first boot instead of the setup wizard. Must meet the password policy (12+ characters, not a common word or pattern) |
 
 > **Note:** rotating `APP_SECRET` invalidates stored Rivian tokens (they can no

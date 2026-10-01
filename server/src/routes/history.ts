@@ -5,15 +5,18 @@ import { z } from "zod";
 import type {
   DriveDetailDto,
   DriveDto,
+  DrivePlaceDto,
   HistoryPoint,
   LocationPointDto,
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { drives, locationPoints } from "../db/schema.js";
 import { driveElevation, maxSpeeds, mileageDistanceKm } from "../services/drive-detector.js";
-import { driveEnergyKwh, driveGaps } from "../services/drive-metrics.js";
+import { driveEnergyKwh } from "../services/drive-metrics.js";
 import type { VehicleState } from "../rivian/types.js";
 import { stateNumber } from "../services/state-utils.js";
+import { type Spot, nearbySpot } from "../services/home-charging.js";
+import { homeContext } from "./charging.js";
 
 const METRIC_COLUMNS: Record<string, string> = {
   battery: "battery_level",
@@ -140,7 +143,8 @@ export async function historyRoutes(
       const fallback = await latestCapacityKwh(ctx, request.params.id);
       const speeds = await maxSpeeds(ctx.db, rows.map((r) => r.id));
       const state = ctx.monitor.getState(request.params.id);
-      return rows.map((row) => toDriveDto(row, fallback, speeds.get(row.id) ?? null, state));
+      const { spots } = await homeContext(ctx);
+      return rows.map((row) => toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, spots));
     },
   );
 
@@ -171,12 +175,8 @@ export async function historyRoutes(
         drive.elevationLossM = elevation?.lossM ?? null;
       }
       return {
-        ...toDriveDto(drive, fallback, speed, state),
+        ...toDriveDto(drive, fallback, speed, state, (await homeContext(ctx)).spots),
         points: points.map(toLocationDto),
-        gaps: driveGaps(points.map((p) => ({ ts: p.ts.getTime(), lat: p.lat, lon: p.lon }))).map((g) => ({
-          from: new Date(g.from).toISOString(),
-          to: new Date(g.to).toISOString(),
-        })),
       };
     },
   );
@@ -198,6 +198,7 @@ function toDriveDto(
   fallbackCapacityKwh: number | null,
   maxSpeedKmh: number | null,
   current: VehicleState | undefined,
+  homeSpots: readonly Spot[],
 ): DriveDto {
   // A drive in progress shows its figures so far, from the latest state.
   const live = row.endedAt == null && current ? current : null;
@@ -231,7 +232,21 @@ function toDriveDto(
       row.destinationLat != null && row.destinationLon != null
         ? { name: row.destinationName, lat: row.destinationLat, lon: row.destinationLon }
         : null,
+    start: drivePlace(row.startLat, row.startLon, row.startPlace, row.startAddress, homeSpots),
+    end: live ? null : drivePlace(row.endLat, row.endLon, row.endPlace, row.endAddress, homeSpots),
   };
+}
+
+/** "Home" near a home spot, else the looked-up address; null until known. */
+export function drivePlace(
+  lat: number | null,
+  lon: number | null,
+  place: string | null,
+  address: string | null,
+  homeSpots: readonly Spot[],
+): DrivePlaceDto | null {
+  if (nearbySpot(lat, lon, homeSpots)) return { label: "Home", address, isHome: true };
+  return place ? { label: place, address, isHome: false } : null;
 }
 
 function toLocationDto(
