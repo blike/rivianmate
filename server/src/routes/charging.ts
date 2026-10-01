@@ -1,9 +1,18 @@
 import { desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { ChargingSessionDto, WallboxDto } from "../api-types.js";
+import type {
+  ChargingCurvePointDto,
+  ChargingSessionDto,
+  WallboxDto,
+} from "../api-types.js";
 import type { AppContext } from "../context.js";
-import { chargingSessions, wallboxReadings, wallboxes } from "../db/schema.js";
+import {
+  chargingCurvePoints,
+  chargingSessions,
+  wallboxReadings,
+  wallboxes,
+} from "../db/schema.js";
 
 const patchSchema = z.object({
   cost: z.union([z.string(), z.number()]).nullable(),
@@ -23,6 +32,19 @@ export async function chargingRoutes(
         .orderBy(desc(chargingSessions.startedAt))
         .limit(200);
       return rows.map(toSessionDto);
+    },
+  );
+
+  app.get<{ Params: { sessionId: string } }>(
+    "/api/charging-sessions/:sessionId/curve",
+    async (request): Promise<ChargingCurvePointDto[]> => {
+      const rows = await ctx.db
+        .select()
+        .from(chargingCurvePoints)
+        .where(eq(chargingCurvePoints.sessionId, Number(request.params.sessionId)))
+        .orderBy(chargingCurvePoints.ts)
+        .limit(5000);
+      return rows.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc }));
     },
   );
 

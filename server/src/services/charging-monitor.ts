@@ -1,6 +1,11 @@
 import { eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { chargingSessions, wallboxReadings, wallboxes } from "../db/schema.js";
+import {
+  chargingCurvePoints,
+  chargingSessions,
+  wallboxReadings,
+  wallboxes,
+} from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import {
   LiveSessionData,
@@ -195,6 +200,7 @@ export class ChargingMonitor {
           maxPowerKw: power ?? 0,
         });
         this.log(`charging session started for ${vehicleId}`);
+        await this.recordCurve(inserted[0]!.id, session);
         return;
       }
 
@@ -220,6 +226,7 @@ export class ChargingMonitor {
           rawFinal: session,
         })
         .where(eq(chargingSessions.id, open.id));
+      await this.recordCurve(open.id, session);
       return;
     }
 
@@ -231,6 +238,28 @@ export class ChargingMonitor {
       this.openSessions.delete(vehicleId);
       this.log(`charging session ended for ${vehicleId}`);
     }
+  }
+
+  /**
+   * Stores curve samples: the subscription's chart points when present,
+   * plus the current reading. Repeats of the same timestamp are ignored.
+   */
+  private async recordCurve(sessionId: number, session: LiveSessionData): Promise<void> {
+    const samples = [...(session.chart ?? [])];
+    const power = num(session.power?.value);
+    const soc = num(session.soc?.value);
+    if (power != null || soc != null) {
+      samples.push({
+        ts: session.power?.updatedAt ?? session.soc?.updatedAt ?? new Date().toISOString(),
+        powerKw: power,
+        soc,
+      });
+    }
+    const rows = samples
+      .filter((s) => !Number.isNaN(Date.parse(s.ts)))
+      .map((s) => ({ sessionId, ts: new Date(s.ts), powerKw: s.powerKw, soc: s.soc }));
+    if (rows.length === 0) return;
+    await this.db.insert(chargingCurvePoints).values(rows).onConflictDoNothing();
   }
 
   private async pollWallboxes(): Promise<void> {

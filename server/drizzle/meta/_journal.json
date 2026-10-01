@@ -22,6 +22,13 @@
       "when": 1790818350913,
       "tag": "0002_drive_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790818490093,
+      "tag": "0003_charging_curve",
+      "breakpoints": true
     }
   ]
 }

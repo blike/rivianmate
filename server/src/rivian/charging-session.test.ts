@@ -36,6 +36,25 @@ describe("mapChargingSession", () => {
     expect(session!.isFreeSession).toBe(false);
     expect(session!.startTime).toBe("2026-08-18T12:00:00Z");
     expect(isActiveSession(session)).toBe(true);
+    expect(session!.chart).toEqual([]);
+  });
+
+  it("keeps timestamped chart points as curve samples", () => {
+    const session = mapChargingSession(
+      {
+        liveData: { powerKW: 11 },
+        chartData: [
+          { soc: "54", powerKW: 10.5, startTime: "2026-08-18T12:00:00Z" },
+          { soc: { value: 55 }, powerKW: { value: 11 }, startTime: { value: "2026-08-18T12:01:00Z" } },
+          { soc: 56, powerKW: 11 },
+        ],
+      },
+      now,
+    );
+    expect(session!.chart).toEqual([
+      { ts: "2026-08-18T12:00:00Z", powerKw: 10.5, soc: 54 },
+      { ts: "2026-08-18T12:01:00Z", powerKw: 11, soc: 55 },
+    ]);
   });
 
   it("maps value envelopes and keeps their timestamps", () => {

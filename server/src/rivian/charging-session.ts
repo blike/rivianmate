@@ -1,4 +1,8 @@
-import type { LiveSessionData, LiveSessionValueRecord } from "./types.js";
+import type {
+  ChargingCurveSample,
+  LiveSessionData,
+  LiveSessionValueRecord,
+} from "./types.js";
 
 type Leaf = unknown;
 
@@ -74,6 +78,14 @@ export function mapChargingSession(
     socLeaf = chart[i]?.soc;
   }
 
+  const curve: ChargingCurveSample[] = [];
+  for (const point of chart) {
+    const at = asString(point?.startTime);
+    if (!at || Number.isNaN(Date.parse(at))) continue;
+    const sample = { ts: at, powerKw: asNumber(point?.powerKW), soc: asNumber(point?.soc) };
+    if (sample.powerKw != null || sample.soc != null) curve.push(sample);
+  }
+
   const power = asNumber(live.powerKW);
   const chargerState = asString(live.vehicleChargerState);
   return {
@@ -104,5 +116,6 @@ export function mapChargingSession(
       ts,
     ),
     vehicleChargerState: record(chargerState, live.vehicleChargerState, ts),
+    chart: curve,
   };
 }

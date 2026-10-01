@@ -11,6 +11,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const appSettings = pgTable("app_settings", {
@@ -177,4 +178,19 @@ export const chargingSessions = pgTable(
   (t) => [
     index("charging_vehicle_started_idx").on(t.vehicleId, t.startedAt),
   ],
+);
+
+/** Observed power/SoC samples per charging session, for the curve chart. */
+export const chargingCurvePoints = pgTable(
+  "charging_curve_points",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    sessionId: bigint("session_id", { mode: "number" })
+      .notNull()
+      .references(() => chargingSessions.id, { onDelete: "cascade" }),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    powerKw: real("power_kw"),
+    soc: real("soc"),
+  },
+  (t) => [uniqueIndex("charging_curve_session_ts_idx").on(t.sessionId, t.ts)],
 );

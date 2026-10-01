@@ -80,6 +80,12 @@ export interface DriveDetailDto extends DriveDto {
   points: LocationPointDto[];
 }
 
+export interface ChargingCurvePointDto {
+  ts: string;
+  powerKw: number | null;
+  soc: number | null;
+}
+
 export interface ChargingSessionDto {
   id: number;
   vehicleId: string;

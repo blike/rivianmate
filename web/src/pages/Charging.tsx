@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useLiveCharging, useUnits } from "../api/hooks.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
+import { TrendChart } from "../components/TrendChart.js";
 import { fmt, fmtDuration, titleCase } from "../lib/state.js";
 
 export function Charging(props: { vehicleId: string }) {
@@ -32,6 +33,24 @@ export function Charging(props: { vehicleId: string }) {
   });
 
   const isLive = live?.vehicleChargerState?.value === "charging_active";
+
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const curveSession =
+    sessions?.find((s) => s.id === selectedSessionId) ?? sessions?.[0];
+  const { data: curve } = useQuery({
+    queryKey: ["chargingCurve", curveSession?.id],
+    queryFn: () => api.chargingCurve(curveSession!.id),
+    enabled: curveSession != null,
+    refetchInterval: curveSession && !curveSession.endedAt ? 30_000 : false,
+  });
+  const curveData = useMemo(() => {
+    const first = curve?.[0] ? Date.parse(curve[0].ts) : 0;
+    return (curve ?? []).map((p) => ({
+      minutes: (Date.parse(p.ts) - first) / 60_000,
+      power: p.powerKw,
+      soc: p.soc,
+    }));
+  }, [curve]);
 
   return (
     <div className="space-y-4">
@@ -76,7 +95,13 @@ export function Charging(props: { vehicleId: string }) {
               </thead>
               <tbody>
                 {sessions.map((s) => (
-                  <tr key={s.id} className="border-t border-[var(--border)]">
+                  <tr
+                    key={s.id}
+                    onClick={() => setSelectedSessionId(s.id)}
+                    className={`cursor-pointer border-t border-[var(--border)] hover:bg-[var(--surface-2)] ${
+                      curveSession?.id === s.id ? "bg-[var(--surface-2)]" : ""
+                    }`}
+                  >
                     <td className="py-2">
                       {new Date(s.startedAt).toLocaleString([], {
                         month: "short",
@@ -124,6 +149,36 @@ export function Charging(props: { vehicleId: string }) {
           </div>
         )}
       </Panel>
+
+      {curveSession && (
+        <Panel
+          title={`Charging curve · ${new Date(curveSession.startedAt).toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}`}
+        >
+          {curveData.length > 1 ? (
+            <TrendChart
+              data={curveData}
+              xKey="minutes"
+              height={240}
+              xFormatter={(m) => `${fmt(m, 0)} min`}
+              rightDomain={[0, 100]}
+              series={[
+                { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
+                { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
+              ]}
+            />
+          ) : (
+            <p className="py-6 text-center text-sm text-[var(--text-muted)]">
+              No curve recorded for this session. Curves are kept for sessions charged
+              while RivianMate was running.
+            </p>
+          )}
+        </Panel>
+      )}
 
       {wallboxes && wallboxes.length > 0 && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

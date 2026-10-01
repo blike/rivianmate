@@ -1,4 +1,5 @@
 import type {
+  ChargingCurvePointDto,
   ChargingSessionDto,
   ConnectResponse,
   DriveDetailDto,
@@ -15,6 +16,7 @@ import type {
 } from "@server/api-types.js";
 
 export type {
+  ChargingCurvePointDto,
   RivianDiagnosticsResponse,
   UnitPreferences,
   ChargingSessionDto,
@@ -118,4 +120,6 @@ export const api = {
       body: JSON.stringify({ cost }),
     }),
   wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
+  chargingCurve: (sessionId: number) =>
+    request<ChargingCurvePointDto[]>(`/api/charging-sessions/${sessionId}/curve`),
 };

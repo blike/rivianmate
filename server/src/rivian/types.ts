@@ -68,6 +68,13 @@ export interface LiveSessionValueRecord {
   updatedAt: string;
 }
 
+/** One observed point on a session's charging curve. */
+export interface ChargingCurveSample {
+  ts: string;
+  powerKw: number | null;
+  soc: number | null;
+}
+
 export interface LiveSessionData {
   chargerId: string | null;
   currentCurrency: string | null;
@@ -86,6 +93,8 @@ export interface LiveSessionData {
   timeRemaining?: LiveSessionValueRecord | null;
   totalChargedEnergy?: LiveSessionValueRecord | null;
   vehicleChargerState?: LiveSessionValueRecord | null;
+  /** Curve points pushed by the chargingSession subscription. */
+  chart?: ChargingCurveSample[];
 }
 
 export interface Wallbox {
