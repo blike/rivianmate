@@ -45,6 +45,9 @@ export function TrendChart(props: {
   const hasRight = props.series.some((s) => s.right);
   const tick = { fill: "var(--text-muted)", fontSize: 11 };
   const xFormatter = props.xFormatter ?? ((x: number) => fmt(x, 0));
+  // Axis ticks use the series' precision so narrow ranges don't repeat labels.
+  const leftDigits = props.series.find((s) => !s.right)?.digits ?? 0;
+  const rightDigits = props.series.find((s) => s.right)?.digits ?? 0;
 
   return (
     <div style={{ height: props.height ?? 220 }}>
@@ -76,7 +79,7 @@ export function TrendChart(props: {
             tickLine={false}
             axisLine={false}
             width={44}
-            tickFormatter={(v: number) => fmt(v, 0)}
+            tickFormatter={(v: number) => fmt(v, leftDigits)}
           />
           {hasRight && (
             <YAxis
@@ -87,7 +90,7 @@ export function TrendChart(props: {
               tickLine={false}
               axisLine={false}
               width={40}
-              tickFormatter={(v: number) => fmt(v, 0)}
+              tickFormatter={(v: number) => fmt(v, rightDigits)}
             />
           )}
           <Tooltip

@@ -178,7 +178,7 @@ export function Charging(props: { vehicleId: string }) {
               data={curveData}
               xKey="minutes"
               height={240}
-              xFormatter={(m) => `${fmt(m, 0)} min`}
+              xFormatter={(m) => `${fmt(m, curveData.at(-1)!.minutes < 10 ? 1 : 0)} min`}
               rightDomain={[0, 100]}
               series={[
                 { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },

@@ -26,11 +26,15 @@ const TICK_MS = 2_000;
 
 type Phase = "parked" | "driving" | "arriving" | "charging";
 
-/** Ticks per phase: park 10 → drive 60 → park 10 → charge 60 → repeat. */
+/**
+ * Ticks per phase: park 10 → drive 60 → park 100 → charge 60 → repeat.
+ * The stop after a drive (200 s) outlasts the drive detector's 3-minute
+ * park grace, so mock drives actually complete.
+ */
 const PHASE_TICKS: Record<Phase, number> = {
   parked: 10,
   driving: 60,
-  arriving: 10,
+  arriving: 100,
   charging: 60,
 };
 
