@@ -9,6 +9,7 @@ import {
   StatCard,
   TirePanel,
 } from "../components/panels.js";
+import { FreshnessBadge } from "../components/FreshnessBadge.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { fmt, location, nv, sv, titleCase } from "../lib/state.js";
 
@@ -29,7 +30,7 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-medium">
           {props.vehicle?.name ?? props.vehicle?.model ?? "Vehicle"}
           {props.vehicle?.modelYear && (
@@ -38,7 +39,8 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
             </span>
           )}
         </h2>
-        <span className="text-xs text-[var(--text-muted)]">
+        <span className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+          <FreshnessBadge state={state} />
           {props.vehicle?.vin}
         </span>
       </div>
