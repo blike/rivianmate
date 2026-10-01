@@ -125,12 +125,13 @@ export class VehicleMonitor {
     };
   }
 
-  /** Start monitoring if stored credentials exist; no-op otherwise. */
-  async startIfConfigured(): Promise<boolean> {
+  /** Start monitoring if usable stored credentials exist. */
+  async startIfConfigured(): Promise<"started" | "no_account" | "needs_login"> {
     const account = await this.tokenStore.load();
-    if (!account || account.authState !== "ok") return false;
+    if (!account) return "no_account";
+    if (account.authState !== "ok") return "needs_login";
     await this.start(this.createConnection(account.tokens));
-    return true;
+    return "started";
   }
 
   /** Start with a freshly authenticated connection (from the connect flow). */

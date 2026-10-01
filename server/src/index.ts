@@ -79,14 +79,27 @@ async function main(): Promise<void> {
 
   const app = await buildApp(ctx);
 
-  const started = await monitor.startIfConfigured().catch((err) => {
-    console.error(`Failed to start Rivian monitor: ${(err as Error).message}`);
-    return false;
-  });
-  if (started) console.log("Rivian monitor started from stored credentials");
   if (config.MOCK_RIVIAN) console.log("MOCK_RIVIAN enabled (OTP is 000000)");
 
+  // Listen first: the API and healthcheck must not wait on Rivian.
   await app.listen({ port: config.PORT, host: config.HOST });
+
+  void monitor
+    .startIfConfigured()
+    .then((result) => {
+      if (result === "started") {
+        console.log("Rivian monitor started from stored credentials");
+      } else if (result === "needs_login") {
+        console.log("Rivian session expired; sign in again from the web UI");
+      } else {
+        console.log(
+          "No usable Rivian account stored (not connected yet, or APP_SECRET changed); connect from the web UI",
+        );
+      }
+    })
+    .catch((err) => {
+      console.error(`Failed to start Rivian monitor: ${(err as Error).message}`);
+    });
 
   const shutdown = async () => {
     await monitor.stop();

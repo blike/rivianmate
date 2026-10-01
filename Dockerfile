@@ -20,6 +20,8 @@ COPY --from=build /app/server/dist ./dist
 COPY --from=build /app/server/drizzle ./drizzle
 COPY --from=build /app/web/dist ./web-dist
 EXPOSE 4000
+# 127.0.0.1, not localhost: in Alpine "localhost" may resolve to ::1 first,
+# but the server listens on IPv4 only.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
-  CMD wget -qO- http://localhost:4000/api/status || exit 1
+  CMD wget -qO /dev/null http://127.0.0.1:${PORT}/api/status || exit 1
 CMD ["node", "dist/index.js"]
