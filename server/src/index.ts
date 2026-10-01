@@ -7,10 +7,12 @@ import type { AppContext, RivianFactory } from "./context.js";
 import { TokenCrypto, hashPassword } from "./crypto.js";
 import { createDb, runMigrations } from "./db/client.js";
 import { appSettings } from "./db/schema.js";
+import { passwordProblem } from "./password-policy.js";
 import { RivianClient, type RivianApi } from "./rivian/client.js";
 import { RivianGovernor } from "./rivian/governor.js";
 import { MockRivian } from "./rivian/mock.js";
 import { RivianSubscriptionManager } from "./rivian/subscription.js";
+import { getPasswordHash } from "./routes/auth.js";
 import { LiveBus } from "./services/live-bus.js";
 import { TokenStore } from "./services/token-store.js";
 import { VehicleMonitor } from "./services/vehicle-monitor.js";
@@ -67,7 +69,9 @@ async function main(): Promise<void> {
   };
 
   // Optional: seed the app password from the environment on first boot.
-  if (config.APP_PASSWORD) {
+  if (config.APP_PASSWORD && (await getPasswordHash(ctx)) === null) {
+    const problem = passwordProblem(config.APP_PASSWORD);
+    if (problem) throw new Error(`APP_PASSWORD is too weak: ${problem}`);
     await db
       .insert(appSettings)
       .values({

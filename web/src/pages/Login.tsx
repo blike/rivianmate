@@ -22,7 +22,8 @@ export function Login(props: { onDone: () => void }) {
 
   return (
     <AuthCard
-      title="Sign in"
+      title="Welcome back"
+      subtitle="Enter your app password to continue."
       error={error}
       busy={busy}
       submitLabel="Sign in"
@@ -33,6 +34,7 @@ export function Login(props: { onDone: () => void }) {
         type="password"
         value={password}
         onChange={setPassword}
+        autoComplete="current-password"
         autoFocus
       />
     </AuthCard>

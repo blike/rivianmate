@@ -80,3 +80,59 @@ body {
     animation: none;
   }
 }
+
+/* Sign-in / onboarding screens: a faint brand glow behind the card. */
+.auth-backdrop {
+  background:
+    radial-gradient(40rem 24rem at 50% -6rem, rgb(245 197 24 / 0.09), transparent 70%),
+    radial-gradient(32rem 20rem at 50% 110%, rgb(57 135 229 / 0.06), transparent 70%);
+}
+
+.auth-enter {
+  animation: auth-enter 0.35s ease-out both;
+}
+
+@keyframes auth-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-enter {
+    animation: none;
+  }
+}
+
+.otp-caret {
+  animation: otp-blink 1s step-end infinite;
+}
+
+@keyframes otp-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.otp-shake {
+  animation: otp-shake 0.36s ease-in-out;
+}
+
+@keyframes otp-shake {
+  20%,
+  60% {
+    transform: translateX(-5px);
+  }
+  40%,
+  80% {
+    transform: translateX(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .otp-caret,
+  .otp-shake {
+    animation: none;
+  }
+}

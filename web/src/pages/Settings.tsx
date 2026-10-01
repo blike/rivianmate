@@ -10,7 +10,9 @@ import {
 } from "../api/hooks.js";
 import { LoadingScope, Skeleton } from "../components/loading.js";
 import { Panel, Row } from "../components/panels.js";
+import { passwordProblem } from "@server/password-policy.js";
 import { TextField } from "../components/AuthCard.js";
+import { PasswordHint } from "../components/PasswordHint.js";
 
 export function Settings() {
   const { data: status, refetch } = useStatus();
@@ -177,19 +179,22 @@ export function Settings() {
             type="password"
             value={current}
             onChange={setCurrent}
+            autoComplete="current-password"
           />
           <TextField
-            label="New password (min 8 characters)"
+            label="New password"
             type="password"
             value={next}
             onChange={setNext}
+            autoComplete="new-password"
+            hint={<PasswordHint password={next} />}
           />
           {message && (
             <p className="text-sm text-[var(--text-secondary)]">{message}</p>
           )}
           <button
             className="rounded-md bg-[var(--series-1)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            disabled={next.length < 8 || !current}
+            disabled={!current || passwordProblem(next) !== null}
             onClick={changePassword}
           >
             Change password

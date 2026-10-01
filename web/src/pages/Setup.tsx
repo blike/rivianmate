@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ApiError, api } from "../api/client.js";
+import { passwordProblem } from "@server/password-policy.js";
 import { AuthCard, TextField } from "../components/AuthCard.js";
+import { PasswordHint } from "../components/PasswordHint.js";
 
 export function Setup(props: { onDone: () => void }) {
   const [password, setPassword] = useState("");
@@ -9,7 +11,8 @@ export function Setup(props: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (password.length < 8) return setError("Use at least 8 characters");
+    const problem = passwordProblem(password);
+    if (problem) return setError(problem);
     if (password !== confirm) return setError("Passwords do not match");
     setBusy(true);
     setError(null);
@@ -27,6 +30,7 @@ export function Setup(props: { onDone: () => void }) {
     <AuthCard
       title="Welcome"
       subtitle="Choose a password to protect this app. You'll connect your Rivian account next."
+      step={{ current: 1, total: 3 }}
       error={error}
       busy={busy}
       submitLabel="Create password"
@@ -37,6 +41,8 @@ export function Setup(props: { onDone: () => void }) {
         type="password"
         value={password}
         onChange={setPassword}
+        autoComplete="new-password"
+        hint={<PasswordHint password={password} />}
         autoFocus
       />
       <TextField
@@ -44,6 +50,7 @@ export function Setup(props: { onDone: () => void }) {
         type="password"
         value={confirm}
         onChange={setConfirm}
+        autoComplete="new-password"
       />
     </AuthCard>
   );
