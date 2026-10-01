@@ -1,20 +1,21 @@
-import type { DriveDetailDto } from "@server/api-types.js";
+import type { DriveDetailDto, DriveDto, DrivePlaceDto } from "@server/api-types.js";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
-import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.js";
+import { ContentFrame, LoadingScope, Skeleton, SkeletonBlock, SkeletonRows } from "../components/loading.js";
 import { Panel, Row } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { averageSpeedKmh, driveProfile, rangeUsedKm } from "../lib/drives.js";
-import { fmt, fmtDuration, titleCase } from "../lib/state.js";
+import { fmt, fmtDuration, fmtSeconds, titleCase } from "../lib/state.js";
+import { useRemainingHeight } from "../lib/useRemainingHeight.js";
 
 /** A drive in progress refreshes this often, so its figures keep up. */
 const LIVE_REFRESH_MS = 15_000;
 
-const timeOfDay = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const dateTime = (iso: string) =>
+  new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export function Drives(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -26,24 +27,28 @@ export function Drives(props: { vehicleId: string }) {
     refetchInterval: (query) =>
       query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
   });
+  // The newest drive until one is picked.
+  const driveId = selectedId ?? drives?.[0]?.id ?? null;
 
   const {
     data: detail,
     isPending: detailPending,
     isPlaceholderData: showingPreviousDrive,
   } = useQuery({
-    queryKey: ["drive", selectedId],
-    queryFn: () => api.drive(selectedId!),
-    enabled: selectedId != null,
+    queryKey: ["drive", driveId],
+    queryFn: () => api.drive(driveId!),
+    enabled: driveId != null,
     refetchInterval: (query) => (query.state.data && !query.state.data.endedAt ? LIVE_REFRESH_MS : false),
-    // Keep the previous route on screen (dimmed) while the next one loads.
+    // Keep the previous drive on screen (dimmed) while the next one loads.
     placeholderData: keepPreviousData,
   });
+  const loading = drivesPending || (driveId != null && detailPending);
 
-  const trail = (detail?.points ?? []).map(
-    (p) => [p.lat, p.lon] as [number, number],
+  const trail = useMemo(
+    () => (detail?.points ?? []).map((p) => [p.lat, p.lon] as [number, number]),
+    [detail],
   );
-  const midpoint = trail[Math.floor(trail.length / 2)];
+  const lastPoint = trail.at(-1);
 
   const profile = useMemo(
     () =>
@@ -57,21 +62,89 @@ export function Drives(props: { vehicleId: string }) {
     [detail, u],
   );
 
-  return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  // The drives table fills the rest of the screen and scrolls inside; the
+  // gap leaves room for the panel's padding and the page's bottom margin.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const tableHeight = useRemainingHeight(tableRef, 58, 0.4);
+
+  if (!drivesPending && !drives?.length) {
+    return (
       <Panel title="Drives">
-        {drivesPending ? (
-          <SkeletonRows rows={8} />
-        ) : !drives?.length ? (
-          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
-            No drives recorded yet.
-          </p>
-        ) : (
-          <div className="max-h-[32rem] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-[var(--surface-1)] text-left text-xs text-[var(--text-muted)]">
+        <p className="py-6 text-center text-sm text-[var(--text-muted)]">No drives recorded yet.</p>
+      </Panel>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* The map stretches to the stats column's height. */}
+      <div
+        className={`grid grid-cols-1 gap-4 transition-opacity lg:grid-cols-2 ${
+          showingPreviousDrive ? "opacity-50" : ""
+        }`}
+      >
+        <div className="flex flex-col gap-4">
+          <Panel title={detail && !detail.endedAt ? "Drive · in progress" : "Drive"} className="flex-1">
+            <LoadingScope loading={loading}>
+              <DriveSummary drive={detail} loading={loading} />
+            </LoadingScope>
+          </Panel>
+          <Panel title="Speed and elevation">
+            <ContentFrame
+              height={160}
+              loading={loading}
+              empty={profile.length < 2}
+              emptyText="No speed or altitude readings for this drive."
+            >
+              <TrendChart
+                data={profile}
+                xKey="minutes"
+                height={160}
+                xFormatter={formatMinutes(profile.at(-1)?.minutes ?? 0)}
+                series={[
+                  { key: "speed", label: "Speed", color: "var(--series-1)", unit: u.speedUnit, digits: 0 },
+                  { key: "elevation", label: "Elevation", color: "var(--series-2)", mark: "line", right: true, unit: u.elevationUnit, digits: 0 },
+                ]}
+              />
+            </ContentFrame>
+          </Panel>
+        </div>
+
+        <Panel title="Route" className="flex min-h-[22rem] flex-col">
+          <div className="relative min-h-[18rem] flex-1 overflow-hidden rounded-lg">
+            {loading ? (
+              <SkeletonBlock height="100%" />
+            ) : detail && lastPoint ? (
+              <div className="absolute inset-0">
+                <VehicleMap
+                  key={detail.id}
+                  lat={lastPoint[0]}
+                  lon={lastPoint[1]}
+                  trail={trail}
+                  height="100%"
+                  follow={false}
+                />
+              </div>
+            ) : (
+              <p className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+                No GPS points recorded for this drive.
+              </p>
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="Drives">
+        <div ref={tableRef} className="overflow-auto" style={{ maxHeight: tableHeight }}>
+          {drivesPending ? (
+            <SkeletonRows rows={8} />
+          ) : (
+            <table className="w-full min-w-[52rem] text-sm">
+              <thead className="sticky top-0 z-10 bg-[var(--surface-1)] text-left text-xs text-[var(--text-muted)]">
                 <tr>
                   <th className="pb-2 font-normal">Started</th>
+                  <th className="pb-2 font-normal">From</th>
+                  <th className="pb-2 font-normal">To</th>
                   <th className="pb-2 font-normal">Duration</th>
                   <th className="pb-2 text-right font-normal">Distance</th>
                   <th className="pb-2 text-right font-normal">Battery</th>
@@ -79,115 +152,76 @@ export function Drives(props: { vehicleId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {drives.map((d) => {
-                  const used =
-                    d.startBattery != null && d.endBattery != null
-                      ? d.startBattery - d.endBattery
-                      : null;
-                  return (
-                    <tr
-                      key={d.id}
-                      onClick={() => setSelectedId(d.id)}
-                      className={`cursor-pointer border-t border-[var(--border)] hover:bg-[var(--surface-2)] ${
-                        selectedId === d.id ? "bg-[var(--surface-2)]" : ""
-                      }`}
-                    >
-                      <td className="py-2">
-                        {new Date(d.startedAt).toLocaleString([], {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                        {!d.endedAt && (
-                          <span className="ml-2 text-xs text-[var(--status-good)]">
-                            in progress
-                          </span>
-                        )}
-                        {d.destination?.name && (
-                          <div className="max-w-[16rem] truncate text-xs text-[var(--text-muted)]">
-                            To {d.destination.name}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2">{fmtDuration(d.startedAt, d.endedAt)}</td>
-                      <td className="py-2 text-right tabular-nums">
-                        {u.formatDistance(d.distanceKm, 1)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {used != null ? `-${fmt(used, 1)}%` : "—"}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {u.formatEfficiency(d.distanceKm, d.energyKwh)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {drives!.map((d) => (
+                  <DriveRow key={d.id} drive={d} selected={driveId === d.id} onSelect={() => setSelectedId(d.id)} />
+                ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </Panel>
-
-      <Panel title={detail && !detail.endedAt ? "Route · in progress" : "Route"}>
-        {selectedId == null ? (
-          <p className="py-10 text-center text-sm text-[var(--text-muted)]">
-            Select a drive to see its route.
-          </p>
-        ) : (
-          <div className={`transition-opacity ${showingPreviousDrive ? "opacity-50" : ""}`}>
-            <LoadingScope loading={detailPending}>
-              <DriveStats drive={detail} />
-            </LoadingScope>
-            <ContentFrame
-              height="28rem"
-              loading={detailPending}
-              empty={!midpoint}
-              emptyText="No GPS points recorded for this drive."
-            >
-              {detail && midpoint && (
-                <VehicleMap
-                  key={detail.id}
-                  lat={midpoint[0]}
-                  lon={midpoint[1]}
-                  trail={trail}
-                  height="28rem"
-                  follow={false}
-                />
-              )}
-            </ContentFrame>
-            {detail && detail.gaps.length > 0 && (
-              <p className="mt-2 text-xs text-[var(--text-muted)]">
-                No readings{" "}
-                {detail.gaps.map((g) => `${timeOfDay(g.from)}–${timeOfDay(g.to)}`).join(", ")}, so the
-                route is a straight line there. Distance and energy come from the vehicle and stay
-                accurate.
-              </p>
-            )}
-          </div>
-        )}
-        {profile.length > 1 && (
-          <div className="mt-4">
-            <h3 className="mb-1 text-xs text-[var(--text-muted)]">Speed and elevation</h3>
-            <TrendChart
-              data={profile}
-              xKey="minutes"
-              height={180}
-              xFormatter={(m) => `${fmt(m, 0)} min`}
-              series={[
-                { key: "speed", label: "Speed", color: "var(--series-1)", unit: u.speedUnit, digits: 0 },
-                { key: "elevation", label: "Elevation", color: "var(--series-2)", mark: "line", right: true, unit: u.elevationUnit, digits: 0 },
-              ]}
-            />
-          </div>
-        )}
+          )}
+        </div>
       </Panel>
     </div>
   );
 }
 
-/** The drive's figures; for a drive in progress, its readings so far. */
-function DriveStats(props: { drive: DriveDetailDto | undefined }) {
+function DriveRow(props: { drive: DriveDto; selected: boolean; onSelect: () => void }) {
+  const u = useUnits();
+  const d = props.drive;
+  const used = d.startBattery != null && d.endBattery != null ? d.startBattery - d.endBattery : null;
+  return (
+    <tr
+      onClick={props.onSelect}
+      className={`cursor-pointer border-t border-[var(--border)] hover:bg-[var(--surface-2)] ${
+        props.selected ? "bg-[var(--surface-2)]" : ""
+      }`}
+    >
+      <td className="whitespace-nowrap py-2 pr-3">
+        {dateTime(d.startedAt)}
+        {!d.endedAt && <span className="ml-2 text-xs text-[var(--status-good)]">in progress</span>}
+      </td>
+      <td className="py-2 pr-3">
+        <PlaceCell place={d.start} />
+      </td>
+      <td className="py-2 pr-3">
+        {d.endedAt ? (
+          <PlaceCell place={d.end} />
+        ) : d.destination?.name ? (
+          <span className="block max-w-[14rem] truncate text-[var(--text-secondary)]" title={d.destination.name}>
+            Navigating to {d.destination.name}
+          </span>
+        ) : (
+          <span className="text-[var(--text-muted)]">—</span>
+        )}
+      </td>
+      <td className="whitespace-nowrap py-2">{fmtDuration(d.startedAt, d.endedAt)}</td>
+      <td className="py-2 text-right tabular-nums">{u.formatDistance(d.distanceKm, 1)}</td>
+      <td className="py-2 text-right tabular-nums">{used != null ? `-${fmt(used, 1)}%` : "—"}</td>
+      <td className="py-2 text-right tabular-nums">{u.formatEfficiency(d.distanceKm, d.energyKwh)}</td>
+    </tr>
+  );
+}
+
+/** "Home" or a short address (full address on hover); "—" until looked up. */
+function PlaceCell(props: { place: DrivePlaceDto | null }) {
+  if (!props.place) return <span className="text-[var(--text-muted)]">—</span>;
+  return (
+    <span
+      className={`block max-w-[14rem] truncate ${props.place.isHome ? "font-medium" : ""}`}
+      title={props.place.address ?? props.place.label}
+    >
+      {props.place.label}
+    </span>
+  );
+}
+
+/** Axis labels for minutes into a drive, with decimals for short ones so ticks don't repeat. */
+function formatMinutes(totalMinutes: number) {
+  return (m: number) =>
+    totalMinutes >= 120 ? fmtSeconds(m * 60) : `${fmt(m, totalMinutes < 10 ? 1 : 0)} min`;
+}
+
+/** When and where, then the drive's figures; for a drive in progress, its readings so far. */
+function DriveSummary(props: { drive: DriveDetailDto | undefined; loading: boolean }) {
   const u = useUnits();
   const d = props.drive;
   const live = d != null && !d.endedAt;
@@ -196,15 +230,24 @@ function DriveStats(props: { drive: DriveDetailDto | undefined }) {
     d?.startBattery != null && d.endBattery != null
       ? `${fmt(d.startBattery, 0)}% → ${fmt(d.endBattery, 0)}%`
       : "—";
+  const to = d?.end?.label ?? (live && d?.destination?.name ? `Navigating to ${d.destination.name}` : null);
 
   return (
-    <div className="mb-3">
-      {d?.destination && (
-        <p className="mb-2 truncate text-sm">
-          <span className="text-[var(--text-secondary)]">{live ? "Navigating to" : "Navigated to"}</span>{" "}
-          {d.destination.name ?? `${fmt(d.destination.lat, 4)}, ${fmt(d.destination.lon, 4)}`}
+    <div>
+      <div className="mb-3">
+        <p className="text-sm font-medium">
+          {props.loading || !d ? <Skeleton className="w-[12em]" /> : dateTime(d.startedAt)}
         </p>
-      )}
+        <p className="truncate text-sm text-[var(--text-secondary)]">
+          {props.loading || !d ? (
+            <Skeleton className="w-[16em]" />
+          ) : (
+            <>
+              {d.start?.label ?? "—"} → {to ?? (live ? "…" : "—")}
+            </>
+          )}
+        </p>
+      </div>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
         <Row label="Distance" value={u.formatDistance(d?.distanceKm, 1)} />
         <Row label="Duration" value={d ? fmtDuration(d.startedAt, d.endedAt) : "—"} />
@@ -214,15 +257,14 @@ function DriveStats(props: { drive: DriveDetailDto | undefined }) {
         <Row label="Range used" value={u.formatDistance(rangeUsed)} />
         <Row label="Avg speed" value={u.formatSpeed(d ? averageSpeedKmh(d.distanceKm, d.startedAt, d.endedAt) : null)} />
         <Row label="Top speed" value={u.formatSpeed(d?.maxSpeedKmh)} />
-        <Row label="Drive mode" value={d?.driveMode ? titleCase(d.driveMode) : "—"} />
         <Row label="Climb" value={u.formatElevation(d?.elevationGainM)} />
         <Row label="Descent" value={u.formatElevation(d?.elevationLossM)} />
+        <Row label="Drive mode" value={d?.driveMode ? titleCase(d.driveMode) : "—"} />
       </dl>
-      {live && (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">
-          Figures so far; they update every few seconds until the drive ends.
-        </p>
-      )}
+      {/* Space kept for the note, so the panel's height doesn't jump between drives. */}
+      <p className="mt-2 text-xs lg:min-h-8 text-[var(--text-muted)]">
+        {live && "Figures so far; they update every few seconds until the drive ends."}
+      </p>
     </div>
   );
 }

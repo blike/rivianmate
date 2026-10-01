@@ -11,6 +11,11 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
+  /** Look up drive start/end addresses with OpenStreetMap (on unless "false"/"0"). */
+  REVERSE_GEOCODING: z
+    .string()
+    .optional()
+    .transform((v) => v !== "0" && v !== "false"),
   APP_PASSWORD: z.string().optional(),
   NODE_ENV: z.string().default("development"),
   WEB_DIST: z.string().optional(),

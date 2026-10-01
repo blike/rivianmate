@@ -102,6 +102,13 @@ export const drives = pgTable(
     destinationName: text("destination_name"),
     destinationLat: doublePrecision("destination_lat"),
     destinationLon: doublePrecision("destination_lon"),
+    /** Short place names and full addresses for the start and end, looked up after the drive. */
+    startPlace: text("start_place"),
+    startAddress: text("start_address"),
+    endPlace: text("end_place"),
+    endAddress: text("end_address"),
+    /** When the lookup finished (found or not); null = still to do. */
+    placesCheckedAt: timestamp("places_checked_at", { withTimezone: true }),
   },
   (t) => [index("drives_vehicle_started_idx").on(t.vehicleId, t.startedAt)],
 );
@@ -256,3 +263,14 @@ export const parallaxLatest = pgTable(
   },
   (t) => [primaryKey({ columns: [t.vehicleId, t.rvm] })],
 );
+
+/**
+ * Reverse-geocoding results by rounded coordinates (~11 m), so a place is
+ * looked up once. A null place means nothing was found there.
+ */
+export const geocodeCache = pgTable("geocode_cache", {
+  key: text("key").primaryKey(),
+  place: text("place"),
+  address: text("address"),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});

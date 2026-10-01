@@ -49,6 +49,8 @@ interface PerVehicle {
  */
 export class DriveDetector {
   private perVehicle = new Map<string, PerVehicle>();
+  /** A drive was closed (e.g. to look up its places). */
+  onDriveEnded?: (driveId: number) => void;
 
   constructor(
     private readonly db: Db,
@@ -236,6 +238,7 @@ export class DriveDetector {
         distanceKm,
       })
       .where(and(eq(drives.id, driveId), isNull(drives.endedAt)));
+    this.onDriveEnded?.(driveId);
   }
 
   /** Ends a drive at its last recorded point (its final readings are unknown). */
@@ -253,6 +256,7 @@ export class DriveDetector {
         elevationLossM: elevation?.lossM ?? null,
       })
       .where(and(eq(drives.id, drive.id), isNull(drives.endedAt)));
+    this.onDriveEnded?.(drive.id);
   }
 
   private async lastPoint(driveId: number) {

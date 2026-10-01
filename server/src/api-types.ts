@@ -108,12 +108,21 @@ export interface DriveDto {
   driveMode: string | null;
   /** Where navigation was headed, if the vehicle was navigating. */
   destination: { name: string | null; lat: number; lon: number } | null;
+  /** Where it started and ended: "Home", or an address once looked up. */
+  start: DrivePlaceDto | null;
+  end: DrivePlaceDto | null;
+}
+
+export interface DrivePlaceDto {
+  /** "Home" or a short address, e.g. "306 West Willow Street, Normal". */
+  label: string;
+  /** Full address, when looked up. */
+  address: string | null;
+  isHome: boolean;
 }
 
 export interface DriveDetailDto extends DriveDto {
   points: LocationPointDto[];
-  /** Stretches with no readings (e.g. RivianMate offline), drawn as straight lines. */
-  gaps: { from: string; to: string }[];
 }
 
 export interface OtaTimelineDto {

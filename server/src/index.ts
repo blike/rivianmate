@@ -10,12 +10,14 @@ import { appSettings } from "./db/schema.js";
 import { passwordProblem } from "./password-policy.js";
 import { RivianClient, type RivianApi } from "./rivian/client.js";
 import { RivianGovernor } from "./rivian/governor.js";
-import { MockRivian } from "./rivian/mock.js";
+import { MockRivian, mockGeocode } from "./rivian/mock.js";
 import { RivianSubscriptionManager } from "./rivian/subscription.js";
 import { getPasswordHash } from "./routes/auth.js";
+import { DrivePlaces, nominatimGeocoder } from "./services/drive-places.js";
 import { LiveBus } from "./services/live-bus.js";
 import { TokenStore } from "./services/token-store.js";
 import { VehicleMonitor } from "./services/vehicle-monitor.js";
+import { loadVersion } from "./version.js";
 
 const START_RETRY_BASE_MS = 30_000;
 const START_RETRY_MAX_MS = 15 * 60_000;
@@ -54,6 +56,18 @@ async function main(): Promise<void> {
     bus,
     (tokens) => rivianFactory.createConnection(tokens),
     (msg) => console.log(`[monitor] ${msg}`),
+    config.REVERSE_GEOCODING
+      ? new DrivePlaces(
+          db,
+          // Mock drives are in made-up places; don't look them up.
+          config.MOCK_RIVIAN
+            ? mockGeocode
+            : nominatimGeocoder(
+                `RivianMate/${loadVersion().version ?? "dev"} (self-hosted; https://github.com/blike/rivianmate)`,
+              ),
+          (msg) => console.log(`[places] ${msg}`),
+        )
+      : undefined,
   );
 
   const ctx: AppContext = {

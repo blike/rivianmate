@@ -17,6 +17,7 @@ import {
 import { ChargeHistoryImporter } from "./charge-history.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { DriveDetector } from "./drive-detector.js";
+import type { DrivePlaces } from "./drive-places.js";
 import { OtaNotesTracker } from "./ota-notes.js";
 import { ParallaxStore } from "./parallax-store.js";
 import type { LiveBus } from "./live-bus.js";
@@ -108,12 +109,15 @@ export class VehicleMonitor {
     private readonly bus: LiveBus,
     private readonly createConnection: (tokens: RivianTokens) => RivianConnection,
     private readonly log: (msg: string) => void = console.log,
+    /** Fills in drives' start and end places; absent when lookups are off. */
+    private readonly drivePlaces?: DrivePlaces,
   ) {
     this.snapshotWriter = new SnapshotWriter(db);
     this.parallaxStore = new ParallaxStore(db, log);
     this.driveDetector = new DriveDetector(db, (vehicleId, driveId) =>
       this.snapshotWriter.setCurrentDrive(vehicleId, driveId),
     );
+    this.driveDetector.onDriveEnded = (driveId) => this.drivePlaces?.enqueue(driveId);
   }
 
   get isRunning(): boolean {
@@ -208,6 +212,7 @@ export class VehicleMonitor {
     }
 
     await this.driveDetector.closeDanglingDrives(this.vehicles.map((v) => v.id));
+    void this.drivePlaces?.start().catch((err: Error) => this.log(`drive places: ${err.message}`));
 
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
@@ -313,6 +318,7 @@ export class VehicleMonitor {
     if (this.scheduleTimer) clearInterval(this.scheduleTimer);
     this.scheduleTimer = undefined;
     this.driveDetector.stop();
+    this.drivePlaces?.stop();
     this.clearFallbackTimers();
     this.streamConnected = false;
     this.streamConnectedAt = null;
