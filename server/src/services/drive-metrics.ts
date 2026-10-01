@@ -1,4 +1,5 @@
 /** Pure calculations for drive summaries. */
+import { haversineKm } from "./state-utils.js";
 
 /**
  * Elevation gain/loss with hysteresis: GPS altitude jitters by a few metres,
@@ -43,3 +44,28 @@ export function driveEnergyKwh(
   if (!(dropPct > 0)) return null;
   return (dropPct / 100) * capacityKwh;
 }
+
+/** A stretch this long without a reading, across this much ground, was missed. */
+const GAP_MIN_MS = 2 * 60_000;
+const GAP_MIN_KM = 0.5;
+
+/**
+ * Stretches of a drive with no readings, e.g. while RivianMate was offline.
+ * Points are only written when the vehicle moves, so a long wait in
+ * traffic leaves no points but also no ground covered; only a jump in
+ * position counts.
+ */
+export function driveGaps(
+  points: readonly { ts: number; lat: number; lon: number }[],
+): { from: number; to: number }[] {
+  const gaps: { from: number; to: number }[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    if (b.ts - a.ts >= GAP_MIN_MS && haversineKm(a.lat, a.lon, b.lat, b.lon) >= GAP_MIN_KM) {
+      gaps.push({ from: a.ts, to: b.ts });
+    }
+  }
+  return gaps;
+}
+

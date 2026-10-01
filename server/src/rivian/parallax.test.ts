@@ -8,6 +8,8 @@ import {
   decodeColdWeather,
   decodeNetwork,
   decodeParkedEnergy,
+  decodeTripInfo,
+  decodeTripProgress,
   readProtoFields,
 } from "./parallax.js";
 
@@ -127,5 +129,50 @@ describe("decodeNetwork", () => {
 
   it("reports no Wi-Fi without an SSID", () => {
     expect(decodeNetwork(b64(message(4, [...int(1, 1)])))?.wifi).toBeNull();
+  });
+});
+
+// Field layout from a live navigation trip (location and address changed).
+describe("decodeTripInfo / decodeTripProgress", () => {
+  const stop = message(1, [
+    ...message(1, [...double(1, 40.4842), ...double(2, -88.9937)]),
+    ...message(2, [...double(1, 40.4842), ...double(2, -88.9937)]),
+    ...int(3, 2),
+    ...string(4, "100 Main St"),
+    ...string(5, "place-id"),
+    ...double(7, 63.27),
+  ]);
+  const tripInfo = b64([
+    ...string(1, "-6117841862812636333"),
+    ...message(2, [...message(1, [...double(1, 40.5), ...double(2, -89)]), ...float(3, 5.9)]),
+    ...message(3, [...double(1, 30837), ...double(2, 2242), ...message(3, stop), ...message(4, string(3, "Via I-5 S"))]),
+    ...double(5, 69.8),
+    ...double(6, 63.259),
+    ...double(7, 339440.3),
+  ]);
+
+  it("reads the destination, route length and predicted arrival", () => {
+    expect(decodeTripInfo(tripInfo)).toEqual({
+      destination: { name: "100 Main St", lat: 40.4842, lon: -88.9937 },
+      totalDistanceKm: 30.837,
+      totalDurationS: 2242,
+      arrivalSoc: 63.259,
+      arrivalRangeKm: 339.4403,
+    });
+  });
+
+  it("is null when not navigating", () => {
+    expect(decodeTripInfo("")).toBeNull();
+  });
+
+  it("reads ETA and what's left", () => {
+    const progress = b64([
+      ...message(1, int(1, 1790869380)),
+      ...message(2, int(1, 1790869380)),
+      ...double(4, 30506),
+      ...double(5, 2220),
+      ...message(6, [...message(1, [...double(1, 40.5), ...double(2, -89)]), ...float(2, 7.9)]),
+    ]);
+    expect(decodeTripProgress(progress)).toEqual({ etaMs: 1790869380000, remainingKm: 30.506, remainingS: 2220 });
   });
 });

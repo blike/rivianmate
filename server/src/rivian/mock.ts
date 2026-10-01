@@ -24,6 +24,8 @@ import {
   RVM_COLD_WEATHER,
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
+  RVM_TRIP_INFO,
+  RVM_TRIP_PROGRESS,
 } from "./parallax.js";
 import { b64, double, float, int, message, string } from "./protobuf-encode.js";
 
@@ -290,6 +292,36 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
   }
 
+  /** Navigating to the Rivian service center for the length of the drive. */
+  private emitTripInfo(): void {
+    const km = PHASE_TICKS.driving * 0.5;
+    // Driving uses 0.15% a tick; range is 4.4 km per %.
+    const arrivalSoc = Math.max(5, this.battery - PHASE_TICKS.driving * 0.15);
+    this.emitParallax(RVM_TRIP_INFO, [
+      ...string(1, "mock-trip"),
+      ...message(3, [
+        ...double(1, km * 1000),
+        ...double(2, PHASE_TICKS.driving * (TICK_MS / 1000)),
+        ...message(3, message(1, [
+          ...message(1, [...double(1, 40.4842), ...double(2, -88.9937)]),
+          ...string(4, "Rivian Service Center, Bloomington"),
+        ])),
+      ]),
+      ...double(6, arrivalSoc),
+      ...double(7, arrivalSoc * 4.4 * 1000),
+    ]);
+  }
+
+  private emitTripProgress(): void {
+    const ticksLeft = PHASE_TICKS.driving - this.tickInPhase;
+    const secondsLeft = ticksLeft * (TICK_MS / 1000);
+    this.emitParallax(RVM_TRIP_PROGRESS, [
+      ...message(1, int(1, Math.round(Date.now() / 1000 + secondsLeft))),
+      ...double(4, ticksLeft * 500),
+      ...double(5, secondsLeft),
+    ]);
+  }
+
   private emitBatteryState(): void {
     const warm = this.phase === "charging" ? 6 * Math.min(1, this.tickInPhase / 30) : 0;
     this.emitParallax(RVM_BATTERY_STATE, [
@@ -340,6 +372,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         vehicleMileage: v(Math.round(this.mileageM)),
         cabinClimateInteriorTemperature: v(21),
       });
+      this.emitTripProgress();
     } else if (this.phase === "charging") {
       this.battery = Math.min(85, this.battery + 0.12);
       this.sessionEnergyKwh += (11.5 * TICK_MS) / 3_600_000;
@@ -375,6 +408,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.tickInPhase = 0;
     switch (phase) {
       case "driving":
+        this.emitTripInfo();
         this.emit({
           gearStatus: v("drive"),
           powerState: v("go"),
@@ -385,6 +419,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         break;
       case "arriving":
       case "parked":
+        this.emitParallax(RVM_TRIP_INFO, []); // navigation ended
         this.emit({
           gearStatus: v("park"),
           powerState: v("standby"),

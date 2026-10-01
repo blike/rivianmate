@@ -94,6 +94,14 @@ export const drives = pgTable(
     batteryCapacityKwh: real("battery_capacity_kwh"),
     elevationGainM: real("elevation_gain_m"),
     elevationLossM: real("elevation_loss_m"),
+    /** Range the vehicle estimated at the start and end. */
+    startRangeKm: real("start_range_km"),
+    endRangeKm: real("end_range_km"),
+    driveMode: text("drive_mode"),
+    /** Where the vehicle's navigation was headed, when it was navigating. */
+    destinationName: text("destination_name"),
+    destinationLat: doublePrecision("destination_lat"),
+    destinationLon: doublePrecision("destination_lon"),
   },
   (t) => [index("drives_vehicle_started_idx").on(t.vehicleId, t.startedAt)],
 );

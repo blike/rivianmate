@@ -9,14 +9,26 @@ import {
   RVM_COLD_WEATHER,
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
+  RVM_TRIP_INFO,
+  RVM_TRIP_PROGRESS,
   decodeBatteryState,
   decodeColdWeather,
   decodeNetwork,
   decodeParkedEnergy,
+  decodeTripInfo,
+  decodeTripProgress,
 } from "../rivian/parallax.js";
 
 /** Topics kept for the insights view (the charging graph is stored as curves). */
-const STORED_RVMS = new Set([RVM_BATTERY_STATE, RVM_CHARGE_BREAKDOWN, RVM_COLD_WEATHER, RVM_PARKED_ENERGY, RVM_NETWORK]);
+const STORED_RVMS = new Set([
+  RVM_BATTERY_STATE,
+  RVM_CHARGE_BREAKDOWN,
+  RVM_COLD_WEATHER,
+  RVM_PARKED_ENERGY,
+  RVM_NETWORK,
+  RVM_TRIP_INFO,
+  RVM_TRIP_PROGRESS,
+]);
 /** Rivian's message time; seconds or milliseconds since the epoch. */
 function messageTime(timestamp: number | null): Date | null {
   if (!timestamp) return null;
@@ -82,12 +94,24 @@ export class ParallaxStore {
     const cold = read(RVM_COLD_WEATHER, decodeColdWeather);
     const parked = read(RVM_PARKED_ENERGY, decodeParkedEnergy);
     const network = read(RVM_NETWORK, decodeNetwork);
+    // Progress outlives the trip, so navigation needs an active trip_info.
+    const trip = read(RVM_TRIP_INFO, decodeTripInfo);
+    const progress = trip ? read(RVM_TRIP_PROGRESS, decodeTripProgress) : null;
     return {
       cellTemps: awake?.value.cellTemps ? { ...awake.value.cellTemps, at: awake.at } : null,
       cellTempsCurrent: battery?.value.cellTemps != null,
       coldWeather: cold ? { ...cold.value, at: cold.at } : null,
       parkedEnergy: parked && parked.value.length > 0 ? { windows: parked.value, at: parked.at } : null,
       connectivity: network ? { ...network.value, at: network.at } : null,
+      navigation: trip
+        ? {
+            ...trip.value,
+            etaAt: progress?.value.etaMs != null ? new Date(progress.value.etaMs).toISOString() : null,
+            remainingKm: progress?.value.remainingKm ?? trip.value.totalDistanceKm,
+            remainingS: progress?.value.remainingS ?? trip.value.totalDurationS,
+            at: progress?.at ?? trip.at,
+          }
+        : null,
     };
   }
 }

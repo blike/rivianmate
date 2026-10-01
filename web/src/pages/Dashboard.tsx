@@ -2,7 +2,7 @@ import type { VehicleDto } from "@server/api-types.js";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client.js";
 import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
-import { BatteryEnergyPanel, ConnectivityPanel } from "../components/InsightsPanels.js";
+import { BatteryEnergyPanel, ConnectivityPanel, NavigationCard } from "../components/InsightsPanels.js";
 import {
   ClimatePanel,
   ClosuresGrid,
@@ -23,7 +23,8 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
   const { data: insights, isPending: insightsPending } = useQuery({
     queryKey: ["insights", props.vehicleId],
     queryFn: () => api.insights(props.vehicleId),
-    refetchInterval: 60_000,
+    // Navigation progress changes by the second; other readings slowly.
+    refetchInterval: (query) => (query.state.data?.navigation ? 15_000 : 60_000),
   });
   const u = useUnits();
 
@@ -51,6 +52,8 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
           </h2>
           <FreshnessBadge state={state} />
         </div>
+
+        {insights?.navigation && <NavigationCard navigation={insights.navigation} />}
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatCard
