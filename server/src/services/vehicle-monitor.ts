@@ -12,6 +12,7 @@ import {
 } from "../rivian/types.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { DriveDetector } from "./drive-detector.js";
+import { OtaNotesTracker } from "./ota-notes.js";
 import type { LiveBus } from "./live-bus.js";
 import { SnapshotWriter } from "./snapshot-writer.js";
 import { mergeVehicleState, stateLocation, stateString } from "./state-utils.js";
@@ -62,6 +63,7 @@ export class VehicleMonitor {
   private snapshotWriter: SnapshotWriter;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
+  private otaNotes?: OtaNotesTracker;
   private wsDownTimer?: NodeJS.Timeout;
   private fallbackPollTimer?: NodeJS.Timeout;
   private running = false;
@@ -169,6 +171,14 @@ export class VehicleMonitor {
       if (superseded()) return;
     }
 
+    const otaNotes = new OtaNotesTracker(this.db, connection.api, this.log);
+    this.otaNotes = otaNotes;
+    for (const vehicle of this.vehicles) {
+      const state = this.states.get(vehicle.id);
+      if (state) await otaNotes.check(vehicle.id, state);
+      if (superseded()) return;
+    }
+
     const chargingMonitor = new ChargingMonitor(
       this.db,
       connection.api,
@@ -215,6 +225,7 @@ export class VehicleMonitor {
     this.connection?.stream.stop();
     this.chargingMonitor?.stop();
     this.chargingMonitor = undefined;
+    this.otaNotes = undefined;
     this.driveDetector.stop();
     this.clearFallbackTimers();
     this.streamConnected = false;
@@ -232,6 +243,10 @@ export class VehicleMonitor {
 
     const loc = stateLocation(cached);
     if (loc) this.chargingMonitor?.noteLocation(vehicleId, loc.latitude, loc.longitude);
+
+    if (changed.includes("otaCurrentVersion") || changed.includes("otaAvailableVersion")) {
+      void this.otaNotes?.check(vehicleId, cached);
+    }
 
     if (changed.includes("chargerStatus")) {
       this.chargingMonitor?.setPluggedIn(vehicleId, isPluggedIn(cached));

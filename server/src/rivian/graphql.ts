@@ -26,6 +26,8 @@ export const LOGIN_WITH_OTP = `mutation LoginWithOTP($email: String!, $otpCode: 
 
 export const GET_USER_INFO = `query getUserInfo { currentUser { __typename id vehicles { id vin name roles state createdAt updatedAt vehicle { __typename id vin modelYear make model vehicleState { supportedFeatures { __typename name status } } } } } }`;
 
+export const GET_OTA_UPDATE_DETAILS = `query getOTAUpdateDetails($vehicleId: String!) { getOTAUpdateDetails(vehicleId: $vehicleId) { releaseNotesUrl } }`;
+
 export const GET_REGISTERED_WALLBOXES = `query getRegisteredWallboxes { getRegisteredWallboxes { __typename wallboxId userId wifiId name linked latitude longitude chargingStatus power currentVoltage currentAmps softwareVersion model serialNumber maxAmps maxVoltage maxPower } }`;
 
 /**

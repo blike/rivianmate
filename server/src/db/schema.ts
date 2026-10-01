@@ -12,6 +12,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const appSettings = pgTable("app_settings", {
@@ -193,4 +194,18 @@ export const chargingCurvePoints = pgTable(
     soc: real("soc"),
   },
   (t) => [uniqueIndex("charging_curve_session_ts_idx").on(t.sessionId, t.ts)],
+);
+
+/** Release-notes links Rivian returned, per vehicle and software version. */
+export const otaReleaseNotes = pgTable(
+  "ota_release_notes",
+  {
+    vehicleId: text("vehicle_id")
+      .notNull()
+      .references(() => vehicles.id),
+    version: text("version").notNull(),
+    url: text("url").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.vehicleId, t.version] })],
 );

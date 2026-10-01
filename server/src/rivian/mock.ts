@@ -185,6 +185,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ];
   }
 
+  async getOtaReleaseNotesUrl(_vehicleId: string): Promise<string | null> {
+    return "https://example.com/rivian-release-notes/2024.14.00";
+  }
+
   // --- VehicleStateStream ---
 
   subscribe(vehicleId: string, callback: VehicleStateCallback): void {

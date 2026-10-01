@@ -26,6 +26,11 @@ export function Health(props: { vehicleId: string }) {
     queryFn: () => api.tirePressures(props.vehicleId, tireDays),
     refetchInterval: 15 * 60_000,
   });
+  const { data: ota } = useQuery({
+    queryKey: ["ota", props.vehicleId],
+    queryFn: () => api.otaTimeline(props.vehicleId),
+    refetchInterval: 15 * 60_000,
+  });
   const { data: battery } = useQuery({
     queryKey: ["batteryHealth", props.vehicleId],
     queryFn: () => api.batteryHealth(props.vehicleId),
@@ -170,6 +175,46 @@ export function Health(props: { vehicleId: string }) {
           </p>
         )}
       </Panel>
+      <Panel title="Software updates">
+        {ota?.available && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--accent)] px-3 py-2 text-sm">
+            <span>
+              Update available: <span className="font-medium tabular-nums">{ota.available}</span>
+            </span>
+            {ota.availableNotesUrl && <NotesLink href={ota.availableNotesUrl} />}
+          </div>
+        )}
+        {ota && ota.versions.length > 0 ? (
+          <ol className="text-sm">
+            {ota.versions.map((v, i) => (
+              <li
+                key={v.version}
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] py-2 first:border-t-0"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="font-medium tabular-nums">{v.version}</span>
+                  {i === 0 && v.version === ota.current && (
+                    <span className="rounded-full border border-[var(--border)] px-2 text-xs text-[var(--text-secondary)]">
+                      installed
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+                  First seen {new Date(v.firstSeen).toLocaleDateString()}
+                  {v.notesUrl && <NotesLink href={v.notesUrl} />}
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
+            No software versions recorded yet.
+          </p>
+        )}
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          Dates are when RivianMate first saw each version, so earlier updates may predate them.
+        </p>
+      </Panel>
     </div>
   );
 }
@@ -191,5 +236,18 @@ function WindowPicker(props: { value: number; onChange: (days: number) => void }
         </button>
       ))}
     </div>
+  );
+}
+
+function NotesLink(props: { href: string }) {
+  return (
+    <a
+      href={props.href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="text-xs text-[var(--series-1)] hover:underline"
+    >
+      Release notes ↗
+    </a>
   );
 }

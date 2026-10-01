@@ -29,6 +29,13 @@
       "when": 1790818490093,
       "tag": "0003_charging_curve",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790818800207,
+      "tag": "0004_ota_release_notes",
+      "breakpoints": true
     }
   ]
 }

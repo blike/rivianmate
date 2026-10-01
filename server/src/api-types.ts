@@ -80,6 +80,14 @@ export interface DriveDetailDto extends DriveDto {
   points: LocationPointDto[];
 }
 
+export interface OtaTimelineDto {
+  current: string | null;
+  available: string | null;
+  availableNotesUrl: string | null;
+  /** Installed versions, newest first; firstSeen is when RivianMate first saw it. */
+  versions: { version: string; firstSeen: string; notesUrl: string | null }[];
+}
+
 /** Average tire pressures per time bucket, in bar. */
 export interface TirePressurePointDto {
   ts: string;

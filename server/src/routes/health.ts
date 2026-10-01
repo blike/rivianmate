@@ -4,11 +4,13 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type {
   BatteryHealthDto,
+  OtaTimelineDto,
   PhantomDrainDto,
   TirePressurePointDto,
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
-import { chargingSessions, vehicleStateSnapshots } from "../db/schema.js";
+import { chargingSessions, otaReleaseNotes, vehicleStateSnapshots } from "../db/schema.js";
+import { stateString } from "../services/state-utils.js";
 import { capacityEstimates, phantomDrain } from "../services/health.js";
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
@@ -48,6 +50,46 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
         )
         .orderBy(asc(vehicleStateSnapshots.ts));
       return phantomDrain(rows);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/vehicles/:id/ota",
+    async (request): Promise<OtaTimelineDto> => {
+      const vehicleId = request.params.id;
+      const history = await ctx.db.execute<{ version: string; first_seen: string }>(sql`
+        SELECT version, MIN(ts) AS first_seen
+        FROM (
+          SELECT ts, data->'otaCurrentVersion'->>'value' AS version
+          FROM vehicle_state_snapshots
+          WHERE vehicle_id = ${vehicleId} AND data ? 'otaCurrentVersion'
+        ) v
+        WHERE version IS NOT NULL AND version NOT IN ('', '0.0.0')
+        GROUP BY version
+        ORDER BY first_seen DESC
+      `);
+      const notes = await ctx.db
+        .select({ version: otaReleaseNotes.version, url: otaReleaseNotes.url })
+        .from(otaReleaseNotes)
+        .where(eq(otaReleaseNotes.vehicleId, vehicleId));
+      const notesByVersion = new Map(notes.map((n) => [n.version, n.url]));
+
+      const state = ctx.monitor.getState(vehicleId) ?? {};
+      const current = stateString(state, "otaCurrentVersion");
+      const availableRaw = stateString(state, "otaAvailableVersion");
+      const available =
+        availableRaw && availableRaw !== "0.0.0" && availableRaw !== current ? availableRaw : null;
+
+      return {
+        current,
+        available,
+        availableNotesUrl: available ? (notesByVersion.get(available) ?? null) : null,
+        versions: history.map((h) => ({
+          version: h.version,
+          firstSeen: new Date(h.first_seen).toISOString(),
+          notesUrl: notesByVersion.get(h.version) ?? null,
+        })),
+      };
     },
   );
 

@@ -9,6 +9,7 @@ import type {
   HistoryPoint,
   LocationPointDto,
   RivianDiagnosticsResponse,
+  OtaTimelineDto,
   PhantomDrainDto,
   StatusResponse,
   TirePressurePointDto,
@@ -126,6 +127,7 @@ export const api = {
   wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
   phantomDrain: (vehicleId: string, days: number) =>
     request<PhantomDrainDto>(`/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}`),
+  otaTimeline: (vehicleId: string) => request<OtaTimelineDto>(`/api/vehicles/${vehicleId}/ota`),
   tirePressures: (vehicleId: string, days: number) =>
     request<TirePressurePointDto[]>(`/api/vehicles/${vehicleId}/health/tires?days=${days}`),
   batteryHealth: (vehicleId: string) =>
