@@ -8,6 +8,9 @@ describe("unitFormatter", () => {
     expect(u.formatSpeed(100)).toBe("62 mph");
     expect(u.formatTemperature(21)).toBe("70 °F");
     expect(u.formatDistance(null)).toBe("—");
+    expect(u.formatElevation(100)).toBe("328 ft");
+    expect(u.formatEfficiency(40, 10)).toBe("2.49 mi/kWh");
+    expect(u.formatEfficiency(40, 0)).toBe("—");
   });
 
   it("formats metric", () => {
@@ -15,5 +18,7 @@ describe("unitFormatter", () => {
     expect(u.formatDistance(100)).toBe("100 km");
     expect(u.formatSpeed(90)).toBe("90 km/h");
     expect(u.formatTemperature(21.4, 1)).toBe("21.4 °C");
+    expect(u.formatElevation(100)).toBe("100 m");
+    expect(u.formatEfficiency(40, 10)).toBe("25.0 kWh/100 km");
   });
 });

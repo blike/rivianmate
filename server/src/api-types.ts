@@ -56,6 +56,7 @@ export interface LocationPointDto {
   lon: number;
   speedKmh: number | null;
   bearing: number | null;
+  altitude: number | null;
 }
 
 export interface DriveDto {
@@ -69,6 +70,10 @@ export interface DriveDto {
   distanceKm: number | null;
   startBattery: number | null;
   endBattery: number | null;
+  /** Battery-% drop × reported pack capacity; null when not computable. */
+  energyKwh: number | null;
+  elevationGainM: number | null;
+  elevationLossM: number | null;
 }
 
 export interface DriveDetailDto extends DriveDto {

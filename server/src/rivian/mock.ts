@@ -239,6 +239,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         },
         gnssSpeed: v(25),
         gnssBearing: v(Math.round(this.heading)),
+        // Rolling hills so elevation features have something to show.
+        gnssAltitude: v(Math.round(240 + 35 * Math.sin(this.tickInPhase / 8))),
         batteryLevel: v(Number(this.battery.toFixed(1))),
         distanceToEmpty: v(Math.round(this.battery * 4.4)),
         vehicleMileage: v(Math.round(this.mileageM)),

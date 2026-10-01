@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
-import { Panel } from "../components/panels.js";
+import { Panel, Row } from "../components/panels.js";
+import { TrendChart } from "../components/TrendChart.js";
+import { withCumulativeKm } from "../lib/geo.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { fmt, fmtDuration } from "../lib/state.js";
 
@@ -26,6 +28,14 @@ export function Drives(props: { vehicleId: string }) {
     (p) => [p.lat, p.lon] as [number, number],
   );
 
+  const profile = useMemo(
+    () =>
+      withCumulativeKm(detail?.points ?? [])
+        .filter((p) => p.altitude != null)
+        .map((p) => ({ x: u.distance(p.km) ?? 0, elevation: u.elevation(p.altitude) })),
+    [detail, u],
+  );
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Panel title="Drives">
@@ -42,6 +52,7 @@ export function Drives(props: { vehicleId: string }) {
                   <th className="pb-2 font-normal">Duration</th>
                   <th className="pb-2 text-right font-normal">Distance</th>
                   <th className="pb-2 text-right font-normal">Battery</th>
+                  <th className="pb-2 text-right font-normal">Efficiency</th>
                 </tr>
               </thead>
               <tbody>
@@ -78,6 +89,9 @@ export function Drives(props: { vehicleId: string }) {
                       <td className="py-2 text-right tabular-nums">
                         {used != null ? `-${fmt(used, 1)}%` : "—"}
                       </td>
+                      <td className="py-2 text-right tabular-nums">
+                        {u.formatEfficiency(d.distanceKm, d.energyKwh)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -88,6 +102,16 @@ export function Drives(props: { vehicleId: string }) {
       </Panel>
 
       <Panel title="Route">
+        {detail && (
+          <dl className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+            <Row label="Distance" value={u.formatDistance(detail.distanceKm, 1)} />
+            <Row label="Energy" value={detail.energyKwh != null ? `${fmt(detail.energyKwh, 1)} kWh` : "—"} />
+            <Row label="Efficiency" value={u.formatEfficiency(detail.distanceKm, detail.energyKwh)} />
+            <Row label="Climb" value={u.formatElevation(detail.elevationGainM)} />
+            <Row label="Descent" value={u.formatElevation(detail.elevationLossM)} />
+            <Row label="Duration" value={fmtDuration(detail.startedAt, detail.endedAt)} />
+          </dl>
+        )}
         {detail && trail.length > 0 ? (
           <VehicleMap
             lat={trail[Math.floor(trail.length / 2)]![0]}
@@ -100,6 +124,18 @@ export function Drives(props: { vehicleId: string }) {
           <p className="py-10 text-center text-sm text-[var(--text-muted)]">
             Select a drive to see its route.
           </p>
+        )}
+        {profile.length > 1 && (
+          <div className="mt-4">
+            <h3 className="mb-1 text-xs text-[var(--text-muted)]">Elevation ({u.elevationUnit})</h3>
+            <TrendChart
+              data={profile}
+              xKey="x"
+              height={160}
+              xFormatter={(x) => `${fmt(x, 1)} ${u.distanceUnit}`}
+              series={[{ key: "elevation", label: "Elevation", color: "var(--series-2)", unit: u.elevationUnit, digits: 0 }]}
+            />
+          </div>
         )}
       </Panel>
     </div>

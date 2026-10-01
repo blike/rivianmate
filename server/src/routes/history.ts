@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -10,6 +10,8 @@ import type {
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { drives, locationPoints } from "../db/schema.js";
+import { driveElevation } from "../services/drive-detector.js";
+import { driveEnergyKwh } from "../services/drive-metrics.js";
 
 const METRIC_COLUMNS: Record<string, string> = {
   battery: "battery_level",
@@ -102,7 +104,39 @@ export async function historyRoutes(
         .where(eq(drives.vehicleId, request.params.id))
         .orderBy(desc(drives.startedAt))
         .limit(200);
-      return rows.map(toDriveDto);
+      // Drives recorded before elevation tracking: compute once and keep.
+      // Only drives that actually have altitude readings are candidates, so
+      // drives without any don't cost a query on every listing.
+      const pending = rows.filter((r) => r.endedAt && r.elevationGainM == null);
+      const withAltitude = pending.length
+        ? new Set(
+            (
+              await ctx.db
+                .selectDistinct({ driveId: locationPoints.driveId })
+                .from(locationPoints)
+                .where(
+                  and(
+                    inArray(locationPoints.driveId, pending.map((r) => r.id)),
+                    isNotNull(locationPoints.altitude),
+                  ),
+                )
+            ).map((r) => r.driveId),
+          )
+        : new Set<number | null>();
+      for (const row of pending) {
+        if (withAltitude.has(row.id)) {
+          const elevation = await driveElevation(ctx.db, row.id);
+          if (!elevation) continue;
+          row.elevationGainM = elevation.gainM;
+          row.elevationLossM = elevation.lossM;
+          await ctx.db
+            .update(drives)
+            .set({ elevationGainM: elevation.gainM, elevationLossM: elevation.lossM })
+            .where(eq(drives.id, row.id));
+        }
+      }
+      const fallback = await latestCapacityKwh(ctx, request.params.id);
+      return rows.map((row) => toDriveDto(row, fallback));
     },
   );
 
@@ -123,12 +157,27 @@ export async function historyRoutes(
         .where(eq(locationPoints.driveId, driveId))
         .orderBy(locationPoints.ts)
         .limit(10_000);
-      return { ...toDriveDto(drive), points: points.map(toLocationDto) };
+      const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
+      return { ...toDriveDto(drive, fallback), points: points.map(toLocationDto) };
     },
   );
 }
 
-function toDriveDto(row: typeof drives.$inferSelect): DriveDto {
+/** Latest pack capacity seen for the vehicle (for drives without one). */
+async function latestCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
+  const rows = await ctx.db.execute<{ kwh: number | null }>(sql`
+    SELECT (data->'batteryCapacity'->>'value')::float8 AS kwh
+    FROM vehicle_state_snapshots
+    WHERE vehicle_id = ${vehicleId} AND data ? 'batteryCapacity'
+    ORDER BY ts DESC LIMIT 1
+  `);
+  return rows[0]?.kwh ?? null;
+}
+
+function toDriveDto(
+  row: typeof drives.$inferSelect,
+  fallbackCapacityKwh: number | null,
+): DriveDto {
   return {
     id: row.id,
     startedAt: row.startedAt.toISOString(),
@@ -140,6 +189,13 @@ function toDriveDto(row: typeof drives.$inferSelect): DriveDto {
     distanceKm: row.distanceKm,
     startBattery: row.startBattery,
     endBattery: row.endBattery,
+    energyKwh: driveEnergyKwh(
+      row.startBattery,
+      row.endBattery,
+      row.batteryCapacityKwh ?? fallbackCapacityKwh,
+    ),
+    elevationGainM: row.elevationGainM,
+    elevationLossM: row.elevationLossM,
   };
 }
 
@@ -152,5 +208,6 @@ function toLocationDto(
     lon: row.lon,
     speedKmh: row.speedKmh,
     bearing: row.bearing,
+    altitude: row.altitude,
   };
 }

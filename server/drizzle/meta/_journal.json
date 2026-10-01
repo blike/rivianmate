@@ -15,6 +15,13 @@
       "when": 1790816769185,
       "tag": "0001_speed_mps_to_kmh",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790818350913,
+      "tag": "0002_drive_metrics",
+      "breakpoints": true
     }
   ]
 }

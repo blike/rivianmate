@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { drives, locationPoints } from "../db/schema.js";
 import type { VehicleState } from "../rivian/types.js";
+import { elevationChange } from "./drive-metrics.js";
 import {
   stateLocation,
   stateNumber,
@@ -117,6 +118,7 @@ export class DriveDetector {
         startLon: loc?.longitude,
         startMileageM: pv.startMileageM,
         startBattery: stateNumber(state, "batteryLevel"),
+        batteryCapacityKwh: stateNumber(state, "batteryCapacity"),
       })
       .returning({ id: drives.id });
     pv.driveId = inserted[0]!.id;
@@ -143,9 +145,13 @@ export class DriveDetector {
       distanceKm = await this.sumPointDistance(driveId);
     }
 
+    const elevation = await driveElevation(this.db, driveId);
+
     await this.db
       .update(drives)
       .set({
+        elevationGainM: elevation?.gainM ?? null,
+        elevationLossM: elevation?.lossM ?? null,
         endedAt: new Date(),
         endLat: loc?.latitude,
         endLon: loc?.longitude,
@@ -184,4 +190,19 @@ export class DriveDetector {
     }
     return pv;
   }
+}
+
+/** Elevation gain/loss from a drive's recorded GPS altitudes. */
+export async function driveElevation(
+  db: Db,
+  driveId: number,
+): Promise<{ gainM: number; lossM: number } | null> {
+  const rows = await db
+    .select({ altitude: locationPoints.altitude })
+    .from(locationPoints)
+    .where(eq(locationPoints.driveId, driveId))
+    .orderBy(locationPoints.ts);
+  return elevationChange(
+    rows.map((r) => r.altitude).filter((a): a is number => a != null),
+  );
 }

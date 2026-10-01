@@ -88,6 +88,10 @@ export const drives = pgTable(
     endMileageM: doublePrecision("end_mileage_m"),
     startBattery: real("start_battery"),
     endBattery: real("end_battery"),
+    /** Pack capacity Rivian reported when the drive started. */
+    batteryCapacityKwh: real("battery_capacity_kwh"),
+    elevationGainM: real("elevation_gain_m"),
+    elevationLossM: real("elevation_loss_m"),
   },
   (t) => [index("drives_vehicle_started_idx").on(t.vehicleId, t.startedAt)],
 );
