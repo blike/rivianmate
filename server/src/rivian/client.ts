@@ -13,14 +13,12 @@ import {
   LOGIN,
   LOGIN_WITH_OTP,
   VEHICLE_STATE_PROPERTIES,
-  buildLiveSessionQuery,
   buildVehicleStateQuery,
 } from "./graphql.js";
 import { RivianGovernor, parseRetryAfter } from "./governor.js";
 import {
   ChargeSessionSummary,
   ChargingSchedule,
-  LiveSessionData,
   LoginResult,
   RivianApiError,
   RivianAppSession,
@@ -62,7 +60,6 @@ export interface RivianApi {
     vehicleId: string,
     properties?: readonly string[],
   ): Promise<VehicleState>;
-  getLiveSessionData(vehicleId: string): Promise<LiveSessionData | null>;
   getRegisteredWallboxes(): Promise<Wallbox[]>;
   /** Release-notes link for the vehicle's current/pending OTA update. */
   getOtaReleaseNotesUrl(vehicleId: string): Promise<string | null>;
@@ -207,16 +204,6 @@ export class RivianClient implements RivianApi {
     return data.vehicleState;
   }
 
-  async getLiveSessionData(vehicleId: string): Promise<LiveSessionData | null> {
-    const data = await this.authenticatedRequest<{
-      getLiveSessionData: LiveSessionData | null;
-    }>(GRAPHQL_CHARGING, {
-      operationName: "getLiveSessionData",
-      query: buildLiveSessionQuery(),
-      variables: { vehicleId: vehicleId },
-    });
-    return data.getLiveSessionData;
-  }
 
   async getRegisteredWallboxes(): Promise<Wallbox[]> {
     const data = await this.authenticatedRequest<{
@@ -250,6 +237,7 @@ export class RivianClient implements RivianApi {
     });
     return data.getVehicle?.chargingSchedules ?? [];
   }
+
 
   async getChargeHistory(): Promise<ChargeSessionSummary[]> {
     const data = await this.authenticatedRequest<{

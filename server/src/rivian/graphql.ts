@@ -30,12 +30,16 @@ export const GET_OTA_UPDATE_DETAILS = `query getOTAUpdateDetails($vehicleId: Str
 
 export const GET_CHARGING_SCHEDULE = `query GetChargingSchedule($vehicleId: String!) { getVehicle(id: $vehicleId) { chargingSchedules { enabled startTime duration amperage location { latitude longitude } weekDays } } }`;
 
+/** Parallax topics ("RVMs") as base64 protobuf; see parallax.ts. */
+export const PARALLAX_MESSAGES_SUBSCRIPTION = `subscription ParallaxMessages($vehicleId: String!, $rvms: [String!]) { parallaxMessages(vehicleId: $vehicleId, rvms: $rvms) { payload timestamp rvm } }`;
+
 /** Departure schedules are only exposed as a subscription. */
-export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSchedules($vehicleID: String!) { vehicleDepartureSchedules(vehicleId: $vehicleID) { id name enabled occurrence { type weekDays timeOfDayMinutes } comfortSettings { seatFrontLeftHeat seatFrontRightHeat cabinClimateSetTemp defrost } } }`;
+export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSchedules($vehicleID: String!) { vehicleDepartureSchedules(vehicleId: $vehicleID) { id name isEnabled occurrence { __typename ... on RepeatsWeekly { days startsAtMin } } departureSettings { comfortSettings { surfaceHeatVentLevels { frontLeftSeat frontRightSeat } cabinTempCelsius frontDefogDefrost } } } }`;
 
 /** Account-wide completed charging sessions (charging gateway). */
 export const GET_COMPLETED_SESSION_SUMMARIES = `query getCompletedSessionSummaries { getCompletedSessionSummaries { transactionId startInstant endInstant totalEnergyKwh rangeAddedKm vendor paidTotal chargerType currencyCode city vehicleId isPublic isHomeCharger } }`;
 
+/** Power curve of the vehicle's most recent charging session (charging gateway). */
 export const GET_REGISTERED_WALLBOXES = `query getRegisteredWallboxes { getRegisteredWallboxes { __typename wallboxId userId wifiId name linked latitude longitude chargingStatus power currentVoltage currentAmps softwareVersion model serialNumber maxAmps maxVoltage maxPower } }`;
 
 /**
@@ -187,53 +191,9 @@ export function buildVehicleStateSubscription(
   return `subscription VehicleState($vehicleID: String!) { vehicleState(id: $vehicleID) { ${buildVehicleStateFragment(properties)} } }`;
 }
 
-const LIVE_SESSION_VALUE_RECORD_KEYS = new Set([
-  "current",
-  "currentMiles",
-  "kilometersChargedPerHour",
-  "power",
-  "rangeAddedThisSession",
-  "soc",
-  "timeRemaining",
-  "totalChargedEnergy",
-  "vehicleChargerState",
-]);
-
-export const LIVE_SESSION_PROPERTIES: readonly string[] = [
-  "chargerId",
-  "current",
-  "currentCurrency",
-  "currentMiles",
-  "currentPrice",
-  "isFreeSession",
-  "isRivianCharger",
-  "kilometersChargedPerHour",
-  "locationId",
-  "power",
-  "rangeAddedThisSession",
-  "soc",
-  "startTime",
-  "timeElapsed",
-  "timeRemaining",
-  "totalChargedEnergy",
-  "vehicleChargerState",
-];
-
-export function buildLiveSessionQuery(
-  properties: readonly string[] = LIVE_SESSION_PROPERTIES,
-): string {
-  const fragment = properties
-    .map((p) =>
-      LIVE_SESSION_VALUE_RECORD_KEYS.has(p)
-        ? `${p} { __typename value updatedAt }`
-        : p,
-    )
-    .join(" ");
-  return `query getLiveSessionData($vehicleId: ID!) { getLiveSessionData(vehicleId: $vehicleId) { __typename ${fragment} } }`;
-}
-
 /**
- * Live charging data pushed over the same WebSocket as vehicle state. This
- * replaces periodic getLiveSessionData polling while the socket is healthy.
+ * Live charging data pushed over the same WebSocket as vehicle state.
+ * (Rivian has removed the getLiveSessionData query; this is the only live
+ * source.)
  */
 export const CHARGING_SESSION_SUBSCRIPTION = `subscription chargingSession($vehicleID: String!) { chargingSession(vehicleId: $vehicleID) { chartData { soc powerKW startTime endTime timeEstimationValidityStatus vehicleChargerState } liveData { powerKW kilometersChargedPerHour rangeAddedThisSession totalChargedEnergy timeElapsed timeRemaining price currency isFreeSession vehicleChargerState startTime } } }`;

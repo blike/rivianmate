@@ -313,11 +313,13 @@ describe("RivianSubscriptionManager", () => {
       JSON.stringify({
         id: "departureSchedules:VIN1",
         type: "next",
-        payload: { data: { vehicleDepartureSchedules: [{ id: "d1", name: "Work", enabled: true }] } },
+        payload: { data: { vehicleDepartureSchedules: [{ id: "d1", name: "Work", isEnabled: true }] } },
       }),
     );
     await server.until(() => received.length === 1);
-    expect(received[0]).toEqual([{ id: "d1", name: "Work", enabled: true }]);
+    expect(received[0]).toEqual([
+      { id: "d1", name: "Work", enabled: true, occurrence: null, comfortSettings: null },
+    ]);
 
     conn.socket.send(
       JSON.stringify({ id: "departureSchedules:VIN1", type: "error", payload: [{ message: "nope" }] }),

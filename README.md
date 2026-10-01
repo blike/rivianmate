@@ -53,8 +53,8 @@ traffic low:
   stopped arriving. Wallboxes are refreshed at startup and every 15 minutes
   while charging.
 - **Occasional extras.** Charging schedules are fetched at startup and every
-  6 hours. Rivian's charging history is synced at startup, 15 minutes after a
-  charge ends, and daily. Release notes are fetched once per software
+  6 hours. Rivian's charging history and the latest session's power curve are
+  synced at startup, 15 minutes after a charge ends, and daily. Release notes are fetched once per software
   version. Departure schedules ride on the existing socket. Each of these
   turns itself off for the run if Rivian rejects it.
 - **Backing off.** All requests go through one process-wide queue, spaced at
@@ -135,6 +135,10 @@ Useful commands: `pnpm typecheck` · `pnpm lint` · `pnpm test` · `pnpm build` 
 `pnpm --filter @rivianmate/server db:generate` (regenerate Drizzle migrations
 after editing [server/src/db/schema.ts](server/src/db/schema.ts)).
 Migrations run automatically at server boot.
+
+Database integration tests run only when `TEST_DATABASE_URL` points at a
+disposable Postgres database (its tables are truncated):
+`TEST_DATABASE_URL=postgres://… pnpm --filter @rivianmate/server test`.
 
 If the API server must run on a different port, point the web proxy at it:
 `VITE_API_TARGET=http://localhost:4100 pnpm dev:web`.

@@ -6,7 +6,7 @@ import {
 import { useEffect, useMemo } from "react";
 import type { LiveSessionData, VehicleState } from "@server/api-types.js";
 import { DEFAULT_UNITS, unitFormatter } from "../lib/units.js";
-import { api, type UnitPreferences } from "./client.js";
+import { api, type HomeChargingSettings, type UnitPreferences } from "./client.js";
 
 export function useStatus() {
   return useQuery({ queryKey: ["status"], queryFn: api.status, staleTime: 5000 });
@@ -80,6 +80,22 @@ export function useSetUnits() {
     onMutate: (units) => queryClient.setQueryData(["units"], units),
     onSuccess: (units) => queryClient.setQueryData(["units"], units),
     onError: () => queryClient.invalidateQueries({ queryKey: ["units"] }),
+  });
+}
+
+export function useHomeCharging() {
+  return useQuery({ queryKey: ["homeCharging"], queryFn: api.homeCharging, staleTime: Infinity });
+}
+
+export function useSetHomeCharging() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: HomeChargingSettings) => api.setHomeCharging(settings),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(["homeCharging"], settings);
+      // Estimated costs on sessions depend on these settings.
+      void queryClient.invalidateQueries({ queryKey: ["chargingSessions"] });
+    },
   });
 }
 

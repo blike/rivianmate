@@ -36,7 +36,12 @@ export function fmt(n: number | null | undefined, digits = 0): string {
 
 export function fmtDuration(startIso: string, endIso: string | null): string {
   const end = endIso ? new Date(endIso).getTime() : Date.now();
-  const minutes = Math.round((end - new Date(startIso).getTime()) / 60000);
+  return fmtSeconds((end - new Date(startIso).getTime()) / 1000);
+}
+
+/** "45m" or "5h 13m". */
+export function fmtSeconds(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

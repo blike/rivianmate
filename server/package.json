@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "parallax:capture": "node --env-file-if-exists=../.env --import tsx scripts/parallax-capture.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

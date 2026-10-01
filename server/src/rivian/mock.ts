@@ -192,6 +192,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ];
   }
 
+  /** Curve for the most recent imported mock session (home, ~5 days ago, 6 h). */
+
   async getChargeHistory(): Promise<ChargeSessionSummary[]> {
     const daysAgo = (d: number, h = 0) => new Date(Date.now() - d * 86_400_000 + h * 3_600_000).toISOString();
     const base = { vehicleId: MOCK_VEHICLE_ID, chargerType: null };

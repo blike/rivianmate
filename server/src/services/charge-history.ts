@@ -1,10 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, asc, between, eq, gte, isNotNull, isNull, min } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { chargingSessions } from "../db/schema.js";
+import { chargingSessions, vehicleStateSnapshots } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
+import { deriveChargingStats } from "./charging-time.js";
 import {
   type ChargeSessionSummary,
   RivianUnauthenticatedError,
+  type VehicleState,
   describeRivianError,
   isGraphqlValidationError,
 } from "../rivian/types.js";
@@ -76,6 +78,8 @@ export function parseDate(value: string | null | undefined): Date | null {
 
 const DAILY_MS = 24 * 3600_000;
 const AFTER_SESSION_DELAY_MS = 15 * 60_000;
+/** Snapshot rows are stamped on write, which can trail the readings inside. */
+const SNAPSHOT_MARGIN_MS = 2 * 3600_000;
 
 /**
  * Imports Rivian's completed-session history: backfills sessions charged
@@ -120,8 +124,18 @@ export class ChargeHistoryImporter {
   }
 
   async run(): Promise<{ inserted: number; linked: number } | null> {
-    if (this.unsupported || this.running) return null;
+    if (this.running) return null;
     this.running = true;
+    try {
+      const result = this.unsupported ? null : await this.importHistory();
+      await this.fillFromStateHistory();
+      return result;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async importHistory(): Promise<{ inserted: number; linked: number } | null> {
     try {
       const summaries = await this.api.getChargeHistory();
       const ids = this.vehicleIds();
@@ -149,8 +163,73 @@ export class ChargeHistoryImporter {
         this.log(`charge history sync failed: ${describeRivianError(err)}`);
       }
       return null;
-    } finally {
-      this.running = false;
+    }
+  }
+
+  /**
+   * Charging time and SOC for finished sessions that lack them (typically
+   * imported from Rivian), rebuilt from the vehicle states RivianMate
+   * recorded during the session. Sessions from before recording began are
+   * skipped.
+   */
+  private async fillFromStateHistory(): Promise<void> {
+    try {
+      for (const vehicleId of this.vehicleIds()) {
+        const [first] = await this.db
+          .select({ ts: min(vehicleStateSnapshots.ts) })
+          .from(vehicleStateSnapshots)
+          .where(eq(vehicleStateSnapshots.vehicleId, vehicleId));
+        if (!first?.ts) continue;
+        const sessions = await this.db
+          .select()
+          .from(chargingSessions)
+          .where(
+            and(
+              eq(chargingSessions.vehicleId, vehicleId),
+              isNull(chargingSessions.chargingSeconds),
+              isNotNull(chargingSessions.endedAt),
+              gte(chargingSessions.endedAt, first.ts),
+            ),
+          );
+        let filled = 0;
+        for (const session of sessions) {
+          const start = session.startedAt.getTime();
+          const end = session.endedAt!.getTime();
+          const rows = await this.db
+            .select({ data: vehicleStateSnapshots.data })
+            .from(vehicleStateSnapshots)
+            .where(
+              and(
+                eq(vehicleStateSnapshots.vehicleId, vehicleId),
+                between(
+                  vehicleStateSnapshots.ts,
+                  new Date(start - SNAPSHOT_MARGIN_MS),
+                  new Date(end + SNAPSHOT_MARGIN_MS),
+                ),
+              ),
+            )
+            .orderBy(asc(vehicleStateSnapshots.ts))
+            .limit(5000);
+          const stats = deriveChargingStats(
+            rows.map((r) => r.data as VehicleState),
+            start,
+            end,
+          );
+          if (stats.chargingSeconds === null) continue;
+          await this.db
+            .update(chargingSessions)
+            .set({
+              chargingSeconds: stats.chargingSeconds,
+              startSoc: session.startSoc ?? stats.startSoc,
+              endSoc: session.endSoc ?? stats.endSoc,
+            })
+            .where(eq(chargingSessions.id, session.id));
+          filled += 1;
+        }
+        if (filled) this.log(`charge history: filled charging time for ${filled} sessions`);
+      }
+    } catch (err) {
+      this.log(`charging time backfill failed: ${(err as Error).message}`);
     }
   }
 
@@ -193,7 +272,10 @@ export class ChargeHistoryImporter {
             isHomeCharger: row.isHomeCharger ?? s.isHomeCharger ?? null,
             energyKwh: row.energyKwh ?? s.totalEnergyKwh ?? null,
             rangeAddedKm: row.rangeAddedKm ?? s.rangeAddedKm ?? null,
-            endedAt: row.endedAt ?? endedAt,
+            // Rivian's span runs from plug-in to unplug, which we may have
+            // only partly seen (e.g. started while already plugged in).
+            startedAt: startedAt < row.startedAt ? startedAt : row.startedAt,
+            endedAt: endedAt ?? row.endedAt,
             cost: row.cost ?? cost,
             currency: row.currency ?? s.currencyCode ?? null,
           })

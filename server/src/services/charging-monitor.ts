@@ -1,4 +1,4 @@
-import { eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import {
   chargingCurvePoints,
@@ -7,42 +7,72 @@ import {
   wallboxes,
 } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
+import { type ParallaxMessage, RVM_CHARGING_GRAPH, decodeChargingGraph } from "../rivian/parallax.js";
 import {
   LiveSessionData,
   RivianRateLimitError,
   RivianUnauthenticatedError,
+  type VehicleState,
 } from "../rivian/types.js";
+import { isChargingState, stampedAt } from "./charging-time.js";
+import { nearbySpot } from "./home-charging.js";
 import type { LiveBus } from "./live-bus.js";
+import { type ResumableSession, closeTime } from "./session-resume.js";
+import { stateNumber, stateString } from "./state-utils.js";
 
-/** REST safety net: only while plugged in and the push feed has gone quiet. */
-const SAFETY_NET_INTERVAL_MS = 5 * 60_000;
-const PUSH_STALE_MS = 5 * 60_000;
 /** Wallbox readings are only interesting while a vehicle is plugged in. */
 const WALLBOX_INTERVAL_MS = 15 * 60_000;
+/**
+ * Graph bars may predate the session's recorded start (we can start
+ * watching mid plug-in). How far back the graph reaches is unconfirmed, so
+ * older bars are dropped rather than risk attaching a previous session's.
+ */
+const GRAPH_LOOKBACK_MS = 12 * 3600_000;
+/** Tolerance at session edges: a graph bar starts on Rivian's clock. */
+const GRAPH_SLACK_MS = 10 * 60_000;
 
 interface OpenSession {
   id: number;
+  startedAt: number;
   powerSum: number;
   powerCount: number;
   maxPowerKw: number;
+  /** Seconds charged in finished stretches; the running one is `chargingSince`. */
+  chargingSeconds: number;
+  chargingSince: number | null;
+}
+
+/** What vehicle state says about charging, timed by Rivian's stamps. */
+interface PlugReading {
+  plugged: boolean;
+  /** When the plug state was stamped (the unplug time on an unplug delta). */
+  pluggedAt: number;
+  charging: boolean;
+  chargingAt: number;
+  soc: number | null;
 }
 
 /**
- * Tracks charging sessions from the live `chargingSession` push feed and
- * persists session rows and wallbox readings.
+ * Records one charging session per plug-in, as Rivian's history does:
+ * plugging in opens it and unplugging closes it, so pauses (a scheduled
+ * charge waiting for its window, a top-up after completing) stay in one
+ * row. Vehicle state supplies the plug state, time spent charging and SOC.
+ * The power curve comes from Parallax's charging graph; the legacy
+ * `chargingSession` push feed, when Rivian sends it, adds energy and cost.
  *
- * Nothing here polls on a fixed schedule while the vehicle is unplugged.
- * While plugged in, a slow REST check runs only if the push feed has been
- * silent for a while (e.g. the socket is down or Rivian refused the
- * charging subscription).
+ * Nothing here polls Rivian while the vehicle is unplugged; while plugged
+ * in, only wallbox readings are refreshed.
  */
 export class ChargingMonitor {
   private timer?: NodeJS.Timeout;
   private running = false;
   private pluggedIn = new Set<string>();
-  private lastPushAt = new Map<string, number>();
+  /** Vehicles whose plug state we've seen; until then the push feed decides. */
+  private plugKnown = new Set<string>();
   private lastWallboxPollAt = 0;
   private openSessions = new Map<string, OpenSession>();
+  /** Sessions a previous run left open, awaiting proof they're still going. */
+  private resumable = new Map<string, ResumableSession>();
   private lastWallboxReading = new Map<string, string>();
   /** Per-vehicle serialization so pushes and polls never race an insert. */
   private chains = new Map<string, Promise<void>>();
@@ -73,27 +103,111 @@ export class ChargingMonitor {
     this.latestLocation.set(vehicleId, { lat, lon });
   }
 
-  /** Driven by the vehicle monitor from chargerStatus updates. */
+  /**
+   * Vehicle state from the monitor: plug state, charger state and battery
+   * level. Ignored until the plug state is known.
+   */
+  noteState(vehicleId: string, state: VehicleState): void {
+    const status = stateString(state, "chargerStatus");
+    if (status === null) return;
+    const now = this.now();
+    this.applyPlugReading(vehicleId, {
+      plugged: status !== "chrgr_sts_not_connected",
+      pluggedAt: stampedAt(state, "chargerStatus", now),
+      charging: isChargingState(stateString(state, "chargerState")),
+      chargingAt: stampedAt(state, "chargerState", now),
+      soc: stateNumber(state, "batteryLevel"),
+    });
+  }
+
+  /** Plug state alone (no charger state or SOC). */
   setPluggedIn(vehicleId: string, pluggedIn: boolean): void {
-    if (this.pluggedIn.has(vehicleId) === pluggedIn) return;
-    if (pluggedIn) {
-      this.pluggedIn.add(vehicleId);
-      // Give the push feed a head start before any REST check.
-      this.lastPushAt.set(vehicleId, this.lastPushAt.get(vehicleId) ?? this.now());
-    } else {
-      this.pluggedIn.delete(vehicleId);
-      // Unplugged: whatever was open is over.
-      void this.enqueue(vehicleId, async () => {
-        await this.processSession(vehicleId, null);
-        this.bus.emitChargingSession(vehicleId, null);
-      });
+    const now = this.now();
+    this.applyPlugReading(vehicleId, {
+      plugged: pluggedIn,
+      pluggedAt: now,
+      charging: false,
+      chargingAt: now,
+      soc: null,
+    });
+  }
+
+  private applyPlugReading(vehicleId: string, reading: PlugReading): void {
+    this.plugKnown.add(vehicleId);
+    const wasPlugged = this.pluggedIn.has(vehicleId);
+    if (reading.plugged) this.pluggedIn.add(vehicleId);
+    else this.pluggedIn.delete(vehicleId);
+    void this.enqueue(vehicleId, () => this.processPlugReading(vehicleId, reading));
+    if (wasPlugged !== reading.plugged) this.reschedule();
+  }
+
+  /**
+   * Parallax messages; the charging graph becomes the session's power curve.
+   * Rivian keeps the last session's graph after it ends and sends it on
+   * subscribe, so bars go to the open session, or else to the finished
+   * session they fall within.
+   */
+  ingestParallax(vehicleId: string, message: ParallaxMessage): Promise<void> {
+    if (message.rvm !== RVM_CHARGING_GRAPH) return Promise.resolve();
+    const bars = decodeChargingGraph(message.payload);
+    if (bars.length === 0) return Promise.resolve();
+    return this.enqueue(vehicleId, async () => {
+      const target = await this.graphTarget(vehicleId, bars[0]!.startMs, bars.at(-1)!.startMs);
+      if (!target) return;
+      const rows = bars
+        .filter((b) => b.startMs >= target.from && b.startMs <= target.to)
+        .map((b) => ({ sessionId: target.id, ts: new Date(b.startMs), powerKw: b.powerKw, soc: b.soc }));
+      if (rows.length === 0) return;
+      await this.db
+        .insert(chargingCurvePoints)
+        .values(rows)
+        .onConflictDoUpdate({
+          target: [chargingCurvePoints.sessionId, chargingCurvePoints.ts],
+          set: { powerKw: sql`excluded.power_kw`, soc: sql`COALESCE(excluded.soc, ${chargingCurvePoints.soc})` },
+        });
+      await this.db
+        .update(chargingSessions)
+        .set({
+          maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE session_id = ${target.id})`,
+          avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND power_kw > 0)`,
+        })
+        .where(eq(chargingSessions.id, target.id));
+    });
+  }
+
+  /** The session a graph spanning [firstMs, lastMs] belongs to, and its time window. */
+  private async graphTarget(
+    vehicleId: string,
+    firstMs: number,
+    lastMs: number,
+  ): Promise<{ id: number; from: number; to: number } | null> {
+    const open = this.openSessions.get(vehicleId);
+    if (open) {
+      return { id: open.id, from: open.startedAt - GRAPH_LOOKBACK_MS, to: this.now() + GRAPH_SLACK_MS };
     }
-    this.reschedule();
+    const [closed] = await this.db
+      .select({ id: chargingSessions.id, startedAt: chargingSessions.startedAt, endedAt: chargingSessions.endedAt })
+      .from(chargingSessions)
+      .where(
+        and(
+          eq(chargingSessions.vehicleId, vehicleId),
+          isNotNull(chargingSessions.endedAt),
+          lte(chargingSessions.startedAt, new Date(lastMs + GRAPH_SLACK_MS)),
+          gte(chargingSessions.endedAt, new Date(firstMs - GRAPH_SLACK_MS)),
+        ),
+      )
+      .orderBy(desc(chargingSessions.startedAt))
+      .limit(1);
+    if (!closed) return null;
+    return {
+      id: closed.id,
+      from: closed.startedAt.getTime() - GRAPH_SLACK_MS,
+      to: closed.endedAt!.getTime() + GRAPH_SLACK_MS,
+    };
   }
 
   /** Live session data pushed over the WebSocket. */
   ingest(vehicleId: string, session: LiveSessionData | null): Promise<void> {
-    this.lastPushAt.set(vehicleId, this.now());
     return this.enqueue(vehicleId, async () => {
       await this.processSession(vehicleId, session);
       this.bus.emitChargingSession(vehicleId, session);
@@ -103,7 +217,7 @@ export class ChargingMonitor {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    await this.closeDanglingSessions();
+    await this.loadResumableSessions();
     // One wallbox refresh at startup keeps names/firmware current.
     try {
       await this.pollWallboxes();
@@ -123,28 +237,16 @@ export class ChargingMonitor {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.running || this.pluggedIn.size === 0) return;
-    this.timer = setTimeout(() => void this.tick(), SAFETY_NET_INTERVAL_MS);
+    const due = Math.max(0, this.lastWallboxPollAt + WALLBOX_INTERVAL_MS - this.now());
+    this.timer = setTimeout(() => void this.tick(), due);
   }
 
   private async tick(): Promise<void> {
     this.timer = undefined;
     try {
-      for (const vehicleId of this.pluggedIn) {
-        if (!this.vehicles.has(vehicleId)) continue;
-        const lastPush = this.lastPushAt.get(vehicleId) ?? 0;
-        if (this.now() - lastPush < PUSH_STALE_MS) continue;
-        const session = await this.api.getLiveSessionData(vehicleId);
-        this.onAuthOk?.();
-        await this.enqueue(vehicleId, async () => {
-          await this.processSession(vehicleId, session);
-          this.bus.emitChargingSession(vehicleId, session);
-        });
-      }
-      if (this.now() - this.lastWallboxPollAt >= WALLBOX_INTERVAL_MS) {
-        await this.pollWallboxes();
-      }
+      await this.pollWallboxes();
     } catch (err) {
-      this.handleError(err, "charging check");
+      this.handleError(err, "wallbox refresh");
     }
     this.reschedule();
   }
@@ -168,82 +270,171 @@ export class ChargingMonitor {
     return next;
   }
 
+  /** Plug-in opens a session, unplug closes it; charging time and SOC in between. */
+  private async processPlugReading(vehicleId: string, reading: PlugReading): Promise<void> {
+    await this.settleResumable(vehicleId, reading.plugged);
+    const open = this.openSessions.get(vehicleId);
+
+    if (!reading.plugged) {
+      if (open) {
+        const endedAt = Math.min(Math.max(reading.pluggedAt, open.startedAt), this.now());
+        await this.closeOpen(vehicleId, open, endedAt, reading.soc);
+        this.bus.emitChargingSession(vehicleId, null);
+      }
+      return;
+    }
+
+    if (!open) {
+      const startedAt = this.now();
+      const chargingSince = reading.charging ? Math.max(reading.chargingAt, startedAt) : null;
+      await this.openSession(vehicleId, {
+        startedAt,
+        startSoc: reading.soc,
+        chargingSince,
+      });
+      return;
+    }
+
+    const changes: Partial<typeof chargingSessions.$inferInsert> = {};
+    if (reading.charging && open.chargingSince === null) {
+      open.chargingSince = Math.max(reading.chargingAt, open.startedAt);
+      changes.chargingSince = new Date(open.chargingSince);
+    } else if (!reading.charging && open.chargingSince !== null) {
+      open.chargingSeconds += stretchSeconds(open.chargingSince, reading.chargingAt);
+      open.chargingSince = null;
+      changes.chargingSeconds = open.chargingSeconds;
+      changes.chargingSince = null;
+    }
+    if (reading.soc !== null) changes.endSoc = reading.soc;
+    if (Object.keys(changes).length === 0) return;
+    await this.db.update(chargingSessions).set(changes).where(eq(chargingSessions.id, open.id));
+  }
+
+  private async openSession(
+    vehicleId: string,
+    init: { startedAt: number; startSoc: number | null; chargingSince: number | null },
+    live?: LiveSessionData,
+  ): Promise<OpenSession> {
+    const loc = this.latestLocation.get(vehicleId);
+    const wallbox = await this.wallboxAt(loc);
+    const isRivianCharger = live?.isRivianCharger ?? null;
+    const [row] = await this.db
+      .insert(chargingSessions)
+      .values({
+        vehicleId,
+        startedAt: new Date(init.startedAt),
+        chargerId: live?.chargerId ?? null,
+        chargerType: wallbox
+          ? "wallbox"
+          : isRivianCharger == null
+            ? null
+            : isRivianCharger
+              ? "rivian_charger"
+              : "other",
+        wallboxId: wallbox?.wallboxId ?? null,
+        isRivianCharger,
+        startSoc: init.startSoc,
+        endSoc: init.startSoc,
+        chargingSeconds: 0,
+        chargingSince: init.chargingSince != null ? new Date(init.chargingSince) : null,
+        currency: live?.currentCurrency ?? null,
+        lat: loc?.lat,
+        lon: loc?.lon,
+      })
+      .returning({ id: chargingSessions.id });
+    const open: OpenSession = {
+      id: row!.id,
+      startedAt: init.startedAt,
+      powerSum: 0,
+      powerCount: 0,
+      maxPowerKw: 0,
+      chargingSeconds: 0,
+      chargingSince: init.chargingSince,
+    };
+    this.openSessions.set(vehicleId, open);
+    this.log(`charging session started for ${vehicleId}`);
+    return open;
+  }
+
+  private async closeOpen(
+    vehicleId: string,
+    open: OpenSession,
+    endedAt: number,
+    soc: number | null,
+  ): Promise<void> {
+    if (open.chargingSince !== null) {
+      open.chargingSeconds += stretchSeconds(open.chargingSince, endedAt);
+      open.chargingSince = null;
+    }
+    await this.db
+      .update(chargingSessions)
+      .set({
+        endedAt: new Date(endedAt),
+        chargingSeconds: open.chargingSeconds,
+        chargingSince: null,
+        ...(soc !== null ? { endSoc: soc } : {}),
+      })
+      .where(eq(chargingSessions.id, open.id));
+    this.openSessions.delete(vehicleId);
+    this.log(`charging session ended for ${vehicleId}`);
+    this.onSessionEnded?.(vehicleId);
+  }
+
+  /** Push feed: adds power, energy, cost and curve to the plug-in's session. */
   private async processSession(
     vehicleId: string,
     session: LiveSessionData | null,
   ): Promise<void> {
     const active = isActiveSession(session);
-    const open = this.openSessions.get(vehicleId);
+    // Without plug state, the push feed is all we have to bound a session.
+    if (!this.plugKnown.has(vehicleId)) await this.settleResumable(vehicleId, active);
+    let open = this.openSessions.get(vehicleId);
 
-    if (active && session) {
-      const power = num(session.power?.value);
-      if (!open) {
-        const loc = this.latestLocation.get(vehicleId);
-        const inserted = await this.db
-          .insert(chargingSessions)
-          .values({
-            vehicleId,
-            startedAt: session.startTime ? new Date(session.startTime) : new Date(),
-            chargerId: session.chargerId,
-            chargerType:
-              session.isRivianCharger == null
-                ? null
-                : session.isRivianCharger
-                  ? "rivian_charger"
-                  : "other",
-            isRivianCharger: session.isRivianCharger,
-            startSoc: num(session.soc?.value),
-            currency: session.currentCurrency,
-            lat: loc?.lat,
-            lon: loc?.lon,
-          })
-          .returning({ id: chargingSessions.id });
-        this.openSessions.set(vehicleId, {
-          id: inserted[0]!.id,
-          powerSum: power ?? 0,
-          powerCount: power != null ? 1 : 0,
-          maxPowerKw: power ?? 0,
-        });
-        this.log(`charging session started for ${vehicleId}`);
-        await this.recordCurve(inserted[0]!.id, session);
-        return;
+    if (!active || !session) {
+      if (open && !this.plugKnown.has(vehicleId)) {
+        await this.closeOpen(vehicleId, open, this.now(), null);
       }
-
-      if (power != null) {
-        open.powerSum += power;
-        open.powerCount += 1;
-        open.maxPowerKw = Math.max(open.maxPowerKw, power);
-      }
-      await this.db
-        .update(chargingSessions)
-        .set({
-          endSoc: num(session.soc?.value),
-          energyKwh: num(session.totalChargedEnergy?.value),
-          rangeAddedKm: num(session.rangeAddedThisSession?.value),
-          avgPowerKw: open.powerCount
-            ? open.powerSum / open.powerCount
-            : null,
-          maxPowerKw: open.maxPowerKw,
-          cost:
-            session.currentPrice != null
-              ? String(session.currentPrice)
-              : undefined,
-          rawFinal: session,
-        })
-        .where(eq(chargingSessions.id, open.id));
-      await this.recordCurve(open.id, session);
       return;
     }
 
-    if (open) {
-      await this.db
-        .update(chargingSessions)
-        .set({ endedAt: new Date() })
-        .where(eq(chargingSessions.id, open.id));
-      this.openSessions.delete(vehicleId);
-      this.log(`charging session ended for ${vehicleId}`);
-      this.onSessionEnded?.(vehicleId);
+    if (!open) {
+      const now = this.now();
+      const start = session.startTime ? Date.parse(session.startTime) : Number.NaN;
+      open = await this.openSession(
+        vehicleId,
+        {
+          startedAt: Number.isFinite(start) && start <= now ? start : now,
+          startSoc: num(session.soc?.value),
+          chargingSince: this.plugKnown.has(vehicleId) ? null : now,
+        },
+        session,
+      );
     }
+
+    const power = num(session.power?.value);
+    if (power != null) {
+      open.powerSum += power;
+      open.powerCount += 1;
+      open.maxPowerKw = Math.max(open.maxPowerKw, power);
+    }
+    const soc = num(session.soc?.value);
+    await this.db
+      .update(chargingSessions)
+      .set({
+        ...(soc != null ? { endSoc: soc } : {}),
+        energyKwh: num(session.totalChargedEnergy?.value),
+        rangeAddedKm: num(session.rangeAddedThisSession?.value),
+        // Only when the push feed reported power, so Parallax figures stand.
+        ...(open.powerCount
+          ? { avgPowerKw: open.powerSum / open.powerCount, maxPowerKw: open.maxPowerKw }
+          : {}),
+        ...(session.isRivianCharger != null ? { isRivianCharger: session.isRivianCharger } : {}),
+        ...(session.chargerId ? { chargerId: session.chargerId } : {}),
+        cost: session.currentPrice != null ? String(session.currentPrice) : undefined,
+        rawFinal: session,
+      })
+      .where(eq(chargingSessions.id, open.id));
+    await this.recordCurve(open.id, session);
   }
 
   /**
@@ -266,6 +457,20 @@ export class ChargingMonitor {
       .map((s) => ({ sessionId, ts: new Date(s.ts), powerKw: s.powerKw, soc: s.soc }));
     if (rows.length === 0) return;
     await this.db.insert(chargingCurvePoints).values(rows).onConflictDoNothing();
+  }
+
+  /** The registered wallbox the vehicle is parked at, if any. */
+  private async wallboxAt(
+    loc: { lat: number; lon: number } | undefined,
+  ): Promise<{ wallboxId: string } | null> {
+    if (!loc) return null;
+    const boxes = await this.db
+      .select({ wallboxId: wallboxes.wallboxId, lat: wallboxes.latitude, lon: wallboxes.longitude })
+      .from(wallboxes);
+    const spots = boxes
+      .filter((b) => b.lat != null && b.lon != null)
+      .map((b) => ({ wallboxId: b.wallboxId, lat: b.lat!, lon: b.lon! }));
+    return nearbySpot(loc.lat, loc.lon, spots);
   }
 
   private async pollWallboxes(): Promise<void> {
@@ -313,12 +518,94 @@ export class ChargingMonitor {
     }
   }
 
-  private async closeDanglingSessions(): Promise<void> {
+  /**
+   * Sessions the previous run left open. They aren't closed blindly: a
+   * restart mid-charge would split one plug-in in two. Each waits for the
+   * plug state: still plugged in continues it, unplugged closes it.
+   */
+  private async loadResumableSessions(): Promise<void> {
+    const rows = await this.db
+      .select({
+        id: chargingSessions.id,
+        vehicleId: chargingSessions.vehicleId,
+        startedAt: chargingSessions.startedAt,
+        chargingSeconds: chargingSessions.chargingSeconds,
+        chargingSince: chargingSessions.chargingSince,
+        lastSampleAt: sql<string | null>`(SELECT MAX(ts) FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id})`,
+      })
+      .from(chargingSessions)
+      .where(isNull(chargingSessions.endedAt))
+      .orderBy(chargingSessions.startedAt);
+    for (const row of rows) {
+      const candidate: ResumableSession = {
+        id: row.id,
+        startedAt: row.startedAt,
+        lastSampleAt: row.lastSampleAt ? new Date(row.lastSampleAt) : null,
+        chargingSeconds: row.chargingSeconds,
+        chargingSince: row.chargingSince,
+      };
+      const previous = this.resumable.get(row.vehicleId);
+      if (previous) await this.closeSession(previous); // only the newest can still be running
+      if (this.vehicles.has(row.vehicleId)) {
+        this.resumable.set(row.vehicleId, candidate);
+      } else {
+        await this.closeSession(candidate);
+      }
+    }
+  }
+
+  /**
+   * Continue the leftover session if the vehicle is still plugged in (or,
+   * without plug state, still charging); otherwise close it.
+   */
+  private async settleResumable(vehicleId: string, stillGoing: boolean): Promise<void> {
+    const leftover = this.resumable.get(vehicleId);
+    if (!leftover) return;
+    this.resumable.delete(vehicleId);
+    if (!stillGoing || this.openSessions.has(vehicleId)) {
+      await this.closeSession(leftover);
+      return;
+    }
+    const [stats] = await this.db
+      .select({
+        avg: sql<number | null>`AVG(power_kw)::float8`,
+        max: sql<number | null>`MAX(power_kw)::float8`,
+        count: sql<number>`COUNT(power_kw)::int`,
+      })
+      .from(chargingCurvePoints)
+      .where(eq(chargingCurvePoints.sessionId, leftover.id));
+    const count = stats?.count ?? 0;
+    this.openSessions.set(vehicleId, {
+      id: leftover.id,
+      startedAt: leftover.startedAt.getTime(),
+      powerSum: (stats?.avg ?? 0) * count,
+      powerCount: count,
+      maxPowerKw: stats?.max ?? 0,
+      chargingSeconds: leftover.chargingSeconds ?? 0,
+      chargingSince: leftover.chargingSince?.getTime() ?? null,
+    });
+    this.log(`charging session resumed for ${vehicleId}`);
+  }
+
+  private async closeSession(session: ResumableSession): Promise<void> {
+    const endedAt = closeTime(session);
+    const since = session.chargingSince;
     await this.db
       .update(chargingSessions)
-      .set({ endedAt: new Date() })
-      .where(isNull(chargingSessions.endedAt));
+      .set({
+        endedAt,
+        chargingSince: null,
+        ...(since
+          ? { chargingSeconds: (session.chargingSeconds ?? 0) + stretchSeconds(since.getTime(), endedAt.getTime()) }
+          : {}),
+      })
+      .where(eq(chargingSessions.id, session.id));
   }
+}
+
+/** Whole seconds from `since` to `until`, never negative. */
+function stretchSeconds(since: number, until: number): number {
+  return Math.max(0, Math.round((until - since) / 1000));
 }
 
 const ACTIVE_CHARGER_STATES = new Set([

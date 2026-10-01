@@ -17,6 +17,9 @@ import { LiveBus } from "./services/live-bus.js";
 import { TokenStore } from "./services/token-store.js";
 import { VehicleMonitor } from "./services/vehicle-monitor.js";
 
+const START_RETRY_BASE_MS = 30_000;
+const START_RETRY_MAX_MS = 15 * 60_000;
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 function resolveWebDist(configuredPath?: string): string | undefined {
@@ -88,24 +91,36 @@ async function main(): Promise<void> {
   // Listen first: the API and healthcheck must not wait on Rivian.
   await app.listen({ port: config.PORT, host: config.HOST });
 
-  void monitor
-    .startIfConfigured()
-    .then((result) => {
-      if (result === "started") {
-        console.log("Rivian monitor started from stored credentials");
-      } else if (result === "needs_login") {
-        console.log("Rivian session expired; sign in again from the web UI");
-      } else {
-        console.log(
-          "No usable Rivian account stored (not connected yet, or APP_SECRET changed); connect from the web UI",
+  // A network blip at boot (e.g. container networking not up yet) must not
+  // leave tracking off until the next restart: retry with backoff.
+  let startRetry: NodeJS.Timeout | undefined;
+  const startMonitor = (attempt = 0): void => {
+    void monitor
+      .startIfConfigured()
+      .then((result) => {
+        if (result === "started") {
+          console.log("Rivian monitor started from stored credentials");
+        } else if (result === "needs_login") {
+          console.log("Rivian session expired; sign in again from the web UI");
+        } else {
+          console.log(
+            "No usable Rivian account stored (not connected yet, or APP_SECRET changed); connect from the web UI",
+          );
+        }
+      })
+      .catch((err) => {
+        if (monitor.isRunning) return; // connected meanwhile (e.g. from the web UI)
+        const delay = Math.min(START_RETRY_MAX_MS, START_RETRY_BASE_MS * 2 ** attempt);
+        console.error(
+          `Failed to start Rivian monitor: ${(err as Error).message}; retrying in ${Math.round(delay / 1000)}s`,
         );
-      }
-    })
-    .catch((err) => {
-      console.error(`Failed to start Rivian monitor: ${(err as Error).message}`);
-    });
+        startRetry = setTimeout(() => startMonitor(attempt + 1), delay);
+      });
+  };
+  startMonitor();
 
   const shutdown = async () => {
+    clearTimeout(startRetry);
     await monitor.stop();
     await app.close();
     process.exit(0);

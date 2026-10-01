@@ -47,6 +47,8 @@ export interface VehicleDto {
   modelYear: number | null;
 }
 
+export type { HomeChargingSettings } from "./services/home-charging.js";
+
 export interface UnitPreferences {
   distance: "mi" | "km";
   temperature: "F" | "C";
@@ -147,6 +149,12 @@ export interface ChargingSessionDto {
   chargerType: string | null;
   startSoc: number | null;
   endSoc: number | null;
+  /**
+   * startedAt → endedAt spans the plug-in. Within it, seconds spent charging
+   * (null when unknown), not counting a stretch running since `chargingSince`.
+   */
+  chargingSeconds: number | null;
+  chargingSince: string | null;
   energyKwh: number | null;
   rangeAddedKm: number | null;
   avgPowerKw: number | null;
@@ -155,6 +163,10 @@ export interface ChargingSessionDto {
   currency: string | null;
   lat: number | null;
   lon: number | null;
+  /** Charged at home (Rivian's flag, home wallbox, or near home). */
+  isHome: boolean;
+  /** Energy × home rate, when this home session has no cost of its own. */
+  estimatedCost: string | null;
   /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
   source: "live" | "rivian" | "live+rivian";
   vendor: string | null;
