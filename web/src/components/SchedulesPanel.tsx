@@ -6,55 +6,42 @@ import { fmt } from "../lib/state.js";
 import { SkeletonBlock } from "./loading.js";
 import { Panel } from "./panels.js";
 
-function EnabledPill(props: { enabled: boolean | null }) {
-  if (props.enabled == null) return null;
-  return (
-    <span
-      className={`rounded-full border px-2 text-xs ${
-        props.enabled
-          ? "border-[var(--status-good)] text-[var(--status-good)]"
-          : "border-[var(--border)] text-[var(--text-muted)]"
-      }`}
-    >
-      {props.enabled ? "On" : "Off"}
-    </span>
-  );
-}
-
 /** Same height as one schedule card. */
 function ScheduleSkeleton() {
   return <SkeletonBlock height="4rem" />;
 }
 
-/** Read-only view of charging and departure schedules set in the Rivian app. */
-export function SchedulesPanel(props: { vehicleId: string }) {
+/**
+ * Read-only view of the charging and departure schedules set in the Rivian
+ * app. Schedules switched off are left out; Rivian returns those too.
+ */
+export function SchedulesPanel(props: { vehicleId: string; className?: string }) {
   const u = useUnits();
   const { data, isPending } = useQuery({
     queryKey: ["schedules", props.vehicleId],
     queryFn: () => api.schedules(props.vehicleId),
     refetchInterval: 5 * 60_000,
   });
+  const charging = data?.charging?.filter((c) => c.enabled !== false);
+  const departures = data?.departures?.filter((d) => d.enabled !== false);
 
   return (
-    <Panel title="Schedules">
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <Panel title="Schedules" className={props.className}>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-1">
         <section className="min-w-0">
           <h3 className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Charging</h3>
           {isPending ? (
             <ScheduleSkeleton />
-          ) : data?.charging == null ? (
+          ) : charging == null ? (
             <p className="text-sm text-[var(--text-muted)]">Not loaded yet.</p>
-          ) : data.charging.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No charging schedule set.</p>
+          ) : charging.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">No charging schedule on.</p>
           ) : (
             <ul className="space-y-2 text-sm">
-              {data.charging.map((c, i) => (
+              {charging.map((c, i) => (
                 <li key={i} className="rounded-md bg-[var(--surface-2)] p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">
-                      {formatTimeOfDay(c.startTime)} for {formatDuration(c.duration)}
-                    </span>
-                    <EnabledPill enabled={c.enabled} />
+                  <div className="font-medium">
+                    {formatTimeOfDay(c.startTime)} for {formatDuration(c.duration)}
                   </div>
                   <div className="mt-1 text-xs text-[var(--text-secondary)]">
                     {formatWeekDays(c.weekDays)}
@@ -72,19 +59,16 @@ export function SchedulesPanel(props: { vehicleId: string }) {
             <ScheduleSkeleton />
           ) : data?.departuresUnavailable ? (
             <p className="text-sm text-[var(--text-muted)]">Rivian doesn't provide departure schedules for this vehicle.</p>
-          ) : data?.departures == null ? (
+          ) : departures == null ? (
             <p className="text-sm text-[var(--text-muted)]">Waiting for the vehicle to report its schedules.</p>
-          ) : data.departures.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No departure schedules set.</p>
+          ) : departures.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">No departure schedule on.</p>
           ) : (
             <ul className="space-y-2 text-sm">
-              {data.departures.map((d) => (
+              {departures.map((d) => (
                 <li key={d.id} className="rounded-md bg-[var(--surface-2)] p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">
-                      {d.name ?? "Departure"} · {formatTimeOfDay(d.occurrence?.timeOfDayMinutes)}
-                    </span>
-                    <EnabledPill enabled={d.enabled} />
+                  <div className="font-medium">
+                    {d.name ?? "Departure"} · {formatTimeOfDay(d.occurrence?.timeOfDayMinutes)}
                   </div>
                   <div className="mt-1 text-xs text-[var(--text-secondary)]">
                     {formatWeekDays(d.occurrence?.weekDays)}

@@ -28,9 +28,9 @@ export function StatCard(props: {
   );
 }
 
-export function Panel(props: { title: string; children: ReactNode }) {
+export function Panel(props: { title: string; className?: string; children: ReactNode }) {
   return (
-    <section className="card p-4">
+    <section className={`card p-4 ${props.className ?? ""}`}>
       <h3 className="mb-3 text-sm font-medium text-[var(--text-secondary)]">
         {props.title}
       </h3>

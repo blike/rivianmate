@@ -10,8 +10,8 @@ import { createDb, runMigrations } from "../db/client.js";
 import { chargingCurvePoints, chargingSessions, vehicles } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { LiveSessionData, VehicleState } from "../rivian/types.js";
-import { RVM_CHARGING_GRAPH } from "../rivian/parallax.js";
-import { chargingGraph, graphBar } from "../testing/protobuf.js";
+import { RVM_CHARGE_BREAKDOWN, RVM_CHARGING_GRAPH } from "../rivian/parallax.js";
+import { b64, chargingGraph, float, graphBar, int } from "../testing/protobuf.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { LiveBus } from "./live-bus.js";
 
@@ -177,6 +177,52 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     expect(points.map((p) => p.soc)).toEqual([40, 43, 70]);
     const [row] = await sessions();
     expect(row!.maxPowerKw).toBeCloseTo(7.4);
+  });
+
+  /** A charge_session_breakdown message. */
+  const breakdown = (totalKwh: number, packKwh: number, thermalKwh: number, minutes: number, km: number) => ({
+    rvm: RVM_CHARGE_BREAKDOWN,
+    timestamp: null,
+    payload: b64([...float(1, totalKwh), ...float(2, packKwh), ...float(5, thermalKwh), ...int(6, minutes), ...int(8, km)]),
+  });
+
+  it("splits a finished session's energy with the breakdown matching its charging time", async () => {
+    await handle.db.insert(chargingSessions).values({
+      vehicleId: "v1",
+      startedAt: new Date("2026-10-01T00:34:54Z"),
+      endedAt: new Date("2026-10-01T12:31:09Z"),
+      chargingSeconds: 18_779, // 5h13m
+      energyKwh: 35.7, // from Rivian's history
+    });
+    const m = monitor();
+    await m.start();
+    await m.ingestParallax("v1", breakdown(35.8, 34.4, 1.4, 313, 162));
+    m.stop();
+
+    const [row] = await sessions();
+    expect([row!.packKwh, row!.thermalKwh]).toEqual([expect.closeTo(34.4), expect.closeTo(1.4)]);
+    expect(row!.energyKwh).toBeCloseTo(35.7);
+    expect(row!.rangeAddedKm).toBe(162);
+  });
+
+  it("keeps the previous session's breakdown off a new plug-in, then tracks its own", async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
+    await m.ingestParallax("v1", breakdown(35.8, 34.4, 1.4, 313, 162)); // sent on subscribe
+    let [row] = await sessions();
+    expect(row!.energyKwh).toBeNull();
+
+    clock = Date.parse("2026-10-01T08:00:00Z");
+    await m.ingestParallax("v1", breakdown(7.2, 7, 0.2, 59, 33));
+    m.stop();
+    [row] = await sessions();
+    expect([row!.energyKwh, row!.packKwh, row!.thermalKwh]).toEqual([
+      expect.closeTo(7.2),
+      expect.closeTo(7),
+      expect.closeTo(0.2),
+    ]);
+    expect(row!.rangeAddedKm).toBe(33);
   });
 
   it("adds push-feed power and energy to the plug-in's session", async () => {

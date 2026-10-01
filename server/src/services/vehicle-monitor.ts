@@ -3,8 +3,8 @@ import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { VehicleStateStream } from "../rivian/subscription.js";
 import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
-import { RVM_CHARGING_GRAPH } from "../rivian/parallax.js";
-import type { SchedulesDto } from "../api-types.js";
+import { PARALLAX_MONITOR_RVMS } from "../rivian/parallax.js";
+import type { SchedulesDto, VehicleInsightsDto } from "../api-types.js";
 import {
   ChargingSchedule,
   DepartureSchedule,
@@ -18,6 +18,7 @@ import { ChargeHistoryImporter } from "./charge-history.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { DriveDetector } from "./drive-detector.js";
 import { OtaNotesTracker } from "./ota-notes.js";
+import { ParallaxStore } from "./parallax-store.js";
 import type { LiveBus } from "./live-bus.js";
 import { SnapshotWriter } from "./snapshot-writer.js";
 import { mergeVehicleState, stateLocation, stateString } from "./state-utils.js";
@@ -85,6 +86,7 @@ export class VehicleMonitor {
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
   private otaNotes?: OtaNotesTracker;
+  private readonly parallaxStore: ParallaxStore;
   private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
   private scheduleTimer?: NodeJS.Timeout;
@@ -108,6 +110,7 @@ export class VehicleMonitor {
     private readonly log: (msg: string) => void = console.log,
   ) {
     this.snapshotWriter = new SnapshotWriter(db);
+    this.parallaxStore = new ParallaxStore(db, log);
     this.driveDetector = new DriveDetector(db, (vehicleId, driveId) =>
       this.snapshotWriter.setCurrentDrive(vehicleId, driveId),
     );
@@ -262,8 +265,9 @@ export class VehicleMonitor {
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
       });
-      stream.subscribeParallax?.(vehicle.id, [RVM_CHARGING_GRAPH], (_vehicleId, message) => {
+      stream.subscribeParallax?.(vehicle.id, PARALLAX_MONITOR_RVMS, (_vehicleId, message) => {
         void chargingMonitor.ingestParallax(vehicle.id, message);
+        void this.parallaxStore.ingest(vehicle.id, message);
       });
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
         const entry = this.scheduleEntry(vehicle.id);
@@ -335,6 +339,11 @@ export class VehicleMonitor {
     } catch (err) {
       this.log(`persistence error: ${(err as Error).message}`);
     }
+  }
+
+  /** Latest Parallax readings (battery temperatures, parked energy, …). */
+  getInsights(vehicleId: string): Promise<VehicleInsightsDto> {
+    return this.parallaxStore.insights(vehicleId);
   }
 
   getSchedules(vehicleId: string): SchedulesDto {

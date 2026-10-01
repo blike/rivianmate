@@ -138,3 +138,198 @@ export function decodeChargingGraph(payloadBase64: string): ChargingGraphBar[] {
     .filter((bar): bar is ChargingGraphBar => bar !== null)
     .sort((a, b) => a.startMs - b.startMs);
 }
+
+// ---------------------------------------------------------------------------
+// Insight topics. Field meanings come from community docs, checked against
+// live payloads next to the legacy vehicle state; each decoder notes what's
+// confirmed. Unknown fields are ignored.
+
+export const RVM_CHARGE_BREAKDOWN = "energy_edge_compute.graphs.charge_session_breakdown";
+export const RVM_BATTERY_STATE = "energy.high_voltage.battery_state";
+export const RVM_COLD_WEATHER = "energy_edge_compute.graphs.cold_weather_soc";
+export const RVM_PARKED_ENERGY = "energy_edge_compute.graphs.parked_energy_distributions";
+export const RVM_NETWORK = "vehicle.network.state";
+
+/** Topics the monitor subscribes to. */
+export const PARALLAX_MONITOR_RVMS: readonly string[] = [
+  RVM_CHARGING_GRAPH,
+  RVM_CHARGE_BREAKDOWN,
+  RVM_BATTERY_STATE,
+  RVM_COLD_WEATHER,
+  RVM_PARKED_ENERGY,
+  RVM_NETWORK,
+];
+
+/** Field accessors over one decoded message; wrong wire types read as absent. */
+function fieldsOf(bytes: Uint8Array | null | undefined) {
+  const fields = bytes ? readProtoFields(bytes) : null;
+  if (!fields) return null;
+  const find = (n: number) => fields.find((f) => f.field === n);
+  const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
+  return {
+    float(n: number): number | null {
+      const f = find(n);
+      return f?.wire === 5 ? view(f.value).getFloat32(0, true) : null;
+    },
+    double(n: number): number | null {
+      const f = find(n);
+      return f?.wire === 1 ? view(f.value).getFloat64(0, true) : null;
+    },
+    /** Signed varint (int32/int64 two's complement). */
+    int(n: number): number | null {
+      const f = find(n);
+      return f?.wire === 0 ? Number(BigInt.asIntN(64, f.value)) : null;
+    },
+    string(n: number): string | null {
+      const f = find(n);
+      return f?.wire === 2 ? new TextDecoder().decode(f.value) : null;
+    },
+    message(n: number) {
+      const f = find(n);
+      return f?.wire === 2 ? fieldsOf(f.value) : null;
+    },
+  };
+}
+
+const decode = (payloadBase64: string) =>
+  payloadBase64 ? fieldsOf(Buffer.from(payloadBase64, "base64")) : null;
+
+/** Rounds float32 noise (34.4 arrives as 34.400001…). */
+const f32 = (n: number | null) => (n == null ? null : Math.round(n * 1000) / 1000);
+
+export interface ChargeBreakdown {
+  totalKwh: number;
+  /** Energy stored in the pack, and energy spent heating or cooling it. */
+  packKwh: number;
+  thermalKwh: number;
+  chargingMinutes: number;
+  rangeAddedKm: number | null;
+  cost: { amount: number; currency: string } | null;
+}
+
+/**
+ * `charge_session_breakdown` (`k70/b`): 1 total kWh, 2 pack kWh, 5 thermal
+ * kWh, 6 minutes charging, 8 range added (km), 11 cost (money). Rivian keeps
+ * the last session's breakdown and sends it on subscribe. Confirmed against
+ * a home session: 35.8 = 34.4 + 1.4 kWh, 313 min, 162 km, matching Rivian's
+ * history. Proto3 omits zeros, so missing numbers read as 0.
+ */
+export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  const totalKwh = f32(m.float(1)) ?? 0;
+  const packKwh = f32(m.float(2)) ?? 0;
+  const thermalKwh = f32(m.float(5)) ?? 0;
+  if (totalKwh < 0 || packKwh < 0 || thermalKwh < 0) return null;
+  const money = m.message(11);
+  const units = money?.int(2) ?? 0;
+  const nanos = money?.int(3) ?? 0;
+  const currency = money?.string(1) || null;
+  return {
+    totalKwh,
+    packKwh,
+    thermalKwh,
+    chargingMinutes: Math.max(0, m.int(6) ?? 0),
+    rangeAddedKm: m.int(8),
+    cost: currency ? { amount: units + nanos / 1e9, currency } : null,
+  };
+}
+
+export interface BatteryState {
+  soc: number | null;
+  capacityKwh: number | null;
+  /** Cell temperatures, °C; only while the vehicle is awake. */
+  cellTemps: { avgC: number; maxC: number; minC: number } | null;
+}
+
+/**
+ * `energy.high_voltage.battery_state` (`l70/p`): 1 charge state {1 SOC %,
+ * 2 pack capacity kWh}; 2 temperature state {1 avg, 2 max, 3 min °C}.
+ * SOC and capacity match the legacy batteryLevel/batteryCapacity.
+ */
+export function decodeBatteryState(payloadBase64: string): BatteryState | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  const charge = m.message(1);
+  const temps = m.message(2);
+  const avg = f32(temps?.float(1) ?? null);
+  const max = f32(temps?.float(2) ?? null);
+  const min = f32(temps?.float(3) ?? null);
+  return {
+    soc: f32(charge?.double(1) ?? null),
+    capacityKwh: f32(charge?.double(2) ?? null),
+    cellTemps: avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
+  };
+}
+
+export interface ColdWeather {
+  /** Battery % usable now, % held back by the cold, and range lost (km). */
+  usableSoc: number | null;
+  coldSoc: number;
+  rangeImpactKm: number;
+}
+
+/** `cold_weather_soc` (`k70/k`): 1 usable SOC %, 2 cold-limited SOC %, 3 range impact km. */
+export function decodeColdWeather(payloadBase64: string): ColdWeather | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  const num = (n: number) => m.int(n) ?? f32(m.float(n));
+  return { usableSoc: num(1), coldSoc: num(2) ?? 0, rangeImpactKm: num(3) ?? 0 };
+}
+
+export interface ParkedEnergyWindow {
+  minutes: number;
+  kwh: number;
+  rangeKm: number;
+}
+
+/**
+ * `parked_energy_distributions` (`k70/o`): repeated windows {1 total kWh,
+ * 6 total range km, 11 window length in minutes}; 2–5 and 7–10 split them
+ * into categories the docs don't name. 1440- and 480-minute windows drain
+ * at the same rate, which supports reading 11 as minutes.
+ */
+export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] {
+  const m = decode(payloadBase64);
+  if (!m) return [];
+  const windows: ParkedEnergyWindow[] = [];
+  for (const field of [1, 2, 3, 4]) {
+    const w = m.message(field);
+    const minutes = w?.int(11);
+    if (!w || !minutes || minutes <= 0) continue;
+    windows.push({ minutes, kwh: f32(w.float(1)) ?? 0, rangeKm: f32(w.float(6)) ?? 0 });
+  }
+  return windows;
+}
+
+export interface NetworkState {
+  wifi: { ssid: string; rssiDbm: number | null; frequencyMhz: number | null } | null;
+  cellular: { carrier: string | null; technology: string | null } | null;
+}
+
+/**
+ * `vehicle.network.state`: 4 Wi-Fi {3 SSID, 8 RSSI dBm, 10 frequency MHz},
+ * 5 cellular {1 carrier, 2 technology}. A Wi-Fi block without an SSID
+ * means not connected.
+ */
+export function decodeNetwork(payloadBase64: string): NetworkState | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  const wifi = m.message(4);
+  const cell = m.message(5);
+  const ssid = wifi?.string(3);
+  const rssi = wifi?.int(8) ?? null;
+  const frequency = wifi?.int(10) ?? null;
+  const carrier = cell?.string(1) || null;
+  const technology = cell?.string(2) || null;
+  return {
+    wifi: ssid
+      ? {
+          ssid,
+          rssiDbm: rssi != null && rssi < 0 && rssi > -130 ? rssi : null,
+          frequencyMhz: frequency && frequency > 0 ? frequency : null,
+        }
+      : null,
+    cellular: carrier || technology ? { carrier, technology } : null,
+  };
+}

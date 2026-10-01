@@ -1,5 +1,8 @@
 import type { VehicleDto } from "@server/api-types.js";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api/client.js";
 import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
+import { BatteryEnergyPanel, ConnectivityPanel } from "../components/InsightsPanels.js";
 import {
   ClimatePanel,
   ClosuresGrid,
@@ -17,6 +20,11 @@ import { fmt, location, nv, sv, titleCase } from "../lib/state.js";
 export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
   const { data: state, isPending } = useVehicleState(props.vehicleId);
   const { data: liveSession } = useLiveCharging(props.vehicleId);
+  const { data: insights, isPending: insightsPending } = useQuery({
+    queryKey: ["insights", props.vehicleId],
+    queryFn: () => api.insights(props.vehicleId),
+    refetchInterval: 60_000,
+  });
   const u = useUnits();
 
   const battery = nv(state, "batteryLevel");
@@ -127,6 +135,16 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
               <Row label="Charge port" value={titleCase(sv(state, "chargePortState"))} />
             </dl>
           </Panel>
+
+          <LoadingScope loading={insightsPending}>
+            <Panel title="Battery & energy">
+              <BatteryEnergyPanel insights={insights} />
+            </Panel>
+
+            <Panel title="Connectivity">
+              <ConnectivityPanel insights={insights} />
+            </Panel>
+          </LoadingScope>
         </div>
       </div>
     </LoadingScope>
