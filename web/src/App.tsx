@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useLiveState, useStatus, useUnitPreferences, useVehicles } from "./api/hooks.js";
+import { AppHeader } from "./components/AppHeader.js";
 import { Charging } from "./pages/Charging.js";
 import { Dashboard } from "./pages/Dashboard.js";
 import { Drives } from "./pages/Drives.js";
@@ -37,15 +38,6 @@ export default function App() {
   return <Shell />;
 }
 
-const NAV = [
-  { to: "/", label: "Dashboard" },
-  { to: "/history", label: "History" },
-  { to: "/drives", label: "Drives" },
-  { to: "/charging", label: "Charging" },
-  { to: "/health", label: "Health" },
-  { to: "/settings", label: "Settings" },
-];
-
 function Shell() {
   const { data: vehicles, isPending: vehiclesPending } = useVehicles();
   // Wait for units too, so values don't re-render from the default units.
@@ -57,42 +49,7 @@ function Shell() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-6xl flex-col px-4">
-      <header className="flex flex-wrap items-center gap-4 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">
-          Rivian<span className="text-[var(--accent)]">Mate</span>
-        </h1>
-        <nav className="flex gap-1">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `rounded-md px-3 py-1.5 text-sm ${
-                  isActive
-                    ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-        {vehicles && vehicles.length > 1 && (
-          <select
-            className="ml-auto rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1.5 text-sm"
-            value={vehicleId}
-            onChange={(e) => setSelectedId(e.target.value)}
-          >
-            {vehicles.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name ?? v.model ?? v.vin}
-              </option>
-            ))}
-          </select>
-        )}
-      </header>
+      <AppHeader vehicles={vehicles} vehicleId={vehicleId} onSelectVehicle={setSelectedId} />
       <main className="flex-1 pb-10">
         {vehiclesPending || unitsPending ? null : !vehicleId ? (
           <p className="text-[var(--text-muted)]">
