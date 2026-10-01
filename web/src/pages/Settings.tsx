@@ -3,7 +3,9 @@ import { ApiError, api } from "../api/client.js";
 import {
   useRivianDiagnostics,
   useRivianDisconnect,
+  useSetUnits,
   useStatus,
+  useUnits,
 } from "../api/hooks.js";
 import { Panel, Row } from "../components/panels.js";
 import { TextField } from "../components/AuthCard.js";
@@ -12,6 +14,8 @@ export function Settings() {
   const { data: status, refetch } = useStatus();
   const disconnect = useRivianDisconnect();
   const { data: diagnostics } = useRivianDiagnostics();
+  const { units } = useUnits();
+  const setUnits = useSetUnits();
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -104,6 +108,29 @@ export function Settings() {
         </Panel>
       )}
 
+      <Panel title="Units">
+        <div className="space-y-3 text-sm">
+          <UnitToggle
+            label="Distance & speed"
+            value={units.distance}
+            options={[
+              { value: "mi", label: "Miles" },
+              { value: "km", label: "Kilometers" },
+            ]}
+            onChange={(distance) => setUnits.mutate({ ...units, distance })}
+          />
+          <UnitToggle
+            label="Temperature"
+            value={units.temperature}
+            options={[
+              { value: "F", label: "°F" },
+              { value: "C", label: "°C" },
+            ]}
+            onChange={(temperature) => setUnits.mutate({ ...units, temperature })}
+          />
+        </div>
+      </Panel>
+
       <Panel title="App password">
         <div className="space-y-3">
           <TextField
@@ -139,6 +166,40 @@ export function Settings() {
           Sign out
         </button>
       </Panel>
+    </div>
+  );
+}
+
+function UnitToggle<T extends string>(props: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-[var(--text-secondary)]">{props.label}</span>
+      <div
+        role="radiogroup"
+        aria-label={props.label}
+        className="flex rounded-md border border-[var(--border)] p-0.5"
+      >
+        {props.options.map((o) => (
+          <button
+            key={o.value}
+            role="radio"
+            aria-checked={o.value === props.value}
+            className={`rounded px-3 py-1 ${
+              o.value === props.value
+                ? "bg-[var(--series-1)] text-white"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+            onClick={() => props.onChange(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

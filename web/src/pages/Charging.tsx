@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client.js";
-import { useLiveCharging } from "../api/hooks.js";
+import { useLiveCharging, useUnits } from "../api/hooks.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
-import { fmt, fmtDuration, kmToMi, titleCase } from "../lib/state.js";
+import { fmt, fmtDuration, titleCase } from "../lib/state.js";
 
 export function Charging(props: { vehicleId: string }) {
   const queryClient = useQueryClient();
   const { data: live } = useLiveCharging(props.vehicleId);
+  const u = useUnits();
 
   const { data: sessions } = useQuery({
     queryKey: ["chargingSessions", props.vehicleId],
@@ -104,9 +105,7 @@ export function Charging(props: { vehicleId: string }) {
                       {s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : "—"}
                     </td>
                     <td className="py-2 text-right tabular-nums">
-                      {s.rangeAddedKm != null
-                        ? `${fmt(kmToMi(s.rangeAddedKm), 0)} mi`
-                        : "—"}
+                      {u.formatDistance(s.rangeAddedKm)}
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {s.maxPowerKw != null ? `${fmt(s.maxPowerKw, 1)} kW` : "—"}

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { VehicleState } from "@server/api-types.js";
 import { fmt, nv, sv, titleCase } from "../lib/state.js";
+import { useUnits } from "../api/hooks.js";
 import { type ClosureStatus, closureStatuses } from "../lib/closures.js";
 
 export function StatCard(props: {
@@ -86,11 +87,12 @@ export function ClosuresGrid(props: {
 
 export function ClimatePanel(props: { state: VehicleState | undefined }) {
   const s = props.state;
+  const u = useUnits();
   const interior = nv(s, "cabinClimateInteriorTemperature");
   return (
     <dl className="space-y-1 text-sm">
-      <Row label="Cabin temperature" value={interior != null ? `${fmt(interior, 1)} °C` : "—"} />
-      <Row label="Set temperature" value={valTemp(nv(s, "cabinClimateDriverTemperature"))} />
+      <Row label="Cabin temperature" value={u.formatTemperature(interior)} />
+      <Row label="Set temperature" value={u.formatTemperature(nv(s, "cabinClimateDriverTemperature"))} />
       <Row label="Preconditioning" value={titleCase(sv(s, "cabinPreconditioningStatus"))} />
       <Row label="Defrost" value={titleCase(sv(s, "defrostDefogStatus"))} />
       <Row label="Pet mode" value={titleCase(sv(s, "petModeStatus"))} />
@@ -98,9 +100,6 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
   );
 }
 
-function valTemp(v: number | null): string {
-  return v != null ? `${fmt(v, 1)} °C` : "—";
-}
 
 export function TirePanel(props: { state: VehicleState | undefined }) {
   const s = props.state;

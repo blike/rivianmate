@@ -26,12 +26,6 @@ export function location(
   return { lat: loc.latitude, lon: loc.longitude, ts: loc.timeStamp };
 }
 
-export const KM_TO_MI = 0.621371;
-
-export function kmToMi(km: number | null): number | null {
-  return km == null ? null : km * KM_TO_MI;
-}
-
 export function fmt(n: number | null | undefined, digits = 0): string {
   if (n == null) return "—";
   return n.toLocaleString(undefined, {

@@ -1,5 +1,5 @@
 import type { VehicleDto } from "@server/api-types.js";
-import { useLiveCharging, useVehicleState } from "../api/hooks.js";
+import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
 import {
   ClimatePanel,
   ClosuresGrid,
@@ -10,15 +10,18 @@ import {
   TirePanel,
 } from "../components/panels.js";
 import { VehicleMap } from "../components/VehicleMap.js";
-import { fmt, kmToMi, location, nv, sv, titleCase } from "../lib/state.js";
+import { fmt, location, nv, sv, titleCase } from "../lib/state.js";
 
 export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
   const { data: state } = useVehicleState(props.vehicleId);
   const { data: liveSession } = useLiveCharging(props.vehicleId);
+  const u = useUnits();
 
   const battery = nv(state, "batteryLevel");
   const rangeKm = nv(state, "distanceToEmpty");
-  const mileageKm = (nv(state, "vehicleMileage") ?? 0) / 1000;
+  const mileageM = nv(state, "vehicleMileage");
+  const mileageKm = mileageM != null ? mileageM / 1000 : null;
+  const speedMps = nv(state, "gnssSpeed");
   const power = sv(state, "powerState");
   const charger = sv(state, "chargerStatus");
   const charging = charger === "chrgr_sts_connected_charging";
@@ -48,13 +51,11 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
         />
         <StatCard
           label="Range"
-          value={rangeKm != null ? `${fmt(kmToMi(rangeKm), 0)} mi` : "—"}
-          sub={rangeKm != null ? `${fmt(rangeKm, 0)} km` : undefined}
+          value={u.formatDistance(rangeKm)}
         />
         <StatCard
           label="Odometer"
-          value={`${fmt(kmToMi(mileageKm), 0)} mi`}
-          sub={`${fmt(mileageKm, 0)} km`}
+          value={u.formatDistance(mileageKm)}
         />
         <StatCard
           label={charging ? "Charging" : "State"}
@@ -87,7 +88,7 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
           {loc && (
             <p className="mt-2 text-xs text-[var(--text-muted)]">
               Updated {new Date(loc.ts).toLocaleString()} ·{" "}
-              {fmt(nv(state, "gnssSpeed"), 0)} km/h
+              {u.formatSpeed(speedMps != null ? speedMps * 3.6 : null)}
             </p>
           )}
         </Panel>

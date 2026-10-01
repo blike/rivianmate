@@ -8,6 +8,7 @@ import { SESSION_COOKIE, authRoutes } from "./routes/auth.js";
 import { chargingRoutes } from "./routes/charging.js";
 import { historyRoutes } from "./routes/history.js";
 import { rivianRoutes } from "./routes/rivian.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { vehicleRoutes } from "./routes/vehicles.js";
 
 const PUBLIC_PATHS = new Set(["/api/status", "/api/setup", "/api/auth/login"]);
@@ -44,6 +45,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await vehicleRoutes(app, ctx);
   await historyRoutes(app, ctx);
   await chargingRoutes(app, ctx);
+  await settingsRoutes(app, ctx);
 
   if (ctx.config.WEB_DIST && existsSync(ctx.config.WEB_DIST)) {
     await app.register(fastifyStatic, { root: ctx.config.WEB_DIST });

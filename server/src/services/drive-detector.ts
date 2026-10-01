@@ -61,7 +61,7 @@ export class DriveDetector {
     const pv = this.ensure(vehicleId);
     const gear = stateString(state, "gearStatus");
     const power = stateString(state, "powerState");
-    const speed = stateNumber(state, "gnssSpeed") ?? 0;
+    const speed = stateNumber(state, "gnssSpeed") ?? 0; // m/s
 
     const isMoving =
       gear === "drive" ||

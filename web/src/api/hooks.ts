@@ -3,9 +3,10 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import type { LiveSessionData, VehicleState } from "@server/api-types.js";
-import { api } from "./client.js";
+import { DEFAULT_UNITS, unitFormatter } from "../lib/units.js";
+import { api, type UnitPreferences } from "./client.js";
 
 export function useStatus() {
   return useQuery({ queryKey: ["status"], queryFn: api.status, staleTime: 5000 });
@@ -54,6 +55,31 @@ export function useLiveCharging(vehicleId: string | undefined) {
     queryFn: () => null,
     enabled: false,
     staleTime: Infinity,
+  });
+}
+
+/** App-wide unit preferences plus ready-made formatters. */
+export function useUnits() {
+  const { data } = useQuery({
+    queryKey: ["units"],
+    queryFn: api.units,
+    staleTime: Infinity,
+  });
+  const units = data ?? DEFAULT_UNITS;
+  // Stable identity per unit choice so consumers can use it as a dependency.
+  return useMemo(
+    () => unitFormatter({ distance: units.distance, temperature: units.temperature }),
+    [units.distance, units.temperature],
+  );
+}
+
+export function useSetUnits() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (units: UnitPreferences) => api.setUnits(units),
+    onMutate: (units) => queryClient.setQueryData(["units"], units),
+    onSuccess: (units) => queryClient.setQueryData(["units"], units),
+    onError: () => queryClient.invalidateQueries({ queryKey: ["units"] }),
   });
 }
 

@@ -8,6 +8,7 @@ import type {
   LocationPointDto,
   RivianDiagnosticsResponse,
   StatusResponse,
+  UnitPreferences,
   VehicleDto,
   VehicleState,
   WallboxDto,
@@ -15,6 +16,7 @@ import type {
 
 export type {
   RivianDiagnosticsResponse,
+  UnitPreferences,
   ChargingSessionDto,
   ConnectResponse,
   DriveDetailDto,
@@ -84,6 +86,12 @@ export const api = {
     request<ConnectResponse>("/api/rivian/otp", {
       method: "POST",
       body: JSON.stringify({ code }),
+    }),
+  units: () => request<UnitPreferences>("/api/settings/units"),
+  setUnits: (units: UnitPreferences) =>
+    request<UnitPreferences>("/api/settings/units", {
+      method: "PUT",
+      body: JSON.stringify(units),
     }),
   rivianDiagnostics: () =>
     request<RivianDiagnosticsResponse>("/api/rivian/diagnostics"),

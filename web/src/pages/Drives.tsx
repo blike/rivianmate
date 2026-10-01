@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client.js";
+import { useUnits } from "../api/hooks.js";
 import { Panel } from "../components/panels.js";
 import { VehicleMap } from "../components/VehicleMap.js";
-import { fmt, fmtDuration, kmToMi } from "../lib/state.js";
+import { fmt, fmtDuration } from "../lib/state.js";
 
 export function Drives(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const u = useUnits();
 
   const { data: drives } = useQuery({
     queryKey: ["drives", props.vehicleId],
@@ -71,9 +73,7 @@ export function Drives(props: { vehicleId: string }) {
                       </td>
                       <td className="py-2">{fmtDuration(d.startedAt, d.endedAt)}</td>
                       <td className="py-2 text-right tabular-nums">
-                        {d.distanceKm != null
-                          ? `${fmt(kmToMi(d.distanceKm), 1)} mi`
-                          : "—"}
+                        {u.formatDistance(d.distanceKm, 1)}
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {used != null ? `-${fmt(used, 1)}%` : "—"}

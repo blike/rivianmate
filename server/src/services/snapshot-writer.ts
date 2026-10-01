@@ -101,6 +101,7 @@ export class SnapshotWriter {
   ): Promise<void> {
     const loc = stateLocation(state);
     if (!loc) return;
+    // Rivian reports gnssSpeed in m/s.
     const speed = stateNumber(state, "gnssSpeed") ?? 0;
     const last = pv.lastLocation;
     if (last) {
@@ -114,7 +115,7 @@ export class SnapshotWriter {
       ts: new Date(loc.timeStamp),
       lat: loc.latitude,
       lon: loc.longitude,
-      speedKmh: speed,
+      speedKmh: speed * 3.6,
       bearing: stateNumber(state, "gnssBearing"),
       altitude: stateNumber(state, "gnssAltitude"),
       driveId: pv.currentDriveId,

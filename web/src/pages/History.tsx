@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import type { HistoryMetric } from "@server/api-types.js";
 import { api } from "../api/client.js";
+import { useUnits } from "../api/hooks.js";
 import { Panel } from "../components/panels.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { fmt } from "../lib/state.js";
@@ -22,11 +23,14 @@ const RANGES = [
   { label: "90d", hours: 24 * 90, bucket: "1d" },
 ] as const;
 
-const METRICS: { key: HistoryMetric; label: string; unit: string; transform?: (v: number) => number }[] = [
-  { key: "battery", label: "Battery", unit: "%" },
-  { key: "range", label: "Range", unit: "km" },
-  { key: "mileage", label: "Odometer", unit: "km", transform: (v) => v / 1000 },
-  { key: "cabinTemp", label: "Cabin temp", unit: "°C" },
+type MetricKind = "percent" | "distance" | "temperature";
+
+/** Raw values: range in km, odometer in metres, temperature in °C. */
+const METRICS: { key: HistoryMetric; label: string; kind: MetricKind; scale?: number }[] = [
+  { key: "battery", label: "Battery", kind: "percent" },
+  { key: "range", label: "Range", kind: "distance" },
+  { key: "mileage", label: "Odometer", kind: "distance", scale: 1 / 1000 },
+  { key: "cabinTemp", label: "Cabin temp", kind: "temperature" },
 ];
 
 export function History(props: { vehicleId: string }) {
@@ -34,6 +38,13 @@ export function History(props: { vehicleId: string }) {
   const [metricIdx, setMetricIdx] = useState(0);
   const range = RANGES[rangeIdx] ?? RANGES[1]!;
   const metric = METRICS[metricIdx] ?? METRICS[0]!;
+  const u = useUnits();
+  const unit =
+    metric.kind === "distance"
+      ? u.distanceUnit
+      : metric.kind === "temperature"
+        ? u.temperatureUnit
+        : "%";
 
   const { from, to } = useMemo(() => {
     const to = new Date();
@@ -52,18 +63,24 @@ export function History(props: { vehicleId: string }) {
     refetchInterval: 60_000,
   });
 
+  const convert = useCallback(
+    (v: number | null): number | null => {
+      if (v == null) return null;
+      const scaled = v * (metric.scale ?? 1);
+      if (metric.kind === "distance") return u.distance(scaled);
+      if (metric.kind === "temperature") return u.temperature(scaled);
+      return scaled;
+    },
+    [metric, u],
+  );
+
   const chartData = useMemo(
     () =>
       (points ?? []).map((p) => ({
         ts: new Date(p.bucket).getTime(),
-        value:
-          p.avg == null
-            ? null
-            : metric.transform
-              ? metric.transform(p.avg)
-              : p.avg,
+        value: convert(p.avg),
       })),
-    [points, metric],
+    [points, convert],
   );
 
   const trailPositions = useMemo(
@@ -90,7 +107,7 @@ export function History(props: { vehicleId: string }) {
         </div>
       </div>
 
-      <Panel title={`${metric.label} (${metric.unit}) — last ${range.label}`}>
+      <Panel title={`${metric.label} (${unit}) — last ${range.label}`}>
         {chartData.length === 0 ? (
           <p className="py-10 text-center text-sm text-[var(--text-muted)]">
             No history yet — data appears as the vehicle reports state.
@@ -140,7 +157,7 @@ export function History(props: { vehicleId: string }) {
                   }}
                   labelFormatter={(ts: number) => new Date(ts).toLocaleString()}
                   formatter={(value: number) => [
-                    `${fmt(value, 1)} ${metric.unit}`,
+                    `${fmt(value, 1)} ${unit}`,
                     metric.label,
                   ]}
                 />

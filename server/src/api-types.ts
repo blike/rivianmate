@@ -26,6 +26,11 @@ export interface VehicleDto {
   modelYear: number | null;
 }
 
+export interface UnitPreferences {
+  distance: "mi" | "km";
+  temperature: "F" | "C";
+}
+
 export interface RivianDiagnosticsResponse {
   monitor: MonitorDiagnostics;
   traffic: RivianTrafficSnapshot;
