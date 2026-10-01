@@ -55,6 +55,8 @@ export async function vehicleRoutes(
 
       const initial = ctx.monitor.getState(vehicleId);
       if (initial) send("state", initial);
+      // Always sent, so clients can tell "not charging" from "not loaded yet".
+      send("charging", ctx.bus.latestChargingSession(vehicleId));
 
       const offState = ctx.bus.onState((id, state) => {
         if (id === vehicleId) send("state", state);

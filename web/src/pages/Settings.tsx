@@ -8,13 +8,14 @@ import {
   useUnits,
   useVehicles,
 } from "../api/hooks.js";
+import { LoadingScope, Skeleton } from "../components/loading.js";
 import { Panel, Row } from "../components/panels.js";
 import { TextField } from "../components/AuthCard.js";
 
 export function Settings() {
   const { data: status, refetch } = useStatus();
   const disconnect = useRivianDisconnect();
-  const { data: diagnostics } = useRivianDiagnostics();
+  const { data: diagnostics, isPending: diagnosticsPending } = useRivianDiagnostics();
   const { data: vehicles } = useVehicles();
   const { units } = useUnits();
   const setUnits = useSetUnits();
@@ -63,52 +64,65 @@ export function Settings() {
         </button>
       </Panel>
 
-      {diagnostics && (
-        <Panel title="Rivian API usage (last 24h)">
+      <Panel title="Rivian API usage (last 24h)">
+        <LoadingScope loading={diagnosticsPending}>
           <dl className="space-y-1 text-sm">
             <Row
               label="Live stream"
               value={
-                diagnostics.monitor.streamConnected
-                  ? "Connected"
-                  : diagnostics.monitor.fallbackPolling
-                    ? "Down (slow polling)"
-                    : "Down"
+                !diagnostics
+                  ? "—"
+                  : diagnostics.monitor.streamConnected
+                    ? "Connected"
+                    : diagnostics.monitor.fallbackPolling
+                      ? "Down (slow polling)"
+                      : "Down"
               }
             />
             <Row
               label="Requests"
-              value={String(diagnostics.traffic.last24h.httpRequests)}
+              value={diagnostics ? String(diagnostics.traffic.last24h.httpRequests) : "—"}
             />
             <Row
               label="Stream connects / reconnects"
-              value={`${diagnostics.traffic.last24h.wsConnects} / ${diagnostics.traffic.last24h.wsReconnects}`}
+              value={
+                diagnostics
+                  ? `${diagnostics.traffic.last24h.wsConnects} / ${diagnostics.traffic.last24h.wsReconnects}`
+                  : "—"
+              }
             />
             <Row
               label="Session refreshes"
-              value={String(diagnostics.traffic.last24h.sessionRefreshes)}
+              value={diagnostics ? String(diagnostics.traffic.last24h.sessionRefreshes) : "—"}
             />
             <Row
               label="Rate limited"
-              value={String(diagnostics.traffic.last24h.rateLimited)}
+              value={diagnostics ? String(diagnostics.traffic.last24h.rateLimited) : "—"}
             />
-            {diagnostics.traffic.cooldownUntil && (
+            {diagnostics?.traffic.cooldownUntil && (
               <Row
                 label="Paused until"
                 value={new Date(diagnostics.traffic.cooldownUntil).toLocaleTimeString()}
               />
             )}
           </dl>
-          {Object.keys(diagnostics.traffic.requestsByOperation24h).length > 0 && (
+        </LoadingScope>
+        {diagnosticsPending ? (
+          <p className="mt-3 text-xs">
+            <Skeleton className="w-[24em] max-w-full" />
+          </p>
+        ) : (
+          diagnostics &&
+          Object.keys(diagnostics.traffic.requestsByOperation24h).length > 0 && (
             <p className="mt-3 text-xs text-[var(--text-secondary)]">
               {Object.entries(diagnostics.traffic.requestsByOperation24h)
                 .sort((a, b) => b[1] - a[1])
                 .map(([op, n]) => `${op} ${n}`)
                 .join(" · ")}
             </p>
-          )}
-        </Panel>
-      )}
+          )
+        )}
+      </Panel>
 
       {vehicles && vehicles.length > 0 && (
         <Panel title={vehicles.length > 1 ? "Vehicles" : "Vehicle"}>

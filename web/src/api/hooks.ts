@@ -58,13 +58,13 @@ export function useLiveCharging(vehicleId: string | undefined) {
   });
 }
 
+export function useUnitPreferences() {
+  return useQuery({ queryKey: ["units"], queryFn: api.units, staleTime: Infinity });
+}
+
 /** App-wide unit preferences plus ready-made formatters. */
 export function useUnits() {
-  const { data } = useQuery({
-    queryKey: ["units"],
-    queryFn: api.units,
-    staleTime: Infinity,
-  });
+  const { data } = useUnitPreferences();
   const units = data ?? DEFAULT_UNITS;
   // Stable identity per unit choice so consumers can use it as a dependency.
   return useMemo(

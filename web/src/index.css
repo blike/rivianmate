@@ -41,3 +41,42 @@ body {
   background: var(--surface-2);
   border-radius: 0.75rem;
 }
+
+.skeleton {
+  display: inline-block;
+  width: 4em;
+  height: 0.9em;
+  vertical-align: middle;
+  border-radius: 0.25rem;
+  background: var(--surface-2);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-block {
+  display: block;
+  width: 100%;
+  border-radius: 0.5rem;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Only show a full-page loading message if loading is actually slow. */
+.delayed-fade-in {
+  animation: fade-in 0.2s ease-out 0.4s both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

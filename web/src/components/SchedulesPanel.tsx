@@ -3,6 +3,7 @@ import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
 import { formatDuration, formatTimeOfDay, formatWeekDays } from "../lib/schedules.js";
 import { fmt, titleCase } from "../lib/state.js";
+import { SkeletonBlock } from "./loading.js";
 import { Panel } from "./panels.js";
 
 function EnabledPill(props: { enabled: boolean | null }) {
@@ -20,10 +21,15 @@ function EnabledPill(props: { enabled: boolean | null }) {
   );
 }
 
+/** Same height as one schedule card. */
+function ScheduleSkeleton() {
+  return <SkeletonBlock height="4rem" />;
+}
+
 /** Read-only view of charging and departure schedules set in the Rivian app. */
 export function SchedulesPanel(props: { vehicleId: string }) {
   const u = useUnits();
-  const { data } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ["schedules", props.vehicleId],
     queryFn: () => api.schedules(props.vehicleId),
     refetchInterval: 5 * 60_000,
@@ -34,7 +40,9 @@ export function SchedulesPanel(props: { vehicleId: string }) {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <section className="min-w-0">
           <h3 className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Charging</h3>
-          {data?.charging == null ? (
+          {isPending ? (
+            <ScheduleSkeleton />
+          ) : data?.charging == null ? (
             <p className="text-sm text-[var(--text-muted)]">Not loaded yet.</p>
           ) : data.charging.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No charging schedule set.</p>
@@ -60,7 +68,9 @@ export function SchedulesPanel(props: { vehicleId: string }) {
 
         <section className="min-w-0">
           <h3 className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Departures</h3>
-          {data?.departuresUnavailable ? (
+          {isPending ? (
+            <ScheduleSkeleton />
+          ) : data?.departuresUnavailable ? (
             <p className="text-sm text-[var(--text-muted)]">Rivian doesn't provide departure schedules for this vehicle.</p>
           ) : data?.departures == null ? (
             <p className="text-sm text-[var(--text-muted)]">Waiting for the vehicle to report its schedules.</p>

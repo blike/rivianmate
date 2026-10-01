@@ -8,6 +8,8 @@ import {
   useMap,
 } from "react-leaflet";
 
+export const MAP_HEIGHT = "20rem";
+
 const vehicleIcon = (bearing: number | null) =>
   L.divIcon({
     className: "",
@@ -43,7 +45,7 @@ export function VehicleMap(props: {
     <MapContainer
       center={[props.lat, props.lon]}
       zoom={14}
-      style={{ height: props.height ?? "20rem", width: "100%" }}
+      style={{ height: props.height ?? MAP_HEIGHT, width: "100%" }}
       scrollWheelZoom
     >
       <TileLayer

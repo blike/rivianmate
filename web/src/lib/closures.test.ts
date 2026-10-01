@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { closedValue, closureStatuses, lockedValue, vehicleBody } from "./closures.js";
+import {
+  closedValue,
+  closurePlaceholders,
+  closureStatuses,
+  lockedValue,
+  vehicleBody,
+} from "./closures.js";
 
 const v = (value: string) => ({ timeStamp: "t", value });
 
@@ -32,5 +38,12 @@ describe("closures", () => {
     const truck = closureStatuses(state, "R1T").closures.map((c) => c.label);
     expect(truck).toEqual(["Driver door", "Tailgate"]);
     expect(closureStatuses(state, "R1S").closures[0]!.locked).toBeNull();
+  });
+
+  it("lays out every part for the body style before state loads", () => {
+    const suv = closurePlaceholders("R1S").closures.map((c) => c.label);
+    expect(suv).toContain("Liftgate");
+    expect(suv).not.toContain("Tailgate");
+    expect(closurePlaceholders("R1T").windows).toHaveLength(4);
   });
 });

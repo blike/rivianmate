@@ -1,18 +1,20 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api, type ChargingSessionDto } from "../api/client.js";
-import { useLiveCharging, useUnits } from "../api/hooks.js";
+import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
+import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
 import { SchedulesPanel } from "../components/SchedulesPanel.js";
 import { TrendChart } from "../components/TrendChart.js";
-import { fmt, fmtDuration, titleCase } from "../lib/state.js";
+import { fmt, fmtDuration, sv, titleCase } from "../lib/state.js";
 
 export function Charging(props: { vehicleId: string }) {
   const queryClient = useQueryClient();
   const { data: live } = useLiveCharging(props.vehicleId);
+  const { data: state } = useVehicleState(props.vehicleId);
   const u = useUnits();
 
-  const { data: sessions } = useQuery({
+  const { data: sessions, isPending: sessionsPending } = useQuery({
     queryKey: ["chargingSessions", props.vehicleId],
     queryFn: () => api.chargingSessions(props.vehicleId),
     refetchInterval: 60_000,
@@ -34,15 +36,25 @@ export function Charging(props: { vehicleId: string }) {
   });
 
   const isLive = live?.vehicleChargerState?.value === "charging_active";
+  // The live session arrives over SSE just after the page loads; if the
+  // vehicle state already says it's charging, hold its place meanwhile.
+  const liveExpected =
+    live === undefined && sv(state, "chargerStatus") === "chrgr_sts_connected_charging";
 
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const curveSession =
     sessions?.find((s) => s.id === selectedSessionId) ?? sessions?.[0];
-  const { data: curve } = useQuery({
+  const {
+    data: curve,
+    isPending: curvePending,
+    isPlaceholderData: showingPreviousCurve,
+  } = useQuery({
     queryKey: ["chargingCurve", curveSession?.id],
     queryFn: () => api.chargingCurve(curveSession!.id),
     enabled: curveSession != null,
     refetchInterval: curveSession && !curveSession.endedAt ? 30_000 : false,
+    // Keep the previous curve on screen (dimmed) while the next one loads.
+    placeholderData: keepPreviousData,
   });
   const curveData = useMemo(() => {
     const first = curve?.[0] ? Date.parse(curve[0].ts) : 0;
@@ -55,29 +67,33 @@ export function Charging(props: { vehicleId: string }) {
 
   return (
     <div className="space-y-4">
-      {isLive && live && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatCard label="Power" value={`${fmt(num(live.power?.value), 1)} kW`} />
-          <StatCard label="State of charge" value={`${fmt(num(live.soc?.value), 0)}%`} />
-          <StatCard
-            label="Energy added"
-            value={`${fmt(num(live.totalChargedEnergy?.value), 1)} kWh`}
-          />
-          <StatCard
-            label="Time remaining"
-            value={
-              live.timeRemaining?.value != null
-                ? `${fmt(num(live.timeRemaining.value)! / 60, 0)} min`
-                : "—"
-            }
-          />
-        </div>
+      {(isLive || liveExpected) && (
+        <LoadingScope loading={!isLive}>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <StatCard label="Power" value={`${fmt(num(live?.power?.value), 1)} kW`} />
+            <StatCard label="State of charge" value={`${fmt(num(live?.soc?.value), 0)}%`} />
+            <StatCard
+              label="Energy added"
+              value={`${fmt(num(live?.totalChargedEnergy?.value), 1)} kWh`}
+            />
+            <StatCard
+              label="Time remaining"
+              value={
+                live?.timeRemaining?.value != null
+                  ? `${fmt(num(live.timeRemaining.value)! / 60, 0)} min`
+                  : "—"
+              }
+            />
+          </div>
+        </LoadingScope>
       )}
 
       <SchedulesPanel vehicleId={props.vehicleId} />
 
       <Panel title="Charging sessions">
-        {!sessions?.length ? (
+        {sessionsPending ? (
+          <SkeletonRows rows={6} />
+        ) : !sessions?.length ? (
           <p className="py-6 text-center text-sm text-[var(--text-muted)]">
             No charging sessions recorded yet.
           </p>
@@ -164,33 +180,39 @@ export function Charging(props: { vehicleId: string }) {
         )}
       </Panel>
 
-      {curveSession && (
+      {(sessionsPending || curveSession) && (
         <Panel
-          title={`Charging curve · ${new Date(curveSession.startedAt).toLocaleString([], {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}`}
+          title={
+            curveSession
+              ? `Charging curve · ${new Date(curveSession.startedAt).toLocaleString([], {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`
+              : "Charging curve"
+          }
         >
-          {curveData.length > 1 ? (
-            <TrendChart
-              data={curveData}
-              xKey="minutes"
+          <div className={`transition-opacity ${showingPreviousCurve ? "opacity-50" : ""}`}>
+            <ContentFrame
               height={240}
-              xFormatter={(m) => `${fmt(m, curveData.at(-1)!.minutes < 10 ? 1 : 0)} min`}
-              rightDomain={[0, 100]}
-              series={[
-                { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
-                { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
-              ]}
-            />
-          ) : (
-            <p className="py-6 text-center text-sm text-[var(--text-muted)]">
-              No curve recorded for this session. Curves are kept for sessions charged
-              while RivianMate was running.
-            </p>
-          )}
+              loading={sessionsPending || curvePending}
+              empty={curveData.length <= 1}
+              emptyText="No curve recorded for this session. Curves are kept for sessions charged while RivianMate was running."
+            >
+              <TrendChart
+                data={curveData}
+                xKey="minutes"
+                height={240}
+                xFormatter={(m) => `${fmt(m, curveData.at(-1)!.minutes < 10 ? 1 : 0)} min`}
+                rightDomain={[0, 100]}
+                series={[
+                  { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
+                  { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
+                ]}
+              />
+            </ContentFrame>
+          </div>
         </Panel>
       )}
 

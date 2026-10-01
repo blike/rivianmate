@@ -9,6 +9,8 @@ export interface LiveEvents {
 /** In-process fanout from the monitor services to SSE connections. */
 export class LiveBus {
   private emitter = new EventEmitter();
+  /** Latest charging session per vehicle, replayed to new SSE clients. */
+  private chargingSessions = new Map<string, LiveSessionData | null>();
 
   constructor() {
     this.emitter.setMaxListeners(100);
@@ -19,7 +21,12 @@ export class LiveBus {
   }
 
   emitChargingSession(vehicleId: string, session: LiveSessionData | null): void {
+    this.chargingSessions.set(vehicleId, session);
     this.emitter.emit("chargingSession", vehicleId, session);
+  }
+
+  latestChargingSession(vehicleId: string): LiveSessionData | null {
+    return this.chargingSessions.get(vehicleId) ?? null;
   }
 
   onState(listener: LiveEvents["state"]): () => void {

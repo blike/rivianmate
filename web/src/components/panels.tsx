@@ -2,21 +2,27 @@ import type { ReactNode } from "react";
 import type { VehicleState } from "@server/api-types.js";
 import { fmt, nv, sv, titleCase } from "../lib/state.js";
 import { useUnits } from "../api/hooks.js";
-import { type ClosureStatus, closureStatuses } from "../lib/closures.js";
+import { type ClosureStatus, closurePlaceholders, closureStatuses } from "../lib/closures.js";
+import { Skeleton, useLoading } from "./loading.js";
 
 export function StatCard(props: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
 }) {
+  const loading = useLoading();
   return (
     <div className="card p-4">
       <div className="text-xs uppercase tracking-wide text-[var(--text-muted)]">
         {props.label}
       </div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{props.value}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums">
+        {loading ? <Skeleton /> : props.value}
+      </div>
       {props.sub && (
-        <div className="mt-1 text-xs text-[var(--text-secondary)]">{props.sub}</div>
+        <div className="mt-1 text-xs text-[var(--text-secondary)]">
+          {loading ? <Skeleton className="w-[8em]" /> : props.sub}
+        </div>
       )}
     </div>
   );
@@ -50,15 +56,22 @@ function StatusDot(props: { ok: boolean | null }) {
 
 function ClosureRow(props: { status: ClosureStatus }) {
   const { label, closed, locked } = props.status;
+  const loading = useLoading();
   return (
     <div className="flex items-center justify-between py-1 text-sm">
       <span className="text-[var(--text-secondary)]">{label}</span>
       <span className="flex items-center gap-2">
-        <StatusDot ok={closed} />
-        <span>
-          {closed ? "Closed" : "Open"}
-          {locked !== null && ` · ${locked ? "Locked" : "Unlocked"}`}
-        </span>
+        {loading ? (
+          <Skeleton className="w-[7em]" />
+        ) : (
+          <>
+            <StatusDot ok={closed} />
+            <span>
+              {closed ? "Closed" : "Open"}
+              {locked !== null && ` · ${locked ? "Locked" : "Unlocked"}`}
+            </span>
+          </>
+        )}
       </span>
     </div>
   );
@@ -68,7 +81,10 @@ export function ClosuresGrid(props: {
   state: VehicleState | undefined;
   model?: string | null;
 }) {
-  const { closures, windows } = closureStatuses(props.state, props.model);
+  const loading = useLoading();
+  const { closures, windows } = loading
+    ? closurePlaceholders(props.model)
+    : closureStatuses(props.state, props.model);
   return (
     <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
       <div>
@@ -104,6 +120,7 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
 export function TirePanel(props: { state: VehicleState | undefined }) {
   const s = props.state;
   const u = useUnits();
+  const loading = useLoading();
   const corners = [
     { label: "Front left", status: "tirePressureStatusFrontLeft", pressure: "tirePressureFrontLeft" },
     { label: "Front right", status: "tirePressureStatusFrontRight", pressure: "tirePressureFrontRight" },
@@ -119,10 +136,16 @@ export function TirePanel(props: { state: VehicleState | undefined }) {
           <div key={c.label} className="rounded-md bg-[var(--surface-2)] p-3 text-sm">
             <div className="text-xs text-[var(--text-muted)]">{c.label}</div>
             <div className="mt-1 flex items-center gap-2">
-              <StatusDot ok={status == null ? null : status === "OK"} />
-              <span className="tabular-nums">
-                {bar != null ? u.formatPressure(bar) : (status ?? "—")}
-              </span>
+              {loading ? (
+                <Skeleton />
+              ) : (
+                <>
+                  <StatusDot ok={status == null ? null : status === "OK"} />
+                  <span className="tabular-nums">
+                    {bar != null ? u.formatPressure(bar) : (status ?? "—")}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         );
@@ -152,10 +175,11 @@ export function OtaPanel(props: { state: VehicleState | undefined }) {
 }
 
 export function Row(props: { label: string; value: ReactNode }) {
+  const loading = useLoading();
   return (
     <div className="flex items-center justify-between gap-4">
       <dt className="text-[var(--text-secondary)]">{props.label}</dt>
-      <dd className="tabular-nums">{props.value}</dd>
+      <dd className="tabular-nums">{loading ? <Skeleton className="w-[5em]" /> : props.value}</dd>
     </div>
   );
 }

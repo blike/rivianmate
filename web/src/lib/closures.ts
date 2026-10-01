@@ -77,10 +77,13 @@ export interface ClosureStatus {
   locked: boolean | null;
 }
 
+function forBody(defs: ClosureDef[], body: VehicleBody) {
+  return defs.filter((def) => !(def.body && body && def.body !== body));
+}
+
 function resolve(defs: ClosureDef[], state: VehicleState | undefined, body: VehicleBody) {
   const rows: ClosureStatus[] = [];
-  for (const def of defs) {
-    if (def.body && body && def.body !== body) continue;
+  for (const def of forBody(defs, body)) {
     const closed = closedValue(sv(state, def.closedKey));
     // Hide parts with no recognizable reading (absent on this vehicle or not reported).
     if (closed === null) continue;
@@ -100,4 +103,12 @@ export function closureStatuses(state: VehicleState | undefined, model: string |
     closures: resolve(CLOSURES, state, body),
     windows: resolve(WINDOWS, state, body),
   };
+}
+
+/** Rows this body type can show, for laying out the panel before state loads. */
+export function closurePlaceholders(model: string | null | undefined) {
+  const body = vehicleBody(model);
+  const rows = (defs: ClosureDef[]): ClosureStatus[] =>
+    forBody(defs, body).map((def) => ({ key: def.closedKey, label: def.label, closed: true, locked: null }));
+  return { closures: rows(CLOSURES), windows: rows(WINDOWS) };
 }

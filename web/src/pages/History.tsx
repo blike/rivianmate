@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import {
   Area,
@@ -12,6 +12,7 @@ import {
 import type { HistoryMetric } from "@server/api-types.js";
 import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
+import { ContentFrame } from "../components/loading.js";
 import { Panel } from "../components/panels.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { fmt } from "../lib/state.js";
@@ -51,16 +52,21 @@ export function History(props: { vehicleId: string }) {
     return { from: new Date(to.getTime() - range.hours * 3600_000), to };
   }, [range.hours]);
 
-  const { data: points } = useQuery({
+  const { data: points, isPending: pointsPending } = useQuery({
     queryKey: ["history", props.vehicleId, metric.key, range.label],
     queryFn: () => api.history(props.vehicleId, metric.key, from, to, range.bucket),
     refetchInterval: 60_000,
+    // Keep the old chart while a new range loads; another metric's values
+    // would be drawn on the wrong scale, so those show a placeholder instead.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === metric.key ? previous : undefined,
   });
 
-  const { data: trail } = useQuery({
+  const { data: trail, isPending: trailPending } = useQuery({
     queryKey: ["locations", props.vehicleId, range.label],
     queryFn: () => api.locations(props.vehicleId, from, to),
     refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
   });
 
   const convert = useCallback(
@@ -87,6 +93,7 @@ export function History(props: { vehicleId: string }) {
     () => (trail ?? []).map((p) => [p.lat, p.lon] as [number, number]),
     [trail],
   );
+  const lastPosition = trailPositions.at(-1);
 
   return (
     <div className="space-y-4">
@@ -108,11 +115,12 @@ export function History(props: { vehicleId: string }) {
       </div>
 
       <Panel title={`${metric.label} (${unit}) — last ${range.label}`}>
-        {chartData.length === 0 ? (
-          <p className="py-10 text-center text-sm text-[var(--text-muted)]">
-            No history yet — data appears as the vehicle reports state.
-          </p>
-        ) : (
+        <ContentFrame
+          height="18rem"
+          loading={pointsPending}
+          empty={chartData.length === 0}
+          emptyText="No history yet — data appears as the vehicle reports state."
+        >
           <div style={{ height: "18rem" }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -173,23 +181,26 @@ export function History(props: { vehicleId: string }) {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        )}
+        </ContentFrame>
       </Panel>
 
       <Panel title="Location trail">
-        {trailPositions.length > 0 ? (
-          <VehicleMap
-            lat={trailPositions[trailPositions.length - 1]![0]}
-            lon={trailPositions[trailPositions.length - 1]![1]}
-            trail={trailPositions}
-            height="24rem"
-            follow={false}
-          />
-        ) : (
-          <p className="py-10 text-center text-sm text-[var(--text-muted)]">
-            No location points in this range.
-          </p>
-        )}
+        <ContentFrame
+          height="24rem"
+          loading={trailPending}
+          empty={trailPositions.length === 0}
+          emptyText="No location points in this range."
+        >
+          {lastPosition && (
+            <VehicleMap
+              lat={lastPosition[0]}
+              lon={lastPosition[1]}
+              trail={trailPositions}
+              height="24rem"
+              follow={false}
+            />
+          )}
+        </ContentFrame>
       </Panel>
     </div>
   );

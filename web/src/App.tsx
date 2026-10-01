@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
-import { useLiveState, useStatus, useVehicles } from "./api/hooks.js";
+import { useLiveState, useStatus, useUnitPreferences, useVehicles } from "./api/hooks.js";
 import { Charging } from "./pages/Charging.js";
 import { Dashboard } from "./pages/Dashboard.js";
 import { Drives } from "./pages/Drives.js";
@@ -16,7 +16,7 @@ export default function App() {
 
   if (isLoading || !status) {
     return (
-      <div className="flex h-full items-center justify-center text-[var(--text-muted)]">
+      <div className="delayed-fade-in flex h-full items-center justify-center text-[var(--text-muted)]">
         Loading…
       </div>
     );
@@ -47,7 +47,9 @@ const NAV = [
 ];
 
 function Shell() {
-  const { data: vehicles } = useVehicles();
+  const { data: vehicles, isPending: vehiclesPending } = useVehicles();
+  // Wait for units too, so values don't re-render from the default units.
+  const { isPending: unitsPending } = useUnitPreferences();
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const vehicleId = selectedId ?? vehicles?.[0]?.id;
   const vehicle = vehicles?.find((v) => v.id === vehicleId);
@@ -92,8 +94,10 @@ function Shell() {
         )}
       </header>
       <main className="flex-1 pb-10">
-        {!vehicleId ? (
-          <p className="text-[var(--text-muted)]">No vehicles found.</p>
+        {vehiclesPending || unitsPending ? null : !vehicleId ? (
+          <p className="text-[var(--text-muted)]">
+            {vehicles ? "No vehicles found." : "Couldn't load vehicles."}
+          </p>
         ) : (
           <Routes>
             <Route path="/" element={<Dashboard vehicleId={vehicleId} vehicle={vehicle} />} />

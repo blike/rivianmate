@@ -83,7 +83,10 @@ export class ChargingMonitor {
     } else {
       this.pluggedIn.delete(vehicleId);
       // Unplugged: whatever was open is over.
-      void this.enqueue(vehicleId, () => this.processSession(vehicleId, null));
+      void this.enqueue(vehicleId, async () => {
+        await this.processSession(vehicleId, null);
+        this.bus.emitChargingSession(vehicleId, null);
+      });
     }
     this.reschedule();
   }

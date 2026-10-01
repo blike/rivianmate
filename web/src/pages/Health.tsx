@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
+import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.js";
 import { Panel, StatCard } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { fmt } from "../lib/state.js";
@@ -16,22 +17,25 @@ export function Health(props: { vehicleId: string }) {
   const [tireDays, setTireDays] = useState<number>(30);
   const u = useUnits();
 
-  const { data: drain } = useQuery({
+  // Window changes keep the previous chart until the new one loads.
+  const { data: drain, isPending: drainPending } = useQuery({
     queryKey: ["phantomDrain", props.vehicleId, drainDays],
     queryFn: () => api.phantomDrain(props.vehicleId, drainDays),
     refetchInterval: 15 * 60_000,
+    placeholderData: keepPreviousData,
   });
-  const { data: tires } = useQuery({
+  const { data: tires, isPending: tiresPending } = useQuery({
     queryKey: ["tirePressures", props.vehicleId, tireDays],
     queryFn: () => api.tirePressures(props.vehicleId, tireDays),
     refetchInterval: 15 * 60_000,
+    placeholderData: keepPreviousData,
   });
-  const { data: ota } = useQuery({
+  const { data: ota, isPending: otaPending } = useQuery({
     queryKey: ["ota", props.vehicleId],
     queryFn: () => api.otaTimeline(props.vehicleId),
     refetchInterval: 15 * 60_000,
   });
-  const { data: battery } = useQuery({
+  const { data: battery, isPending: batteryPending } = useQuery({
     queryKey: ["batteryHealth", props.vehicleId],
     queryFn: () => api.batteryHealth(props.vehicleId),
     refetchInterval: 15 * 60_000,
@@ -80,26 +84,30 @@ export function Health(props: { vehicleId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard
-          label="Parked drain"
-          value={drain?.avgPctPerDay != null ? `${fmt(drain.avgPctPerDay, 2)}%/day` : "—"}
-          sub={`Last ${drainDays} days`}
-        />
-        <StatCard
-          label="Est. usable capacity"
-          value={latestEstimate != null ? `${fmt(latestEstimate, 0)} kWh` : "—"}
-          sub="From your latest long charge"
-        />
-        <StatCard
-          label="Reported capacity"
-          value={latestReported != null ? `${fmt(latestReported, 0)} kWh` : "—"}
-          sub="As reported by the vehicle"
-        />
-        <StatCard
-          label="Battery cells"
-          value={battery?.cellType ?? "—"}
-          sub={isLfp ? "LFP: regular charges to 100% are fine" : "As reported by the vehicle"}
-        />
+        <LoadingScope loading={drainPending}>
+          <StatCard
+            label="Parked drain"
+            value={drain?.avgPctPerDay != null ? `${fmt(drain.avgPctPerDay, 2)}%/day` : "—"}
+            sub={`Last ${drainDays} days`}
+          />
+        </LoadingScope>
+        <LoadingScope loading={batteryPending}>
+          <StatCard
+            label="Est. usable capacity"
+            value={latestEstimate != null ? `${fmt(latestEstimate, 0)} kWh` : "—"}
+            sub="From your latest long charge"
+          />
+          <StatCard
+            label="Reported capacity"
+            value={latestReported != null ? `${fmt(latestReported, 0)} kWh` : "—"}
+            sub="As reported by the vehicle"
+          />
+          <StatCard
+            label="Battery cells"
+            value={battery?.cellType ?? "—"}
+            sub={isLfp ? "LFP: regular charges to 100% are fine" : "As reported by the vehicle"}
+          />
+        </LoadingScope>
       </div>
 
       <Panel title="Parked battery drain">
@@ -109,7 +117,12 @@ export function Health(props: { vehicleId: string }) {
           </p>
           <WindowPicker value={drainDays} onChange={setDrainDays} />
         </div>
-        {drainData.length > 0 ? (
+        <ContentFrame
+          height={200}
+          loading={drainPending}
+          empty={drainData.length === 0}
+          emptyText="Not enough parked time recorded yet."
+        >
           <TrendChart
             data={drainData}
             xKey="ts"
@@ -117,11 +130,7 @@ export function Health(props: { vehicleId: string }) {
             xFormatter={shortDate}
             series={[{ key: "rate", label: "Drain", color: "var(--status-warning)", mark: "bar", unit: "%/day", digits: 2 }]}
           />
-        ) : (
-          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
-            Not enough parked time recorded yet.
-          </p>
-        )}
+        </ContentFrame>
       </Panel>
 
       <Panel title="Tire pressure">
@@ -131,7 +140,12 @@ export function Health(props: { vehicleId: string }) {
           </p>
           <WindowPicker value={tireDays} onChange={setTireDays} />
         </div>
-        {tireData.length > 0 ? (
+        <ContentFrame
+          height={220}
+          loading={tiresPending}
+          empty={tireData.length === 0}
+          emptyText="No tire pressure readings in this window yet."
+        >
           <TrendChart
             data={tireData}
             xKey="ts"
@@ -145,11 +159,7 @@ export function Health(props: { vehicleId: string }) {
               { key: "rr", label: "Rear right", color: "var(--status-critical)", mark: "line", unit: u.pressureUnit, digits: u.pressureUnit === "psi" ? 1 : 2 },
             ]}
           />
-        ) : (
-          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
-            No tire pressure readings in this window yet.
-          </p>
-        )}
+        </ContentFrame>
       </Panel>
 
       <Panel title="Battery capacity over time">
@@ -158,7 +168,12 @@ export function Health(props: { vehicleId: string }) {
           battery % gained. Charging losses and SoC rounding make single sessions noisy; watch the
           trend over months, not one point.
         </p>
-        {capacityData.length > 0 ? (
+        <ContentFrame
+          height={220}
+          loading={batteryPending}
+          empty={capacityData.length === 0}
+          emptyText="No estimate yet. One appears after a charge that adds at least 20%."
+        >
           <TrendChart
             data={capacityData}
             xKey="ts"
@@ -169,11 +184,7 @@ export function Health(props: { vehicleId: string }) {
               { key: "reported", label: "Reported by vehicle", color: "var(--series-2)", mark: "line", unit: "kWh", digits: 1 },
             ]}
           />
-        ) : (
-          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
-            No estimate yet. One appears after a charge that adds at least 20%.
-          </p>
-        )}
+        </ContentFrame>
       </Panel>
       <Panel title="Software updates">
         {ota?.available && (
@@ -184,7 +195,9 @@ export function Health(props: { vehicleId: string }) {
             {ota.availableNotesUrl && <NotesLink href={ota.availableNotesUrl} />}
           </div>
         )}
-        {ota && ota.versions.length > 0 ? (
+        {otaPending ? (
+          <SkeletonRows rows={3} />
+        ) : ota && ota.versions.length > 0 ? (
           <ol className="text-sm">
             {ota.versions.map((v, i) => (
               <li

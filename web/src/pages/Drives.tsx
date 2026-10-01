@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api } from "../api/client.js";
 import { useUnits } from "../api/hooks.js";
+import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.js";
 import { Panel, Row } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { withCumulativeKm } from "../lib/geo.js";
@@ -12,21 +13,28 @@ export function Drives(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const u = useUnits();
 
-  const { data: drives } = useQuery({
+  const { data: drives, isPending: drivesPending } = useQuery({
     queryKey: ["drives", props.vehicleId],
     queryFn: () => api.drives(props.vehicleId),
     refetchInterval: 60_000,
   });
 
-  const { data: detail } = useQuery({
+  const {
+    data: detail,
+    isPending: detailPending,
+    isPlaceholderData: showingPreviousDrive,
+  } = useQuery({
     queryKey: ["drive", selectedId],
     queryFn: () => api.drive(selectedId!),
     enabled: selectedId != null,
+    // Keep the previous route on screen (dimmed) while the next one loads.
+    placeholderData: keepPreviousData,
   });
 
   const trail = (detail?.points ?? []).map(
     (p) => [p.lat, p.lon] as [number, number],
   );
+  const midpoint = trail[Math.floor(trail.length / 2)];
 
   const profile = useMemo(
     () =>
@@ -39,7 +47,9 @@ export function Drives(props: { vehicleId: string }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Panel title="Drives">
-        {!drives?.length ? (
+        {drivesPending ? (
+          <SkeletonRows rows={8} />
+        ) : !drives?.length ? (
           <p className="py-6 text-center text-sm text-[var(--text-muted)]">
             No drives recorded yet.
           </p>
@@ -102,28 +112,40 @@ export function Drives(props: { vehicleId: string }) {
       </Panel>
 
       <Panel title="Route">
-        {detail && (
-          <dl className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
-            <Row label="Distance" value={u.formatDistance(detail.distanceKm, 1)} />
-            <Row label="Energy" value={detail.energyKwh != null ? `${fmt(detail.energyKwh, 1)} kWh` : "—"} />
-            <Row label="Efficiency" value={u.formatEfficiency(detail.distanceKm, detail.energyKwh)} />
-            <Row label="Climb" value={u.formatElevation(detail.elevationGainM)} />
-            <Row label="Descent" value={u.formatElevation(detail.elevationLossM)} />
-            <Row label="Duration" value={fmtDuration(detail.startedAt, detail.endedAt)} />
-          </dl>
-        )}
-        {detail && trail.length > 0 ? (
-          <VehicleMap
-            lat={trail[Math.floor(trail.length / 2)]![0]}
-            lon={trail[Math.floor(trail.length / 2)]![1]}
-            trail={trail}
-            height="28rem"
-            follow={false}
-          />
-        ) : (
+        {selectedId == null ? (
           <p className="py-10 text-center text-sm text-[var(--text-muted)]">
             Select a drive to see its route.
           </p>
+        ) : (
+          <div className={`transition-opacity ${showingPreviousDrive ? "opacity-50" : ""}`}>
+            <LoadingScope loading={detailPending}>
+              <dl className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+                <Row label="Distance" value={u.formatDistance(detail?.distanceKm, 1)} />
+                <Row label="Energy" value={detail?.energyKwh != null ? `${fmt(detail.energyKwh, 1)} kWh` : "—"} />
+                <Row label="Efficiency" value={u.formatEfficiency(detail?.distanceKm, detail?.energyKwh)} />
+                <Row label="Climb" value={u.formatElevation(detail?.elevationGainM)} />
+                <Row label="Descent" value={u.formatElevation(detail?.elevationLossM)} />
+                <Row label="Duration" value={detail ? fmtDuration(detail.startedAt, detail.endedAt) : "—"} />
+              </dl>
+            </LoadingScope>
+            <ContentFrame
+              height="28rem"
+              loading={detailPending}
+              empty={!midpoint}
+              emptyText="No GPS points recorded for this drive."
+            >
+              {detail && midpoint && (
+                <VehicleMap
+                  key={detail.id}
+                  lat={midpoint[0]}
+                  lon={midpoint[1]}
+                  trail={trail}
+                  height="28rem"
+                  follow={false}
+                />
+              )}
+            </ContentFrame>
+          </div>
         )}
         {profile.length > 1 && (
           <div className="mt-4">
