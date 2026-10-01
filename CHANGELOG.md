@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.4.0 — 2026-09-30
+
+- Pages no longer flash "No vehicles found", empty charts, or other empty
+  states while loading. Panels show placeholders at their final size, values
+  render in your units from the start, and switching ranges keeps the previous
+  chart until the next one loads.
+- Live charging stats appear immediately after a page refresh.
+- Redesigned sign-in and onboarding screens, including a six-digit
+  verification code input that accepts paste and one-time-code autofill and
+  submits automatically.
+- Stronger app password requirements: new passwords need at least 12
+  characters and can't be common passwords, the app name, or patterns like
+  1234, with a live strength meter. Existing passwords keep working.
+- Settings → About shows the running version and build commit.
+- Updated all dependencies to their latest versions, with no known
+  vulnerabilities.
+- Faster multi-platform Docker builds.
+
+### Upgrading
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and
+database volume, then run `docker compose pull && docker compose up -d`.
+
+Docker image tags have changed. `latest` now means the newest stable release
+and is the default in `docker-compose.yml`; pin a line with `0.4` or an exact
+release with `0.4.0`. Builds of every `main` commit are now published as `edge`
+instead of `latest`.
+
+If you set `APP_PASSWORD` and the app has no password yet, it must meet the new
+password requirements or the server will refuse to start. It's ignored once a
+password exists.
+
 ## v0.3 — 2026-09-30
 
 - Quieter, more resilient Rivian connections with shared request throttling,
