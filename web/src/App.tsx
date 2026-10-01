@@ -4,6 +4,7 @@ import { useLiveState, useStatus, useVehicles } from "./api/hooks.js";
 import { Charging } from "./pages/Charging.js";
 import { Dashboard } from "./pages/Dashboard.js";
 import { Drives } from "./pages/Drives.js";
+import { Health } from "./pages/Health.js";
 import { History } from "./pages/History.js";
 import { Login } from "./pages/Login.js";
 import { RivianConnect } from "./pages/RivianConnect.js";
@@ -41,6 +42,7 @@ const NAV = [
   { to: "/history", label: "History" },
   { to: "/drives", label: "Drives" },
   { to: "/charging", label: "Charging" },
+  { to: "/health", label: "Health" },
   { to: "/settings", label: "Settings" },
 ];
 
@@ -98,6 +100,7 @@ function Shell() {
             <Route path="/history" element={<History vehicleId={vehicleId} />} />
             <Route path="/drives" element={<Drives vehicleId={vehicleId} />} />
             <Route path="/charging" element={<Charging vehicleId={vehicleId} />} />
+            <Route path="/health" element={<Health vehicleId={vehicleId} />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

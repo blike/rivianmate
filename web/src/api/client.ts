@@ -1,4 +1,5 @@
 import type {
+  BatteryHealthDto,
   ChargingCurvePointDto,
   ChargingSessionDto,
   ConnectResponse,
@@ -8,6 +9,7 @@ import type {
   HistoryPoint,
   LocationPointDto,
   RivianDiagnosticsResponse,
+  PhantomDrainDto,
   StatusResponse,
   UnitPreferences,
   VehicleDto,
@@ -16,6 +18,7 @@ import type {
 } from "@server/api-types.js";
 
 export type {
+  BatteryHealthDto,
   ChargingCurvePointDto,
   RivianDiagnosticsResponse,
   UnitPreferences,
@@ -120,6 +123,10 @@ export const api = {
       body: JSON.stringify({ cost }),
     }),
   wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
+  phantomDrain: (vehicleId: string, days: number) =>
+    request<PhantomDrainDto>(`/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}`),
+  batteryHealth: (vehicleId: string) =>
+    request<BatteryHealthDto>(`/api/vehicles/${vehicleId}/health/battery`),
   chargingCurve: (sessionId: number) =>
     request<ChargingCurvePointDto[]>(`/api/charging-sessions/${sessionId}/curve`),
 };

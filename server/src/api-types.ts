@@ -80,6 +80,20 @@ export interface DriveDetailDto extends DriveDto {
   points: LocationPointDto[];
 }
 
+export interface PhantomDrainDto {
+  days: { day: string; lossPct: number; parkedHours: number; pctPerDay: number }[];
+  /** Average %/day over all parked time in the window; null if too little data. */
+  avgPctPerDay: number | null;
+}
+
+export interface BatteryHealthDto {
+  /** Usable-capacity estimates from charging sessions (energy ÷ SoC gained). */
+  estimates: { sessionId: number; date: string; socGain: number; estimatedKwh: number }[];
+  /** Pack capacity as reported by the vehicle, max per day. */
+  reported: { day: string; kwh: number }[];
+  cellType: string | null;
+}
+
 export interface ChargingCurvePointDto {
   ts: string;
   powerKw: number | null;

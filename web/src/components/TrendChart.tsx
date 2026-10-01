@@ -23,6 +23,8 @@ export interface TrendSeries {
   right?: boolean;
   unit?: string;
   digits?: number;
+  /** Draw a dot per data point (for sparse series). */
+  dots?: boolean;
 }
 
 type Row = Record<string, number | null>;
@@ -115,7 +117,16 @@ export function TrendChart(props: {
             };
             if (s.mark === "bar") return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
             if (s.mark === "line") {
-              return <Line {...common} type="monotone" stroke={s.color} strokeWidth={2} dot={false} connectNulls />;
+              return (
+                <Line
+                  {...common}
+                  type="monotone"
+                  stroke={s.color}
+                  strokeWidth={2}
+                  dot={s.dots ? { r: 3, fill: s.color, strokeWidth: 0 } : false}
+                  connectNulls
+                />
+              );
             }
             return (
               <Area
