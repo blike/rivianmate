@@ -49,6 +49,13 @@ export interface VehicleDto {
 
 export type { HomeChargingSettings } from "./services/home-charging.js";
 
+/** Map basemap overrides from the server environment; null = app defaults. */
+export interface MapConfigResponse {
+  styleUrl: string | null;
+  tilesUrl: string | null;
+  glyphsUrl: string | null;
+}
+
 export interface UnitPreferences {
   distance: "mi" | "km";
   temperature: "F" | "C";

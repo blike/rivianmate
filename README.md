@@ -153,6 +153,9 @@ If the API server must run on a different port, point the web proxy at it:
 | `MOCK_RIVIAN` | no | `1` = simulated vehicle, OTP `000000` |
 | `REVERSE_GEOCODING` | no | `false` turns off drive start/end address lookups. When on (the default), each drive's start and end coordinates are sent to OpenStreetMap's [Nominatim](https://nominatim.org) service, at most one request a second, and results are cached |
 | `APP_PASSWORD` | no | Seed the app password on first boot instead of the setup wizard. Must meet the password policy (12+ characters, not a common word or pattern) |
+| `MAP_TILES_URL` | no | TileJSON URL for OpenMapTiles-schema vector tiles used by the themed map. Defaults to [OpenFreeMap](https://openfreemap.org) (free, no API key). Point it at your own tile server to keep map requests local |
+| `MAP_GLYPHS_URL` | no | Font glyph URL template (`{fontstack}`, `{range}`) for map labels. Defaults to OpenFreeMap's Noto Sans |
+| `MAP_STYLE_URL` | no | A complete MapLibre style URL (e.g. MapTiler, Stadia). Replaces the built-in themed style; the vehicle and route are still drawn on top |
 
 > **Note:** rotating `APP_SECRET` invalidates stored Rivian tokens (they can no
 > longer be decrypted); you'll be asked to reconnect your Rivian account.

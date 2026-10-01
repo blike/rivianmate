@@ -17,6 +17,12 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v !== "0" && v !== "false"),
   APP_PASSWORD: z.string().optional(),
+  /** Full MapLibre style URL; replaces the built-in themed style entirely. */
+  MAP_STYLE_URL: z.string().url().optional(),
+  /** TileJSON URL for OpenMapTiles-schema vector tiles (themed style). */
+  MAP_TILES_URL: z.string().url().optional(),
+  /** Glyph URL template with {fontstack} and {range} (themed style). */
+  MAP_GLYPHS_URL: z.string().optional(),
   NODE_ENV: z.string().default("development"),
   WEB_DIST: z.string().optional(),
 });
