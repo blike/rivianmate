@@ -168,6 +168,7 @@ export function Charging(props: { vehicleId: string }) {
                     <td className="py-2 text-right">
                       <CostCell
                         cost={s.cost}
+                        estimatedCost={s.estimatedCost}
                         currency={s.currency}
                         onSave={(cost) => costMutation.mutate({ id: s.id, cost })}
                       />
@@ -251,6 +252,7 @@ export function Charging(props: { vehicleId: string }) {
 
 function CostCell(props: {
   cost: string | null;
+  estimatedCost?: string | null;
   currency: string | null;
   onSave: (cost: string | null) => void;
 }) {
@@ -267,9 +269,15 @@ function CostCell(props: {
         }}
         title="Edit cost"
       >
-        {props.cost != null
-          ? `${props.currency === "USD" || !props.currency ? "$" : `${props.currency} `}${fmt(Number(props.cost), 2)}`
-          : "add"}
+        {props.cost != null ? (
+          formatMoney(props.cost, props.currency)
+        ) : props.estimatedCost != null ? (
+          <span className="text-[var(--text-muted)]" title="Estimated from your home electricity rate">
+            ≈ {formatMoney(props.estimatedCost, props.currency)}
+          </span>
+        ) : (
+          "add"
+        )}
       </button>
     );
   }
@@ -299,9 +307,14 @@ function num(value: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function formatMoney(amount: string, currency: string | null): string {
+  const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
+  return `${prefix}${fmt(Number(amount), 2)}`;
+}
+
 function chargerLabel(s: ChargingSessionDto): string {
   if (s.chargerType === "rivian_charger") return "Rivian Adventure Network";
-  if (s.chargerType === "wallbox") return "Home";
+  if (s.isHome) return "Home";
   if (s.vendor) return titleCase(s.vendor.toLowerCase());
   return s.chargerId ?? titleCase(s.chargerType);
 }

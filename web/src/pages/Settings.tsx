@@ -10,6 +10,7 @@ import {
   useVersion,
 } from "../api/hooks.js";
 import { LoadingScope, Skeleton } from "../components/loading.js";
+import { HomeChargingPanel } from "../components/HomeChargingPanel.js";
 import { Panel, Row } from "../components/panels.js";
 import { passwordProblem } from "@server/password-policy.js";
 import { TextField } from "../components/AuthCard.js";
@@ -175,6 +176,8 @@ export function Settings() {
           />
         </div>
       </Panel>
+
+      <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />
 
       <Panel title="App password">
         <div className="space-y-3">

@@ -19,9 +19,11 @@ import type {
   VersionResponse,
   VehicleState,
   WallboxDto,
+  HomeChargingSettings,
 } from "@server/api-types.js";
 
 export type {
+  HomeChargingSettings,
   BatteryHealthDto,
   ChargingCurvePointDto,
   RivianDiagnosticsResponse,
@@ -97,6 +99,12 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
   version: () => request<VersionResponse>("/api/version"),
+  homeCharging: () => request<HomeChargingSettings>("/api/settings/home-charging"),
+  setHomeCharging: (settings: HomeChargingSettings) =>
+    request<HomeChargingSettings>("/api/settings/home-charging", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
   units: () => request<UnitPreferences>("/api/settings/units"),
   setUnits: (units: UnitPreferences) =>
     request<UnitPreferences>("/api/settings/units", {

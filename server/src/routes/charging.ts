@@ -8,6 +8,14 @@ import type {
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import {
+  type HomeChargingSettings,
+  type Spot,
+  estimateHomeCost,
+  homeSpots,
+  isHomeSession,
+} from "../services/home-charging.js";
+import { getHomeChargingSettings } from "./settings.js";
+import {
   chargingCurvePoints,
   chargingSessions,
   wallboxReadings,
@@ -31,7 +39,8 @@ export async function chargingRoutes(
         .where(eq(chargingSessions.vehicleId, request.params.id))
         .orderBy(desc(chargingSessions.startedAt))
         .limit(200);
-      return rows.map(toSessionDto);
+      const home = await homeContext(ctx);
+      return rows.map((row) => toSessionDto(row, home));
     },
   );
 
@@ -58,7 +67,7 @@ export async function chargingRoutes(
         .where(eq(chargingSessions.id, Number(request.params.sessionId)))
         .returning();
       if (!updated[0]) return reply.code(404).send({ error: "Not found" });
-      return toSessionDto(updated[0]);
+      return toSessionDto(updated[0], await homeContext(ctx));
     },
   );
 
@@ -97,9 +106,28 @@ export async function chargingRoutes(
   });
 }
 
+interface HomeContext {
+  settings: HomeChargingSettings;
+  spots: Spot[];
+}
+
+async function homeContext(ctx: AppContext): Promise<HomeContext> {
+  const settings = await getHomeChargingSettings(ctx);
+  const boxes = await ctx.db
+    .select({ latitude: wallboxes.latitude, longitude: wallboxes.longitude })
+    .from(wallboxes);
+  return { settings, spots: homeSpots(settings, boxes) };
+}
+
 function toSessionDto(
   row: typeof chargingSessions.$inferSelect,
+  home: HomeContext,
 ): ChargingSessionDto {
+  const isHome = isHomeSession(row, home.spots);
+  // Estimates use today's rate, so changing the rate reprices past estimates;
+  // a cost recorded or entered for the session always takes precedence.
+  const estimatedCost =
+    isHome && row.cost == null ? estimateHomeCost(row.energyKwh, home.settings.ratePerKwh) : null;
   return {
     id: row.id,
     vehicleId: row.vehicleId,
@@ -114,12 +142,15 @@ function toSessionDto(
     avgPowerKw: row.avgPowerKw,
     maxPowerKw: row.maxPowerKw,
     cost: row.cost,
-    currency: row.currency,
+    // Estimates are priced in the home rate's currency.
+    currency: row.currency ?? (estimatedCost != null ? home.settings.currency : null),
     lat: row.lat,
     lon: row.lon,
     source: row.source,
     vendor: row.vendor,
     city: row.city,
     isPublic: row.isPublic,
+    isHome,
+    estimatedCost,
   };
 }

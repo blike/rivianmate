@@ -12,6 +12,7 @@ import {
   RivianRateLimitError,
   RivianUnauthenticatedError,
 } from "../rivian/types.js";
+import { nearbySpot } from "./home-charging.js";
 import type { LiveBus } from "./live-bus.js";
 import { type ResumableSession, closeTime, isSameSession } from "./session-resume.js";
 
@@ -187,18 +188,21 @@ export class ChargingMonitor {
       const power = num(session.power?.value);
       if (!open) {
         const loc = this.latestLocation.get(vehicleId);
+        const wallbox = await this.wallboxAt(loc);
         const inserted = await this.db
           .insert(chargingSessions)
           .values({
             vehicleId,
             startedAt: session.startTime ? new Date(session.startTime) : new Date(),
             chargerId: session.chargerId,
-            chargerType:
-              session.isRivianCharger == null
+            chargerType: wallbox
+              ? "wallbox"
+              : session.isRivianCharger == null
                 ? null
                 : session.isRivianCharger
                   ? "rivian_charger"
                   : "other",
+            wallboxId: wallbox?.wallboxId ?? null,
             isRivianCharger: session.isRivianCharger,
             startSoc: num(session.soc?.value),
             currency: session.currentCurrency,
@@ -274,6 +278,20 @@ export class ChargingMonitor {
       .map((s) => ({ sessionId, ts: new Date(s.ts), powerKw: s.powerKw, soc: s.soc }));
     if (rows.length === 0) return;
     await this.db.insert(chargingCurvePoints).values(rows).onConflictDoNothing();
+  }
+
+  /** The registered wallbox the vehicle is parked at, if any. */
+  private async wallboxAt(
+    loc: { lat: number; lon: number } | undefined,
+  ): Promise<{ wallboxId: string } | null> {
+    if (!loc) return null;
+    const boxes = await this.db
+      .select({ wallboxId: wallboxes.wallboxId, lat: wallboxes.latitude, lon: wallboxes.longitude })
+      .from(wallboxes);
+    const spots = boxes
+      .filter((b) => b.lat != null && b.lon != null)
+      .map((b) => ({ wallboxId: b.wallboxId, lat: b.lat!, lon: b.lon! }));
+    return nearbySpot(loc.lat, loc.lon, spots);
   }
 
   private async pollWallboxes(): Promise<void> {
