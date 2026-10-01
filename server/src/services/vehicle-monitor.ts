@@ -265,7 +265,11 @@ export class VehicleMonitor {
     // Plug state from the seed poll, so a session already in progress is tracked.
     for (const vehicle of this.vehicles) {
       const state = this.states.get(vehicle.id);
-      if (state) chargingMonitor.setPluggedIn(vehicle.id, isPluggedIn(state));
+      // Only act on a known plug state: an unknown one (seed poll failed)
+      // must not close a session left open by a restart.
+      if (state && stateString(state, "chargerStatus") !== null) {
+        chargingMonitor.setPluggedIn(vehicle.id, isPluggedIn(state));
+      }
     }
     stream.start();
     await this.refreshChargingSchedules();

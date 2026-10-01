@@ -1,4 +1,4 @@
-import { eq, isNull } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import {
   chargingCurvePoints,
@@ -13,6 +13,7 @@ import {
   RivianUnauthenticatedError,
 } from "../rivian/types.js";
 import type { LiveBus } from "./live-bus.js";
+import { type ResumableSession, closeTime, isSameSession } from "./session-resume.js";
 
 /** REST safety net: only while plugged in and the push feed has gone quiet. */
 const SAFETY_NET_INTERVAL_MS = 5 * 60_000;
@@ -43,6 +44,8 @@ export class ChargingMonitor {
   private lastPushAt = new Map<string, number>();
   private lastWallboxPollAt = 0;
   private openSessions = new Map<string, OpenSession>();
+  /** Sessions a previous run left open, awaiting proof they're still going. */
+  private resumable = new Map<string, ResumableSession>();
   private lastWallboxReading = new Map<string, string>();
   /** Per-vehicle serialization so pushes and polls never race an insert. */
   private chains = new Map<string, Promise<void>>();
@@ -75,6 +78,10 @@ export class ChargingMonitor {
 
   /** Driven by the vehicle monitor from chargerStatus updates. */
   setPluggedIn(vehicleId: string, pluggedIn: boolean): void {
+    if (!pluggedIn && this.resumable.has(vehicleId)) {
+      // Unplugged while we were away: the leftover session already ended.
+      void this.enqueue(vehicleId, () => this.closeResumable(vehicleId));
+    }
     if (this.pluggedIn.has(vehicleId) === pluggedIn) return;
     if (pluggedIn) {
       this.pluggedIn.add(vehicleId);
@@ -103,7 +110,7 @@ export class ChargingMonitor {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    await this.closeDanglingSessions();
+    await this.loadResumableSessions();
     // One wallbox refresh at startup keeps names/firmware current.
     try {
       await this.pollWallboxes();
@@ -173,6 +180,7 @@ export class ChargingMonitor {
     session: LiveSessionData | null,
   ): Promise<void> {
     const active = isActiveSession(session);
+    await this.settleResumable(vehicleId, active ? session : null);
     const open = this.openSessions.get(vehicleId);
 
     if (active && session) {
@@ -313,11 +321,77 @@ export class ChargingMonitor {
     }
   }
 
-  private async closeDanglingSessions(): Promise<void> {
+  /**
+   * Sessions the previous run left open. They aren't closed blindly: a
+   * restart mid-charge would split one charge in two. Each is kept until
+   * live data (or the plug state) shows whether it is still going.
+   */
+  private async loadResumableSessions(): Promise<void> {
+    const rows = await this.db
+      .select({
+        id: chargingSessions.id,
+        vehicleId: chargingSessions.vehicleId,
+        startedAt: chargingSessions.startedAt,
+        lastSampleAt: sql<string | null>`(SELECT MAX(ts) FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id})`,
+      })
+      .from(chargingSessions)
+      .where(isNull(chargingSessions.endedAt))
+      .orderBy(chargingSessions.startedAt);
+    for (const row of rows) {
+      const candidate: ResumableSession = {
+        id: row.id,
+        startedAt: row.startedAt,
+        lastSampleAt: row.lastSampleAt ? new Date(row.lastSampleAt) : null,
+      };
+      const previous = this.resumable.get(row.vehicleId);
+      if (previous) await this.closeSession(previous); // only the newest can still be running
+      if (this.vehicles.has(row.vehicleId)) {
+        this.resumable.set(row.vehicleId, candidate);
+      } else {
+        await this.closeSession(candidate);
+      }
+    }
+  }
+
+  /** Adopt the leftover session if live data shows the same charge; else close it. */
+  private async settleResumable(vehicleId: string, active: LiveSessionData | null): Promise<void> {
+    const leftover = this.resumable.get(vehicleId);
+    if (!leftover) return;
+    this.resumable.delete(vehicleId);
+    if (active && !this.openSessions.has(vehicleId) && isSameSession(leftover, active, this.now())) {
+      const [stats] = await this.db
+        .select({
+          avg: sql<number | null>`AVG(power_kw)::float8`,
+          max: sql<number | null>`MAX(power_kw)::float8`,
+          count: sql<number>`COUNT(power_kw)::int`,
+        })
+        .from(chargingCurvePoints)
+        .where(eq(chargingCurvePoints.sessionId, leftover.id));
+      const count = stats?.count ?? 0;
+      this.openSessions.set(vehicleId, {
+        id: leftover.id,
+        powerSum: (stats?.avg ?? 0) * count,
+        powerCount: count,
+        maxPowerKw: stats?.max ?? 0,
+      });
+      this.log(`charging session resumed for ${vehicleId}`);
+      return;
+    }
+    await this.closeSession(leftover);
+  }
+
+  private async closeResumable(vehicleId: string): Promise<void> {
+    const leftover = this.resumable.get(vehicleId);
+    if (!leftover) return;
+    this.resumable.delete(vehicleId);
+    await this.closeSession(leftover);
+  }
+
+  private async closeSession(session: ResumableSession): Promise<void> {
     await this.db
       .update(chargingSessions)
-      .set({ endedAt: new Date() })
-      .where(isNull(chargingSessions.endedAt));
+      .set({ endedAt: closeTime(session) })
+      .where(eq(chargingSessions.id, session.id));
   }
 }
 

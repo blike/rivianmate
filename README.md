@@ -136,6 +136,10 @@ Useful commands: `pnpm typecheck` · `pnpm lint` · `pnpm test` · `pnpm build` 
 after editing [server/src/db/schema.ts](server/src/db/schema.ts)).
 Migrations run automatically at server boot.
 
+Database integration tests run only when `TEST_DATABASE_URL` points at a
+disposable Postgres database (its tables are truncated):
+`TEST_DATABASE_URL=postgres://… pnpm --filter @rivianmate/server test`.
+
 If the API server must run on a different port, point the web proxy at it:
 `VITE_API_TARGET=http://localhost:4100 pnpm dev:web`.
 
