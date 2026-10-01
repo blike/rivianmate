@@ -85,9 +85,14 @@ account (email, password, and the emailed OTP code). Tokens are encrypted and
 persisted, so the tracker resumes automatically after restarts.
 
 Images are published to Docker Hub as `mitchvitale/rivianmate:latest` by the
-GitHub Actions workflow on every push to `main`
+GitHub Actions workflow after validation on every push to `main` and release tag (`v*`)
 ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)).
 To update a deployment: `docker compose pull && docker compose up -d`.
+
+For v0.3, set `RIVIANMATE_VERSION=0.3` in `.env` before updating. Back up
+Postgres first: migrations run automatically at startup. Keep `APP_SECRET`
+unchanged so existing Rivian tokens remain readable. See [CHANGELOG.md](CHANGELOG.md)
+for release highlights and [RELEASING.md](RELEASING.md) for the release process.
 
 ## Local development
 
