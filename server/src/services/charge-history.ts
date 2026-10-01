@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { chargingSessions } from "../db/schema.js";
+import { chargingCurvePoints, chargingSessions } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
+import { assignCurvePoints } from "./curve-history.js";
 import {
   type ChargeSessionSummary,
   RivianUnauthenticatedError,
@@ -87,6 +88,7 @@ export class ChargeHistoryImporter {
   private timer?: NodeJS.Timeout;
   private pending?: NodeJS.Timeout;
   private unsupported = false;
+  private curveUnsupported = false;
   private running = false;
 
   onAuthFailure?: () => void;
@@ -120,8 +122,19 @@ export class ChargeHistoryImporter {
   }
 
   async run(): Promise<{ inserted: number; linked: number } | null> {
-    if (this.unsupported || this.running) return null;
+    if (this.running) return null;
     this.running = true;
+    try {
+      const result = this.unsupported ? null : await this.importHistory();
+      // After the import, so a session that ran while we were away exists.
+      if (!this.curveUnsupported) await this.syncLatestCurves();
+      return result;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async importHistory(): Promise<{ inserted: number; linked: number } | null> {
     try {
       const summaries = await this.api.getChargeHistory();
       const ids = this.vehicleIds();
@@ -149,8 +162,64 @@ export class ChargeHistoryImporter {
         this.log(`charge history sync failed: ${describeRivianError(err)}`);
       }
       return null;
-    } finally {
-      this.running = false;
+    }
+  }
+
+  /**
+   * Rivian keeps the power curve of each vehicle's most recent session.
+   * Fill it into the matching session: gaps from a restart or socket
+   * outage, or a whole curve for a session charged while we were away.
+   * Existing points (which also carry SoC) are left untouched.
+   */
+  private async syncLatestCurves(): Promise<void> {
+    for (const vehicleId of this.vehicleIds()) {
+      try {
+        const raw = await this.api.getLatestSessionCurve(vehicleId);
+        const points = raw
+          .map((p) => ({ ts: new Date(p.ts), powerKw: p.powerKw }))
+          .filter((p) => Number.isFinite(p.ts.getTime()));
+        if (points.length === 0) continue;
+        const first = new Date(Math.min(...points.map((p) => p.ts.getTime())));
+        const last = new Date(Math.max(...points.map((p) => p.ts.getTime())));
+        const sessions = await this.db
+          .select({
+            id: chargingSessions.id,
+            startedAt: chargingSessions.startedAt,
+            endedAt: chargingSessions.endedAt,
+          })
+          .from(chargingSessions)
+          .where(
+            and(
+              eq(chargingSessions.vehicleId, vehicleId),
+              lte(chargingSessions.startedAt, new Date(last.getTime() + 2 * 60_000)),
+              or(
+                isNull(chargingSessions.endedAt),
+                gte(chargingSessions.endedAt, new Date(first.getTime() - 2 * 60_000)),
+              ),
+            ),
+          );
+        let added = 0;
+        for (const [sessionId, assigned] of assignCurvePoints(points, sessions, Date.now())) {
+          const rows = await this.db
+            .insert(chargingCurvePoints)
+            .values(assigned.map((p) => ({ sessionId, ts: p.ts, powerKw: p.powerKw })))
+            .onConflictDoNothing()
+            .returning({ id: chargingCurvePoints.id });
+          added += rows.length;
+        }
+        if (added) this.log(`charge curve: ${added} points filled in for ${vehicleId}`);
+      } catch (err) {
+        if (isGraphqlValidationError(err)) {
+          this.curveUnsupported = true;
+          this.log(`latest session curve query not supported: ${describeRivianError(err)}`);
+          return;
+        }
+        if (err instanceof RivianUnauthenticatedError) {
+          this.onAuthFailure?.();
+          return;
+        }
+        this.log(`charge curve sync failed: ${describeRivianError(err)}`);
+      }
     }
   }
 

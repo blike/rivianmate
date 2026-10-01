@@ -5,6 +5,7 @@ import {
   CREATE_CSRF_TOKEN,
   GET_CHARGING_SCHEDULE,
   GET_COMPLETED_SESSION_SUMMARIES,
+  GET_LIVE_SESSION_HISTORY,
   GET_OTA_UPDATE_DETAILS,
   GET_REGISTERED_WALLBOXES,
   GET_USER_INFO,
@@ -69,6 +70,8 @@ export interface RivianApi {
   getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]>;
   /** Completed charging sessions for the whole account. */
   getChargeHistory(): Promise<ChargeSessionSummary[]>;
+  /** Power curve (kW over time) of the most recent charging session. */
+  getLatestSessionCurve(vehicleId: string): Promise<{ ts: string; powerKw: number | null }[]>;
 }
 
 interface GraphqlRequest {
@@ -249,6 +252,21 @@ export class RivianClient implements RivianApi {
       variables: { vehicleId },
     });
     return data.getVehicle?.chargingSchedules ?? [];
+  }
+
+  async getLatestSessionCurve(
+    vehicleId: string,
+  ): Promise<{ ts: string; powerKw: number | null }[]> {
+    const data = await this.authenticatedRequest<{
+      getLiveSessionHistory: { chartData: { kw: number | null; time: string | null }[] | null } | null;
+    }>(GRAPHQL_CHARGING, {
+      operationName: "getLiveSessionHistory",
+      query: GET_LIVE_SESSION_HISTORY,
+      variables: { vehicleId },
+    });
+    return (data.getLiveSessionHistory?.chartData ?? [])
+      .filter((p): p is { kw: number | null; time: string } => typeof p.time === "string")
+      .map((p) => ({ ts: p.time, powerKw: p.kw }));
   }
 
   async getChargeHistory(): Promise<ChargeSessionSummary[]> {

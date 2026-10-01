@@ -36,6 +36,9 @@ export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSc
 /** Account-wide completed charging sessions (charging gateway). */
 export const GET_COMPLETED_SESSION_SUMMARIES = `query getCompletedSessionSummaries { getCompletedSessionSummaries { transactionId startInstant endInstant totalEnergyKwh rangeAddedKm vendor paidTotal chargerType currencyCode city vehicleId isPublic isHomeCharger } }`;
 
+/** Power curve of the vehicle's most recent charging session (charging gateway). */
+export const GET_LIVE_SESSION_HISTORY = `query getLiveSessionHistory($vehicleId: ID!) { getLiveSessionHistory(vehicleId: $vehicleId) { chartData { kw time } } }`;
+
 export const GET_REGISTERED_WALLBOXES = `query getRegisteredWallboxes { getRegisteredWallboxes { __typename wallboxId userId wifiId name linked latitude longitude chargingStatus power currentVoltage currentAmps softwareVersion model serialNumber maxAmps maxVoltage maxPower } }`;
 
 /**
