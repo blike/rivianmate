@@ -23,7 +23,8 @@
 
 Back up Postgres before updating. Database migrations run automatically and
 include a one-time correction of previously stored speed values. Preserve your
-existing `APP_SECRET` and database volume. Set `RIVIANMATE_VERSION=0.3` in `.env`,
+existing `APP_SECRET` and database volume. Set
+`image: mitchvitale/rivianmate:0.3` in `docker-compose.yml`,
 then run `docker compose pull && docker compose up -d`.
 
 Health trends and charging curves need recorded data; imported charging summaries

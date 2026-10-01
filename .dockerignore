@@ -1,6 +1,12 @@
 home-assistant-rivian/
 node_modules/
 dist/
+**/node_modules/
+**/dist/
+.git/
+.github/
+.agents/
+.codex/
 .env
 .env.local
 *.log

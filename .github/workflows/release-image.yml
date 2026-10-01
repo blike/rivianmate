@@ -1,0 +1,52 @@
+name: Tag release image
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  tag-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag the validated commit image
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9][a-zA-Z0-9_.-]*$ ]]; then
+            echo "::error::Release tag must start with v and a version number."
+            exit 1
+          fi
+          image=mitchvitale/rivianmate
+          commit=$(git rev-parse HEAD)
+          source="$image:$commit"
+          # A simultaneous main/tag push can reach this job before main finishes.
+          # Only the validated main build publishes the commit image.
+          for attempt in $(seq 1 30); do
+            if docker buildx imagetools inspect "$source" > /dev/null 2>&1; then
+              docker buildx imagetools create \
+                --tag "$image:$RELEASE_TAG" \
+                --tag "$image:${RELEASE_TAG#v}" \
+                "$source"
+              exit 0
+            fi
+            echo "Waiting for the main build to publish $source ($attempt/30)"
+            sleep 20
+          done
+          echo "::error::No image for $commit. Publish this commit from main successfully, then rerun this workflow."
+          exit 1

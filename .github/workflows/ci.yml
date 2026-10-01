@@ -2,7 +2,8 @@ name: Validate
 
 on:
   push:
-    branches: [main, dev, v0.3]
+    # main is validated by docker-publish.yml; release branches use PR checks.
+    branches: [dev]
   pull_request:
   workflow_call:
 

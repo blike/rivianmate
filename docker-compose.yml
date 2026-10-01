@@ -1,7 +1,7 @@
 services:
   rivianmate:
     build: .
-    image: mitchvitale/rivianmate:${RIVIANMATE_VERSION:-latest}
+    image: mitchvitale/rivianmate:latest
     restart: always
     depends_on:
       postgres:

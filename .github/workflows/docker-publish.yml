@@ -3,7 +3,6 @@ name: Build and Push to Docker Hub
 on:
   push:
     branches: [main]
-    tags: ['v*']
 
 permissions:
   contents: read
@@ -18,23 +17,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Set image tags
-        id: image
-        env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          {
-            echo 'tags<<EOF'
-            echo 'mitchvitale/rivianmate:latest'
-            echo "mitchvitale/rivianmate:${GITHUB_SHA}"
-            if [ "$REF_TYPE" = tag ]; then
-              echo "mitchvitale/rivianmate:${REF_NAME}"
-              echo "mitchvitale/rivianmate:${REF_NAME#v}"
-            fi
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (for multi-platform builds)
         uses: docker/setup-qemu-action@v4
@@ -54,7 +36,9 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.image.outputs.tags }}
+          tags: |
+            mitchvitale/rivianmate:latest
+            mitchvitale/rivianmate:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/blike/rivianmate
             org.opencontainers.image.revision=${{ github.sha }}
