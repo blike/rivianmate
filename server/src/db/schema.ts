@@ -173,6 +173,9 @@ export const chargingSessions = pgTable(
     chargingSeconds: integer("charging_seconds"),
     chargingSince: timestamp("charging_since", { withTimezone: true }),
     energyKwh: real("energy_kwh"),
+    /** From Rivian's breakdown: energy into the pack vs heating/cooling it. */
+    packKwh: real("pack_kwh"),
+    thermalKwh: real("thermal_kwh"),
     rangeAddedKm: real("range_added_km"),
     avgPowerKw: real("avg_power_kw"),
     maxPowerKw: real("max_power_kw"),
@@ -224,4 +227,24 @@ export const otaReleaseNotes = pgTable(
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.vehicleId, t.version] })],
+);
+
+/**
+ * The latest Parallax message per vehicle and topic, kept raw (base64
+ * protobuf) and decoded when read, so better decoding applies to stored
+ * data. A `:awake` suffix keeps the last payload carrying awake-only fields.
+ */
+export const parallaxLatest = pgTable(
+  "parallax_latest",
+  {
+    vehicleId: text("vehicle_id")
+      .notNull()
+      .references(() => vehicles.id),
+    rvm: text("rvm").notNull(),
+    payload: text("payload").notNull(),
+    /** Rivian's message timestamp, when given. */
+    messageAt: timestamp("message_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.vehicleId, t.rvm] })],
 );

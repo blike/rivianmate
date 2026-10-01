@@ -2,6 +2,7 @@ import type { RivianApi } from "./client.js";
 import type {
   ChargingSessionCallback,
   DepartureSchedulesCallback,
+  ParallaxCallback,
   VehicleStateCallback,
   VehicleStateStream,
 } from "./subscription.js";
@@ -17,6 +18,14 @@ import {
   VehicleState,
   Wallbox,
 } from "./types.js";
+import {
+  RVM_BATTERY_STATE,
+  RVM_CHARGE_BREAKDOWN,
+  RVM_COLD_WEATHER,
+  RVM_NETWORK,
+  RVM_PARKED_ENERGY,
+} from "./parallax.js";
+import { b64, double, float, int, message, string } from "./protobuf-encode.js";
 
 export const MOCK_VIN = "7FCTGAAA0MN000001";
 export const MOCK_VEHICLE_ID = "mock-vehicle-1";
@@ -61,6 +70,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   private callback?: VehicleStateCallback;
   private chargingCallback?: ChargingSessionCallback;
+  private parallaxCallback?: ParallaxCallback;
   private subscribedId = MOCK_VEHICLE_ID;
   private timer?: NodeJS.Timeout;
   private phase: Phase = "parked";
@@ -207,6 +217,15 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   async getChargingSchedules(_vehicleId: string): Promise<ChargingSchedule[]> {
     return [
       {
+        // Rivian also returns schedules that are switched off.
+        enabled: false,
+        startTime: 0,
+        duration: 24 * 60,
+        amperage: 48,
+        weekDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+        location: { latitude: 40.5142, longitude: -88.9906 },
+      },
+      {
         enabled: true,
         startTime: 23 * 60,
         duration: 7 * 60,
@@ -244,12 +263,39 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.chargingCallback = callback;
   }
 
+  subscribeParallax(_vehicleId: string, _rvms: readonly string[], callback: ParallaxCallback): void {
+    this.parallaxCallback = callback;
+  }
+
   start(): void {
     if (this.timer) return;
     this.onConnectionChange?.(true);
     this.onAuthenticated?.();
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.emit(this.fullState());
+    this.emitParallax(RVM_COLD_WEATHER, [...int(1, 85), ...int(2, 6), ...int(3, 24)]);
+    this.emitParallax(RVM_PARKED_ENERGY, [
+      ...message(1, [...float(1, 1.3), ...float(6, 5.9), ...int(11, 1440)]),
+      ...message(2, [...float(1, 0.4), ...float(6, 1.8), ...int(11, 480)]),
+    ]);
+    this.emitParallax(RVM_NETWORK, [
+      ...message(4, [...string(3, "Garage"), ...int(8, -58), ...int(10, 5180)]),
+      ...message(5, [...string(1, "AT&T"), ...string(2, "LTE")]),
+    ]);
+    this.emitBatteryState();
+  }
+
+  /** Parallax topics come in as base64 protobuf, as from Rivian. */
+  private emitParallax(rvm: string, bytes: number[]): void {
+    this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
+  }
+
+  private emitBatteryState(): void {
+    const warm = this.phase === "charging" ? 6 * Math.min(1, this.tickInPhase / 30) : 0;
+    this.emitParallax(RVM_BATTERY_STATE, [
+      ...message(1, [...double(1, Number(this.battery.toFixed(1))), ...double(2, 135)]),
+      ...message(2, [...float(1, 24 + warm), ...float(2, 27 + warm), ...float(3, 22 + warm)]),
+    ]);
   }
 
   stop(): void {
@@ -305,7 +351,16 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         ),
       });
       void this.pushCharging();
+      const thermalKwh = Math.min(0.4, this.sessionEnergyKwh * 0.04);
+      this.emitParallax(RVM_CHARGE_BREAKDOWN, [
+        ...float(1, this.sessionEnergyKwh),
+        ...float(2, this.sessionEnergyKwh - thermalKwh),
+        ...float(5, thermalKwh),
+        ...int(6, Math.floor((this.tickInPhase * TICK_MS) / 60_000)),
+        ...int(8, Math.round(this.sessionEnergyKwh * 3.4)),
+      ]);
     }
+    if (this.tickInPhase % 5 === 0) this.emitBatteryState();
   }
 
   private async pushCharging(): Promise<void> {

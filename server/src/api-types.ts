@@ -156,6 +156,9 @@ export interface ChargingSessionDto {
   chargingSeconds: number | null;
   chargingSince: string | null;
   energyKwh: number | null;
+  /** Rivian's split of the energy: stored in the pack vs heating/cooling it. */
+  packKwh: number | null;
+  thermalKwh: number | null;
   rangeAddedKm: number | null;
   avgPowerKw: number | null;
   maxPowerKw: number | null;
@@ -190,5 +193,24 @@ export interface WallboxDto {
     power: number | null;
     currentVoltage: number | null;
     currentAmps: number | null;
+  } | null;
+}
+
+/**
+ * Latest readings from Rivian's Parallax feed; each part is null until the
+ * vehicle has reported it. `at` is when Rivian sent it.
+ */
+export interface VehicleInsightsDto {
+  /** Last cell temperatures reported (°C); only sent while awake. */
+  cellTemps: { avgC: number; maxC: number; minC: number; at: string } | null;
+  /** Whether the latest battery report carried temperatures (vehicle awake). */
+  cellTempsCurrent: boolean;
+  coldWeather: { usableSoc: number | null; coldSoc: number; rangeImpactKm: number; at: string } | null;
+  /** Energy used while parked, over Rivian's windows (e.g. last 24 h). */
+  parkedEnergy: { windows: { minutes: number; kwh: number; rangeKm: number }[]; at: string } | null;
+  connectivity: {
+    wifi: { ssid: string; rssiDbm: number | null; frequencyMhz: number | null } | null;
+    cellular: { carrier: string | null; technology: string | null } | null;
+    at: string;
   } | null;
 }

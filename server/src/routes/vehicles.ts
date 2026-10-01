@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { SchedulesDto, VehicleDto } from "../api-types.js";
+import type { SchedulesDto, VehicleDto, VehicleInsightsDto } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { vehicles } from "../db/schema.js";
 
@@ -33,6 +33,11 @@ export async function vehicleRoutes(
   app.get<{ Params: { id: string } }>(
     "/api/vehicles/:id/schedules",
     async (request): Promise<SchedulesDto> => ctx.monitor.getSchedules(request.params.id),
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/vehicles/:id/insights",
+    async (request): Promise<VehicleInsightsDto> => ctx.monitor.getInsights(request.params.id),
   );
 
   /** SSE stream of merged full-state updates + live charging session. */

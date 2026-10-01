@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { b64, float, graphBar, int, message } from "../testing/protobuf.js";
-import { decodeChargingGraph, decodeChargingGraphBar, readProtoFields } from "./parallax.js";
+import { b64, double, float, graphBar, int, message, string } from "../testing/protobuf.js";
+import {
+  decodeBatteryState,
+  decodeChargeBreakdown,
+  decodeChargingGraph,
+  decodeChargingGraphBar,
+  decodeColdWeather,
+  decodeNetwork,
+  decodeParkedEnergy,
+  readProtoFields,
+} from "./parallax.js";
 
 const START = Date.parse("2026-10-01T07:00:00Z");
 const bar = graphBar;
@@ -48,5 +57,75 @@ describe("decodeChargingGraph", () => {
   it("returns nothing for empty or malformed payloads", () => {
     expect(decodeChargingGraph("")).toEqual([]);
     expect(decodeChargingGraph(b64([0x0a, 0x09]))).toEqual([]);
+  });
+});
+
+// Payloads below mirror a live R1S capture's field layout and values.
+describe("decodeChargeBreakdown", () => {
+  it("splits a session's energy and reads its charging time and range", () => {
+    const payload = b64([
+      ...float(1, 35.8), ...float(2, 34.4), ...float(5, 1.4),
+      ...int(6, 313), ...int(8, 162), ...message(11, []), ...int(12, 1), ...int(13, 1),
+    ]);
+    expect(decodeChargeBreakdown(payload)).toEqual({
+      totalKwh: 35.8, packKwh: 34.4, thermalKwh: 1.4, chargingMinutes: 313, rangeAddedKm: 162, cost: null,
+    });
+  });
+
+  it("reads a session cost", () => {
+    const payload = b64([...float(1, 53), ...message(11, [...string(1, "USD"), ...int(2, 37), ...int(3, 810_000_000)])]);
+    expect(decodeChargeBreakdown(payload)?.cost).toEqual({ amount: 37.81, currency: "USD" });
+  });
+
+  it("returns null for an empty payload", () => {
+    expect(decodeChargeBreakdown("")).toBeNull();
+  });
+});
+
+describe("decodeBatteryState", () => {
+  it("reads SOC and capacity, and cell temperatures when awake", () => {
+    const asleep = b64([...message(1, [...double(1, 69.9), ...double(2, 111.285)]), ...message(3, [])]);
+    expect(decodeBatteryState(asleep)).toEqual({ soc: 69.9, capacityKwh: 111.285, cellTemps: null });
+    const awake = decodeBatteryState(
+      b64([...message(1, [...double(1, 58.2)]), ...message(2, [...float(1, 42.8), ...float(2, 46.6), ...float(3, 37.2)])]),
+    );
+    expect(awake?.cellTemps).toEqual({ avgC: 42.8, maxC: 46.6, minC: 37.2 });
+  });
+});
+
+describe("decodeColdWeather", () => {
+  it("treats omitted fields as no cold impact", () => {
+    expect(decodeColdWeather(b64(int(1, 70)))).toEqual({ usableSoc: 70, coldSoc: 0, rangeImpactKm: 0 });
+  });
+});
+
+describe("decodeParkedEnergy", () => {
+  it("reads each window's energy, range and length", () => {
+    const window = (kwh: number, km: number, minutes: number) =>
+      [...float(1, kwh), ...float(2, 0.3), ...float(4, 0.8), ...float(6, km), ...float(7, 1.449), ...float(9, 3.865), ...int(11, minutes)];
+    const payload = b64([...message(1, window(1.1, 5.314, 1440)), ...message(2, window(0.4, 1.932, 480))]);
+    expect(decodeParkedEnergy(payload)).toEqual([
+      { minutes: 1440, kwh: 1.1, rangeKm: 5.314 },
+      { minutes: 480, kwh: 0.4, rangeKm: 1.932 },
+    ]);
+  });
+});
+
+describe("decodeNetwork", () => {
+  it("reads the Wi-Fi network and cellular carrier", () => {
+    const payload = b64([
+      ...int(1, 1),
+      ...message(2, [...int(1, 1), ...int(2, 2)]),
+      ...message(4, [...int(1, 2), ...int(2, 2), ...string(3, "fatcat"), ...int(7, 3), ...int(8, -66), ...int(9, 72), ...int(10, 5240)]),
+      ...message(5, [...string(1, "AT&T"), ...string(2, "LTE"), ...int(3, 3), ...int(4, -255)]),
+    ]);
+    expect(decodeNetwork(payload)).toEqual({
+      wifi: { ssid: "fatcat", rssiDbm: -66, frequencyMhz: 5240 },
+      cellular: { carrier: "AT&T", technology: "LTE" },
+    });
+  });
+
+  it("reports no Wi-Fi without an SSID", () => {
+    expect(decodeNetwork(b64(message(4, [...int(1, 1)])))?.wifi).toBeNull();
   });
 });

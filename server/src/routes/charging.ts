@@ -184,6 +184,8 @@ function toSessionDto(
     chargingSeconds: row.chargingSeconds,
     chargingSince: row.chargingSince?.toISOString() ?? null,
     energyKwh: row.energyKwh,
+    packKwh: row.packKwh,
+    thermalKwh: row.thermalKwh,
     rangeAddedKm: row.rangeAddedKm,
     avgPowerKw: row.avgPowerKw,
     maxPowerKw: row.maxPowerKw,

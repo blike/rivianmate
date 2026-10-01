@@ -7,7 +7,14 @@ import {
   wallboxes,
 } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
-import { type ParallaxMessage, RVM_CHARGING_GRAPH, decodeChargingGraph } from "../rivian/parallax.js";
+import {
+  type ChargeBreakdown,
+  type ParallaxMessage,
+  RVM_CHARGE_BREAKDOWN,
+  RVM_CHARGING_GRAPH,
+  decodeChargeBreakdown,
+  decodeChargingGraph,
+} from "../rivian/parallax.js";
 import {
   LiveSessionData,
   RivianRateLimitError,
@@ -30,6 +37,15 @@ const WALLBOX_INTERVAL_MS = 15 * 60_000;
 const GRAPH_LOOKBACK_MS = 12 * 3600_000;
 /** Tolerance at session edges: a graph bar starts on Rivian's clock. */
 const GRAPH_SLACK_MS = 10 * 60_000;
+/**
+ * A breakdown carries no session id or time, only minutes spent charging,
+ * so it goes to the session whose charging time matches. Rivian resends the
+ * previous session's breakdown on subscribe, which this keeps off a new one.
+ */
+const BREAKDOWN_MATCH_MIN_S = 5 * 60;
+const BREAKDOWN_MATCH_FRACTION = 0.1;
+/** Finished sessions older than this don't take a breakdown. */
+const BREAKDOWN_MAX_AGE_MS = 7 * 86_400_000;
 
 interface OpenSession {
   id: number;
@@ -142,12 +158,18 @@ export class ChargingMonitor {
   }
 
   /**
-   * Parallax messages; the charging graph becomes the session's power curve.
+   * Parallax messages. The charging graph becomes the session's power curve;
+   * the charge breakdown splits its energy into pack and heating/cooling.
    * Rivian keeps the last session's graph after it ends and sends it on
    * subscribe, so bars go to the open session, or else to the finished
    * session they fall within.
    */
   ingestParallax(vehicleId: string, message: ParallaxMessage): Promise<void> {
+    if (message.rvm === RVM_CHARGE_BREAKDOWN) {
+      const breakdown = decodeChargeBreakdown(message.payload);
+      if (!breakdown || breakdown.totalKwh <= 0) return Promise.resolve();
+      return this.enqueue(vehicleId, () => this.applyBreakdown(vehicleId, breakdown));
+    }
     if (message.rvm !== RVM_CHARGING_GRAPH) return Promise.resolve();
     const bars = decodeChargingGraph(message.payload);
     if (bars.length === 0) return Promise.resolve();
@@ -173,6 +195,58 @@ export class ChargingMonitor {
         })
         .where(eq(chargingSessions.id, target.id));
     });
+  }
+
+  private async applyBreakdown(vehicleId: string, b: ChargeBreakdown): Promise<void> {
+    const matches = (chargingSeconds: number) =>
+      Math.abs(b.chargingMinutes * 60 - chargingSeconds) <=
+      Math.max(BREAKDOWN_MATCH_MIN_S, chargingSeconds * BREAKDOWN_MATCH_FRACTION);
+    const split = { packKwh: b.packKwh, thermalKwh: b.thermalKwh };
+
+    const open = this.openSessions.get(vehicleId);
+    if (open) {
+      const running = open.chargingSince !== null ? (this.now() - open.chargingSince) / 1000 : 0;
+      if (!matches(open.chargingSeconds + running)) return;
+      // Rivian's running totals for the session in progress.
+      await this.db
+        .update(chargingSessions)
+        .set({
+          ...split,
+          energyKwh: b.totalKwh,
+          ...(b.rangeAddedKm != null ? { rangeAddedKm: b.rangeAddedKm } : {}),
+          ...(b.cost
+            ? {
+                cost: sql`COALESCE(${chargingSessions.cost}, ${b.cost.amount.toFixed(2)})`,
+                currency: sql`COALESCE(${chargingSessions.currency}, ${b.cost.currency})`,
+              }
+            : {}),
+        })
+        .where(eq(chargingSessions.id, open.id));
+      return;
+    }
+
+    const [last] = await this.db
+      .select({ id: chargingSessions.id, chargingSeconds: chargingSessions.chargingSeconds })
+      .from(chargingSessions)
+      .where(
+        and(
+          eq(chargingSessions.vehicleId, vehicleId),
+          isNotNull(chargingSessions.endedAt),
+          gte(chargingSessions.endedAt, new Date(this.now() - BREAKDOWN_MAX_AGE_MS)),
+        ),
+      )
+      .orderBy(desc(chargingSessions.startedAt))
+      .limit(1);
+    if (!last || last.chargingSeconds == null || !matches(last.chargingSeconds)) return;
+    // A finished session keeps the energy it has (e.g. from Rivian's history).
+    await this.db
+      .update(chargingSessions)
+      .set({
+        ...split,
+        energyKwh: sql`COALESCE(${chargingSessions.energyKwh}, ${b.totalKwh})`,
+        rangeAddedKm: sql`COALESCE(${chargingSessions.rangeAddedKm}, ${b.rangeAddedKm})`,
+      })
+      .where(eq(chargingSessions.id, last.id));
   }
 
   /** The session a graph spanning [firstMs, lastMs] belongs to, and its time window. */

@@ -50,6 +50,13 @@
       "when": 1790859334681,
       "tag": "0006_charging_time",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790863252145,
+      "tag": "0007_parallax_insights",
+      "breakpoints": true
     }
   ]
 }
