@@ -2,9 +2,13 @@ import type { Db } from "../db/client.js";
 import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { VehicleStateStream } from "../rivian/subscription.js";
+import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
 import {
+  RivianTokens,
   RivianUnauthenticatedError,
   VehicleState,
+  describeRivianError,
+  isGraphqlValidationError,
 } from "../rivian/types.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { DriveDetector } from "./drive-detector.js";
@@ -14,7 +18,23 @@ import { mergeVehicleState, stateLocation, stateString } from "./state-utils.js"
 import type { TokenStore } from "./token-store.js";
 
 const WS_DOWN_POLL_AFTER_MS = 5 * 60_000;
-const FALLBACK_POLL_INTERVAL_MS = 60_000;
+/** Fallback polling only runs while the socket is down, and slowly. */
+const FALLBACK_POLL_AWAKE_MS = 5 * 60_000;
+const FALLBACK_POLL_ASLEEP_MS = 30 * 60_000;
+/**
+ * Consecutive credential rejections (each after a session rotation) before
+ * we stop and ask for a re-login. One-off rejections are common and
+ * recoverable; giving up on the first one forces needless re-logins.
+ */
+const AUTH_FAILURE_THRESHOLD = 3;
+const ASLEEP_POWER_STATES = new Set(["sleep", "standby"]);
+
+export interface MonitorDiagnostics {
+  running: boolean;
+  streamConnected: boolean;
+  fallbackPolling: boolean;
+  consecutiveAuthFailures: number;
+}
 
 export interface MonitoredVehicle {
   id: string;
@@ -39,23 +59,24 @@ export class VehicleMonitor {
   private connection?: RivianConnection;
   private vehicles: MonitoredVehicle[] = [];
   private states = new Map<string, VehicleState>();
-  private vinToId = new Map<string, string>();
   private snapshotWriter: SnapshotWriter;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
   private wsDownTimer?: NodeJS.Timeout;
   private fallbackPollTimer?: NodeJS.Timeout;
   private running = false;
+  private streamConnected = false;
+  private authFailures = 0;
+  /** Set once Rivian rejects the full state query; sticky for the process. */
+  private coreStateQuery = false;
+  /** Bumped on every start/stop so a superseded start() bails out. */
+  private generation = 0;
 
   constructor(
     private readonly db: Db,
     private readonly tokenStore: TokenStore,
     private readonly bus: LiveBus,
-    private readonly createConnection: (tokens: {
-      accessToken: string;
-      refreshToken: string;
-      userSessionToken: string;
-    }) => RivianConnection,
+    private readonly createConnection: (tokens: RivianTokens) => RivianConnection,
     private readonly log: (msg: string) => void = console.log,
   ) {
     this.snapshotWriter = new SnapshotWriter(db);
@@ -76,6 +97,15 @@ export class VehicleMonitor {
     return this.states.get(vehicleId);
   }
 
+  diagnostics(): MonitorDiagnostics {
+    return {
+      running: this.running,
+      streamConnected: this.streamConnected,
+      fallbackPolling: this.fallbackPollTimer !== undefined,
+      consecutiveAuthFailures: this.authFailures,
+    };
+  }
+
   /** Start monitoring if stored credentials exist; no-op otherwise. */
   async startIfConfigured(): Promise<boolean> {
     const account = await this.tokenStore.load();
@@ -87,10 +117,14 @@ export class VehicleMonitor {
   /** Start with a freshly authenticated connection (from the connect flow). */
   async start(connection: RivianConnection): Promise<void> {
     await this.stop();
+    const generation = ++this.generation;
+    const superseded = () => generation !== this.generation;
     this.connection = connection;
     this.running = true;
+    this.authFailures = 0;
 
     const info = await connection.api.getUserInfo();
+    if (superseded()) return;
     this.vehicles = info.vehicles.map((uv) => ({
       id: uv.id,
       vin: uv.vin,
@@ -99,7 +133,6 @@ export class VehicleMonitor {
       model: uv.vehicle?.model ?? null,
       modelYear: uv.vehicle?.modelYear ?? null,
     }));
-    this.vinToId = new Map(this.vehicles.map((v) => [v.vin, v.id]));
 
     for (const uv of info.vehicles) {
       await this.db
@@ -124,55 +157,72 @@ export class VehicleMonitor {
 
     await this.driveDetector.closeDanglingDrives();
 
-    // Seed the cache with one full poll per vehicle, then rely on the stream.
+    // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
       try {
-        const state = await connection.api.getVehicleState(vehicle.vin);
+        const state = await this.pollState(vehicle.id);
         this.states.set(vehicle.id, state ?? {});
       } catch (err) {
-        this.log(`initial state poll failed for ${vehicle.vin}: ${(err as Error).message}`);
+        this.log(`initial state poll failed for ${vehicle.vin}: ${describeRivianError(err)}`);
         this.states.set(vehicle.id, {});
       }
+      if (superseded()) return;
     }
 
-    const stream = connection.stream;
-    stream.onUnauthenticated = () => void this.handleUnauthenticated();
-    stream.onConnectionChange = (connected) =>
-      this.handleStreamConnection(connected);
-    for (const vehicle of this.vehicles) {
-      stream.subscribe(vehicle.vin, (vin, delta) => {
-        void this.handleDelta(vin, delta);
-      });
-    }
-    stream.start();
-
-    this.chargingMonitor = new ChargingMonitor(
+    const chargingMonitor = new ChargingMonitor(
       this.db,
       connection.api,
       this.bus,
       this.log,
     );
-    this.chargingMonitor.onUnauthenticated = () =>
-      void this.handleUnauthenticated();
-    this.chargingMonitor.setVehicles(
-      this.vehicles.map((v) => ({ id: v.id, vin: v.vin })),
+    this.chargingMonitor = chargingMonitor;
+    chargingMonitor.onAuthFailure = () => void this.handleAuthFailure();
+    chargingMonitor.onAuthOk = () => this.handleAuthOk();
+    chargingMonitor.setVehicles(
+      this.vehicles.map((v) => v.id),
     );
-    await this.chargingMonitor.start();
+
+    const stream = connection.stream;
+    stream.onAuthFailure = () => void this.handleAuthFailure();
+    stream.onAuthenticated = () => this.handleAuthOk();
+    stream.onConnectionChange = (connected) =>
+      this.handleStreamConnection(connected);
+    for (const vehicle of this.vehicles) {
+      // Rivian's vehicleState/chargingSession take the vehicle id from
+      // getUserInfo, not the VIN (a VIN yields VEHICLE_NOT_FOUND).
+      stream.subscribe(vehicle.id, (vehicleId, delta) => {
+        void this.handleDelta(vehicleId, delta);
+      });
+      stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
+        void chargingMonitor.ingest(vehicle.id, session);
+      });
+    }
+
+    await chargingMonitor.start();
+    if (superseded()) return;
+    // Plug state from the seed poll, so a session already in progress is tracked.
+    for (const vehicle of this.vehicles) {
+      const state = this.states.get(vehicle.id);
+      if (state) chargingMonitor.setPluggedIn(vehicle.id, isPluggedIn(state));
+    }
+    stream.start();
     this.log(`monitoring ${this.vehicles.length} vehicle(s)`);
   }
 
   async stop(): Promise<void> {
+    this.generation += 1;
     this.running = false;
     this.connection?.stream.stop();
     this.chargingMonitor?.stop();
+    this.chargingMonitor = undefined;
     this.driveDetector.stop();
     this.clearFallbackTimers();
+    this.streamConnected = false;
     this.connection = undefined;
   }
 
-  private async handleDelta(vin: string, delta: VehicleState): Promise<void> {
-    const vehicleId = this.vinToId.get(vin);
-    if (!vehicleId) return;
+  private async handleDelta(vehicleId: string, delta: VehicleState): Promise<void> {
+    if (!this.vehicles.some((v) => v.id === vehicleId)) return;
     const cached = this.states.get(vehicleId) ?? {};
     const changed = mergeVehicleState(cached, delta);
     this.states.set(vehicleId, cached);
@@ -184,10 +234,7 @@ export class VehicleMonitor {
     if (loc) this.chargingMonitor?.noteLocation(vehicleId, loc.latitude, loc.longitude);
 
     if (changed.includes("chargerStatus")) {
-      const status = stateString(cached, "chargerStatus");
-      this.chargingMonitor?.setPluggedIn(
-        status !== null && status !== "chrgr_sts_not_connected",
-      );
+      this.chargingMonitor?.setPluggedIn(vehicleId, isPluggedIn(cached));
     }
 
     try {
@@ -198,6 +245,32 @@ export class VehicleMonitor {
     }
   }
 
+  private handleAuthOk(): void {
+    this.authFailures = 0;
+  }
+
+  /**
+   * Credentials were rejected (the HTTP client has already rotated the
+   * session once for REST calls). Rotate for the socket too and keep going;
+   * only repeated rejections mean the login itself is dead.
+   */
+  private async handleAuthFailure(): Promise<void> {
+    if (!this.running) return;
+    this.authFailures += 1;
+    if (this.authFailures >= AUTH_FAILURE_THRESHOLD) {
+      await this.handleUnauthenticated();
+      return;
+    }
+    this.log(
+      `Rivian rejected credentials (${this.authFailures}/${AUTH_FAILURE_THRESHOLD}); rotating session`,
+    );
+    try {
+      await this.connection?.api.refreshSession();
+    } catch (err) {
+      this.log(`session rotation failed: ${(err as Error).message}`);
+    }
+  }
+
   private async handleUnauthenticated(): Promise<void> {
     this.log("Rivian session unauthenticated; stopping until re-login");
     await this.stop();
@@ -205,15 +278,29 @@ export class VehicleMonitor {
   }
 
   private handleStreamConnection(connected: boolean): void {
+    this.streamConnected = connected;
     if (connected) {
       this.clearFallbackTimers();
       return;
     }
     if (!this.running || this.wsDownTimer) return;
     this.wsDownTimer = setTimeout(() => {
-      this.log("websocket down >5min; falling back to polling");
-      this.fallbackPollTimer = setInterval(() => void this.fallbackPoll(), FALLBACK_POLL_INTERVAL_MS);
+      this.log("websocket down >5min; falling back to slow polling");
+      this.scheduleFallbackPoll();
     }, WS_DOWN_POLL_AFTER_MS);
+  }
+
+  /** Awake vehicles every 5 min, sleeping ones every 30 min. */
+  private scheduleFallbackPoll(): void {
+    if (!this.running || this.streamConnected) return;
+    const asleep = this.vehicles.every((v) => {
+      const power = stateString(this.states.get(v.id) ?? {}, "powerState");
+      return power === null || ASLEEP_POWER_STATES.has(power);
+    });
+    this.fallbackPollTimer = setTimeout(async () => {
+      await this.fallbackPoll();
+      this.scheduleFallbackPoll();
+    }, asleep ? FALLBACK_POLL_ASLEEP_MS : FALLBACK_POLL_AWAKE_MS);
   }
 
   private async fallbackPoll(): Promise<void> {
@@ -221,22 +308,50 @@ export class VehicleMonitor {
     if (!api || !this.running) return;
     for (const vehicle of this.vehicles) {
       try {
-        const state = await api.getVehicleState(vehicle.vin);
-        if (state) await this.handleDelta(vehicle.vin, state);
+        const state = await this.pollState(vehicle.id);
+        this.handleAuthOk();
+        if (state) await this.handleDelta(vehicle.id, state);
       } catch (err) {
         if (err instanceof RivianUnauthenticatedError) {
-          await this.handleUnauthenticated();
+          await this.handleAuthFailure();
           return;
         }
-        this.log(`fallback poll failed: ${(err as Error).message}`);
+        this.log(`fallback poll failed: ${describeRivianError(err)}`);
       }
+    }
+  }
+
+  /**
+   * Polls vehicle state. If Rivian rejects the full selection as invalid,
+   * logs the details once and switches to the core field set.
+   */
+  private async pollState(vehicleId: string): Promise<VehicleState> {
+    const api = this.connection?.api;
+    if (!api) throw new Error("not connected");
+    if (this.coreStateQuery) {
+      return api.getVehicleState(vehicleId, CORE_VEHICLE_STATE_PROPERTIES);
+    }
+    try {
+      return await api.getVehicleState(vehicleId);
+    } catch (err) {
+      if (!isGraphqlValidationError(err)) throw err;
+      this.log(
+        `Rivian rejected the full state query (${describeRivianError(err)}); using core fields`,
+      );
+      this.coreStateQuery = true;
+      return api.getVehicleState(vehicleId, CORE_VEHICLE_STATE_PROPERTIES);
     }
   }
 
   private clearFallbackTimers(): void {
     if (this.wsDownTimer) clearTimeout(this.wsDownTimer);
-    if (this.fallbackPollTimer) clearInterval(this.fallbackPollTimer);
+    if (this.fallbackPollTimer) clearTimeout(this.fallbackPollTimer);
     this.wsDownTimer = undefined;
     this.fallbackPollTimer = undefined;
   }
+}
+
+function isPluggedIn(state: VehicleState): boolean {
+  const status = stateString(state, "chargerStatus");
+  return status !== null && status !== "chrgr_sts_not_connected";
 }

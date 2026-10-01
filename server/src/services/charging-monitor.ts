@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { chargingSessions, wallboxReadings, wallboxes } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
@@ -9,9 +9,11 @@ import {
 } from "../rivian/types.js";
 import type { LiveBus } from "./live-bus.js";
 
-const PLUGGED_INTERVAL_MS = 30_000;
-const IDLE_INTERVAL_MS = 15 * 60_000;
-const MAX_BACKOFF_MS = 900_000;
+/** REST safety net: only while plugged in and the push feed has gone quiet. */
+const SAFETY_NET_INTERVAL_MS = 5 * 60_000;
+const PUSH_STALE_MS = 5 * 60_000;
+/** Wallbox readings are only interesting while a vehicle is plugged in. */
+const WALLBOX_INTERVAL_MS = 15 * 60_000;
 
 interface OpenSession {
   id: number;
@@ -21,31 +23,43 @@ interface OpenSession {
 }
 
 /**
- * Polls the live charging session (30s while plugged in, 15min idle) and the
- * registered wallboxes, persisting session rows and wallbox readings.
+ * Tracks charging sessions from the live `chargingSession` push feed and
+ * persists session rows and wallbox readings.
+ *
+ * Nothing here polls on a fixed schedule while the vehicle is unplugged.
+ * While plugged in, a slow REST check runs only if the push feed has been
+ * silent for a while (e.g. the socket is down or Rivian refused the
+ * charging subscription).
  */
 export class ChargingMonitor {
   private timer?: NodeJS.Timeout;
   private running = false;
-  private pluggedIn = false;
-  private errorCount = 0;
+  private pluggedIn = new Set<string>();
+  private lastPushAt = new Map<string, number>();
+  private lastWallboxPollAt = 0;
   private openSessions = new Map<string, OpenSession>();
   private lastWallboxReading = new Map<string, string>();
-  /** vehicleId -> vin */
-  private vehicles = new Map<string, string>();
+  /** Per-vehicle serialization so pushes and polls never race an insert. */
+  private chains = new Map<string, Promise<void>>();
+  /** Rivian vehicle ids (from getUserInfo, not VINs). */
+  private vehicles = new Set<string>();
   private latestLocation = new Map<string, { lat: number; lon: number }>();
 
-  onUnauthenticated?: () => void;
+  /** Rivian rejected credentials even after a session rotation. */
+  onAuthFailure?: () => void;
+  /** A REST call succeeded with the current credentials. */
+  onAuthOk?: () => void;
 
   constructor(
     private readonly db: Db,
     private readonly api: RivianApi,
     private readonly bus: LiveBus,
     private readonly log: (msg: string) => void = () => {},
+    private readonly now: () => number = Date.now,
   ) {}
 
-  setVehicles(vehicles: { id: string; vin: string }[]): void {
-    this.vehicles = new Map(vehicles.map((v) => [v.id, v.vin]));
+  setVehicles(vehicleIds: string[]): void {
+    this.vehicles = new Set(vehicleIds);
   }
 
   noteLocation(vehicleId: string, lat: number, lon: number): void {
@@ -53,17 +67,40 @@ export class ChargingMonitor {
   }
 
   /** Driven by the vehicle monitor from chargerStatus updates. */
-  setPluggedIn(pluggedIn: boolean): void {
-    if (this.pluggedIn === pluggedIn) return;
-    this.pluggedIn = pluggedIn;
-    if (this.running) this.schedule(pluggedIn ? 0 : this.interval());
+  setPluggedIn(vehicleId: string, pluggedIn: boolean): void {
+    if (this.pluggedIn.has(vehicleId) === pluggedIn) return;
+    if (pluggedIn) {
+      this.pluggedIn.add(vehicleId);
+      // Give the push feed a head start before any REST check.
+      this.lastPushAt.set(vehicleId, this.lastPushAt.get(vehicleId) ?? this.now());
+    } else {
+      this.pluggedIn.delete(vehicleId);
+      // Unplugged: whatever was open is over.
+      void this.enqueue(vehicleId, () => this.processSession(vehicleId, null));
+    }
+    this.reschedule();
+  }
+
+  /** Live session data pushed over the WebSocket. */
+  ingest(vehicleId: string, session: LiveSessionData | null): Promise<void> {
+    this.lastPushAt.set(vehicleId, this.now());
+    return this.enqueue(vehicleId, async () => {
+      await this.processSession(vehicleId, session);
+      this.bus.emitChargingSession(vehicleId, session);
+    });
   }
 
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
     await this.closeDanglingSessions();
-    this.schedule(0);
+    // One wallbox refresh at startup keeps names/firmware current.
+    try {
+      await this.pollWallboxes();
+    } catch (err) {
+      this.handleError(err, "wallbox refresh");
+    }
+    this.reschedule();
   }
 
   stop(): void {
@@ -72,44 +109,53 @@ export class ChargingMonitor {
     this.timer = undefined;
   }
 
-  private interval(): number {
-    return this.pluggedIn ? PLUGGED_INTERVAL_MS : IDLE_INTERVAL_MS;
-  }
-
-  private schedule(delayMs: number): void {
-    if (!this.running) return;
+  private reschedule(): void {
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      void this.tick();
-    }, delayMs);
+    this.timer = undefined;
+    if (!this.running || this.pluggedIn.size === 0) return;
+    this.timer = setTimeout(() => void this.tick(), SAFETY_NET_INTERVAL_MS);
   }
 
   private async tick(): Promise<void> {
+    this.timer = undefined;
     try {
-      for (const [vehicleId, vin] of this.vehicles) {
-        const session = await this.api.getLiveSessionData(vin);
-        await this.processSession(vehicleId, session);
-        this.bus.emitChargingSession(vehicleId, session);
+      for (const vehicleId of this.pluggedIn) {
+        if (!this.vehicles.has(vehicleId)) continue;
+        const lastPush = this.lastPushAt.get(vehicleId) ?? 0;
+        if (this.now() - lastPush < PUSH_STALE_MS) continue;
+        const session = await this.api.getLiveSessionData(vehicleId);
+        this.onAuthOk?.();
+        await this.enqueue(vehicleId, async () => {
+          await this.processSession(vehicleId, session);
+          this.bus.emitChargingSession(vehicleId, session);
+        });
       }
-      await this.pollWallboxes();
-      this.errorCount = 0;
-      this.schedule(this.interval());
+      if (this.now() - this.lastWallboxPollAt >= WALLBOX_INTERVAL_MS) {
+        await this.pollWallboxes();
+      }
     } catch (err) {
-      if (err instanceof RivianUnauthenticatedError) {
-        this.log("charging poll unauthenticated");
-        this.stop();
-        this.onUnauthenticated?.();
-        return;
-      }
-      this.errorCount += 1;
-      const backoff = Math.min(
-        this.interval() * 2 ** this.errorCount,
-        MAX_BACKOFF_MS,
-      );
-      const kind = err instanceof RivianRateLimitError ? "rate limited" : "error";
-      this.log(`charging poll ${kind}: ${(err as Error).message}; retry in ${Math.round(backoff / 1000)}s`);
-      this.schedule(backoff);
+      this.handleError(err, "charging check");
     }
+    this.reschedule();
+  }
+
+  private handleError(err: unknown, what: string): void {
+    if (err instanceof RivianUnauthenticatedError) {
+      this.log(`${what}: credentials rejected`);
+      this.onAuthFailure?.();
+      return;
+    }
+    const kind = err instanceof RivianRateLimitError ? "rate limited" : "failed";
+    this.log(`${what} ${kind}: ${(err as Error).message}`);
+  }
+
+  private enqueue(vehicleId: string, task: () => Promise<void>): Promise<void> {
+    const prev = this.chains.get(vehicleId) ?? Promise.resolve();
+    const next = prev.then(task).catch((err: unknown) => {
+      this.log(`charging persistence error: ${(err as Error).message}`);
+    });
+    this.chains.set(vehicleId, next);
+    return next;
   }
 
   private async processSession(
@@ -129,7 +175,12 @@ export class ChargingMonitor {
             vehicleId,
             startedAt: session.startTime ? new Date(session.startTime) : new Date(),
             chargerId: session.chargerId,
-            chargerType: session.isRivianCharger ? "rivian_charger" : "other",
+            chargerType:
+              session.isRivianCharger == null
+                ? null
+                : session.isRivianCharger
+                  ? "rivian_charger"
+                  : "other",
             isRivianCharger: session.isRivianCharger,
             startSoc: num(session.soc?.value),
             currency: session.currentCurrency,
@@ -183,7 +234,9 @@ export class ChargingMonitor {
   }
 
   private async pollWallboxes(): Promise<void> {
+    this.lastWallboxPollAt = this.now();
     const boxes = await this.api.getRegisteredWallboxes();
+    this.onAuthOk?.();
     for (const box of boxes) {
       await this.db
         .insert(wallboxes)
@@ -229,19 +282,22 @@ export class ChargingMonitor {
     await this.db
       .update(chargingSessions)
       .set({ endedAt: new Date() })
-      .where(
-        and(isNull(chargingSessions.endedAt)),
-      );
+      .where(isNull(chargingSessions.endedAt));
   }
 }
+
+const ACTIVE_CHARGER_STATES = new Set([
+  "charging_active",
+  "charging_connecting",
+  "charging_ready",
+  "charging",
+]);
 
 export function isActiveSession(session: LiveSessionData | null): boolean {
   if (!session) return false;
   const state = session.vehicleChargerState?.value;
   if (typeof state === "string") {
-    return ["charging_active", "charging_connecting", "charging_ready"].includes(
-      state,
-    );
+    return ACTIVE_CHARGER_STATES.has(state.toLowerCase());
   }
   return session.startTime != null;
 }

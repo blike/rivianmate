@@ -30,6 +30,12 @@ export interface RivianTokens {
   userSessionToken: string;
 }
 
+/** Short-lived app session created by CreateCSRFToken (not persisted). */
+export interface RivianAppSession {
+  csrfToken: string;
+  appSessionToken: string;
+}
+
 export type LoginResult =
   | { kind: "tokens"; tokens: RivianTokens }
   | { kind: "otp"; otpToken: string };
@@ -129,7 +135,15 @@ export class RivianApiError extends Error {
 export class RivianUnauthenticatedError extends RivianApiError {}
 export class RivianInvalidCredentialsError extends RivianApiError {}
 export class RivianInvalidOtpError extends RivianApiError {}
-export class RivianRateLimitError extends RivianApiError {}
+export class RivianRateLimitError extends RivianApiError {
+  /** How long Rivian asked us to back off, when it said so. */
+  retryAfterMs?: number;
+}
+/**
+ * Raised locally, without contacting Rivian, while a rate-limit cooldown is
+ * in effect. It must not extend the cooldown.
+ */
+export class RivianCooldownError extends RivianRateLimitError {}
 export class RivianSessionManagerError extends RivianApiError {}
 export class RivianDataError extends RivianApiError {}
 export class RivianBadRequestError extends RivianApiError {}
@@ -171,4 +185,26 @@ export function mapGraphqlError(
     default:
       return new RivianApiError(message, code, reason, status, response);
   }
+}
+
+/** True when Rivian rejected the GraphQL document itself (schema mismatch). */
+export function isGraphqlValidationError(err: unknown): boolean {
+  if (!(err instanceof RivianApiError)) return false;
+  return (
+    err.code === "GRAPHQL_VALIDATION_FAILED" ||
+    /validation/i.test(err.message)
+  );
+}
+
+/**
+ * Full description of a Rivian error, including every GraphQL error entry,
+ * so logs show which field or rule was rejected.
+ */
+export function describeRivianError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const response = (err as RivianApiError).response as
+    | { errors?: unknown[] }
+    | undefined;
+  if (!response?.errors?.length) return err.message;
+  return JSON.stringify(response.errors).slice(0, 1000);
 }

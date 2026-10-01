@@ -21,15 +21,52 @@ ORM (backend) · Postgres · pnpm monorepo, TypeScript end to end.
   charts for battery/range/odometer/cabin temperature and a location trail.
 - **Drives** — automatic drive detection (gear/power/speed heuristics with a
   3-minute park grace period), with distance, battery used, and route replay.
-- **Charging** — live session card while plugged in (30-second polling,
-  15 minutes when idle), a session log (energy, SOC, range added, peak power,
-  editable cost), and wallbox status/readings.
+- **Charging** — live session card pushed over the same WebSocket as vehicle
+  state, a session log (energy, SOC, range added, peak power, editable cost),
+  and wallbox status/readings.
 - **Security** — single app password (scrypt); Rivian tokens are stored
   AES-256-GCM-encrypted with `APP_SECRET`. Your Rivian credentials are only
   forwarded to Rivian during login and never stored.
 
 No vehicle commands (lock/unlock/climate) — this app is read-only and does not
 enroll as a phone key.
+
+## How RivianMate talks to Rivian
+
+Your Rivian account is shared with the official phone app. If a third-party
+client floods the Rivian cloud, or keeps retrying after it's told to back off,
+the phone app can lose its connection to the vehicle. RivianMate keeps its
+traffic low:
+
+- **Push, not polling.** Vehicle state and live charging data come from one
+  WebSocket with one subscription per vehicle and data type. Each
+  subscription is sent once per connection and never re-sent on a quiet
+  socket. Dead sockets are detected with WebSocket ping frames, which don't
+  generate GraphQL traffic.
+- **One session.** The CSRF/app session from login is reused by the REST
+  client and the WebSocket handshake. It is rotated only when Rivian rejects
+  it, and simultaneous rejections trigger a single rotation.
+- **Polling only as a fallback.** When the socket has been down for more
+  than 5 minutes, state is polled every 5 minutes while the vehicle is awake
+  and every 30 minutes while it's asleep. While plugged in, charging is
+  checked over REST every 5 minutes, and only if pushed charging data has
+  stopped arriving. Wallboxes are refreshed at startup and every 15 minutes
+  while charging.
+- **Backing off.** All requests go through one process-wide queue, spaced at
+  least 2 seconds apart. A rate-limit response (HTTP 429 or `RATE_LIMIT`)
+  pauses *all* traffic for at least 5 minutes, doubling up to 1 hour, or for
+  as long as Rivian's `Retry-After` asks if that is longer. WebSocket
+  reconnects back off from 10 seconds to 15 minutes with jitter. Rivian's
+  scheduled connection-TTL close (4420) is renewed quickly and doesn't count
+  as an error.
+- **Tolerant auth.** A single credential rejection triggers a session
+  rotation. You're asked to sign in again only after three rejections in a
+  row.
+
+**Settings → Rivian API usage** shows request counts per operation, socket
+reconnects, session refreshes, and rate limits for the last 24 hours. Run
+only **one** RivianMate instance per Rivian account. A dev server and a
+production container on the same account double the traffic.
 
 ## Remote deployment (Docker Compose)
 

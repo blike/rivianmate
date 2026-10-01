@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { VehicleState } from "@server/api-types.js";
 import { fmt, nv, sv, titleCase } from "../lib/state.js";
+import { type ClosureStatus, closureStatuses } from "../lib/closures.js";
 
 export function StatCard(props: {
   label: string;
@@ -46,66 +47,38 @@ function StatusDot(props: { ok: boolean | null }) {
   );
 }
 
-function ClosureRow(props: {
-  label: string;
-  closed: string | null;
-  locked?: string | null;
-}) {
-  const isClosed = props.closed == null ? null : props.closed === "closed";
+function ClosureRow(props: { status: ClosureStatus }) {
+  const { label, closed, locked } = props.status;
   return (
     <div className="flex items-center justify-between py-1 text-sm">
-      <span className="text-[var(--text-secondary)]">{props.label}</span>
+      <span className="text-[var(--text-secondary)]">{label}</span>
       <span className="flex items-center gap-2">
-        <StatusDot ok={isClosed} />
+        <StatusDot ok={closed} />
         <span>
-          {props.closed == null ? "—" : isClosed ? "Closed" : "Open"}
-          {props.locked != null && ` · ${props.locked === "locked" ? "Locked" : "Unlocked"}`}
+          {closed ? "Closed" : "Open"}
+          {locked !== null && ` · ${locked ? "Locked" : "Unlocked"}`}
         </span>
       </span>
     </div>
   );
 }
 
-export function ClosuresGrid(props: { state: VehicleState | undefined }) {
-  const s = props.state;
-  const rows: { label: string; closedKey: string; lockedKey?: string }[] = [
-    { label: "Driver door", closedKey: "doorFrontLeftClosed", lockedKey: "doorFrontLeftLocked" },
-    { label: "Passenger door", closedKey: "doorFrontRightClosed", lockedKey: "doorFrontRightLocked" },
-    { label: "Rear left door", closedKey: "doorRearLeftClosed", lockedKey: "doorRearLeftLocked" },
-    { label: "Rear right door", closedKey: "doorRearRightClosed", lockedKey: "doorRearRightLocked" },
-    { label: "Frunk", closedKey: "closureFrunkClosed", lockedKey: "closureFrunkLocked" },
-    { label: "Tailgate", closedKey: "closureTailgateClosed", lockedKey: "closureTailgateLocked" },
-    { label: "Liftgate", closedKey: "closureLiftgateClosed", lockedKey: "closureLiftgateLocked" },
-    { label: "Tonneau", closedKey: "closureTonneauClosed", lockedKey: "closureTonneauLocked" },
-    { label: "Gear tunnel L", closedKey: "closureSideBinLeftClosed", lockedKey: "closureSideBinLeftLocked" },
-    { label: "Gear tunnel R", closedKey: "closureSideBinRightClosed", lockedKey: "closureSideBinRightLocked" },
-  ];
-  const windows: { label: string; key: string }[] = [
-    { label: "Window FL", key: "windowFrontLeftClosed" },
-    { label: "Window FR", key: "windowFrontRightClosed" },
-    { label: "Window RL", key: "windowRearLeftClosed" },
-    { label: "Window RR", key: "windowRearRightClosed" },
-  ];
+export function ClosuresGrid(props: {
+  state: VehicleState | undefined;
+  model?: string | null;
+}) {
+  const { closures, windows } = closureStatuses(props.state, props.model);
   return (
     <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
       <div>
-        {rows
-          .filter((r) => sv(s, r.closedKey) != null)
-          .map((r) => (
-            <ClosureRow
-              key={r.closedKey}
-              label={r.label}
-              closed={sv(s, r.closedKey)}
-              locked={r.lockedKey ? sv(s, r.lockedKey) : undefined}
-            />
-          ))}
+        {closures.map((c) => (
+          <ClosureRow key={c.key} status={c} />
+        ))}
       </div>
       <div>
-        {windows
-          .filter((w) => sv(s, w.key) != null)
-          .map((w) => (
-            <ClosureRow key={w.key} label={w.label} closed={sv(s, w.key)} />
-          ))}
+        {windows.map((w) => (
+          <ClosureRow key={w.key} status={w} />
+        ))}
       </div>
     </div>
   );

@@ -93,7 +93,7 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
         </Panel>
 
         <Panel title="Doors, closures & windows">
-          <ClosuresGrid state={state} />
+          <ClosuresGrid state={state} model={props.vehicle?.model} />
         </Panel>
 
         <Panel title="Climate">

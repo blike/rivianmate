@@ -1,60 +1,150 @@
 import { randomUUID } from "node:crypto";
+import type { IncomingMessage } from "node:http";
 import WebSocket from "ws";
+import { mapChargingSession } from "./charging-session.js";
+import { RivianGovernor, parseRetryAfter } from "./governor.js";
 import {
   APOLLO_CLIENT_NAME,
   APOLLO_CLIENT_VERSION,
+  CHARGING_SESSION_SUBSCRIPTION,
   GRAPHQL_WEBSOCKET,
+  CORE_VEHICLE_STATE_PROPERTIES,
   SUBSCRIPTION_PROPERTIES,
   buildVehicleStateSubscription,
 } from "./graphql.js";
-import type { VehicleState } from "./types.js";
+import type { LiveSessionData, RivianAppSession, VehicleState } from "./types.js";
 
-export type VehicleStateCallback = (vin: string, state: VehicleState) => void;
+export type VehicleStateCallback = (vehicleId: string, state: VehicleState) => void;
+export type ChargingSessionCallback = (
+  vehicleId: string,
+  session: LiveSessionData | null,
+) => void;
 
 export interface VehicleStateStream {
-  subscribe(vin: string, callback: VehicleStateCallback): void;
+  /** `vehicleId` is getUserInfo's vehicles[].id, not the VIN. */
+  subscribe(vehicleId: string, callback: VehicleStateCallback): void;
+  /** Live charging data; optional so simple streams can omit it. */
+  subscribeCharging?(vehicleId: string, callback: ChargingSessionCallback): void;
   start(): void;
   stop(): void;
-  /** Fires when the server rejects the session; the account must re-login. */
-  onUnauthenticated?: () => void;
-  /** Fires on connect/disconnect so the monitor can fall back to polling. */
+  /**
+   * Fires when Rivian rejects the socket's credentials. The stream keeps
+   * retrying with backoff; the owner decides when to give up.
+   */
+  onAuthFailure?: () => void;
+  /** Fires after a successful connection_ack (credentials accepted). */
+  onAuthenticated?: () => void;
+  /** Fires on connect/disconnect so the owner can fall back to polling. */
   onConnectionChange?: (connected: boolean) => void;
 }
 
-const IDLE_TIMEOUT_MS = 60_000;
-const MAX_BACKOFF_MS = 300_000;
+/** Rivian closes long-lived sockets on a schedule; just open a new one. */
+export const CLOSE_CONNECTION_TTL_EXPIRED = 4420;
+/** Server-side: the socket has no active subscriptions left. */
+export const CLOSE_NO_ACTIVE_SUBSCRIPTIONS = 4410;
+const AUTH_CLOSE_CODES = new Set([4401, 4403]);
+const CLOSE_TOO_MANY_REQUESTS = 4429;
 
-interface Subscription {
-  vin: string;
-  callback: VehicleStateCallback;
-  wsId?: string;
+export interface SubscriptionManagerOptions {
+  getCredentials: () => {
+    userSessionToken?: string;
+    appSession?: RivianAppSession;
+  };
+  governor: RivianGovernor;
+  url?: string;
+  log?: (msg: string) => void;
+  initialBackoffMs?: number;
+  maxBackoffMs?: number;
+  /** Delay before renewing after Rivian's scheduled TTL close. */
+  ttlRenewDelayMs?: number;
+  /** Transport-level ping cadence used to detect dead sockets. */
+  heartbeatIntervalMs?: number;
 }
 
+type SubKind = "vehicleState" | "chargingSession";
+
+interface Subscription {
+  id: string;
+  kind: SubKind;
+  vehicleId: string;
+  onState?: VehicleStateCallback;
+  onCharging?: ChargingSessionCallback;
+}
+
+type DisconnectReason =
+  | { kind: "ttl" }
+  | { kind: "auth" }
+  | { kind: "rateLimited"; retryAfterMs?: number }
+  | { kind: "error"; message: string };
+
 /**
- * graphql-transport-ws client for Rivian's vehicle state subscription,
- * ported from rivian-python-client's ws_monitor.py.
+ * graphql-transport-ws client for Rivian's vehicle-state and charging-session
+ * subscriptions. Designed to be a quiet, well-behaved client:
+ *
+ * - one socket, one subscription per (vehicle, kind), each sent exactly once
+ *   per connection with a stable id (never re-sent on an idle socket);
+ * - liveness is checked with transport-level ping frames, which cost Rivian
+ *   nothing at the GraphQL layer;
+ * - reconnects use exponential backoff with jitter (10s → 15min) and wait out
+ *   any rate-limit cooldown held by the shared governor.
  */
 export class RivianSubscriptionManager implements VehicleStateStream {
   private ws?: WebSocket;
   private subscriptions = new Map<string, Subscription>();
+  /** Subscription ids sent on the current socket. */
+  private sentIds = new Set<string>();
+  private disabledFields = new Set<string>();
+  /** Set when Rivian ends the full selection without saying why. */
+  private coreFieldsOnly = false;
+  /** Whether the current socket has delivered any vehicle state yet. */
+  private gotVehicleData = false;
+  private chargingUnsupported = false;
   private started = false;
   private connected = false;
+  private everConnected = false;
   private reconnectAttempt = 0;
-  private idleTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
+  private heartbeatTimer?: NodeJS.Timeout;
+  private awaitingPong = false;
+  /** Only enforce pongs once this connection has proven it answers pings. */
+  private pongSeen = false;
 
-  onUnauthenticated?: () => void;
+  private readonly url: string;
+  private readonly log: (msg: string) => void;
+  private readonly initialBackoffMs: number;
+  private readonly maxBackoffMs: number;
+  private readonly ttlRenewDelayMs: number;
+  private readonly heartbeatIntervalMs: number;
+
+  onAuthFailure?: () => void;
+  onAuthenticated?: () => void;
   onConnectionChange?: (connected: boolean) => void;
 
-  constructor(
-    private readonly getUserSessionToken: () => string | undefined,
-    private readonly url: string = GRAPHQL_WEBSOCKET,
-    private readonly log: (msg: string) => void = () => {},
-  ) {}
+  constructor(private readonly options: SubscriptionManagerOptions) {
+    this.url = options.url ?? GRAPHQL_WEBSOCKET;
+    this.log = options.log ?? (() => {});
+    this.initialBackoffMs = options.initialBackoffMs ?? 10_000;
+    this.maxBackoffMs = options.maxBackoffMs ?? 15 * 60_000;
+    this.ttlRenewDelayMs = options.ttlRenewDelayMs ?? 2_000;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 60_000;
+  }
 
-  subscribe(vin: string, callback: VehicleStateCallback): void {
-    this.subscriptions.set(vin, { vin, callback });
-    if (this.connected) this.sendSubscribe(this.subscriptions.get(vin)!);
+  subscribe(vehicleId: string, callback: VehicleStateCallback): void {
+    this.addSubscription({
+      id: `vehicleState:${vehicleId}`,
+      kind: "vehicleState",
+      vehicleId,
+      onState: callback,
+    });
+  }
+
+  subscribeCharging(vehicleId: string, callback: ChargingSessionCallback): void {
+    this.addSubscription({
+      id: `chargingSession:${vehicleId}`,
+      kind: "chargingSession",
+      vehicleId,
+      onCharging: callback,
+    });
   }
 
   start(): void {
@@ -66,9 +156,15 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   stop(): void {
     this.started = false;
     this.clearTimers();
-    this.ws?.removeAllListeners();
-    this.ws?.close();
+    const ws = this.ws;
     this.ws = undefined;
+    if (ws) {
+      ws.removeAllListeners();
+      ws.on("error", () => {});
+      if (ws.readyState === WebSocket.OPEN) ws.close(1000, "client stop");
+      else ws.terminate();
+    }
+    this.sentIds.clear();
     this.setConnected(false);
   }
 
@@ -76,16 +172,68 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     return this.connected;
   }
 
+  /** True once the stream fell back to the core field set. */
+  get usingCoreFieldsOnly(): boolean {
+    return this.coreFieldsOnly;
+  }
+
+  /** Fields dropped after Rivian rejected them (for diagnostics). */
+  get droppedFields(): string[] {
+    return [...this.disabledFields];
+  }
+
+  private addSubscription(sub: Subscription): void {
+    this.subscriptions.set(sub.id, sub);
+    if (this.connected) this.sendSubscribe(sub);
+  }
+
   private connect(): void {
-    if (!this.started) return;
-    const token = this.getUserSessionToken();
-    if (!token) {
+    if (!this.started || this.ws) return;
+
+    const cooldown = this.options.governor.cooldownRemainingMs();
+    if (cooldown > 0) {
+      this.log(`rate-limit cooldown active; connecting in ${Math.round(cooldown / 1000)}s`);
+      this.scheduleReconnect(cooldown);
+      return;
+    }
+
+    const { userSessionToken, appSession } = this.options.getCredentials();
+    if (!userSessionToken) {
       this.log("no user session token; not connecting");
       return;
     }
 
-    const ws = new WebSocket(this.url, "graphql-transport-ws");
+    const headers: Record<string, string> = { "U-Sess": userSessionToken };
+    if (appSession) {
+      headers["A-Sess"] = appSession.appSessionToken;
+      headers["Csrf-Token"] = appSession.csrfToken;
+    }
+
+    this.options.governor.count(this.everConnected ? "wsReconnects" : "wsConnects");
+    const ws = new WebSocket(this.url, "graphql-transport-ws", {
+      headers,
+      handshakeTimeout: 30_000,
+    });
     this.ws = ws;
+    let finished = false;
+    const finish = (reason: DisconnectReason) => {
+      if (finished) return;
+      finished = true;
+      this.handleDisconnect(ws, reason);
+    };
+
+    ws.on("unexpected-response", (req, res: IncomingMessage) => {
+      const status = res.statusCode ?? 0;
+      req.destroy();
+      if (status === 401 || status === 403) finish({ kind: "auth" });
+      else if (status === 429) {
+        const header = res.headers["retry-after"];
+        finish({
+          kind: "rateLimited",
+          retryAfterMs: parseRetryAfter(Array.isArray(header) ? header[0] : header),
+        });
+      } else finish({ kind: "error", message: `handshake rejected (HTTP ${status})` });
+    });
 
     ws.on("open", () => {
       ws.send(
@@ -95,110 +243,238 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             "client-name": APOLLO_CLIENT_NAME,
             "client-version": APOLLO_CLIENT_VERSION,
             "dc-cid": `m-ios-${randomUUID()}`,
-            "u-sess": token,
+            "u-sess": userSessionToken,
           },
         }),
       );
     });
 
+    ws.on("pong", () => {
+      this.awaitingPong = false;
+      this.pongSeen = true;
+    });
+
     ws.on("message", (raw) => {
-      this.touchIdleTimer();
+      this.awaitingPong = false;
+      this.options.governor.count("wsMessages");
       let msg: { type: string; id?: string; payload?: unknown };
       try {
         msg = JSON.parse(raw.toString());
       } catch {
         return;
       }
-      switch (msg.type) {
-        case "connection_ack":
-          this.reconnectAttempt = 0;
-          this.setConnected(true);
-          for (const sub of this.subscriptions.values()) this.sendSubscribe(sub);
-          break;
-        case "next": {
-          const payload = msg.payload as
-            | { data?: { vehicleState?: VehicleState } }
-            | undefined;
-          const state = payload?.data?.vehicleState;
-          if (!state) break;
-          for (const sub of this.subscriptions.values()) {
-            if (sub.wsId === msg.id) sub.callback(sub.vin, state);
-          }
-          break;
-        }
-        case "error": {
-          const errors = msg.payload as { extensions?: { code?: string } }[];
-          if (errors?.some((e) => e?.extensions?.code === "UNAUTHENTICATED")) {
-            this.log("subscription unauthenticated");
-            this.stop();
-            this.onUnauthenticated?.();
-          }
-          break;
-        }
-        default:
-          break;
+      const reason = this.handleMessage(ws, msg);
+      if (reason) {
+        finish(reason);
+        ws.close(1000);
       }
     });
 
-    ws.on("close", (code, reason) => {
-      this.setConnected(false);
-      if (reason?.toString() === "Unauthenticated") {
-        this.stop();
-        this.onUnauthenticated?.();
-        return;
-      }
-      this.scheduleReconnect();
+    ws.on("close", (code, reasonBuf) => {
+      const reason = reasonBuf?.toString() ?? "";
+      if (code === CLOSE_CONNECTION_TTL_EXPIRED) finish({ kind: "ttl" });
+      else if (AUTH_CLOSE_CODES.has(code) || /unauthenticated|forbidden/i.test(reason)) {
+        finish({ kind: "auth" });
+      } else if (code === CLOSE_TOO_MANY_REQUESTS) finish({ kind: "rateLimited" });
+      else finish({ kind: "error", message: `closed (${code}${reason ? ` ${reason}` : ""})` });
     });
 
     ws.on("error", (err) => {
-      this.log(`websocket error: ${err.message}`);
-      ws.close();
+      finish({ kind: "error", message: err.message });
+      ws.terminate();
     });
+  }
+
+  /** Returns a disconnect reason when the message ends the connection. */
+  private handleMessage(
+    ws: WebSocket,
+    msg: { type: string; id?: string; payload?: unknown },
+  ): DisconnectReason | undefined {
+    switch (msg.type) {
+      case "connection_ack":
+        // Backoff is only reset once data actually flows: an accepted
+        // handshake followed by an immediately-ended subscription must
+        // still back off, or we'd reconnect every few seconds forever.
+        this.everConnected = true;
+        this.gotVehicleData = false;
+        this.sentIds.clear();
+        this.setConnected(true);
+        this.onAuthenticated?.();
+        this.startHeartbeat(ws);
+        for (const sub of this.subscriptions.values()) this.sendSubscribe(sub);
+        return undefined;
+      case "ping":
+        ws.send(JSON.stringify({ type: "pong" }));
+        return undefined;
+      case "next": {
+        const sub = msg.id ? this.subscriptions.get(msg.id) : undefined;
+        if (!sub) return undefined;
+        const data = (msg.payload as { data?: Record<string, unknown> } | undefined)
+          ?.data;
+        if (sub.kind === "vehicleState") {
+          const state = data?.vehicleState as VehicleState | undefined;
+          if (state) {
+            if (!this.gotVehicleData) {
+              this.gotVehicleData = true;
+              this.reconnectAttempt = 0;
+            }
+            sub.onState?.(sub.vehicleId, state);
+          }
+        } else if (data && "chargingSession" in data) {
+          sub.onCharging?.(sub.vehicleId, mapChargingSession(data.chargingSession));
+        }
+        return undefined;
+      }
+      case "error":
+      case "complete":
+        return this.handleSubscriptionEnd(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private handleSubscriptionEnd(msg: {
+    type: string;
+    id?: string;
+    payload?: unknown;
+  }): DisconnectReason | undefined {
+    const sub = msg.id ? this.subscriptions.get(msg.id) : undefined;
+    if (msg.id) this.sentIds.delete(msg.id);
+    const errors = Array.isArray(msg.payload)
+      ? (msg.payload as { message?: string; extensions?: { code?: string } }[])
+      : [];
+    if (errors.some((e) => e?.extensions?.code === "UNAUTHENTICATED")) {
+      return { kind: "auth" };
+    }
+    if (errors.some((e) => e?.extensions?.code === "RATE_LIMIT")) {
+      return { kind: "rateLimited" };
+    }
+
+    if (sub?.kind === "chargingSession") {
+      // Optional feature: if Rivian refuses it, keep the socket and let the
+      // charging monitor's REST safety net cover sessions instead.
+      if (msg.type === "error") {
+        this.chargingUnsupported = true;
+        this.log(`charging subscription rejected: ${summarize(errors)}`);
+      }
+      return undefined;
+    }
+
+    const rejected = rejectedFields(errors);
+    for (const field of rejected) this.disabledFields.add(field);
+    if (rejected.length) {
+      this.log(`vehicle state subscription rejected fields: ${rejected.join(", ")}`);
+    } else if (!this.gotVehicleData && !this.coreFieldsOnly) {
+      // Ended before any data and without naming a field: most likely a
+      // schema mismatch somewhere in the selection. Fall back to core fields.
+      this.coreFieldsOnly = true;
+      this.log("vehicle state subscription ended without data; retrying with core fields only");
+    }
+    return {
+      kind: "error",
+      message: `vehicle state subscription ${msg.type}${errors.length ? `: ${summarize(errors)}` : ""}`,
+    };
   }
 
   private sendSubscribe(sub: Subscription): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    sub.wsId = randomUUID();
-    this.ws.send(
-      JSON.stringify({
-        id: sub.wsId,
-        type: "subscribe",
-        payload: {
-          operationName: "VehicleState",
-          query: buildVehicleStateSubscription(SUBSCRIPTION_PROPERTIES),
-          variables: { vehicleID: sub.vin },
-        },
-      }),
-    );
+    if (this.sentIds.has(sub.id)) return;
+    if (sub.kind === "chargingSession" && this.chargingUnsupported) return;
+    this.sentIds.add(sub.id);
+    const payload =
+      sub.kind === "vehicleState"
+        ? {
+            operationName: "VehicleState",
+            query: buildVehicleStateSubscription(
+              (this.coreFieldsOnly
+                ? CORE_VEHICLE_STATE_PROPERTIES
+                : SUBSCRIPTION_PROPERTIES
+              ).filter((p) => !this.disabledFields.has(p)),
+            ),
+            variables: { vehicleID: sub.vehicleId },
+          }
+        : {
+            operationName: "chargingSession",
+            query: CHARGING_SESSION_SUBSCRIPTION,
+            variables: { vehicleID: sub.vehicleId },
+          };
+    this.ws.send(JSON.stringify({ id: sub.id, type: "subscribe", payload }));
   }
 
-  /** No traffic for 60s: assume a stale connection and resubscribe. */
-  private touchIdleTimer(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      if (!this.started) return;
-      this.log("idle timeout; resubscribing");
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        for (const sub of this.subscriptions.values()) this.sendSubscribe(sub);
-        this.touchIdleTimer();
-      } else {
-        this.ws?.close();
+  private handleDisconnect(ws: WebSocket, reason: DisconnectReason): void {
+    if (this.ws !== ws) return;
+    this.ws = undefined;
+    this.sentIds.clear();
+    this.stopHeartbeat();
+    this.setConnected(false);
+    if (!this.started) return;
+
+    switch (reason.kind) {
+      case "ttl":
+        // Scheduled renewal by Rivian: not an error, don't escalate backoff.
+        this.log("connection TTL expired; renewing");
+        this.reconnectAttempt = 0;
+        this.scheduleReconnect(this.ttlRenewDelayMs);
+        return;
+      case "auth":
+        this.log("credentials rejected");
+        this.options.governor.count("wsAuthFailures");
+        this.onAuthFailure?.();
+        break;
+      case "rateLimited": {
+        const cooldown = this.options.governor.noteRateLimited(reason.retryAfterMs);
+        this.log(`rate limited; pausing ${Math.round(cooldown / 1000)}s`);
+        break;
       }
-    }, IDLE_TIMEOUT_MS);
+      case "error":
+        this.log(reason.message);
+        break;
+    }
+    if (!this.started) return; // onAuthFailure may have stopped us
+    this.scheduleReconnect(this.nextBackoffMs());
   }
 
-  private scheduleReconnect(): void {
-    if (!this.started || this.reconnectTimer) return;
-    const delay = Math.min(
-      2 ** this.reconnectAttempt * 1000 + Math.random() * 1000,
-      MAX_BACKOFF_MS,
+  private nextBackoffMs(): number {
+    const base = Math.min(
+      this.initialBackoffMs * 2 ** this.reconnectAttempt,
+      this.maxBackoffMs,
     );
     this.reconnectAttempt += 1;
+    return base + Math.random() * base * 0.25;
+  }
+
+  private scheduleReconnect(delayMs: number): void {
+    if (!this.started || this.reconnectTimer) return;
+    const delay = Math.max(delayMs, this.options.governor.cooldownRemainingMs());
     this.log(`reconnecting in ${Math.round(delay / 1000)}s`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.connect();
     }, delay);
+  }
+
+  /** Transport ping/pong: no GraphQL traffic, just detects dead sockets. */
+  private startHeartbeat(ws: WebSocket): void {
+    this.stopHeartbeat();
+    this.awaitingPong = false;
+    this.pongSeen = false;
+    this.heartbeatTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      // Without a prior pong we can't tell "dead" from "doesn't answer pings";
+      // keep pinging (it still keeps NAT paths open) but don't drop the socket.
+      if (this.awaitingPong && this.pongSeen) {
+        this.log("heartbeat missed; dropping socket");
+        ws.terminate();
+        return;
+      }
+      this.awaitingPong = true;
+      ws.ping();
+    }, this.heartbeatIntervalMs);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = undefined;
   }
 
   private setConnected(connected: boolean): void {
@@ -208,9 +484,23 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   }
 
   private clearTimers(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.stopHeartbeat();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.idleTimer = undefined;
     this.reconnectTimer = undefined;
   }
+}
+
+function summarize(errors: { message?: string }[]): string {
+  const messages = errors.map((e) => e?.message).filter(Boolean).join("; ");
+  return (messages || JSON.stringify(errors)).slice(0, 500);
+}
+
+/** Pulls field names out of GraphQL validation errors. */
+export function rejectedFields(errors: { message?: string }[]): string[] {
+  const fields = new Set<string>();
+  for (const e of errors) {
+    const match = e?.message?.match(/Cannot query field ["']([A-Za-z0-9_]+)["']/);
+    if (match?.[1] && SUBSCRIPTION_PROPERTIES.includes(match[1])) fields.add(match[1]);
+  }
+  return [...fields];
 }

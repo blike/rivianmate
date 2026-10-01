@@ -6,6 +6,7 @@ import type {
   HistoryMetric,
   HistoryPoint,
   LocationPointDto,
+  RivianDiagnosticsResponse,
   StatusResponse,
   VehicleDto,
   VehicleState,
@@ -13,6 +14,7 @@ import type {
 } from "@server/api-types.js";
 
 export type {
+  RivianDiagnosticsResponse,
   ChargingSessionDto,
   ConnectResponse,
   DriveDetailDto,
@@ -83,6 +85,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
+  rivianDiagnostics: () =>
+    request<RivianDiagnosticsResponse>("/api/rivian/diagnostics"),
   rivianDisconnect: () =>
     request<{ ok: boolean }>("/api/rivian/disconnect", { method: "POST" }),
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CORE_VEHICLE_STATE_PROPERTIES,
   buildLiveSessionQuery,
   buildVehicleStateQuery,
   buildVehicleStateSubscription,
@@ -10,6 +11,8 @@ import {
   RivianInvalidOtpError,
   RivianRateLimitError,
   RivianUnauthenticatedError,
+  describeRivianError,
+  isGraphqlValidationError,
   mapGraphqlError,
 } from "./types.js";
 import { mergeVehicleState } from "../services/state-utils.js";
@@ -19,9 +22,7 @@ describe("graphql builders", () => {
   it("uses special templates for connection/location fields", () => {
     const query = buildVehicleStateQuery(VEHICLE_STATE_PROPERTIES);
     expect(query).toContain("cloudConnection { lastSync isOnline }");
-    expect(query).toContain(
-      "gnssLocation { latitude longitude timeStamp isAuthorized }",
-    );
+    expect(query).toContain("gnssLocation { latitude longitude timeStamp }");
     expect(query).toContain("batteryLevel { timeStamp value }");
     expect(query).toContain("$vehicleID: String!");
   });
@@ -40,6 +41,60 @@ describe("graphql builders", () => {
     expect(query).toContain("soc { __typename value updatedAt }");
     expect(query).toContain(" chargerId ");
     expect(query).toContain("$vehicleId: ID!");
+  });
+});
+
+describe("field lists", () => {
+  it("does not request fields Rivian is known to reject", () => {
+    for (const field of [
+      "cabinClimateExteriorTemperature",
+      "cabinClimateRunning",
+      "vehiclePowerOutput",
+      "regenerativeBrakingPower",
+      "gnssError",
+    ]) {
+      expect(SUBSCRIPTION_PROPERTIES).not.toContain(field);
+    }
+    expect(buildVehicleStateQuery(VEHICLE_STATE_PROPERTIES)).not.toContain(
+      "isAuthorized",
+    );
+  });
+
+  it("keeps the core fallback a subset of the full list", () => {
+    for (const field of CORE_VEHICLE_STATE_PROPERTIES) {
+      expect(VEHICLE_STATE_PROPERTIES).toContain(field);
+    }
+  });
+});
+
+describe("error helpers", () => {
+  it("recognizes GraphQL validation failures", () => {
+    expect(
+      isGraphqlValidationError(
+        mapGraphqlError([{ message: "Error in GraphQL validation" }]),
+      ),
+    ).toBe(true);
+    expect(
+      isGraphqlValidationError(
+        mapGraphqlError([{ extensions: { code: "GRAPHQL_VALIDATION_FAILED" } }]),
+      ),
+    ).toBe(true);
+    expect(
+      isGraphqlValidationError(
+        mapGraphqlError([{ extensions: { code: "UNAUTHENTICATED" } }]),
+      ),
+    ).toBe(false);
+  });
+
+  it("describes every error entry", () => {
+    const errors = [
+      { message: "Error in GraphQL validation" },
+      { message: 'Cannot query field "x" on type "VehicleState".' },
+    ];
+    const text = describeRivianError(
+      mapGraphqlError(errors, 400, { errors }),
+    );
+    expect(text).toContain("Cannot query field");
   });
 });
 

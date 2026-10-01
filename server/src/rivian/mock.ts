@@ -1,5 +1,6 @@
 import type { RivianApi } from "./client.js";
 import type {
+  ChargingSessionCallback,
   VehicleStateCallback,
   VehicleStateStream,
 } from "./subscription.js";
@@ -46,10 +47,14 @@ function v(value: string | number): TimeStampedValue {
  */
 export class MockRivian implements RivianApi, VehicleStateStream {
   tokens: RivianTokens | undefined;
-  onUnauthenticated?: () => void;
+  readonly appSession = undefined;
+  onAuthFailure?: () => void;
+  onAuthenticated?: () => void;
   onConnectionChange?: (connected: boolean) => void;
 
   private callback?: VehicleStateCallback;
+  private chargingCallback?: ChargingSessionCallback;
+  private subscribedId = MOCK_VEHICLE_ID;
   private timer?: NodeJS.Timeout;
   private phase: Phase = "parked";
   private tickInPhase = 0;
@@ -69,6 +74,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   }
 
   async createCsrfToken(): Promise<void> {}
+
+  async refreshSession(): Promise<void> {}
 
   async login(_email: string, _password: string): Promise<LoginResult> {
     return { kind: "otp", otpToken: "mock-otp-token" };
@@ -180,13 +187,19 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   // --- VehicleStateStream ---
 
-  subscribe(_vin: string, callback: VehicleStateCallback): void {
+  subscribe(vehicleId: string, callback: VehicleStateCallback): void {
+    this.subscribedId = vehicleId;
     this.callback = callback;
+  }
+
+  subscribeCharging(_vin: string, callback: ChargingSessionCallback): void {
+    this.chargingCallback = callback;
   }
 
   start(): void {
     if (this.timer) return;
     this.onConnectionChange?.(true);
+    this.onAuthenticated?.();
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.emit(this.fullState());
   }
@@ -241,10 +254,18 @@ export class MockRivian implements RivianApi, VehicleStateStream {
           (PHASE_TICKS.charging - this.tickInPhase) * (TICK_MS / 1000) / 60,
         ),
       });
+      void this.pushCharging();
     }
   }
 
+  private async pushCharging(): Promise<void> {
+    this.chargingCallback?.(this.subscribedId, await this.getLiveSessionData(MOCK_VIN));
+  }
+
   private enterPhase(phase: Phase): void {
+    if (this.phase === "charging" && phase !== "charging") {
+      this.chargingCallback?.(this.subscribedId, null);
+    }
     this.phase = phase;
     this.tickInPhase = 0;
     switch (phase) {
@@ -283,7 +304,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   }
 
   private emit(state: VehicleState): void {
-    this.callback?.(MOCK_VIN, state);
+    this.callback?.(this.subscribedId, state);
   }
 
   private fullState(): VehicleState {
