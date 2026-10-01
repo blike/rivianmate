@@ -10,8 +10,10 @@ import type {
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { drives, locationPoints } from "../db/schema.js";
-import { driveElevation } from "../services/drive-detector.js";
-import { driveEnergyKwh } from "../services/drive-metrics.js";
+import { driveElevation, maxSpeeds, mileageDistanceKm } from "../services/drive-detector.js";
+import { driveEnergyKwh, driveGaps } from "../services/drive-metrics.js";
+import type { VehicleState } from "../rivian/types.js";
+import { stateNumber } from "../services/state-utils.js";
 
 const METRIC_COLUMNS: Record<string, string> = {
   battery: "battery_level",
@@ -136,7 +138,9 @@ export async function historyRoutes(
         }
       }
       const fallback = await latestCapacityKwh(ctx, request.params.id);
-      return rows.map((row) => toDriveDto(row, fallback));
+      const speeds = await maxSpeeds(ctx.db, rows.map((r) => r.id));
+      const state = ctx.monitor.getState(request.params.id);
+      return rows.map((row) => toDriveDto(row, fallback, speeds.get(row.id) ?? null, state));
     },
   );
 
@@ -158,7 +162,22 @@ export async function historyRoutes(
         .orderBy(locationPoints.ts)
         .limit(10_000);
       const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
-      return { ...toDriveDto(drive, fallback), points: points.map(toLocationDto) };
+      const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
+      const state = ctx.monitor.getState(drive.vehicleId);
+      if (!drive.endedAt) {
+        // Elevation is stored when a drive ends; until then, from points so far.
+        const elevation = await driveElevation(ctx.db, drive.id);
+        drive.elevationGainM = elevation?.gainM ?? null;
+        drive.elevationLossM = elevation?.lossM ?? null;
+      }
+      return {
+        ...toDriveDto(drive, fallback, speed, state),
+        points: points.map(toLocationDto),
+        gaps: driveGaps(points.map((p) => ({ ts: p.ts.getTime(), lat: p.lat, lon: p.lon }))).map((g) => ({
+          from: new Date(g.from).toISOString(),
+          to: new Date(g.to).toISOString(),
+        })),
+      };
     },
   );
 }
@@ -177,7 +196,15 @@ async function latestCapacityKwh(ctx: AppContext, vehicleId: string): Promise<nu
 function toDriveDto(
   row: typeof drives.$inferSelect,
   fallbackCapacityKwh: number | null,
+  maxSpeedKmh: number | null,
+  current: VehicleState | undefined,
 ): DriveDto {
+  // A drive in progress shows its figures so far, from the latest state.
+  const live = row.endedAt == null && current ? current : null;
+  const endBattery = live ? stateNumber(live, "batteryLevel") : row.endBattery;
+  const distanceKm = live
+    ? mileageDistanceKm(row.startMileageM, stateNumber(live, "vehicleMileage"))
+    : row.distanceKm;
   return {
     id: row.id,
     startedAt: row.startedAt.toISOString(),
@@ -186,16 +213,24 @@ function toDriveDto(
     startLon: row.startLon,
     endLat: row.endLat,
     endLon: row.endLon,
-    distanceKm: row.distanceKm,
+    distanceKm,
     startBattery: row.startBattery,
-    endBattery: row.endBattery,
+    endBattery,
     energyKwh: driveEnergyKwh(
       row.startBattery,
-      row.endBattery,
+      endBattery,
       row.batteryCapacityKwh ?? fallbackCapacityKwh,
     ),
     elevationGainM: row.elevationGainM,
     elevationLossM: row.elevationLossM,
+    startRangeKm: row.startRangeKm,
+    endRangeKm: live ? stateNumber(live, "distanceToEmpty") : row.endRangeKm,
+    maxSpeedKmh,
+    driveMode: row.driveMode,
+    destination:
+      row.destinationLat != null && row.destinationLon != null
+        ? { name: row.destinationName, lat: row.destinationLat, lon: row.destinationLon }
+        : null,
   };
 }
 

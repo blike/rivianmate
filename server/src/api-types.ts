@@ -82,6 +82,10 @@ export interface LocationPointDto {
   altitude: number | null;
 }
 
+/**
+ * While a drive is in progress (endedAt null), the end figures (distance,
+ * end battery and range, energy) are its readings so far.
+ */
 export interface DriveDto {
   id: number;
   startedAt: string;
@@ -97,10 +101,19 @@ export interface DriveDto {
   energyKwh: number | null;
   elevationGainM: number | null;
   elevationLossM: number | null;
+  /** Vehicle's range estimate at the start and end (now, while in progress). */
+  startRangeKm: number | null;
+  endRangeKm: number | null;
+  maxSpeedKmh: number | null;
+  driveMode: string | null;
+  /** Where navigation was headed, if the vehicle was navigating. */
+  destination: { name: string | null; lat: number; lon: number } | null;
 }
 
 export interface DriveDetailDto extends DriveDto {
   points: LocationPointDto[];
+  /** Stretches with no readings (e.g. RivianMate offline), drawn as straight lines. */
+  gaps: { from: string; to: string }[];
 }
 
 export interface OtaTimelineDto {
@@ -208,6 +221,18 @@ export interface VehicleInsightsDto {
   coldWeather: { usableSoc: number | null; coldSoc: number; rangeImpactKm: number; at: string } | null;
   /** Energy used while parked, over Rivian's windows (e.g. last 24 h). */
   parkedEnergy: { windows: { minutes: number; kwh: number; rangeKm: number }[]; at: string } | null;
+  /** The vehicle's active navigation; null when it isn't navigating. */
+  navigation: {
+    destination: { name: string | null; lat: number; lon: number };
+    totalDistanceKm: number | null;
+    totalDurationS: number | null;
+    arrivalSoc: number | null;
+    arrivalRangeKm: number | null;
+    etaAt: string | null;
+    remainingKm: number | null;
+    remainingS: number | null;
+    at: string;
+  } | null;
   connectivity: {
     wifi: { ssid: string; rssiDbm: number | null; frequencyMhz: number | null } | null;
     cellular: { carrier: string | null; technology: string | null } | null;

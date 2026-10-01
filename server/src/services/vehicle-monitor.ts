@@ -3,7 +3,7 @@ import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { VehicleStateStream } from "../rivian/subscription.js";
 import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
-import { PARALLAX_MONITOR_RVMS } from "../rivian/parallax.js";
+import { PARALLAX_MONITOR_RVMS, RVM_TRIP_INFO, decodeTripInfo } from "../rivian/parallax.js";
 import type { SchedulesDto, VehicleInsightsDto } from "../api-types.js";
 import {
   ChargingSchedule,
@@ -207,7 +207,7 @@ export class VehicleMonitor {
         });
     }
 
-    await this.driveDetector.closeDanglingDrives();
+    await this.driveDetector.closeDanglingDrives(this.vehicles.map((v) => v.id));
 
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
@@ -268,6 +268,12 @@ export class VehicleMonitor {
       stream.subscribeParallax?.(vehicle.id, PARALLAX_MONITOR_RVMS, (_vehicleId, message) => {
         void chargingMonitor.ingestParallax(vehicle.id, message);
         void this.parallaxStore.ingest(vehicle.id, message);
+        if (message.rvm === RVM_TRIP_INFO) {
+          const destination = decodeTripInfo(message.payload)?.destination ?? null;
+          void this.driveDetector.noteDestination(vehicle.id, destination).catch((err: Error) =>
+            this.log(`drive destination: ${err.message}`),
+          );
+        }
       });
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
         const entry = this.scheduleEntry(vehicle.id);
