@@ -21,6 +21,7 @@ import type {
   VehicleState,
   WallboxDto,
   HomeChargingSettings,
+  MapConfigResponse,
 } from "@server/api-types.js";
 
 export type {
@@ -107,6 +108,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  mapConfig: () => request<MapConfigResponse>("/api/map-config"),
   units: () => request<UnitPreferences>("/api/settings/units"),
   setUnits: (units: UnitPreferences) =>
     request<UnitPreferences>("/api/settings/units", {

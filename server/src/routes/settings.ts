@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { UnitPreferences, VersionResponse } from "../api-types.js";
+import type { MapConfigResponse, UnitPreferences, VersionResponse } from "../api-types.js";
 import type { AppContext } from "../context.js";
 import { appSettings } from "../db/schema.js";
 import {
@@ -64,6 +64,12 @@ export async function settingsRoutes(
 ): Promise<void> {
   const version = loadVersion();
   app.get("/api/version", async (): Promise<VersionResponse> => version);
+
+  app.get("/api/map-config", async (): Promise<MapConfigResponse> => ({
+    styleUrl: ctx.config.MAP_STYLE_URL ?? null,
+    tilesUrl: ctx.config.MAP_TILES_URL ?? null,
+    glyphsUrl: ctx.config.MAP_GLYPHS_URL ?? null,
+  }));
 
   app.get("/api/settings/units", async (): Promise<UnitPreferences> =>
     getUnitPreferences(ctx),

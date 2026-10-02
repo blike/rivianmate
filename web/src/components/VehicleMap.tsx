@@ -1,62 +1,78 @@
-import L from "leaflet";
-import { useEffect } from "react";
-import {
-  MapContainer,
-  Marker,
-  Polyline,
-  TileLayer,
-  useMap,
-} from "react-leaflet";
+import type { FeatureCollection } from "geojson";
+import type { GeoJSONSource, Map as MapLibreMap, Marker } from "maplibre-gl";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMapConfig } from "../api/hooks.js";
+import { loadMaplibre } from "../lib/maplibre.js";
+import { DEFAULT_BASEMAP, MAP_THEME, themedStyle } from "../lib/mapStyle.js";
 
 export const MAP_HEIGHT = "20rem";
 
-const vehicleIcon = (bearing: number | null) =>
-  L.divIcon({
-    className: "",
-    html: `<div style="transform: rotate(${bearing ?? 0}deg); font-size: 22px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));">⬆️</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+const ROUTE = "route";
+const ROUTE_START = "route-start";
+const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
+
+/** Puck with a heading arrow and a soft pulse; rotation is applied by MapLibre. */
+function vehicleElement(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "rm-vehicle";
+  el.setAttribute("aria-label", "Vehicle location");
+  el.innerHTML = `
+    <span class="rm-vehicle__pulse"></span>
+    <span class="rm-vehicle__puck">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 18.5 19 12 15.6 5.5 19Z"/></svg>
+    </span>`;
+  return el;
+}
+
+/** Route glow + a line that brightens from start to finish, and a start ring. */
+function addRouteLayers(map: MapLibreMap) {
+  map.addSource(ROUTE, { type: "geojson", data: EMPTY, lineMetrics: true });
+  map.addSource(ROUTE_START, { type: "geojson", data: EMPTY });
+  map.addLayer({
+    id: "route-glow",
+    type: "line",
+    source: ROUTE,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": MAP_THEME.accent,
+      "line-width": ["interpolate", ["linear"], ["zoom"], 8, 6, 16, 16],
+      "line-blur": ["interpolate", ["linear"], ["zoom"], 8, 4, 16, 10],
+      "line-opacity": 0.22,
+    },
   });
-
-const dotIcon = L.divIcon({
-  className: "",
-  html: `<div style="width:10px;height:10px;border-radius:50%;background:#3987e5;border:2px solid #fff;"></div>`,
-  iconSize: [10, 10],
-  iconAnchor: [5, 5],
-});
-
-/** Frames the whole trail (with a little padding), once per trail. */
-function FitTrail(props: { trail: [number, number][] }) {
-  const map = useMap();
-  const first = props.trail[0];
-  const last = props.trail.at(-1);
-  const key = `${props.trail.length}|${first}|${last}`;
-  useEffect(() => {
-    if (props.trail.length > 1) map.fitBounds(L.latLngBounds(props.trail), { padding: [24, 24] });
-    // Re-fit only when the trail itself changes, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, key]);
-  return null;
+  map.addLayer({
+    id: "route-line",
+    type: "line",
+    source: ROUTE,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2, 16, 4.5],
+      "line-gradient": [
+        "interpolate",
+        ["linear"],
+        ["line-progress"],
+        0,
+        MAP_THEME.accentDim,
+        1,
+        MAP_THEME.accent,
+      ],
+    },
+  });
+  map.addLayer({
+    id: "route-start",
+    type: "circle",
+    source: ROUTE_START,
+    paint: {
+      "circle-radius": 5,
+      "circle-color": MAP_THEME.background,
+      "circle-stroke-color": MAP_THEME.accentDim,
+      "circle-stroke-width": 2.5,
+    },
+  });
 }
 
-/** Leaflet sizes itself once; this keeps it right when its container resizes. */
-function AutoResize() {
-  const map = useMap();
-  useEffect(() => {
-    const observer = new ResizeObserver(() => map.invalidateSize());
-    observer.observe(map.getContainer());
-    return () => observer.disconnect();
-  }, [map]);
-  return null;
-}
-
-function Recenter(props: { lat: number; lon: number }) {
-  const map = useMap();
-  useEffect(() => {
-    map.setView([props.lat, props.lon]);
-  }, [map, props.lat, props.lon]);
-  return null;
-}
+/** [lat, lon] pairs → GeoJSON [lon, lat]. */
+const toLngLat = (p: [number, number]): [number, number] => [p[1], p[0]];
 
 export function VehicleMap(props: {
   lat: number;
@@ -66,27 +82,123 @@ export function VehicleMap(props: {
   height?: string;
   follow?: boolean;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markerRef = useRef<Marker | null>(null);
+  const [ready, setReady] = useState(false);
+  const { data: mapConfig } = useMapConfig();
+
+  // The latest props, readable from the one-time map setup below.
+  const latest = useRef(props);
+  useLayoutEffect(() => {
+    latest.current = props;
+  });
+
+  // Create the map once the basemap config is known.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!mapConfig || !container) return;
+    let cancelled = false;
+    let map: MapLibreMap | undefined;
+    let observer: ResizeObserver | undefined;
+
+    void loadMaplibre().then((maplibre) => {
+      if (cancelled) return;
+      const { lat, lon } = latest.current;
+      map = new maplibre.Map({
+        container,
+        style:
+          mapConfig.styleUrl ??
+          themedStyle({
+            tilesUrl: mapConfig.tilesUrl ?? DEFAULT_BASEMAP.tilesUrl,
+            glyphsUrl: mapConfig.glyphsUrl ?? DEFAULT_BASEMAP.glyphsUrl,
+          }),
+        center: [lon, lat],
+        zoom: 14,
+        attributionControl: false,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+      });
+      map.touchZoomRotate.disableRotation();
+      map.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
+      map.addControl(new maplibre.AttributionControl({ compact: true }), "bottom-right");
+      markerRef.current = new maplibre.Marker({ element: vehicleElement(), rotationAlignment: "map" })
+        .setLngLat([lon, lat])
+        .addTo(map);
+      map.on("load", () => {
+        if (!map) return;
+        addRouteLayers(map);
+        setReady(true);
+      });
+      // MapLibre only tracks window resizes; panels resize on their own too.
+      observer = new ResizeObserver(() => map?.resize());
+      observer.observe(container);
+      mapRef.current = map;
+    });
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      map?.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  }, [mapConfig]);
+
+  // Vehicle position and heading; follow it unless showing a fixed route.
+  useEffect(() => {
+    const marker = markerRef.current;
+    const map = mapRef.current;
+    if (!marker || !map) return;
+    marker.setLngLat([props.lon, props.lat]);
+    const hasHeading = props.bearing != null;
+    marker.getElement().classList.toggle("rm-vehicle--heading", hasHeading);
+    marker.setRotation(props.bearing ?? 0);
+    if (props.follow !== false) map.easeTo({ center: [props.lon, props.lat], duration: 800 });
+  }, [props.lat, props.lon, props.bearing, props.follow, ready]);
+
+  // Route data, framed to fit when it isn't following the vehicle.
+  const trail = props.trail;
+  const trailKey = trail ? `${trail.length}|${trail[0]}|${trail.at(-1)}` : "";
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const coords = (latest.current.trail ?? []).map(toLngLat);
+    const line: FeatureCollection =
+      coords.length > 1
+        ? {
+            type: "FeatureCollection",
+            features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } }],
+          }
+        : EMPTY;
+    const start: FeatureCollection =
+      coords.length > 1
+        ? {
+            type: "FeatureCollection",
+            features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: coords[0]! } }],
+          }
+        : EMPTY;
+    (map.getSource(ROUTE) as GeoJSONSource | undefined)?.setData(line);
+    (map.getSource(ROUTE_START) as GeoJSONSource | undefined)?.setData(start);
+    if (latest.current.follow === false && coords.length > 1) {
+      const lons = coords.map((c) => c[0]);
+      const lats = coords.map((c) => c[1]);
+      map.fitBounds(
+        [
+          [Math.min(...lons), Math.min(...lats)],
+          [Math.max(...lons), Math.max(...lats)],
+        ],
+        { padding: 48, maxZoom: 16, duration: 0 },
+      );
+    }
+  }, [trailKey, ready]);
+
   return (
-    <MapContainer
-      center={[props.lat, props.lon]}
-      zoom={14}
+    <div
+      ref={containerRef}
+      className="rm-map"
       style={{ height: props.height ?? MAP_HEIGHT, width: "100%" }}
-      scrollWheelZoom
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      {props.trail && props.trail.length > 1 && (
-        <Polyline positions={props.trail} pathOptions={{ color: "#3987e5", weight: 3 }} />
-      )}
-      <Marker
-        position={[props.lat, props.lon]}
-        icon={props.bearing != null ? vehicleIcon(props.bearing) : dotIcon}
-      />
-      {props.follow !== false && <Recenter lat={props.lat} lon={props.lon} />}
-      {props.follow === false && props.trail && <FitTrail trail={props.trail} />}
-      <AutoResize />
-    </MapContainer>
+    />
   );
 }

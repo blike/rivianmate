@@ -99,6 +99,11 @@ export function useSetHomeCharging() {
   });
 }
 
+/** Basemap overrides from the server; fetched once per session. */
+export function useMapConfig() {
+  return useQuery({ queryKey: ["mapConfig"], queryFn: api.mapConfig, staleTime: Infinity });
+}
+
 export function useVersion() {
   return useQuery({ queryKey: ["version"], queryFn: api.version, staleTime: Infinity });
 }

@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 :root {
   /* Single committed dark look */
@@ -37,9 +37,117 @@ body {
   border-radius: 0.75rem;
 }
 
-.leaflet-container {
-  background: var(--surface-2);
+/* ---- Map (MapLibre) ---- */
+.rm-map {
+  position: relative;
+  overflow: hidden;
   border-radius: 0.75rem;
+  background: #151514; /* matches the basemap, so loading has no flash */
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.rm-map .maplibregl-canvas {
+  outline: none;
+}
+
+.rm-map .maplibregl-ctrl-group {
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.rm-map .maplibregl-ctrl-group button {
+  width: 32px;
+  height: 32px;
+}
+
+.rm-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border);
+}
+
+.rm-map .maplibregl-ctrl-group button:hover {
+  background: var(--surface-2);
+}
+
+.rm-map .maplibregl-ctrl-group button:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* The stock icons are dark glyphs; lighten them for the dark controls. */
+.rm-map .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(0.85);
+}
+
+.rm-map .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.rm-map .maplibregl-ctrl-attrib a {
+  color: var(--text-secondary);
+}
+
+.rm-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  border-radius: 0.5rem;
+}
+
+.rm-map .maplibregl-ctrl-attrib-button {
+  filter: invert(1) brightness(0.8);
+  background-color: transparent;
+}
+
+/* Vehicle marker: a dot, or an arrow puck when the heading is known. */
+.rm-vehicle {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.rm-vehicle__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: rm-pulse 2.4s ease-out infinite;
+}
+
+.rm-vehicle__puck {
+  position: absolute;
+  inset: 9px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #121211;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.rm-vehicle__puck svg {
+  width: 15px;
+  height: 15px;
+  fill: #121211;
+  opacity: 0;
+}
+
+.rm-vehicle--heading .rm-vehicle__puck svg {
+  opacity: 1;
+}
+
+@keyframes rm-pulse {
+  from {
+    transform: scale(0.55);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
 }
 
 .skeleton {
@@ -76,6 +184,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .rm-vehicle__pulse {
+    animation: none;
+    opacity: 0.35;
+  }
   .skeleton {
     animation: none;
   }
