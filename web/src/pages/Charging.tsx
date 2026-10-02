@@ -6,7 +6,7 @@ import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.
 import { Panel, Row, StatCard } from "../components/panels.js";
 import { SchedulesPanel } from "../components/SchedulesPanel.js";
 import { TrendChart } from "../components/TrendChart.js";
-import { chargingSecondsNow, socRange } from "../lib/charging.js";
+import { chargerLabel, chargingSecondsNow, formatMoney, socRange } from "../lib/charging.js";
 import { fmt, fmtDuration, fmtSeconds, sv, titleCase } from "../lib/state.js";
 import { useRemainingHeight } from "../lib/useRemainingHeight.js";
 
@@ -381,14 +381,3 @@ function num(value: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function formatMoney(amount: string, currency: string | null): string {
-  const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
-  return `${prefix}${fmt(Number(amount), 2)}`;
-}
-
-function chargerLabel(s: ChargingSessionDto): string {
-  if (s.chargerType === "rivian_charger") return "Rivian Adventure Network";
-  if (s.isHome) return "Home";
-  if (s.vendor) return titleCase(s.vendor.toLowerCase());
-  return s.chargerId ?? titleCase(s.chargerType);
-}

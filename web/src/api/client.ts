@@ -141,7 +141,11 @@ export const api = {
     }),
   wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
   phantomDrain: (vehicleId: string, days: number) =>
-    request<PhantomDrainDto>(`/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}`),
+    request<PhantomDrainDto>(
+      `/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}&tz=${encodeURIComponent(
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )}`,
+    ),
   insights: (vehicleId: string) => request<VehicleInsightsDto>(`/api/vehicles/${vehicleId}/insights`),
   schedules: (vehicleId: string) => request<SchedulesDto>(`/api/vehicles/${vehicleId}/schedules`),
   otaTimeline: (vehicleId: string) => request<OtaTimelineDto>(`/api/vehicles/${vehicleId}/ota`),

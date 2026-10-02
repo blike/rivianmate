@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { VehicleState } from "@server/api-types.js";
-import { fmt, nv, sv, titleCase } from "../lib/state.js";
+import { nv, sv, titleCase } from "../lib/state.js";
 import { useUnits } from "../api/hooks.js";
 import { type ClosureStatus, closurePlaceholders, closureStatuses } from "../lib/closures.js";
 import { Skeleton, useLoading } from "./loading.js";
@@ -55,21 +55,20 @@ function StatusDot(props: { ok: boolean | null }) {
 }
 
 function ClosureRow(props: { status: ClosureStatus }) {
-  const { label, closed, locked } = props.status;
+  // Lock state isn't shown per part: it's the same for all of them, and
+  // the dashboard's Locked/Unlocked chip already covers it.
+  const { label, closed } = props.status;
   const loading = useLoading();
   return (
     <div className="flex items-center justify-between py-1 text-sm">
       <span className="text-[var(--text-secondary)]">{label}</span>
       <span className="flex items-center gap-2">
         {loading ? (
-          <Skeleton className="w-[7em]" />
+          <Skeleton className="w-[4em]" />
         ) : (
           <>
             <StatusDot ok={closed} />
-            <span>
-              {closed ? "Closed" : "Open"}
-              {locked !== null && ` · ${locked ? "Locked" : "Unlocked"}`}
-            </span>
+            <span>{closed ? "Closed" : "Open"}</span>
           </>
         )}
       </span>
@@ -151,26 +150,6 @@ export function TirePanel(props: { state: VehicleState | undefined }) {
         );
       })}
     </div>
-  );
-}
-
-export function OtaPanel(props: { state: VehicleState | undefined }) {
-  const s = props.state;
-  const current = sv(s, "otaCurrentVersion");
-  const available = sv(s, "otaAvailableVersion");
-  const status = sv(s, "otaStatus");
-  const progress = nv(s, "otaInstallProgress");
-  const updateAvailable =
-    available != null && available !== "0.0.0" && available !== current;
-  return (
-    <dl className="space-y-1 text-sm">
-      <Row label="Installed version" value={current ?? "—"} />
-      {updateAvailable && <Row label="Available update" value={available} />}
-      <Row label="Status" value={titleCase(status)} />
-      {progress != null && progress > 0 && (
-        <Row label="Install progress" value={`${fmt(progress)}%`} />
-      )}
-    </dl>
   );
 }
 

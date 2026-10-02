@@ -1,5 +1,5 @@
 import type { ChargingSessionDto } from "@server/api-types.js";
-import { fmt } from "./state.js";
+import { fmt, titleCase } from "./state.js";
 
 /**
  * Seconds spent charging so far, counting a stretch still running; null
@@ -19,4 +19,18 @@ export function socRange(start: number | null, end: number | null): string {
   if (start == null && end == null) return "—";
   const part = (v: number | null) => (v == null ? "?" : fmt(v, 0));
   return `${part(start)}→${part(end)}%`;
+}
+
+export function formatMoney(amount: string, currency: string | null): string {
+  const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
+  return `${prefix}${fmt(Number(amount), 2)}`;
+}
+
+export function chargerLabel(
+  s: Pick<ChargingSessionDto, "chargerType" | "isHome" | "vendor" | "chargerId">,
+): string {
+  if (s.chargerType === "rivian_charger") return "Rivian Adventure Network";
+  if (s.isHome) return "Home";
+  if (s.vendor) return titleCase(s.vendor.toLowerCase());
+  return s.chargerId ?? titleCase(s.chargerType);
 }
