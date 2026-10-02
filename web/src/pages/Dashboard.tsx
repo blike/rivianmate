@@ -363,26 +363,29 @@ function RecentActivity(props: { vehicleId: string }) {
   const { data: drives, isPending: drivesPending } = useQuery({
     queryKey: ["drives", props.vehicleId],
     queryFn: () => api.drives(props.vehicleId),
-    refetchInterval: 60_000,
+    // A drive in progress grows by the second.
+    refetchInterval: (query) => (query.state.data?.[0] && !query.state.data[0].endedAt ? 15_000 : 60_000),
   });
+  const { data: state } = useVehicleState(props.vehicleId);
   const { data: sessions, isPending: sessionsPending } = useQuery({
     queryKey: ["chargingSessions", props.vehicleId],
     queryFn: () => api.chargingSessions(props.vehicleId),
     refetchInterval: 60_000,
   });
-  // Keeps "2 h ago" current.
+  // Keeps "2 h ago" and a live drive's duration current.
+  const driving = drives?.[0] != null && !drives[0].endedAt;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 60_000);
+    const t = setInterval(() => setNow(Date.now()), driving ? 15_000 : 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [driving]);
 
   return (
     <section>
       <SectionHeading>Recent activity</SectionHeading>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <LoadingScope loading={drivesPending}>
-          <LastDriveCard drive={drives?.[0]} now={now} />
+          <LastDriveCard drive={drives?.[0]} now={now} speedMps={nv(state, "gnssSpeed")} />
         </LoadingScope>
         <LoadingScope loading={sessionsPending}>
           <LastChargeCard session={sessions?.[0]} now={now} />
@@ -426,7 +429,7 @@ function ActivityCard(props: {
 function ActivityStats(props: { items: { label: string; value: ReactNode }[] }) {
   const loading = useLoading();
   return (
-    <dl className="grid grid-cols-3 gap-3">
+    <dl className={`grid gap-3 ${props.items.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
       {props.items.map((i) => (
         <div key={i.label}>
           <dt className="text-[11px] uppercase tracking-wide text-[var(--text-muted)]">{i.label}</dt>
@@ -439,14 +442,25 @@ function ActivityStats(props: { items: { label: string; value: ReactNode }[] }) 
   );
 }
 
-function LastDriveCard(props: { drive: DriveDto | undefined; now: number }) {
+function LastDriveCard(props: { drive: DriveDto | undefined; now: number; speedMps: number | null }) {
   const loading = useLoading();
   const u = useUnits();
   const d = props.drive;
   const live = d != null && !d.endedAt;
   const used = d?.startBattery != null && d.endBattery != null ? d.startBattery - d.endBattery : null;
-  const from = d?.start?.label ?? "Unknown";
-  const to = d?.end?.label ?? (live ? (d?.destination?.name ?? "On the road") : "Unknown");
+  // The start is looked up as a drive begins; give it a couple of minutes.
+  const locating = live && props.now - Date.parse(d.startedAt) < 2 * 60_000;
+  const from = d?.start?.label ?? (locating ? "Locating start…" : "Unknown");
+  // A drive under way has an end only if navigation set one.
+  const to = live ? (d?.destination?.name ?? null) : (d?.end?.label ?? "Unknown");
+  const stats = [
+    { label: "Distance", value: u.formatDistance(d?.distanceKm, 1) },
+    { label: "Duration", value: d ? fmtDuration(d.startedAt, d.endedAt, props.now) : "—" },
+    ...(live
+      ? [{ label: "Speed", value: props.speedMps != null ? u.formatSpeed(Math.max(0, props.speedMps) * 3.6) : "—" }]
+      : []),
+    { label: "Battery", value: used == null ? "—" : used < 0.05 ? "0%" : `−${fmt(used, 1)}%` },
+  ];
 
   if (!loading && !d) {
     return (
@@ -460,27 +474,33 @@ function LastDriveCard(props: { drive: DriveDto | undefined; now: number }) {
     <ActivityCard
       to="/drives"
       title={live ? "Driving now" : "Last drive"}
-      when={loading || !d ? <Skeleton className="w-[4em]" /> : live ? "in progress" : relativeTime(new Date(d.endedAt!), props.now)}
+      when={loading || !d ? <Skeleton className="w-[4em]" /> : live ? "In progress" : relativeTime(new Date(d.endedAt!), props.now)}
       icon={<DriveIcon />}
     >
       <div className="flex min-w-0 items-center gap-2 text-base font-medium">
         {loading ? (
           <Skeleton className="w-[14em]" />
         ) : (
-          <>
-            <span className="max-w-[45%] shrink-0 truncate" title={d?.start?.address ?? from}>{from}</span>
-            <span className="shrink-0 text-[var(--accent)]" aria-label="to">→</span>
-            <span className="truncate" title={d?.end?.address ?? to}>{to}</span>
-          </>
+          to == null ? (
+            <>
+              <span className="min-w-0 truncate" title={d?.start?.address ?? from}>
+                <span className="text-[var(--text-muted)]">From </span>
+                {from}
+              </span>
+              <span className="ml-auto shrink-0 rounded-full border border-[var(--border)] px-2 py-0.5 text-xs font-normal text-[var(--text-muted)]">
+                No destination
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="max-w-[45%] shrink-0 truncate" title={d?.start?.address ?? from}>{from}</span>
+              <span className="shrink-0 text-[var(--accent)]" aria-label="to">→</span>
+              <span className="truncate" title={d?.end?.address ?? to}>{to}</span>
+            </>
+          )
         )}
       </div>
-      <ActivityStats
-        items={[
-          { label: "Distance", value: u.formatDistance(d?.distanceKm, 1) },
-          { label: "Duration", value: d ? fmtDuration(d.startedAt, d.endedAt) : "—" },
-          { label: "Battery", value: used == null ? "—" : used < 0.05 ? "0%" : `−${fmt(used, 1)}%` },
-        ]}
-      />
+      <ActivityStats items={stats} />
     </ActivityCard>
   );
 }
@@ -505,7 +525,7 @@ function LastChargeCard(props: { session: ChargingSessionDto | undefined; now: n
     <ActivityCard
       to="/charging"
       title={live ? "Charging session" : "Last charge"}
-      when={loading || !s ? <Skeleton className="w-[4em]" /> : live ? "in progress" : relativeTime(new Date(s.endedAt!), props.now)}
+      when={loading || !s ? <Skeleton className="w-[4em]" /> : live ? "In progress" : relativeTime(new Date(s.endedAt!), props.now)}
       icon={<ChargeIcon />}
     >
       <div className="flex min-w-0 items-center gap-3">

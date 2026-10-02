@@ -34,8 +34,8 @@ export function fmt(n: number | null | undefined, digits = 0): string {
   });
 }
 
-export function fmtDuration(startIso: string, endIso: string | null): string {
-  const end = endIso ? new Date(endIso).getTime() : Date.now();
+export function fmtDuration(startIso: string, endIso: string | null, now = Date.now()): string {
+  const end = endIso ? new Date(endIso).getTime() : now;
   return fmtSeconds((end - new Date(startIso).getTime()) / 1000);
 }
 
