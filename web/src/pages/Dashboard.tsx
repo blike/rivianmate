@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
-import { BatteryEnergyPanel, ConnectivityPanel, NavigationCard } from "../components/InsightsPanels.js";
+import { BatteryEnergyPanel, ConnectivityPanel, NavigationCard, ParkedEnergyPanel } from "../components/InsightsPanels.js";
 import {
   ClimatePanel,
   ClosuresGrid,
@@ -41,6 +41,11 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
 
       <section>
         <SectionHeading>Vehicle details</SectionHeading>
+        <LoadingScope loading={insightsPending}>
+          <Panel title="Parked energy" className="mb-4">
+            <ParkedEnergyPanel insights={insights} />
+          </Panel>
+        </LoadingScope>
         <LoadingScope loading={isPending}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Panel title="Doors, closures & windows">
