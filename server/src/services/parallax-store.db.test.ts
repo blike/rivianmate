@@ -63,7 +63,9 @@ describe.skipIf(!url)("ParallaxStore with Postgres", () => {
     await store.ingest("v1", { rvm: "body.locks.states", timestamp: null, payload: "CAE=" });
 
     const insights = await store.insights("v1");
-    expect(insights.parkedEnergy?.windows).toEqual([{ minutes: 1440, kwh: expect.closeTo(1.1), rangeKm: expect.closeTo(5.3) }]);
+    expect(insights.parkedEnergy?.windows).toEqual([
+      { minutes: 1440, kwh: expect.closeTo(1.1), rangeKm: expect.closeTo(5.3), uses: { climate: 0, system: 0, gearGuardAndOutlets: 0 } },
+    ]);
     expect(insights.connectivity).toEqual({
       wifi: null,
       cellular: { carrier: "AT&T", technology: "LTE" },

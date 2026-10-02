@@ -125,10 +125,17 @@ describe("decodeParkedEnergy", () => {
     const window = (kwh: number, km: number, minutes: number) =>
       [...float(1, kwh), ...float(2, 0.3), ...float(4, 0.8), ...float(6, km), ...float(7, 1.449), ...float(9, 3.865), ...int(11, minutes)];
     const payload = b64([...message(1, window(1.1, 5.314, 1440)), ...message(2, window(0.4, 1.932, 480))]);
+    const uses = { climate: 0.3, system: 0.8, gearGuardAndOutlets: 0 };
     expect(decodeParkedEnergy(payload)).toEqual([
-      { minutes: 1440, kwh: 1.1, rangeKm: 5.314 },
-      { minutes: 480, kwh: 0.4, rangeKm: 1.932 },
+      { minutes: 1440, kwh: 1.1, rangeKm: 5.314, uses },
+      { minutes: 480, kwh: 0.4, rangeKm: 1.932, uses },
     ]);
+  });
+
+  it("splits energy by use, matching the Rivian app", () => {
+    // Captured; the app showed climate 0.4, system 1.7, Gear Guard and outlets 0 kWh.
+    const [day] = decodeParkedEnergy("CiENZ2YGQBXNzMw+JZuZ2T81oFEiQT3PV/c/TaZmA0FYoAsSIQ3OzEw/Fc3MzD0lNDMzPzXQV3dAPc9X9z5N1mxYQFjgAxoCWB0=");
+    expect(day?.uses).toEqual({ climate: 0.4, system: 1.7, gearGuardAndOutlets: 0 });
   });
 });
 

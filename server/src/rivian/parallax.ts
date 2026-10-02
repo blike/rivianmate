@@ -326,13 +326,17 @@ export interface ParkedEnergyWindow {
   minutes: number;
   kwh: number;
   rangeKm: number;
+  /** Where the energy went, kWh. */
+  uses: { climate: number; system: number; gearGuardAndOutlets: number };
 }
 
 /**
  * `parked_energy_distributions` (`k70/o`): repeated windows {1 total kWh,
- * 6 total range km, 11 window length in minutes}; 2–5 and 7–10 split them
- * into categories the docs don't name. 1440- and 480-minute windows drain
- * at the same rate, which supports reading 11 as minutes.
+ * 2–5 kWh by use, 6 total range km, 7–10 range by use, 11 window length in
+ * minutes}. Matched against the Rivian app's last-24 h parked usage: 2
+ * climate (0.4), 4 system (1.7), with Gear Guard and outlets at 0, so 3 and
+ * 5 are those two in an order not yet known. 1440- and 480-minute windows
+ * drain at the same rate, which supports reading 11 as minutes.
  */
 export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] {
   const m = decode(payloadBase64);
@@ -342,7 +346,13 @@ export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] 
     const w = m.message(field);
     const minutes = w?.int(11);
     if (!w || !minutes || minutes <= 0) continue;
-    windows.push({ minutes, kwh: f32(w.float(1)) ?? 0, rangeKm: f32(w.float(6)) ?? 0 });
+    const kwh = (n: number) => f32(w.float(n)) ?? 0;
+    windows.push({
+      minutes,
+      kwh: kwh(1),
+      rangeKm: kwh(6),
+      uses: { climate: kwh(2), system: kwh(4), gearGuardAndOutlets: f32(kwh(3) + kwh(5))! },
+    });
   }
   return windows;
 }

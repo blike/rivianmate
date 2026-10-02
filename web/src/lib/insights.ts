@@ -22,3 +22,14 @@ export function signalLabel(rssiDbm: number | null): string | null {
   if (rssiDbm >= -80) return "Fair";
   return "Weak";
 }
+
+/** Where parked energy went, e.g. "System 1.7 · Climate 0.4 kWh"; null if nothing used. */
+export function parkedUses(uses: { climate: number; system: number; gearGuardAndOutlets: number }): string | null {
+  const parts = [
+    { label: "System", kwh: uses.system },
+    { label: "Climate", kwh: uses.climate },
+    { label: "Gear Guard & outlets", kwh: uses.gearGuardAndOutlets },
+  ].filter((p) => p.kwh >= 0.05);
+  if (parts.length === 0) return null;
+  return `${parts.map((p) => `${p.label} ${p.kwh.toFixed(1)}`).join(" · ")} kWh`;
+}

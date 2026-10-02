@@ -1,6 +1,6 @@
 import type { VehicleInsightsDto } from "@server/api-types.js";
 import { useUnits } from "../api/hooks.js";
-import { parkedWindows, signalLabel, wifiBand, windowLabel } from "../lib/insights.js";
+import { parkedUses, parkedWindows, signalLabel, wifiBand, windowLabel } from "../lib/insights.js";
 import { fmt } from "../lib/state.js";
 import { Row } from "./panels.js";
 
@@ -36,13 +36,18 @@ export function BatteryEnergyPanel(props: { insights: VehicleInsightsDto | undef
           }
         />
         {windows.length > 0 ? (
-          windows.map((w) => (
-            <Row
-              key={w.minutes}
-              label={`Parked energy, ${windowLabel(w.minutes).toLowerCase()}`}
-              value={`${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}`}
-            />
-          ))
+          windows.map((w) => {
+            const uses = parkedUses(w.uses);
+            return (
+              <div key={w.minutes}>
+                <Row
+                  label={`Parked energy, ${windowLabel(w.minutes).toLowerCase()}`}
+                  value={`${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}`}
+                />
+                {uses && <div className="text-right text-xs text-[var(--text-muted)]">{uses}</div>}
+              </div>
+            );
+          })
         ) : (
           <Row label="Parked energy" value="—" />
         )}
