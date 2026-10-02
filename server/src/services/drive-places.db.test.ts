@@ -2,6 +2,7 @@
  * Integration tests against a real Postgres. Skipped unless
  * TEST_DATABASE_URL points at a disposable database (tables are truncated).
  */
+import { eq } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -61,6 +62,27 @@ describe.skipIf(!url)("DrivePlaces with Postgres", () => {
     expect(a.placesCheckedAt).not.toBeNull();
     expect((await row(second)).endPlace).toBe("Place 33");
     expect((await row(ongoing)).placesCheckedAt).toBeNull();
+  });
+
+  it("names the start of a drive in progress, then the rest once it ends", async () => {
+    const calls: number[] = [];
+    const geocode: ReverseGeocode = async (lat) => {
+      calls.push(lat);
+      return { place: `Place ${lat}`, address: `Full ${lat}` };
+    };
+    const id = await drive(33, 34, false);
+    const places = new DrivePlaces(handle.db, geocode, () => {}, 0);
+    places.enqueue(id);
+    await places.idle();
+    let r = await row(id);
+    expect([r.startPlace, r.endPlace, r.placesCheckedAt]).toEqual(["Place 33", null, null]);
+
+    await handle.db.update(drives).set({ endedAt: new Date("2026-10-01T15:20:00Z") }).where(eq(drives.id, id));
+    places.enqueue(id);
+    await places.idle();
+    r = await row(id);
+    expect([r.startPlace, r.endPlace]).toEqual(["Place 33", "Place 34"]);
+    expect(calls).toEqual([33, 34]); // the start came from cache
   });
 
   it("leaves a drive pending when the lookup service fails", async () => {

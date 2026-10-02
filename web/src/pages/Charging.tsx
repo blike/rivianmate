@@ -5,6 +5,7 @@ import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
 import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
 import { SchedulesPanel } from "../components/SchedulesPanel.js";
+import { SplitBar, SplitLegend } from "../components/SplitBar.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { chargerLabel, chargingSecondsNow, formatMoney, socRange } from "../lib/charging.js";
 import { fmt, fmtDuration, fmtSeconds, sv, titleCase } from "../lib/state.js";
@@ -173,16 +174,10 @@ export function Charging(props: { vehicleId: string }) {
                   />
                 )}
               </ContentFrame>
-              {/* Room for both notes, so the panel keeps its height between sessions. */}
-              <div className="mt-2 min-h-9 space-y-1 text-xs text-[var(--text-muted)]">
-                {curveSession?.packKwh != null && curveSession.thermalKwh != null && (
-                  <p>
-                    {fmt(curveSession.packKwh, 1)} kWh went into the battery
-                    {curveSession.thermalKwh >= 0.05
-                      ? ` and ${fmt(curveSession.thermalKwh, 1)} kWh to heating or cooling it.`
-                      : "."}
-                  </p>
-                )}
+              {curveSession?.packKwh != null && curveSession.thermalKwh != null && (
+                <EnergySplit packKwh={curveSession.packKwh} thermalKwh={curveSession.thermalKwh} />
+              )}
+              <div className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
                 {!curveHasPower && curveData.length > 1 && (
                   <p>
                     Battery level from recorded vehicle state. Rivian didn't provide power data for this
@@ -387,3 +382,20 @@ function num(value: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Where a session's energy went: into the pack, or heating or cooling it. */
+function EnergySplit(props: { packKwh: number; thermalKwh: number }) {
+  const segments = [
+    { key: "pack", label: "Stored", kwh: props.packKwh, color: "var(--series-1)" },
+    { key: "thermal", label: "Heating & cooling", kwh: props.thermalKwh, color: "var(--series-2)" },
+  ];
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-baseline justify-between gap-4 text-sm">
+        <span className="text-[var(--text-secondary)]">Energy added</span>
+        <span className="tabular-nums">{fmt(props.packKwh + props.thermalKwh, 1)} kWh</span>
+      </div>
+      <SplitBar segments={segments} />
+      <SplitLegend items={segments} />
+    </div>
+  );
+}
