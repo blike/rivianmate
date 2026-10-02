@@ -150,6 +150,104 @@ body {
   }
 }
 
+/* ---- Dashboard ---- */
+.hero-card {
+  background:
+    radial-gradient(42rem 22rem at -10% -20%, rgb(245 197 24 / 0.08), transparent 65%),
+    var(--surface-1);
+}
+
+/* The hero map runs edge to edge inside its card. */
+.hero-map .rm-map {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.battery-bar {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.battery-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  transition: width 0.6s ease;
+  overflow: hidden;
+}
+
+.battery-bar__fill--ok {
+  background: linear-gradient(90deg, #b8920f, var(--accent));
+  box-shadow: 0 0 16px rgb(245 197 24 / 0.25);
+}
+
+.battery-bar__fill--warn {
+  background: linear-gradient(90deg, #b9800f, var(--status-warning));
+}
+
+.battery-bar__fill--low {
+  background: linear-gradient(90deg, #8f2424, var(--status-critical));
+}
+
+.battery-bar__fill--charging {
+  background: linear-gradient(90deg, #097a09, var(--status-good));
+  box-shadow: 0 0 16px rgb(12 163 12 / 0.35);
+}
+
+.battery-bar__fill--charging::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
+  transform: translateX(-100%);
+  animation: battery-shimmer 2.2s ease-in-out infinite;
+}
+
+@keyframes battery-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Charge limit: a tick that stands just proud of the bar. */
+.battery-bar__limit {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-primary);
+  opacity: 0.75;
+}
+
+.chip-dot--pulse {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: chip-pulse 1.8s ease-out infinite;
+}
+
+@keyframes chip-pulse {
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battery-bar__fill {
+    transition: none;
+  }
+  .battery-bar__fill--charging::after,
+  .chip-dot--pulse {
+    animation: none;
+  }
+}
+
 .skeleton {
   display: inline-block;
   width: 4em;
