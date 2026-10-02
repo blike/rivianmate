@@ -15,7 +15,7 @@ import {
 import { FreshnessBadge } from "../components/FreshnessBadge.js";
 import { LoadingScope, Skeleton, SkeletonBlock, useLoading } from "../components/loading.js";
 import { VehicleMap } from "../components/VehicleMap.js";
-import { chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
+import { chargeOutlook, chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
 import { relativeTime } from "../lib/freshness.js";
 import { fmt, fmtDuration, fmtSeconds, location, nv, sv, titleCase } from "../lib/state.js";
 import { type ActivityKind, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
@@ -120,6 +120,13 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
   const chargePower = charging && liveSession?.power?.value != null ? Number(liveSession.power.value) : null;
   const minutesLeft =
     charging && liveSession?.timeRemaining?.value != null ? Number(liveSession.timeRemaining.value) / 60 : null;
+  const outlook = chargeOutlook({
+    soc: battery,
+    limit,
+    powerKw: chargePower,
+    capacityKwh: nv(state, "batteryCapacity"),
+    minutesLeft,
+  });
 
   const ota = softwareUpdate(state);
   // Scales today's estimate, so it follows the vehicle's own recent efficiency.
@@ -204,9 +211,16 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
             {charging ? (
               <>
                 <HeroFact label="Charging at" value={chargePower != null ? `${fmt(chargePower, 1)} kW` : "—"} />
+                {/* A schedule can end the session before it reaches the limit. */}
                 <HeroFact
-                  label="Time to limit"
-                  value={minutesLeft != null ? fmtSeconds(minutesLeft * 60) : "—"}
+                  label={outlook.kind === "session" ? "Session ends in" : "Time to limit"}
+                  value={
+                    outlook.minutes == null
+                      ? "—"
+                      : outlook.kind === "session" && outlook.endSoc != null
+                        ? `${fmtSeconds(outlook.minutes * 60)} · ~${fmt(outlook.endSoc, 0)}%`
+                        : fmtSeconds(outlook.minutes * 60)
+                  }
                 />
               </>
             ) : (
