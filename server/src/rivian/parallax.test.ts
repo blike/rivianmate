@@ -5,9 +5,11 @@ import {
   decodeChargeBreakdown,
   decodeChargingGraph,
   decodeChargingGraphBar,
+  decodeChargingStatus,
   decodeColdWeather,
   decodeNetwork,
   decodeParkedEnergy,
+  decodeTimeEstimation,
   decodeTripInfo,
   decodeTripProgress,
   readProtoFields,
@@ -174,5 +176,22 @@ describe("decodeTripInfo / decodeTripProgress", () => {
       ...message(6, [...message(1, [...double(1, 40.5), ...double(2, -89)]), ...float(2, 7.9)]),
     ]);
     expect(decodeTripProgress(progress)).toEqual({ etaMs: 1790869380000, remainingKm: 30.506, remainingS: 2220 });
+  });
+});
+
+describe("decodeChargingStatus", () => {
+  it("reads the enums, with omitted ones as 0", () => {
+    expect(decodeChargingStatus(b64([...int(1, 2), ...int(3, 1)]))).toEqual({
+      plugConnection: 2,
+      displayStatus: 0,
+      evseType: 1,
+    });
+    expect(decodeChargingStatus("")).toBeNull();
+  });
+});
+
+describe("decodeTimeEstimation", () => {
+  it("reads the hold time in seconds", () => {
+    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({ holdTimeSeconds: 5400 });
   });
 });

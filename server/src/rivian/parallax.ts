@@ -13,9 +13,15 @@ export const RVM_CHARGING_GRAPH = "energy_edge_compute.graphs.charging_graph_glo
 export const PARALLAX_CHARGING_RVMS: readonly string[] = [
   RVM_CHARGING_GRAPH,
   "energy_edge_compute.graphs.charge_session_breakdown",
+  "energy_edge_compute.graphs.cold_weather_soc",
   "energy.high_voltage.battery_state",
+  "energy.high_voltage.battery_characteristics",
   "charging.session.status",
   "charging.session.time_estimation",
+  "charging.session.trip_target",
+  "charging.session.soc_slider",
+  "charging.session.notification",
+  "charging.schedule.time_window",
 ];
 
 export interface ParallaxMessage {
@@ -152,16 +158,41 @@ export const RVM_NETWORK = "vehicle.network.state";
 export const RVM_TRIP_INFO = "navigation.navigation_service.trip_info";
 export const RVM_TRIP_PROGRESS = "navigation.navigation_service.trip_progress";
 
+// Charging topics recorded while their formats are worked out. Only status
+// and time estimation have documented fields.
+export const RVM_BATTERY_CHARACTERISTICS = "energy.high_voltage.battery_characteristics";
+export const RVM_CHARGING_STATUS = "charging.session.status";
+export const RVM_TIME_ESTIMATION = "charging.session.time_estimation";
+export const RVM_TRIP_TARGET = "charging.session.trip_target";
+export const RVM_SOC_SLIDER = "charging.session.soc_slider";
+export const RVM_CHARGING_NOTIFICATION = "charging.session.notification";
+export const RVM_CHARGING_TIME_WINDOW = "charging.schedule.time_window";
+
+/**
+ * Topics whose every distinct payload is logged, not just the latest, so
+ * their fields can be decoded against how they change during a charge.
+ */
+export const PARALLAX_LOGGED_RVMS: readonly string[] = [
+  RVM_CHARGE_BREAKDOWN,
+  RVM_BATTERY_CHARACTERISTICS,
+  RVM_CHARGING_STATUS,
+  RVM_TIME_ESTIMATION,
+  RVM_TRIP_TARGET,
+  RVM_SOC_SLIDER,
+  RVM_CHARGING_NOTIFICATION,
+  RVM_CHARGING_TIME_WINDOW,
+];
+
 /** Topics the monitor subscribes to. */
 export const PARALLAX_MONITOR_RVMS: readonly string[] = [
   RVM_CHARGING_GRAPH,
-  RVM_CHARGE_BREAKDOWN,
   RVM_BATTERY_STATE,
   RVM_COLD_WEATHER,
   RVM_PARKED_ENERGY,
   RVM_NETWORK,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
+  ...PARALLAX_LOGGED_RVMS,
 ];
 
 /** Field accessors over one decoded message; wrong wire types read as absent. */
@@ -395,4 +426,37 @@ export function decodeTripProgress(payloadBase64: string): TripProgress | null {
     remainingKm: remainingM != null ? remainingM / 1000 : null,
     remainingS: m.double(5),
   };
+}
+
+export interface ChargingStatus {
+  /** Raw enum values; their meanings aren't documented yet. */
+  plugConnection: number;
+  displayStatus: number;
+  evseType: number;
+}
+
+/**
+ * `charging.session.status` (`f70/v`): 1 plug connection status, 2 display
+ * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
+ * Unconfirmed against live payloads.
+ */
+export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  return {
+    plugConnection: m.int(1) ?? 0,
+    displayStatus: m.int(2) ?? 0,
+    evseType: m.int(3) ?? 0,
+  };
+}
+
+/**
+ * `charging.session.time_estimation` (`g70/e0`): 1 hold time (int32
+ * seconds). Whether that's time to the limit or to a schedule's end is
+ * unconfirmed.
+ */
+export function decodeTimeEstimation(payloadBase64: string): { holdTimeSeconds: number } | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  return { holdTimeSeconds: Math.max(0, m.int(1) ?? 0) };
 }
