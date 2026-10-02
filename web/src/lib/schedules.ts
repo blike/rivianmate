@@ -117,6 +117,3 @@ export function dayLabel(date: Date, now: Date): string {
   if (diff === 1) return date.getHours() < 4 ? "tonight" : "tomorrow";
   return date.toLocaleDateString([], { weekday: "long" });
 }
-
-/** Approximate charging power for a current, assuming a 240 V supply. */
-export const kwAt240V = (amps: number) => (amps * 240) / 1000;

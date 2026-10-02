@@ -9,11 +9,10 @@ import {
   formatTimeOfDay,
   formatTimeRange,
   formatWeekDays,
-  kwAt240V,
   scheduleStatus,
   weekSpans,
 } from "../lib/schedules.js";
-import { fmt, fmtSeconds } from "../lib/state.js";
+import { fmtSeconds } from "../lib/state.js";
 import { SkeletonBlock } from "./loading.js";
 import { Panel } from "./panels.js";
 
@@ -170,21 +169,6 @@ function ChargingWeek(props: { schedules: ChargingSchedule[] }) {
         </div>
       </div>
 
-      <ul className="space-y-1 text-sm">
-        {props.schedules.map((c, i) => (
-          <li key={i} className="flex items-baseline justify-between gap-3">
-            <span className="min-w-0 truncate">
-              <span className="text-[var(--text-secondary)]">{formatWeekDays(c.weekDays)}</span>{" "}
-              <span className="tabular-nums">{formatTimeRange(c.startTime, c.duration)}</span>
-            </span>
-            {c.amperage != null && (
-              <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
-                {fmt(c.amperage, 0)} A · ~{fmt(kwAt240V(c.amperage), 1)} kW
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
