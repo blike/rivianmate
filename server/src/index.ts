@@ -24,9 +24,7 @@ const START_RETRY_MAX_MS = 15 * 60_000;
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-function resolveWebDist(configuredPath?: string): string | undefined {
-  if (configuredPath) return configuredPath;
-
+function resolveWebDist(): string | undefined {
   const candidates = [
     join(here, "..", "web-dist"),
     join(here, "..", "..", "web", "dist"),
@@ -73,7 +71,7 @@ async function main(): Promise<void> {
   const ctx: AppContext = {
     config: {
       ...config,
-      WEB_DIST: resolveWebDist(config.WEB_DIST),
+      WEB_DIST: resolveWebDist(),
     },
     db,
     crypto,
@@ -103,7 +101,7 @@ async function main(): Promise<void> {
   if (config.MOCK_RIVIAN) console.log("MOCK_RIVIAN enabled (OTP is 000000)");
 
   // Listen first: the API and healthcheck must not wait on Rivian.
-  await app.listen({ port: config.PORT, host: config.HOST });
+  await app.listen({ port: config.PORT, host: "0.0.0.0" });
 
   // A network blip at boot (e.g. container networking not up yet) must not
   // leave tracking off until the next restart: retry with backoff.

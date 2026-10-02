@@ -6,7 +6,6 @@ const envSchema = z.object({
     .default("postgres://rivianmate:rivianmate@localhost:5432/rivianmate"),
   APP_SECRET: z.string().min(32, "APP_SECRET must be at least 32 characters"),
   PORT: z.coerce.number().int().default(4000),
-  HOST: z.string().default("0.0.0.0"),
   MOCK_RIVIAN: z
     .string()
     .optional()
@@ -24,10 +23,12 @@ const envSchema = z.object({
   /** Glyph URL template with {fontstack} and {range} (themed style). */
   MAP_GLYPHS_URL: z.string().optional(),
   NODE_ENV: z.string().default("development"),
-  WEB_DIST: z.string().optional(),
 });
 
-export type Config = z.infer<typeof envSchema>;
+export type Config = z.infer<typeof envSchema> & {
+  /** Built web app to serve, found next to the server at boot (not an env var). */
+  WEB_DIST?: string;
+};
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = envSchema.safeParse(env);

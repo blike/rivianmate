@@ -41,16 +41,71 @@ export const MOCK_OTP = "000000";
 
 const TICK_MS = 2_000;
 
+/** Home (and the wallbox) on a residential street in Normal, IL. */
+const HOME = { lat: 40.53694, lon: -88.98001 };
+
+/** A 2.2 km loop around the neighborhood, starting and ending at home. */
+const LOOP: [number, number][] = [
+  [40.53694, -88.98001], [40.53689, -88.98246], [40.53675, -88.98263], [40.53613, -88.98262],
+  [40.53536, -88.9826], [40.5346, -88.98256], [40.53382, -88.98255], [40.53386, -88.9806],
+  [40.53315, -88.98049], [40.53239, -88.98047], [40.53224, -88.98042], [40.53183, -88.9804],
+  [40.53176, -88.97927], [40.53178, -88.97826], [40.53179, -88.97752], [40.53189, -88.97739],
+  [40.53239, -88.97741], [40.53282, -88.97742], [40.53299, -88.9774], [40.53317, -88.97736],
+  [40.53343, -88.97727], [40.5336, -88.97719], [40.53375, -88.97708], [40.53391, -88.97696],
+  [40.53408, -88.97679], [40.53422, -88.97663], [40.53433, -88.97646], [40.53445, -88.97625],
+  [40.53454, -88.97606], [40.53462, -88.97585], [40.53476, -88.97578], [40.53494, -88.97585],
+  [40.53703, -88.9759], [40.53701, -88.97704], [40.53699, -88.97799], [40.53694, -88.98001],
+];
+
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+function distanceM(a: [number, number], b: [number, number]): number {
+  const dLat = toRad(b[0] - a[0]);
+  const dLon = toRad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 12_742_000 * Math.asin(Math.sqrt(h));
+}
+
+function bearingDeg(a: [number, number], b: [number, number]): number {
+  const y = Math.sin(toRad(b[1] - a[1])) * Math.cos(toRad(b[0]));
+  const x =
+    Math.cos(toRad(a[0])) * Math.sin(toRad(b[0])) -
+    Math.sin(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.cos(toRad(b[1] - a[1]));
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Cumulative distance (m) at each loop vertex. */
+const LOOP_AT = LOOP.reduce<number[]>((acc, p, i) => {
+  acc.push(i === 0 ? 0 : acc[i - 1]! + distanceM(LOOP[i - 1]!, p));
+  return acc;
+}, []);
+const LOOP_M = LOOP_AT[LOOP_AT.length - 1]!;
+
+/** Position and heading a given distance along the loop. */
+function alongLoop(m: number): { lat: number; lon: number; heading: number } {
+  let i = 1;
+  while (i < LOOP.length - 1 && LOOP_AT[i]! < m) i++;
+  const a = LOOP[i - 1]!;
+  const b = LOOP[i]!;
+  const span = LOOP_AT[i]! - LOOP_AT[i - 1]!;
+  const f = span > 0 ? Math.min(1, Math.max(0, (m - LOOP_AT[i - 1]!) / span)) : 0;
+  return { lat: a[0] + (b[0] - a[0]) * f, lon: a[1] + (b[1] - a[1]) * f, heading: bearingDeg(a, b) };
+}
+
+/** Usable kWh per 1% of battery, and consumption around town. */
+const KWH_PER_PCT = 1.3;
+const KWH_PER_KM = 0.35;
+
 type Phase = "parked" | "driving" | "arriving" | "charging";
 
 /**
- * Ticks per phase: park 10 → drive 60 → park 100 → charge 60 → repeat.
- * The stop after a drive (200 s) outlasts the drive detector's 3-minute
- * park grace, so mock drives actually complete.
+ * Ticks per phase: park 10 → drive 100 (the loop at ~40 km/h) → park 100 →
+ * charge 60 → repeat. The stop after a drive (200 s) outlasts the drive
+ * detector's 3-minute park grace, so mock drives actually complete.
  */
 const PHASE_TICKS: Record<Phase, number> = {
   parked: 10,
-  driving: 60,
+  driving: 100,
   arriving: 100,
   charging: 60,
 };
@@ -84,11 +139,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   private phase: Phase = "parked";
   private tickInPhase = 0;
 
-  // Rivian plant, Normal IL
-  private lat = 40.5142;
-  private lon = -88.9906;
-  private heading = 90;
-  private battery = 78;
+  private lat = HOME.lat;
+  private lon = HOME.lon;
+  private heading = 270;
+  private battery = 79;
   private mileageM = 12_345_678;
   private sessionEnergyKwh = 0;
   private sessionStart?: string;
@@ -194,8 +248,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         wifiId: "home-wifi",
         name: "Garage Wall Charger",
         linked: true,
-        latitude: 40.5142,
-        longitude: -88.9906,
+        latitude: HOME.lat,
+        longitude: HOME.lon,
         chargingStatus: charging ? "charging" : "standby",
         power: charging ? 11.5 : 0,
         currentVoltage: charging ? 240 : 0,
@@ -210,15 +264,15 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ];
   }
 
-  /** Curve for the most recent imported mock session (home, ~5 days ago, 6 h). */
-
   async getChargeHistory(): Promise<ChargeSessionSummary[]> {
-    const daysAgo = (d: number, h = 0) => new Date(Date.now() - d * 86_400_000 + h * 3_600_000).toISOString();
+    // Fixed UTC hours, so the sessions land at the same local time each run.
+    const midnight = new Date().setUTCHours(0, 0, 0, 0);
+    const at = (daysAgo: number, utcHour: number) => new Date(midnight - daysAgo * 86_400_000 + utcHour * 3_600_000).toISOString();
     const base = { vehicleId: MOCK_VEHICLE_ID, chargerType: null };
     return [
-      { ...base, transactionId: "mock-tx-1", startInstant: daysAgo(12), endInstant: daysAgo(12, 0.6), totalEnergyKwh: 62.4, rangeAddedKm: 210, vendor: "RIVIAN", paidTotal: 24.96, currencyCode: "USD", city: "Bloomington", isPublic: true, isHomeCharger: false },
-      { ...base, transactionId: "mock-tx-2", startInstant: daysAgo(9), endInstant: daysAgo(9, 1.1), totalEnergyKwh: 48.1, rangeAddedKm: 160, vendor: "Electrify America", paidTotal: 23.57, currencyCode: "USD", city: "Champaign", isPublic: true, isHomeCharger: false },
-      { ...base, transactionId: "mock-tx-3", startInstant: daysAgo(5), endInstant: daysAgo(5, 6), totalEnergyKwh: 55.0, rangeAddedKm: 185, vendor: null, paidTotal: null, currencyCode: null, city: null, isPublic: false, isHomeCharger: true },
+      { ...base, transactionId: "mock-tx-1", startInstant: at(12, 16), endInstant: at(12, 17.6), totalEnergyKwh: 19.2, rangeAddedKm: 65, vendor: "RIVIAN", paidTotal: 6.14, currencyCode: "USD", city: "Normal", isPublic: true, isHomeCharger: false },
+      { ...base, transactionId: "mock-tx-2", startInstant: at(6, 15.25), endInstant: at(6, 15.85), totalEnergyKwh: 55.9, rangeAddedKm: 182, vendor: "Electrify America", paidTotal: 31.3, currencyCode: "USD", city: "Champaign", isPublic: true, isHomeCharger: false },
+      { ...base, transactionId: "mock-tx-3", startInstant: at(3, 1), endInstant: at(3, 12), totalEnergyKwh: 44.3, rangeAddedKm: 144, vendor: null, paidTotal: null, currencyCode: null, city: null, isPublic: false, isHomeCharger: true },
     ];
   }
 
@@ -231,7 +285,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         duration: 24 * 60,
         amperage: 48,
         weekDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-        location: { latitude: 40.5142, longitude: -88.9906 },
+        location: { latitude: HOME.lat, longitude: HOME.lon },
       },
       {
         enabled: true,
@@ -239,7 +293,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         duration: 7 * 60,
         amperage: 48,
         weekDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-        location: { latitude: 40.5142, longitude: -88.9906 },
+        location: { latitude: HOME.lat, longitude: HOME.lon },
       },
     ];
   }
@@ -257,7 +311,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   }
 
   async getOtaReleaseNotesUrl(_vehicleId: string): Promise<string | null> {
-    return "https://example.com/rivian-release-notes/2024.14.00";
+    return "https://example.com/rivian-release-notes/2026.36.2";
   }
 
   // --- VehicleStateStream ---
@@ -300,17 +354,17 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   /** Navigating to the Rivian service center for the length of the drive. */
   private emitTripInfo(): void {
-    const km = PHASE_TICKS.driving * 0.5;
-    // Driving uses 0.15% a tick; range is 4.4 km per %.
-    const arrivalSoc = Math.max(5, this.battery - PHASE_TICKS.driving * 0.15);
+    const km = LOOP_M / 1000;
+    // Range is 4.4 km per %.
+    const arrivalSoc = Math.max(5, this.battery - (km * KWH_PER_KM) / KWH_PER_PCT);
     this.emitParallax(RVM_TRIP_INFO, [
       ...string(1, "mock-trip"),
       ...message(3, [
         ...double(1, km * 1000),
         ...double(2, PHASE_TICKS.driving * (TICK_MS / 1000)),
         ...message(3, message(1, [
-          ...message(1, [...double(1, 40.4842), ...double(2, -88.9937)]),
-          ...string(4, "Rivian Service Center, Bloomington"),
+          ...message(1, [...double(1, HOME.lat), ...double(2, HOME.lon)]),
+          ...string(4, "Home"),
         ])),
       ]),
       ...double(6, arrivalSoc),
@@ -323,7 +377,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     const secondsLeft = ticksLeft * (TICK_MS / 1000);
     this.emitParallax(RVM_TRIP_PROGRESS, [
       ...message(1, int(1, Math.round(Date.now() / 1000 + secondsLeft))),
-      ...double(4, ticksLeft * 500),
+      ...double(4, LOOP_M - this.loopM()),
       ...double(5, secondsLeft),
     ]);
   }
@@ -352,16 +406,14 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     }
 
     if (this.phase === "driving") {
-      // ~0.5 km per tick along a gently curving path
-      this.heading = (this.heading + (Math.random() * 10 - 5) + 360) % 360;
-      const stepKm = 0.5;
-      const rad = (this.heading * Math.PI) / 180;
-      this.lat += (stepKm / 111.32) * Math.cos(rad);
-      this.lon +=
-        (stepKm / (111.32 * Math.cos((this.lat * Math.PI) / 180))) *
-        Math.sin(rad);
-      this.mileageM += stepKm * 1000;
-      this.battery = Math.max(5, this.battery - 0.15);
+      // Around the loop at a steady ~40 km/h.
+      const stepM = LOOP_M / PHASE_TICKS.driving;
+      const at = alongLoop(this.loopM());
+      this.lat = at.lat;
+      this.lon = at.lon;
+      this.heading = at.heading;
+      this.mileageM += stepM;
+      this.battery = Math.max(5, this.battery - ((stepM / 1000) * KWH_PER_KM) / KWH_PER_PCT);
       this.emit({
         gnssLocation: {
           latitude: this.lat,
@@ -369,7 +421,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
           timeStamp: ts(),
           isAuthorized: true,
         },
-        gnssSpeed: v(25),
+        gnssSpeed: v(Number((stepM / (TICK_MS / 1000)).toFixed(1))),
         gnssBearing: v(Math.round(this.heading)),
         // Rolling hills so elevation features have something to show.
         gnssAltitude: v(Math.round(240 + 35 * Math.sin(this.tickInPhase / 8))),
@@ -400,6 +452,11 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ]);
     }
     if (this.tickInPhase % 5 === 0) this.emitBatteryState();
+  }
+
+  /** Distance driven around the loop so far this drive. */
+  private loopM(): number {
+    return (LOOP_M * this.tickInPhase) / PHASE_TICKS.driving;
   }
 
   private async pushCharging(): Promise<void> {
@@ -464,7 +521,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         timeStamp: ts(),
         isAuthorized: true,
       },
-      gnssSpeed: v(driving ? 25 : 0),
+      gnssSpeed: v(driving ? 11 : 0),
       gnssBearing: v(Math.round(this.heading)),
       gnssAltitude: v(240),
       batteryLevel: v(Number(this.battery.toFixed(1))),
@@ -483,7 +540,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       timeToEndOfCharge: v(charging ? 30 : 0),
       cabinClimateInteriorTemperature: v(21),
       cabinClimateDriverTemperature: v(20.5),
-      cabinPreconditioningStatus: v("undefined_stat"),
+      cabinPreconditioningStatus: v("off"),
       doorFrontLeftClosed: v("closed"),
       doorFrontLeftLocked: v("locked"),
       doorFrontRightClosed: v("closed"),
@@ -519,8 +576,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       twelveVoltBatteryHealth: v("OK"),
       wiperFluidState: v("normal"),
       brakeFluidLow: v("false"),
-      otaCurrentVersion: v("2024.14.00"),
-      otaAvailableVersion: v("2024.14.00"),
+      otaCurrentVersion: v("2026.36.2"),
+      otaAvailableVersion: v("2026.36.2"),
       otaStatus: v("Idle"),
       otaInstallProgress: v(0),
       serviceMode: v("off"),

@@ -1,175 +1,254 @@
 # RivianMate
 
-A self-hosted Rivian tracking app: a live vehicle dashboard plus long-term
-history (battery, range, odometer, location trail, drives) and charging-session
-logging, stored in Postgres.
+**A self-hosted data logger and dashboard for your Rivian.** RivianMate stays
+connected to your vehicle through Rivian's cloud and records drives, charging
+sessions, battery health, and vehicle state in your own Postgres database. It
+then shows them on a dashboard you can open from anywhere.
 
-It talks to the same unofficial Rivian cloud GraphQL API used by the
-[home-assistant-rivian](https://github.com/bretterer/home-assistant-rivian)
-integration (login + OTP, WebSocket vehicle-state subscription, charging and
-wallbox queries) — ported to TypeScript. No Home Assistant required.
+![Dashboard](docs/screenshots/dashboard.png)
 
-**Stack:** React 19 + Vite + Tailwind (frontend) · Node 22 + Fastify + Drizzle
-ORM (backend) · Postgres · pnpm monorepo, TypeScript end to end.
+- **Your data, your server.** One Docker Compose file runs the app and its
+  database. Nothing is sent to a third-party service.
+- **Read-only and gentle.** RivianMate never sends commands to the vehicle. It
+  keeps its Rivian traffic low so your phone app keeps working (see
+  [How RivianMate talks to Rivian](#how-rivianmate-talks-to-rivian)).
+- **No Home Assistant required.** It's a standalone web app, written in
+  TypeScript end to end.
+
+> Screenshots show the built-in demo mode: a simulated R1T with six weeks of
+> history around Bloomington–Normal, Illinois. Map data © OpenStreetMap
+> contributors and the Overture Maps Foundation.
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Updating](#updating)
+- [How RivianMate talks to Rivian](#how-rivianmate-talks-to-rivian)
+- [Privacy and security](#privacy-and-security)
+- [Development](#development)
+- [License](#license)
 
 ## Features
 
-- **Live dashboard** — battery, range, odometer, power/gear state, doors,
-  closures, windows, climate, tires, software (OTA), and the vehicle on a map,
-  streamed to the browser over SSE from Rivian's WebSocket subscription.
-- **History** — state snapshots persist on change (plus 15-minute anchors);
-  charts for battery/range/odometer/cabin temperature and a location trail.
-- **Drives** — automatic drive detection (gear/power/speed heuristics with a
-  3-minute park grace period), with distance, battery used, and route replay.
-- **Charging** — live session card pushed over the same WebSocket as vehicle
-  state, a session log (energy, SOC, range added, peak power, editable cost),
-  and wallbox status/readings.
-- **Security** — single app password (scrypt); Rivian tokens are stored
-  AES-256-GCM-encrypted with `APP_SECRET`. Your Rivian credentials are only
-  forwarded to Rivian during login and never stored.
+### Live dashboard
 
-No vehicle commands (lock/unlock/climate) — this app is read-only and does not
-enroll as a phone key.
+Battery, range, charge limit, and odometer, with the vehicle on a themed map
+that follows it as it drives. Every door, window, and closure (frunk,
+tailgate, tonneau, gear tunnel) is shown and adjusts to your model. The
+dashboard also shows tire pressures, climate, software version, drive mode,
+and active navigation with arrival time and battery on arrival. Battery
+details include cell temperature, cold-weather range impact, and parked
+energy use. Updates are pushed to the browser as they arrive, and a freshness
+badge shows how recent the data is.
 
-## How RivianMate talks to Rivian
+### Drives
 
-Your Rivian account is shared with the official phone app. If a third-party
-client floods the Rivian cloud, or keeps retrying after it's told to back off,
-the phone app can lose its connection to the vehicle. RivianMate keeps its
-traffic low:
+![Drives](docs/screenshots/drives.png)
 
-- **Push, not polling.** Vehicle state and live charging data come from one
-  WebSocket with one subscription per vehicle and data type. Each
-  subscription is sent once per connection and never re-sent on a quiet
-  socket. Dead sockets are detected with WebSocket ping frames, which don't
-  generate GraphQL traffic.
-- **One session.** The CSRF/app session from login is reused by the REST
-  client and the WebSocket handshake. It is rotated only when Rivian rejects
-  it, and simultaneous rejections trigger a single rotation.
-- **Polling only as a fallback.** When the socket has been down for more
-  than 5 minutes, state is polled every 5 minutes while the vehicle is awake
-  and every 30 minutes while it's asleep. While plugged in, charging is
-  checked over REST every 5 minutes, and only if pushed charging data has
-  stopped arriving. Wallboxes are refreshed at startup and every 15 minutes
-  while charging.
-- **Occasional extras.** Charging schedules are fetched at startup and every
-  6 hours. Rivian's charging history and the latest session's power curve are
-  synced at startup, 15 minutes after a charge ends, and daily. Release notes are fetched once per software
-  version. Departure schedules ride on the existing socket. Each of these
-  turns itself off for the run if Rivian rejects it.
-- **Backing off.** All requests go through one process-wide queue, spaced at
-  least 2 seconds apart. A rate-limit response (HTTP 429 or `RATE_LIMIT`)
-  pauses *all* traffic for at least 5 minutes, doubling up to 1 hour, or for
-  as long as Rivian's `Retry-After` asks if that is longer. WebSocket
-  reconnects back off from 10 seconds to 15 minutes with jitter. Rivian's
-  scheduled connection-TTL close (4420) is renewed quickly and doesn't count
-  as an error.
-- **Tolerant auth.** A single credential rejection triggers a session
-  rotation. You're asked to sign in again only after three rejections in a
-  row.
+Drives are detected automatically from gear, power state, and speed. Each one
+records distance, duration, battery and energy used, efficiency, average and
+top speed, climb and descent, and drive mode. Its route is drawn on the map,
+and a chart plots speed and elevation along the way. Start and end points
+show as **Home** or a looked-up address (optional, via OpenStreetMap), and
+navigation destinations are recorded too.
 
-**Settings → Rivian API usage** shows request counts per operation, socket
-reconnects, session refreshes, and rate limits for the last 24 hours. Run
-only **one** RivianMate instance per Rivian account. A dev server and a
-production container on the same account double the traffic.
+### Charging
 
-## Remote deployment (Docker Compose)
+![Charging](docs/screenshots/charging.png)
+
+Every session is logged with plug-in and charging time, SoC gained, energy,
+range added, peak power, and cost. You can see the full power curve for each
+session and how much energy went to heating or cooling the pack. Charging
+history from your Rivian account is imported automatically, so public
+sessions from before you installed RivianMate appear too, with Rivian's
+prices. Set your home electricity rate to get estimated costs for home
+sessions. The page also shows your charging and departure schedules and the
+status of a Rivian Wall Charger.
+
+### Health
+
+![Health](docs/screenshots/health.png)
+
+Battery lost per day while parked, tire pressure trends that make a slow leak
+obvious, and usable battery capacity estimated from your own charging
+sessions over time. It also lists every software version the vehicle has run,
+with links to the release notes.
+
+### History
+
+![History](docs/screenshots/history.png)
+
+Battery, range, odometer, and cabin temperature charts over 24 hours to 90
+days, plus the vehicle's location trail on the map.
+
+### Settings
+
+Miles or kilometers and °F or °C across the app; home charging rate and
+location; your vehicles and VINs; app password; and a 24-hour report of
+RivianMate's own Rivian API usage.
+
+## Quick start
+
+You need a machine that's always on (a home server, NAS, or small VPS) with
+Docker and Docker Compose.
+
+1. **Get the compose file and environment template.**
+
+   ```sh
+   mkdir rivianmate && cd rivianmate
+   curl -O https://raw.githubusercontent.com/blike/rivianmate/main/docker-compose.yml
+   curl -o .env https://raw.githubusercontent.com/blike/rivianmate/main/.env.example
+   ```
+
+2. **Set your secrets** in `.env`:
+
+   ```sh
+   APP_SECRET=$(openssl rand -hex 32)       # paste the output into .env
+   POSTGRES_PASSWORD=<a strong password>
+   ```
+
+3. **Start it.**
+
+   ```sh
+   docker compose up -d
+   ```
+
+4. **Open `http://<your-server>:4000`.** Create an app password, then sign in
+   with your Rivian account and the verification code Rivian emails or texts
+   you. Your vehicles appear within a few seconds.
+
+RivianMate stores encrypted Rivian tokens and resumes tracking after
+restarts, so you only sign in to Rivian once. For access away from home, put
+it behind a reverse proxy with HTTPS (Caddy, Traefik, nginx) or a private
+network such as Tailscale. Don't expose port 4000 directly to the internet.
+
+## Configuration
+
+Everything is set through environment variables. Docker Compose reads them
+from `.env`.
+
+| Variable | Required | Description |
+|---|---|---|
+| `APP_SECRET` | **yes** | At least 32 random characters (`openssl rand -hex 32`). Encrypts stored Rivian tokens and signs sessions. Keep it unchanged: a new secret makes stored tokens unreadable and you'll have to reconnect your Rivian account |
+| `POSTGRES_PASSWORD` | recommended | Password for the bundled Postgres database (defaults to `rivianmate`) |
+| `APP_PORT` | no | Host port for the web app (default `4000`) |
+| `APP_PASSWORD` | no | Sets the app password on first start instead of using the setup screen. Must be at least 12 characters and not a common password or pattern |
+| `REVERSE_GEOCODING` | no | Set to `false` to stop looking up drive start and end addresses. When on (the default), drive endpoints are sent to OpenStreetMap's [Nominatim](https://nominatim.org) at most once a second, and results are cached |
+| `MAP_TILES_URL` | no | TileJSON URL for [OpenMapTiles-schema](https://openmaptiles.org/schema/) vector tiles. Defaults to [OpenFreeMap](https://openfreemap.org), which is free and needs no API key. Point it at your own tile server to keep map requests local |
+| `MAP_GLYPHS_URL` | no | Font glyph URL template (`{fontstack}`, `{range}`) for map labels. Defaults to OpenFreeMap's |
+| `MAP_STYLE_URL` | no | A complete MapLibre style URL (e.g. MapTiler or Stadia Maps) to replace the built-in dark style. The vehicle and routes are still drawn on top |
+| `DATABASE_URL` | no | Postgres connection string. Compose sets it for the bundled database; set it yourself only to use an external Postgres |
+
+## Updating
 
 ```sh
-cp .env.example .env         # set APP_SECRET (openssl rand -hex 32) and POSTGRES_PASSWORD
-docker compose up -d
+docker compose pull && docker compose up -d
 ```
 
-Open `http://<host>:4000`, set the app password, then sign in with your Rivian
-account (email, password, and the emailed OTP code). Tokens are encrypted and
-persisted, so the tracker resumes automatically after restarts.
+Database migrations run automatically at startup. Back up Postgres before
+updating, and keep the same `APP_SECRET`. See [CHANGELOG.md](CHANGELOG.md)
+for what changed.
 
-Images are published to Docker Hub as `mitchvitale/rivianmate`. Every push to
-`main` is validated, built, and published as `edge`
-([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)).
-Release tags (`v1.2.3`) add version tags to that already-built image without
-rebuilding it ([.github/workflows/release-image.yml](.github/workflows/release-image.yml)).
-To update a deployment: `docker compose pull && docker compose up -d`.
-
-Choose the version with the `image:` tag in `docker-compose.yml`:
+Images are published to Docker Hub as `mitchvitale/rivianmate`. Choose a
+version with the `image:` tag in `docker-compose.yml`:
 
 | Tag | Tracks |
 |---|---|
 | `latest` | The newest stable release (the default) |
-| `0` / `0.3` | The newest release in that major / minor line |
-| `0.3.1` | Exactly that release |
+| `0` / `0.4` | The newest release in that major or minor line |
+| `0.4.0` | Exactly that release |
 | `edge` | Every commit on `main`, including unreleased changes |
 
-Pre-releases (e.g. `0.4.0-beta.1`) are published under their exact tag only.
+Pre-releases (e.g. `0.5.0-beta.1`) are published under their exact tag only.
 
-Before updating, back up Postgres: migrations run automatically at startup. Keep `APP_SECRET`
-unchanged so existing Rivian tokens remain readable. See [CHANGELOG.md](CHANGELOG.md)
-for release highlights and [RELEASING.md](RELEASING.md) for the release process.
+## How RivianMate talks to Rivian
 
-## Local development
+RivianMate uses the same unofficial cloud API as the Rivian mobile app and the
+[home-assistant-rivian](https://github.com/bretterer/home-assistant-rivian)
+integration. Your Rivian account is shared with the phone app. If a client
+floods the Rivian cloud, or keeps retrying after it's told to back off, the
+phone app can lose its connection to the vehicle. RivianMate keeps its
+traffic low:
 
-Requirements: Node 22+, pnpm 10 (`corepack enable`), Docker.
+- **Push, not polling.** Vehicle state and live charging data arrive over one
+  WebSocket, with one subscription per vehicle and data type. Dead sockets
+  are detected with WebSocket pings, which don't generate API traffic.
+- **One session.** The session from sign-in is reused everywhere and rotated
+  only when Rivian rejects it.
+- **Polling only as a fallback.** If the socket has been down for more than 5
+  minutes, state is polled every 5 minutes while the vehicle is awake and
+  every 30 minutes while it's asleep.
+- **Occasional extras.** Charging schedules are fetched every 6 hours. Charge
+  history and the latest session's power curve are synced at startup, after
+  each charge, and daily. Release notes are fetched once per software
+  version. Each extra turns itself off if Rivian rejects it.
+- **Backing off.** All requests share one queue, spaced at least 2 seconds
+  apart. A rate-limit response pauses *all* traffic for 5 minutes, doubling
+  up to an hour. Reconnects back off from 10 seconds to 15 minutes.
+- **Tolerant auth.** You're asked to sign in again only after Rivian rejects
+  the session three times in a row.
+
+**Settings → Rivian API usage** shows request counts, reconnects, and rate
+limits for the last 24 hours. Run only **one** RivianMate instance per Rivian
+account: a second instance (including a development server) doubles the
+traffic.
+
+## Privacy and security
+
+- Your Rivian password is passed to Rivian once, at sign-in, and never stored.
+  The resulting tokens are encrypted (AES-256-GCM) with `APP_SECRET`.
+- The web app is protected by a single app password (hashed with scrypt).
+- All data stays in your Postgres database. The only other outbound requests
+  are map tiles (configurable) and, unless you turn it off, address lookups
+  for drive endpoints.
+- The database isn't published outside the Docker network.
+
+## Development
+
+Requirements: Node 22+, pnpm 10 (`corepack enable`), and Docker.
 
 ```sh
-# 1. Postgres (published on localhost:5433 to avoid clashing with a host install)
-docker compose -f docker-compose.yml -f docker-compose.override.example.yml up -d postgres
+# Postgres on localhost:5433
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
-# 2. Install
 pnpm install
+cp .env.example .env        # set APP_SECRET, uncomment DATABASE_URL and MOCK_RIVIAN
 
-# 3. API server (http://localhost:4000)
-# Set APP_SECRET, DATABASE_URL, and optionally MOCK_RIVIAN in .env
-pnpm dev
-
-# 4. Web app with hot reload (http://localhost:5173, proxies /api to :4000)
-pnpm dev:web
+pnpm dev                    # API server on http://localhost:4000
+pnpm dev:web                # web app with hot reload on http://localhost:5173
 ```
 
-Set `MOCK_RIVIAN=1` to develop without a real Rivian account: any email and
-password are accepted, the OTP code is `000000`, and a simulated R1T loops
-through park → drive → park → charge so the dashboard, history, drives, and
-charging pages all populate within a few minutes. Omit it to hit the real
-Rivian API.
+With `MOCK_RIVIAN=1` you don't need a Rivian account. Any email and password
+work, the verification code is `000000`, and a simulated R1T loops through
+parking, a drive around the neighborhood, and charging, so every page fills
+in within a few minutes. Leave it unset to use the real Rivian API.
 
-Useful commands: `pnpm typecheck` · `pnpm lint` · `pnpm test` · `pnpm build` ·
-`pnpm --filter @rivianmate/server db:generate` (regenerate Drizzle migrations
-after editing [server/src/db/schema.ts](server/src/db/schema.ts)).
-Migrations run automatically at server boot.
-
-Database integration tests run only when `TEST_DATABASE_URL` points at a
-disposable Postgres database (its tables are truncated):
-`TEST_DATABASE_URL=postgres://… pnpm --filter @rivianmate/server test`.
-
-If the API server must run on a different port, point the web proxy at it:
-`VITE_API_TARGET=http://localhost:4100 pnpm dev:web`.
-
-## Environment variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `APP_SECRET` | yes | ≥32 chars; encrypts Rivian tokens, signs sessions |
-| `DATABASE_URL` | yes (compose sets it) | Postgres connection string |
-| `PORT` / `APP_PORT` | no | API port (default 4000) / published host port |
-| `MOCK_RIVIAN` | no | `1` = simulated vehicle, OTP `000000` |
-| `REVERSE_GEOCODING` | no | `false` turns off drive start/end address lookups. When on (the default), each drive's start and end coordinates are sent to OpenStreetMap's [Nominatim](https://nominatim.org) service, at most one request a second, and results are cached |
-| `APP_PASSWORD` | no | Seed the app password on first boot instead of the setup wizard. Must meet the password policy (12+ characters, not a common word or pattern) |
-| `MAP_TILES_URL` | no | TileJSON URL for OpenMapTiles-schema vector tiles used by the themed map. Defaults to [OpenFreeMap](https://openfreemap.org) (free, no API key). Point it at your own tile server to keep map requests local |
-| `MAP_GLYPHS_URL` | no | Font glyph URL template (`{fontstack}`, `{range}`) for map labels. Defaults to OpenFreeMap's Noto Sans |
-| `MAP_STYLE_URL` | no | A complete MapLibre style URL (e.g. MapTiler, Stadia). Replaces the built-in themed style; the vehicle and route are still drawn on top |
-
-> **Note:** rotating `APP_SECRET` invalidates stored Rivian tokens (they can no
-> longer be decrypted); you'll be asked to reconnect your Rivian account.
-
-## Repository layout
+| Command | |
+|---|---|
+| `pnpm typecheck` · `pnpm lint` · `pnpm test` · `pnpm build` | Checks and production build |
+| `pnpm --filter @rivianmate/server db:generate` | Generate a migration after editing [`server/src/db/schema.ts`](server/src/db/schema.ts) |
+| `TEST_DATABASE_URL=postgres://… pnpm --filter @rivianmate/server test` | Also run database integration tests (use a disposable database: its tables are truncated) |
+| `VITE_API_TARGET=http://localhost:4100 pnpm dev:web` | Point the web app at an API server on another port |
 
 ```
-server   Fastify API, Rivian API client (HTTP + WebSocket), Drizzle schema,
-         monitors (vehicle state, drives, charging), SSE fanout
-web      React SPA (dashboard, history, drives, charging, settings)
-home-assistant-rivian/   Upstream HACS integration, kept for reference only
+server   Fastify API, Rivian client (HTTP + WebSocket), Drizzle schema and
+         migrations, monitors for vehicle state, drives, and charging
+web      React 19 + Vite + Tailwind single-page app, MapLibre GL maps
 ```
+
+See [RELEASING.md](RELEASING.md) for the release process.
+
+## License
+
+RivianMate is licensed under the [PolyForm Strict License 1.0.0](LICENSE.md).
+You're free to download, install, and run it for personal and other
+noncommercial use. You may not modify it, distribute it, or sell it or
+anything based on it. For other uses, open an issue to ask.
 
 ## Disclaimer
 
-Unofficial software; not affiliated with or endorsed by Rivian. It uses the
-same private API as the Rivian mobile app — use at your own risk.
+RivianMate is unofficial and is not affiliated with or endorsed by Rivian. It
+relies on a private API that may change without notice. Use it at your own
+risk.
