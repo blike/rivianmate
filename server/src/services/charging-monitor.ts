@@ -22,6 +22,7 @@ import {
   type VehicleState,
 } from "../rivian/types.js";
 import { isChargingState, stampedAt } from "./charging-time.js";
+import { type DerivedChargeInputs, derivedLiveSession } from "./derived-session.js";
 import { nearbySpot } from "./home-charging.js";
 import type { LiveBus } from "./live-bus.js";
 import { type ResumableSession, closeTime } from "./session-resume.js";
@@ -95,6 +96,12 @@ export class ChargingMonitor {
   /** Rivian vehicle ids (from getUserInfo, not VINs). */
   private vehicles = new Set<string>();
   private latestLocation = new Map<string, { lat: number; lon: number }>();
+  /** Vehicles whose chargingSession push currently reports an active charge. */
+  private pushActive = new Set<string>();
+  /** State and Parallax readings, for a live session when the push is silent. */
+  private derived = new Map<string, DerivedChargeInputs>();
+  /** What was last emitted from `derived`, so repeats aren't re-sent. */
+  private derivedSent = new Map<string, string>();
 
   /** Rivian rejected credentials even after a session rotation. */
   onAuthFailure?: () => void;
@@ -127,6 +134,12 @@ export class ChargingMonitor {
     const status = stateString(state, "chargerStatus");
     if (status === null) return;
     const now = this.now();
+    this.updateDerived(vehicleId, {
+      chargerState: stateString(state, "chargerState"),
+      soc: stateNumber(state, "batteryLevel"),
+      minutesLeft: stateNumber(state, "timeToEndOfCharge"),
+      stateAt: new Date(now).toISOString(),
+    });
     this.applyPlugReading(vehicleId, {
       plugged: status !== "chrgr_sts_not_connected",
       pluggedAt: stampedAt(state, "chargerStatus", now),
@@ -180,6 +193,10 @@ export class ChargingMonitor {
         .filter((b) => b.startMs >= target.from && b.startMs <= target.to)
         .map((b) => ({ sessionId: target.id, ts: new Date(b.startMs), powerKw: b.powerKw, soc: b.soc }));
       if (rows.length === 0) return;
+      if (target.id === this.openSessions.get(vehicleId)?.id) {
+        const last = rows.at(-1)!;
+        this.updateDerived(vehicleId, { powerKw: last.powerKw, powerAt: last.ts.toISOString() });
+      }
       await this.db
         .insert(chargingCurvePoints)
         .values(rows)
@@ -222,6 +239,7 @@ export class ChargingMonitor {
             : {}),
         })
         .where(eq(chargingSessions.id, open.id));
+      this.updateDerived(vehicleId, { energyKwh: b.totalKwh, energyAt: new Date(this.now()).toISOString() });
       return;
     }
 
@@ -284,8 +302,47 @@ export class ChargingMonitor {
   ingest(vehicleId: string, session: LiveSessionData | null): Promise<void> {
     return this.enqueue(vehicleId, async () => {
       await this.processSession(vehicleId, session);
-      this.bus.emitChargingSession(vehicleId, session);
+      if (isActiveSession(session)) {
+        this.pushActive.add(vehicleId);
+        this.bus.emitChargingSession(vehicleId, session);
+      } else {
+        this.pushActive.delete(vehicleId);
+        this.derivedSent.delete(vehicleId);
+        this.emitDerived(vehicleId);
+      }
     });
+  }
+
+  private updateDerived(vehicleId: string, changes: Partial<DerivedChargeInputs>): void {
+    const current = this.derived.get(vehicleId) ?? {
+      chargerState: null,
+      soc: null,
+      minutesLeft: null,
+      stateAt: new Date(this.now()).toISOString(),
+      powerKw: null,
+      powerAt: null,
+      energyKwh: null,
+      energyAt: null,
+    };
+    this.derived.set(vehicleId, { ...current, ...changes });
+    // After queued work, so a plug-in has opened its session first.
+    void this.enqueue(vehicleId, async () => this.emitDerived(vehicleId));
+  }
+
+  /**
+   * Rivian's chargingSession push is silent for some chargers, so while it
+   * is, the live session comes from vehicle state and Parallax instead.
+   */
+  private emitDerived(vehicleId: string): void {
+    if (this.pushActive.has(vehicleId)) return;
+    const open = this.openSessions.get(vehicleId);
+    const inputs = this.derived.get(vehicleId);
+    const session = open && inputs ? derivedLiveSession(open.startedAt, inputs) : null;
+    // Compare without timestamps: each state report re-stamps them.
+    const signature = JSON.stringify(session && { ...session, soc: session.soc?.value, timeRemaining: session.timeRemaining?.value, vehicleChargerState: session.vehicleChargerState?.value });
+    if (this.derivedSent.get(vehicleId) === signature) return;
+    this.derivedSent.set(vehicleId, signature);
+    this.bus.emitChargingSession(vehicleId, session);
   }
 
   async start(): Promise<void> {

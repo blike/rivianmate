@@ -24,8 +24,8 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
   const api = { getRegisteredWallboxes: async () => [] } as unknown as RivianApi;
   let clock = NOW;
 
-  const monitor = () => {
-    const m = new ChargingMonitor(handle.db, api, new LiveBus(), () => {}, () => clock);
+  const monitor = (bus = new LiveBus()) => {
+    const m = new ChargingMonitor(handle.db, api, bus, () => {}, () => clock);
     m.setVehicles(["v1"]);
     return m;
   };
@@ -236,6 +236,46 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.maxPowerKw).toBe(11);
     expect(rows[0]!.energyKwh).toBe(5);
+  });
+
+  it("builds the live session from state and Parallax while the push feed is silent", async () => {
+    const bus = new LiveBus();
+    const m = monitor(bus);
+    await m.start();
+    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 60);
+    m.noteState("v1", {
+      ...vehicle(CHARGING, "charging_active", 61, "2026-10-01T07:05:00Z"),
+      timeToEndOfCharge: { value: 30, timeStamp: "2026-10-01T07:05:00Z" },
+    });
+    const t0 = Date.parse("2026-10-01T07:00:00Z");
+    await m.ingestParallax("v1", {
+      rvm: RVM_CHARGING_GRAPH,
+      timestamp: null,
+      payload: chargingGraph(graphBar(60, 7.2, t0, t0 + 60_000), graphBar(61, 7.4, t0 + 60_000, t0 + 120_000)),
+    });
+    await m.ingest("v1", null); // drains the queue
+
+    const live = bus.latestChargingSession("v1");
+    expect(live?.vehicleChargerState?.value).toBe("charging_active");
+    expect(live?.power?.value).toBeCloseTo(7.4);
+    expect(live?.soc?.value).toBe(61);
+    expect(live?.timeRemaining?.value).toBe(30 * 60);
+
+    await note(m, "2026-10-01T08:00:00Z", UNPLUGGED, "charging_ready", 70);
+    expect(bus.latestChargingSession("v1")).toBeNull();
+    m.stop();
+  });
+
+  it("prefers an active push over the state-built session", async () => {
+    const bus = new LiveBus();
+    const m = monitor(bus);
+    await m.start();
+    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 50);
+    await m.ingest("v1", live("2026-10-01T11:00:00Z", 11));
+    m.noteState("v1", vehicle(CHARGING, "charging_active", 51, "2026-10-01T11:05:00Z"));
+    await m.ingestParallax("v1", { rvm: "charging.session.status", timestamp: null, payload: "CAEQAQ==" });
+    expect(bus.latestChargingSession("v1")?.power?.value).toBe(11);
+    m.stop();
   });
 
   it("resumes a session left open by a restart when the same charge continues", async () => {
