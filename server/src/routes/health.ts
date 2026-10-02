@@ -15,6 +15,19 @@ import { capacityEstimates, phantomDrain } from "../services/health.js";
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
+const drainQuery = daysQuery.extend({ tz: z.string().max(64).optional() });
+
+/** An IANA time zone the runtime knows, or UTC. */
+function validTimeZone(tz: string | undefined): string {
+  if (!tz) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
+}
+
 /** Numeric value of a state field in the snapshot JSON; NULL for placeholders. */
 function numericField(field: string) {
   const path = sql.raw(`data->'${field}'->>'value'`);
@@ -32,7 +45,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   app.get<{ Params: { id: string } }>(
     "/api/vehicles/:id/health/phantom-drain",
     async (request): Promise<PhantomDrainDto> => {
-      const { days } = daysQuery.parse(request.query);
+      const { days, tz } = drainQuery.parse(request.query);
       const since = new Date(Date.now() - days * 86_400_000);
       const rows = await ctx.db
         .select({
@@ -40,6 +53,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
           batteryLevel: vehicleStateSnapshots.batteryLevel,
           mileageM: vehicleStateSnapshots.mileageM,
           chargerStatus: vehicleStateSnapshots.chargerStatus,
+          gear: sql<string | null>`${vehicleStateSnapshots.data}->'gearStatus'->>'value'`,
         })
         .from(vehicleStateSnapshots)
         .where(
@@ -49,7 +63,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
           ),
         )
         .orderBy(asc(vehicleStateSnapshots.ts));
-      return phantomDrain(rows);
+      return phantomDrain(rows, validTimeZone(tz));
     },
   );
 

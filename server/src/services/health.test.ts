@@ -18,22 +18,60 @@ describe("phantomDrain", () => {
     expect(r.avgPctPerDay).toBeCloseTo(3);
   });
 
-  it("ignores driving, charging, battery gains and long gaps", () => {
+  it("ignores driving, charging, being plugged in and long gaps", () => {
     const r = phantomDrain([
       snap(0, 80),
       snap(1, 75, 5000), // drove
       snap(2, 76, 5000, "chrgr_sts_connected_charging"), // charging
-      snap(3, 90, 5000), // battery rose
-      snap(20, 85, 5000), // 17 h gap: blind spot
+      snap(3, 90, 5000, "chrgr_sts_connected_no_chrg"), // plugged in
+      snap(4, 90, 5000),
+      snap(20, 85, 5000), // 16 h gap: blind spot
       snap(22, 84.8, 5000), // valid: 0.2 % in 2 h
     ]);
-    expect(r.days.reduce((a, d) => a + d.lossPct, 0)).toBeCloseTo(0.2);
     expect(r.avgPctPerDay).toBeNull(); // only 2 h of parked data
+    expect(r.days).toEqual([]);
   });
 
-  it("splits by UTC day", () => {
-    const r = phantomDrain([snap(20, 80), snap(24, 79), snap(28, 78)]);
+  it("ignores time in drive or reverse even if the odometer hasn't caught up", () => {
+    const r = phantomDrain([
+      snap(0, 80),
+      { ...snap(0.5, 79), gear: "drive" },
+      snap(1, 78),
+      snap(5, 77.9),
+      snap(9, 77.8),
+    ]);
+    expect(r.days[0]!.lossPct).toBeCloseTo(0.2);
+    expect(r.days[0]!.parkedHours).toBeCloseTo(8);
+  });
+
+  it("nets out a reading that dips on wake and recovers", () => {
+    // From a real vehicle: a 0.6 % blip once counted as ~30 %/day.
+    const r = phantomDrain([
+      snap(0, 56.9),
+      snap(0.5, 56.3),
+      snap(0.55, 56.7),
+      snap(4, 56.7),
+      snap(8, 56.7),
+    ]);
+    expect(r.days[0]!.lossPct).toBeCloseTo(0.2);
+    expect(r.avgPctPerDay).toBeCloseTo(0.6);
+  });
+
+  it("leaves out days with too little parked time but keeps them in the average", () => {
+    const r = phantomDrain([snap(18, 80), snap(24, 79), snap(26, 78.8)]);
+    expect(r.days.map((d) => d.day)).toEqual(["2026-09-01"]);
+    expect(r.avgPctPerDay).toBeCloseTo((1.2 / 8) * 24);
+  });
+
+  it("splits a stretch across days by time, in the given time zone", () => {
+    const r = phantomDrain([snap(16, 80), snap(22, 79), snap(28, 78), snap(34, 77)]);
     expect(r.days.map((d) => d.day)).toEqual(["2026-09-01", "2026-09-02"]);
+    // 16:00 UTC is 09:00 in Los Angeles, so all 18 h land on Sep 1.
+    const la = phantomDrain(
+      [snap(16, 80), snap(22, 79), snap(28, 78), snap(34, 77)],
+      "America/Los_Angeles",
+    );
+    expect(la.days.map((d) => d.day)).toEqual(["2026-09-01"]);
   });
 });
 

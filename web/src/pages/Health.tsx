@@ -44,7 +44,8 @@ export function Health(props: { vehicleId: string }) {
   const drainData = useMemo(
     () =>
       (drain?.days ?? []).map((d) => ({
-        ts: Date.parse(`${d.day}T00:00:00Z`),
+        // Days come back in this browser's time zone, so parse as local.
+        ts: Date.parse(`${d.day}T00:00:00`),
         rate: d.pctPerDay,
       })),
     [drain],
@@ -113,7 +114,8 @@ export function Health(props: { vehicleId: string }) {
       <Panel title="Parked battery drain">
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-xs text-[var(--text-muted)]">
-            Battery lost per day while parked and unplugged. Time spent driving or charging is excluded.
+            Battery lost per day while parked and unplugged. Days with under 6 hours of parked time are
+            left out, since a short window exaggerates small readings.
           </p>
           <WindowPicker value={drainDays} onChange={setDrainDays} />
         </div>
@@ -121,12 +123,13 @@ export function Health(props: { vehicleId: string }) {
           height={200}
           loading={drainPending}
           empty={drainData.length === 0}
-          emptyText="Not enough parked time recorded yet."
+          emptyText="Not enough parked time recorded yet. A day needs 6+ hours parked and unplugged."
         >
           <TrendChart
             data={drainData}
             xKey="ts"
             height={200}
+            xType="category"
             xFormatter={shortDate}
             series={[{ key: "rate", label: "Drain", color: "var(--status-warning)", mark: "bar", unit: "%/day", digits: 2 }]}
           />
