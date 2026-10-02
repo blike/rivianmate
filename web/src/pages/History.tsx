@@ -16,12 +16,13 @@ import { ContentFrame } from "../components/loading.js";
 import { Panel } from "../components/panels.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { fmt } from "../lib/state.js";
+import { timeTicks } from "../lib/timeAxis.js";
 
 const RANGES = [
-  { label: "24h", hours: 24, bucket: "15m" },
-  { label: "7d", hours: 24 * 7, bucket: "1h" },
-  { label: "30d", hours: 24 * 30, bucket: "6h" },
-  { label: "90d", hours: 24 * 90, bucket: "1d" },
+  { label: "24h", title: "24 hours", hours: 24, bucket: "15m" },
+  { label: "7d", title: "7 days", hours: 24 * 7, bucket: "1h" },
+  { label: "30d", title: "30 days", hours: 24 * 30, bucket: "6h" },
+  { label: "90d", title: "90 days", hours: 24 * 90, bucket: "1d" },
 ] as const;
 
 type MetricKind = "percent" | "distance" | "temperature";
@@ -89,6 +90,13 @@ export function History(props: { vehicleId: string }) {
     [points, convert],
   );
 
+  // Ticks follow the data's own span: a week's window with a day of data
+  // gets hourly ticks, not the same date repeated.
+  const axis = useMemo(
+    () => timeTicks(chartData[0]?.ts ?? 0, chartData.at(-1)?.ts ?? 0),
+    [chartData],
+  );
+
   const trailPositions = useMemo(
     () => (trail ?? []).map((p) => [p.lat, p.lon] as [number, number]),
     [trail],
@@ -114,7 +122,7 @@ export function History(props: { vehicleId: string }) {
         </div>
       </div>
 
-      <Panel title={`${metric.label} (${unit}) — last ${range.label}`}>
+      <Panel title={`${metric.label} (${unit}) — last ${range.title}`}>
         <ContentFrame
           height="18rem"
           loading={pointsPending}
@@ -136,11 +144,9 @@ export function History(props: { vehicleId: string }) {
                   type="number"
                   domain={["dataMin", "dataMax"]}
                   scale="time"
-                  tickFormatter={(ts: number) =>
-                    range.hours <= 24
-                      ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                      : new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" })
-                  }
+                  ticks={axis.ticks}
+                  tickFormatter={axis.format}
+                  minTickGap={24}
                   stroke="var(--text-muted)"
                   tickLine={false}
                   axisLine={false}
