@@ -240,11 +240,18 @@ export interface ChargeBreakdown {
   chargingMinutes: number;
   rangeAddedKm: number | null;
   cost: { amount: number; currency: string } | null;
+  /** Live readings, updated every few seconds; stale once charging stops. */
+  powerKw: number;
+  rangeKmPerHour: number;
+  minutesRemaining: number;
 }
 
 /**
  * `charge_session_breakdown` (`k70/b`): 1 total kWh, 2 pack kWh, 5 thermal
- * kWh, 6 minutes charging, 8 range added (km), 11 cost (money). Rivian keeps
+ * kWh, 6 minutes charging, 7 minutes remaining, 8 range added (km), 9 power
+ * (kW), 10 range rate (km/h), 11 cost (money). Fields 7, 9 and 10 were
+ * matched against a live L2 charge (ramping to 7.4 kW, 31 km/h, 42 min left
+ * matching timeToEndOfCharge); 12 and 13 are unknown enums. Rivian keeps
  * the last session's breakdown and sends it on subscribe. Confirmed against
  * a home session: 35.8 = 34.4 + 1.4 kWh, 313 min, 162 km, matching Rivian's
  * history. Proto3 omits zeros, so missing numbers read as 0.
@@ -267,6 +274,9 @@ export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | 
     chargingMinutes: Math.max(0, m.int(6) ?? 0),
     rangeAddedKm: m.int(8),
     cost: currency ? { amount: units + nanos / 1e9, currency } : null,
+    powerKw: Math.max(0, f32(m.float(9)) ?? 0),
+    rangeKmPerHour: Math.max(0, m.int(10) ?? 0),
+    minutesRemaining: Math.max(0, m.int(7) ?? 0),
   };
 }
 
@@ -429,7 +439,7 @@ export function decodeTripProgress(payloadBase64: string): TripProgress | null {
 }
 
 export interface ChargingStatus {
-  /** Raw enum values; their meanings aren't documented yet. */
+  /** Raw enum values; see decodeChargingStatus for those observed. */
   plugConnection: number;
   displayStatus: number;
   evseType: number;
@@ -438,7 +448,8 @@ export interface ChargingStatus {
 /**
  * `charging.session.status` (`f70/v`): 1 plug connection status, 2 display
  * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
- * Unconfirmed against live payloads.
+ * Seen on a home L2 charger: plug 2 while plugged in; display 5 scheduled,
+ * 2 ready, 3 charging (matching chargerState); EVSE type 1.
  */
 export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
   const m = decode(payloadBase64);
@@ -452,11 +463,14 @@ export function decodeChargingStatus(payloadBase64: string): ChargingStatus | nu
 
 /**
  * `charging.session.time_estimation` (`g70/e0`): 1 hold time (int32
- * seconds). Whether that's time to the limit or to a schedule's end is
- * unconfirmed.
+ * seconds, per the docs; not yet seen), 2 minutes remaining. Field 2 matched
+ * vehicle state's timeToEndOfCharge on a live charge. Empty when not
+ * charging.
  */
-export function decodeTimeEstimation(payloadBase64: string): { holdTimeSeconds: number } | null {
+export function decodeTimeEstimation(
+  payloadBase64: string,
+): { holdTimeSeconds: number; minutesRemaining: number } | null {
   const m = decode(payloadBase64);
   if (!m) return null;
-  return { holdTimeSeconds: Math.max(0, m.int(1) ?? 0) };
+  return { holdTimeSeconds: Math.max(0, m.int(1) ?? 0), minutesRemaining: Math.max(0, m.int(2) ?? 0) };
 }

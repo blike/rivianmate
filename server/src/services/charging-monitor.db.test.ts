@@ -266,6 +266,29 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     m.stop();
   });
 
+  it("takes live power from the breakdown over the graph's 16-minute bars", async () => {
+    const bus = new LiveBus();
+    const m = monitor(bus);
+    await m.start();
+    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 60);
+    clock = Date.parse("2026-10-01T07:30:00Z");
+    await m.ingestParallax("v1", {
+      rvm: RVM_CHARGE_BREAKDOWN,
+      timestamp: null,
+      payload: b64([...float(1, 3.6), ...int(6, 30), ...float(9, 5.2), ...int(10, 19)]),
+    });
+    const t0 = Date.parse("2026-10-01T07:00:00Z");
+    await m.ingestParallax("v1", {
+      rvm: RVM_CHARGING_GRAPH,
+      timestamp: null,
+      payload: chargingGraph(graphBar(60, 7.2, t0, t0 + 16 * 60_000)),
+    });
+    await m.ingest("v1", null); // drains the queue
+
+    expect(bus.latestChargingSession("v1")?.power?.value).toBeCloseTo(5.2);
+    m.stop();
+  });
+
   it("prefers an active push over the state-built session", async () => {
     const bus = new LiveBus();
     const m = monitor(bus);

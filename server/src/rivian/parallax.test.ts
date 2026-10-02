@@ -73,6 +73,21 @@ describe("decodeChargeBreakdown", () => {
     ]);
     expect(decodeChargeBreakdown(payload)).toEqual({
       totalKwh: 35.8, packKwh: 34.4, thermalKwh: 1.4, chargingMinutes: 313, rangeAddedKm: 162, cost: null,
+      powerKw: 0, rangeKmPerHour: 0, minutesRemaining: 0,
+    });
+  });
+
+  it("reads live power, range rate and time left from a charge in progress", () => {
+    // Captured from a home L2 charge at 90.3% with a 95% limit.
+    expect(decodeChargeBreakdown("DZmZJUIVMzMfQi3NzMw/MOsCOCpAwgFNzczsQFAfWgBgAWgD")).toMatchObject({
+      totalKwh: 41.4,
+      packKwh: 39.8,
+      thermalKwh: 1.6,
+      chargingMinutes: 363,
+      minutesRemaining: 42,
+      rangeAddedKm: 194,
+      powerKw: 7.4,
+      rangeKmPerHour: 31,
     });
   });
 
@@ -192,6 +207,11 @@ describe("decodeChargingStatus", () => {
 
 describe("decodeTimeEstimation", () => {
   it("reads the hold time in seconds", () => {
-    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({ holdTimeSeconds: 5400 });
+    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({ holdTimeSeconds: 5400, minutesRemaining: 0 });
+  });
+
+  it("reads minutes remaining from a live charge", () => {
+    expect(decodeTimeEstimation(b64(int(2, 42)))).toEqual({ holdTimeSeconds: 0, minutesRemaining: 42 });
+    expect(decodeTimeEstimation("")).toBeNull();
   });
 });

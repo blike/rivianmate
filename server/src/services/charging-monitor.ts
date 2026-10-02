@@ -193,8 +193,10 @@ export class ChargingMonitor {
         .filter((b) => b.startMs >= target.from && b.startMs <= target.to)
         .map((b) => ({ sessionId: target.id, ts: new Date(b.startMs), powerKw: b.powerKw, soc: b.soc }));
       if (rows.length === 0) return;
-      if (target.id === this.openSessions.get(vehicleId)?.id) {
-        const last = rows.at(-1)!;
+      const powerAt = this.derived.get(vehicleId)?.powerAt;
+      const last = rows.at(-1)!;
+      // The breakdown's live power is fresher than a 16-minute bar.
+      if (target.id === this.openSessions.get(vehicleId)?.id && !(powerAt && Date.parse(powerAt) > last.ts.getTime())) {
         this.updateDerived(vehicleId, { powerKw: last.powerKw, powerAt: last.ts.toISOString() });
       }
       await this.db
@@ -239,7 +241,10 @@ export class ChargingMonitor {
             : {}),
         })
         .where(eq(chargingSessions.id, open.id));
-      this.updateDerived(vehicleId, { energyKwh: b.totalKwh, energyAt: new Date(this.now()).toISOString() });
+      const at = new Date(this.now()).toISOString();
+      // Live power only means something while charging; otherwise it's the last reading.
+      const live = isChargingState(this.derived.get(vehicleId)?.chargerState ?? null) ? { powerKw: b.powerKw, powerAt: at } : {};
+      this.updateDerived(vehicleId, { energyKwh: b.totalKwh, energyAt: at, ...live });
       return;
     }
 
