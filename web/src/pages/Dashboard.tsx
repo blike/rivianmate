@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
-import { BatteryEnergyPanel, ConnectivityPanel, NavigationCard } from "../components/InsightsPanels.js";
+import { BatteryEnergyPanel, ConnectivityPanel, NavigationCard, ParkedEnergyPanel } from "../components/InsightsPanels.js";
 import {
   ClimatePanel,
   ClosuresGrid,
@@ -15,7 +15,7 @@ import {
 import { FreshnessBadge } from "../components/FreshnessBadge.js";
 import { LoadingScope, Skeleton, SkeletonBlock, useLoading } from "../components/loading.js";
 import { VehicleMap } from "../components/VehicleMap.js";
-import { chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
+import { chargeOutlook, chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
 import { relativeTime } from "../lib/freshness.js";
 import { fmt, fmtDuration, fmtSeconds, location, nv, sv, titleCase } from "../lib/state.js";
 import { type ActivityKind, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
@@ -41,6 +41,11 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
 
       <section>
         <SectionHeading>Vehicle details</SectionHeading>
+        <LoadingScope loading={insightsPending}>
+          <Panel title="Parked energy" className="mb-4">
+            <ParkedEnergyPanel insights={insights} />
+          </Panel>
+        </LoadingScope>
         <LoadingScope loading={isPending}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Panel title="Doors, closures & windows">
@@ -108,18 +113,35 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
   const u = useUnits();
   const { data: liveSession } = useLiveCharging(props.vehicleId);
 
-  const battery = nv(state, "batteryLevel");
-  const limit = nv(state, "batteryLimit");
+  // The live session follows Parallax, which reports a charge starting
+  // before vehicle state does.
+  const stateActivity = vehicleActivity(state);
+  const activity =
+    liveSession?.vehicleChargerState?.value === "charging_active" && stateActivity?.kind !== "driving"
+      ? { kind: "charging" as const, label: "Charging" }
+      : stateActivity;
+  const charging = activity?.kind === "charging";
+  // While charging, the live session carries Parallax's readings; vehicle
+  // state fills in when it hasn't reported them.
+  const live = (r: { value: string | number | null } | null | undefined) =>
+    charging && r?.value != null ? Number(r.value) : null;
+  const battery = live(liveSession?.soc) ?? nv(state, "batteryLevel");
+  const limit = live(liveSession?.socLimit) ?? nv(state, "batteryLimit");
   const rangeKm = nv(state, "distanceToEmpty");
   const mileageM = nv(state, "vehicleMileage");
   const speedMps = nv(state, "gnssSpeed");
   const loc = location(state);
-  const activity = vehicleActivity(state);
   const security = securitySummary(state, vehicle?.model);
-  const charging = activity?.kind === "charging";
-  const chargePower = charging && liveSession?.power?.value != null ? Number(liveSession.power.value) : null;
-  const minutesLeft =
-    charging && liveSession?.timeRemaining?.value != null ? Number(liveSession.timeRemaining.value) / 60 : null;
+  const chargePower = live(liveSession?.power);
+  const chargeRate = live(liveSession?.kilometersChargedPerHour);
+  const secondsLeft = live(liveSession?.timeRemaining);
+  const outlook = chargeOutlook({
+    soc: battery,
+    limit,
+    powerKw: chargePower,
+    capacityKwh: live(liveSession?.batteryCapacityKwh) ?? nv(state, "batteryCapacity"),
+    minutesLeft: secondsLeft != null ? secondsLeft / 60 : null,
+  });
 
   const ota = softwareUpdate(state);
   // Scales today's estimate, so it follows the vehicle's own recent efficiency.
@@ -203,10 +225,24 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
             <HeroFact label="Odometer" value={u.formatDistance(mileageM != null ? mileageM / 1000 : null)} />
             {charging ? (
               <>
-                <HeroFact label="Charging at" value={chargePower != null ? `${fmt(chargePower, 1)} kW` : "—"} />
                 <HeroFact
-                  label="Time to limit"
-                  value={minutesLeft != null ? fmtSeconds(minutesLeft * 60) : "—"}
+                  label="Charging at"
+                  value={
+                    chargePower == null
+                      ? "—"
+                      : `${fmt(chargePower, 1)} kW${chargeRate ? ` · ${u.formatChargeRate(chargeRate)}` : ""}`
+                  }
+                />
+                {/* A schedule can end the session before it reaches the limit. */}
+                <HeroFact
+                  label={outlook.kind === "session" ? "Session ends in" : "Time to limit"}
+                  value={
+                    outlook.minutes == null
+                      ? "—"
+                      : outlook.kind === "session" && outlook.endSoc != null
+                        ? `${fmtSeconds(outlook.minutes * 60)} · ~${fmt(outlook.endSoc, 0)}%`
+                        : fmtSeconds(outlook.minutes * 60)
+                  }
                 />
               </>
             ) : (

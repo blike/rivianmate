@@ -4,7 +4,8 @@ export function parkedWindows<T extends { minutes: number }>(windows: readonly T
 }
 
 export function windowLabel(minutes: number): string {
-  return `Last ${minutes / 60} h`;
+  const hours = minutes / 60;
+  return `Last ${hours} ${hours === 1 ? "hour" : "hours"}`;
 }
 
 export function wifiBand(frequencyMhz: number | null): string | null {
@@ -21,4 +22,15 @@ export function signalLabel(rssiDbm: number | null): string | null {
   if (rssiDbm >= -70) return "Good";
   if (rssiDbm >= -80) return "Fair";
   return "Weak";
+}
+
+export const PARKED_USES = [
+  { key: "system", label: "System", color: "var(--series-1)" },
+  { key: "climate", label: "Climate", color: "var(--series-2)" },
+  { key: "gearGuardAndOutlets", label: "Gear Guard & outlets", color: "var(--series-3)" },
+] as const;
+
+/** A window's uses that drew energy, in legend order, for the split bar. */
+export function parkedSegments(uses: { climate: number; system: number; gearGuardAndOutlets: number }) {
+  return PARKED_USES.map((u) => ({ ...u, kwh: uses[u.key] })).filter((s) => s.kwh >= 0.05);
 }

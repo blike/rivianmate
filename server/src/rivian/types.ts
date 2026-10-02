@@ -134,6 +134,9 @@ export interface LiveSessionData {
   timeRemaining?: LiveSessionValueRecord | null;
   totalChargedEnergy?: LiveSessionValueRecord | null;
   vehicleChargerState?: LiveSessionValueRecord | null;
+  /** Charge limit (%) and pack capacity (kWh), from Parallax when known. */
+  socLimit?: LiveSessionValueRecord | null;
+  batteryCapacityKwh?: LiveSessionValueRecord | null;
   /** Curve points pushed by the chargingSession subscription. */
   chart?: ChargingCurveSample[];
 }

@@ -13,9 +13,15 @@ export const RVM_CHARGING_GRAPH = "energy_edge_compute.graphs.charging_graph_glo
 export const PARALLAX_CHARGING_RVMS: readonly string[] = [
   RVM_CHARGING_GRAPH,
   "energy_edge_compute.graphs.charge_session_breakdown",
+  "energy_edge_compute.graphs.cold_weather_soc",
   "energy.high_voltage.battery_state",
+  "energy.high_voltage.battery_characteristics",
   "charging.session.status",
   "charging.session.time_estimation",
+  "charging.session.trip_target",
+  "charging.session.soc_slider",
+  "charging.session.notification",
+  "charging.schedule.time_window",
 ];
 
 export interface ParallaxMessage {
@@ -152,16 +158,41 @@ export const RVM_NETWORK = "vehicle.network.state";
 export const RVM_TRIP_INFO = "navigation.navigation_service.trip_info";
 export const RVM_TRIP_PROGRESS = "navigation.navigation_service.trip_progress";
 
+// Charging topics recorded while their formats are worked out. Only status
+// and time estimation have documented fields.
+export const RVM_BATTERY_CHARACTERISTICS = "energy.high_voltage.battery_characteristics";
+export const RVM_CHARGING_STATUS = "charging.session.status";
+export const RVM_TIME_ESTIMATION = "charging.session.time_estimation";
+export const RVM_TRIP_TARGET = "charging.session.trip_target";
+export const RVM_SOC_SLIDER = "charging.session.soc_slider";
+export const RVM_CHARGING_NOTIFICATION = "charging.session.notification";
+export const RVM_CHARGING_TIME_WINDOW = "charging.schedule.time_window";
+
+/**
+ * Topics whose every distinct payload is logged, not just the latest, so
+ * their fields can be decoded against how they change during a charge.
+ */
+export const PARALLAX_LOGGED_RVMS: readonly string[] = [
+  RVM_CHARGE_BREAKDOWN,
+  RVM_BATTERY_CHARACTERISTICS,
+  RVM_CHARGING_STATUS,
+  RVM_TIME_ESTIMATION,
+  RVM_TRIP_TARGET,
+  RVM_SOC_SLIDER,
+  RVM_CHARGING_NOTIFICATION,
+  RVM_CHARGING_TIME_WINDOW,
+];
+
 /** Topics the monitor subscribes to. */
 export const PARALLAX_MONITOR_RVMS: readonly string[] = [
   RVM_CHARGING_GRAPH,
-  RVM_CHARGE_BREAKDOWN,
   RVM_BATTERY_STATE,
   RVM_COLD_WEATHER,
   RVM_PARKED_ENERGY,
   RVM_NETWORK,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
+  ...PARALLAX_LOGGED_RVMS,
 ];
 
 /** Field accessors over one decoded message; wrong wire types read as absent. */
@@ -209,11 +240,18 @@ export interface ChargeBreakdown {
   chargingMinutes: number;
   rangeAddedKm: number | null;
   cost: { amount: number; currency: string } | null;
+  /** Live readings, updated every few seconds; stale once charging stops. */
+  powerKw: number;
+  rangeKmPerHour: number;
+  minutesRemaining: number;
 }
 
 /**
  * `charge_session_breakdown` (`k70/b`): 1 total kWh, 2 pack kWh, 5 thermal
- * kWh, 6 minutes charging, 8 range added (km), 11 cost (money). Rivian keeps
+ * kWh, 6 minutes charging, 7 minutes remaining, 8 range added (km), 9 power
+ * (kW), 10 range rate (km/h), 11 cost (money). Fields 7, 9 and 10 were
+ * matched against a live L2 charge (ramping to 7.4 kW, 31 km/h, 42 min left
+ * matching timeToEndOfCharge); 12 and 13 are unknown enums. Rivian keeps
  * the last session's breakdown and sends it on subscribe. Confirmed against
  * a home session: 35.8 = 34.4 + 1.4 kWh, 313 min, 162 km, matching Rivian's
  * history. Proto3 omits zeros, so missing numbers read as 0.
@@ -236,6 +274,9 @@ export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | 
     chargingMinutes: Math.max(0, m.int(6) ?? 0),
     rangeAddedKm: m.int(8),
     cost: currency ? { amount: units + nanos / 1e9, currency } : null,
+    powerKw: Math.max(0, f32(m.float(9)) ?? 0),
+    rangeKmPerHour: Math.max(0, m.int(10) ?? 0),
+    minutesRemaining: Math.max(0, m.int(7) ?? 0),
   };
 }
 
@@ -285,13 +326,17 @@ export interface ParkedEnergyWindow {
   minutes: number;
   kwh: number;
   rangeKm: number;
+  /** Where the energy went, kWh. */
+  uses: { climate: number; system: number; gearGuardAndOutlets: number };
 }
 
 /**
  * `parked_energy_distributions` (`k70/o`): repeated windows {1 total kWh,
- * 6 total range km, 11 window length in minutes}; 2–5 and 7–10 split them
- * into categories the docs don't name. 1440- and 480-minute windows drain
- * at the same rate, which supports reading 11 as minutes.
+ * 2–5 kWh by use, 6 total range km, 7–10 range by use, 11 window length in
+ * minutes}. Matched against the Rivian app's last-24 h parked usage: 2
+ * climate (0.4), 4 system (1.7), with Gear Guard and outlets at 0, so 3 and
+ * 5 are those two in an order not yet known. 1440- and 480-minute windows
+ * drain at the same rate, which supports reading 11 as minutes.
  */
 export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] {
   const m = decode(payloadBase64);
@@ -301,7 +346,13 @@ export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] 
     const w = m.message(field);
     const minutes = w?.int(11);
     if (!w || !minutes || minutes <= 0) continue;
-    windows.push({ minutes, kwh: f32(w.float(1)) ?? 0, rangeKm: f32(w.float(6)) ?? 0 });
+    const kwh = (n: number) => f32(w.float(n)) ?? 0;
+    windows.push({
+      minutes,
+      kwh: kwh(1),
+      rangeKm: kwh(6),
+      uses: { climate: kwh(2), system: kwh(4), gearGuardAndOutlets: f32(kwh(3) + kwh(5))! },
+    });
   }
   return windows;
 }
@@ -395,4 +446,56 @@ export function decodeTripProgress(payloadBase64: string): TripProgress | null {
     remainingKm: remainingM != null ? remainingM / 1000 : null,
     remainingS: m.double(5),
   };
+}
+
+export interface ChargingStatus {
+  /** Raw enum values; see decodeChargingStatus for those observed. */
+  plugConnection: number;
+  displayStatus: number;
+  evseType: number;
+}
+
+/**
+ * `charging.session.status` (`f70/v`): 1 plug connection status, 2 display
+ * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
+ * Seen on a home L2 charger: plug 2 while plugged in; display 5 scheduled,
+ * 2 ready, 3 charging (matching chargerState); EVSE type 1.
+ */
+export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  return {
+    plugConnection: m.int(1) ?? 0,
+    displayStatus: m.int(2) ?? 0,
+    evseType: m.int(3) ?? 0,
+  };
+}
+
+/**
+ * `charging.session.time_estimation` (`g70/e0`): 1 hold time (int32
+ * seconds, per the docs; not yet seen), 2 minutes remaining. Field 2 matched
+ * vehicle state's timeToEndOfCharge on a live charge. Empty when not
+ * charging.
+ */
+export function decodeTimeEstimation(
+  payloadBase64: string,
+): { holdTimeSeconds: number; minutesRemaining: number } | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  return { holdTimeSeconds: Math.max(0, m.int(1) ?? 0), minutesRemaining: Math.max(0, m.int(2) ?? 0) };
+}
+
+/** `charging.session.soc_slider`: 1 charge limit (%), matching batteryLimit. */
+export function decodeSocSlider(payloadBase64: string): { limit: number } | null {
+  const limit = decode(payloadBase64)?.int(1);
+  return limit != null && limit > 0 && limit <= 100 ? { limit } : null;
+}
+
+/**
+ * The legacy chargerState matching a status's display status, for the
+ * values seen so far (5 scheduled, 2 ready, 3 charging); null otherwise.
+ * Parallax reports these about 30 s before vehicle state does.
+ */
+export function chargerStateFromStatus(status: ChargingStatus): string | null {
+  return { 2: "charging_ready", 3: "charging_active", 5: "charging_scheduled" }[status.displayStatus] ?? null;
 }

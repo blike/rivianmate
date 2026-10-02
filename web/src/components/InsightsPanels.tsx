@@ -1,17 +1,17 @@
 import type { VehicleInsightsDto } from "@server/api-types.js";
 import { useUnits } from "../api/hooks.js";
-import { parkedWindows, signalLabel, wifiBand, windowLabel } from "../lib/insights.js";
+import { PARKED_USES, parkedSegments, parkedWindows, signalLabel, wifiBand, windowLabel } from "../lib/insights.js";
 import { fmt } from "../lib/state.js";
+import { Skeleton, useLoading } from "./loading.js";
 import { Row } from "./panels.js";
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-/** Battery temperatures, cold-weather impact and energy used while parked. */
+/** Battery temperatures and cold-weather impact. */
 export function BatteryEnergyPanel(props: { insights: VehicleInsightsDto | undefined }) {
   const u = useUnits();
-  const { cellTemps, cellTempsCurrent, coldWeather, parkedEnergy } = props.insights ?? {};
-  const windows = parkedWindows(parkedEnergy?.windows ?? []);
+  const { cellTemps, cellTempsCurrent, coldWeather } = props.insights ?? {};
   const cold = coldWeather && coldWeather.rangeImpactKm > 0 ? coldWeather : null;
 
   return (
@@ -35,17 +35,6 @@ export function BatteryEnergyPanel(props: { insights: VehicleInsightsDto | undef
                 : "None"
           }
         />
-        {windows.length > 0 ? (
-          windows.map((w) => (
-            <Row
-              key={w.minutes}
-              label={`Parked energy, ${windowLabel(w.minutes).toLowerCase()}`}
-              value={`${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}`}
-            />
-          ))
-        ) : (
-          <Row label="Parked energy" value="—" />
-        )}
       </dl>
       <p className="mt-2 text-xs text-[var(--text-muted)]">
         {cellTemps && !cellTempsCurrent
@@ -101,5 +90,65 @@ export function NavigationCard(props: { navigation: NonNullable<VehicleInsightsD
       </p>
       <p className="text-sm tabular-nums text-[var(--text-secondary)]">{facts.join(" · ")}</p>
     </section>
+  );
+}
+
+type ParkedWindow = NonNullable<VehicleInsightsDto["parkedEnergy"]>["windows"][number];
+
+/** Energy used while parked: one bar per window, split by use. */
+export function ParkedEnergyPanel(props: { insights: VehicleInsightsDto | undefined }) {
+  const u = useUnits();
+  const loading = useLoading();
+  const windows = parkedWindows(props.insights?.parkedEnergy?.windows ?? []);
+  if (!loading && windows.length === 0) {
+    return <p className="text-sm text-[var(--text-muted)]">No parked energy reported yet.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {(loading ? [null, null] : windows).map((w, i) => (
+        <div key={w?.minutes ?? i}>
+          <div className="mb-1.5 flex items-baseline justify-between gap-4 text-sm">
+            <span className="text-[var(--text-secondary)]">
+              {w ? windowLabel(w.minutes) : <Skeleton className="w-[5em]" />}
+            </span>
+            <span className="tabular-nums">
+              {w ? `${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}` : <Skeleton className="w-[6em]" />}
+            </span>
+          </div>
+          <ParkedBar window={w} />
+        </div>
+      ))}
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-muted)]">
+        {PARKED_USES.map((use) => (
+          <li key={use.key} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ background: use.color }} />
+            {use.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ParkedBar(props: { window: ParkedWindow | null }) {
+  const segments = props.window ? parkedSegments(props.window.uses) : [];
+  // Shares of the bar, summing to 100: flex-grow values summing below 1
+  // would leave part of the bar empty.
+  const total = segments.reduce((sum, s) => sum + s.kwh, 0);
+  return (
+    <div
+      className="parked-bar"
+      role="img"
+      aria-label={segments.map((s) => `${s.label} ${fmt(s.kwh, 1)} kWh`).join(", ") || "No parked energy used"}
+    >
+      {segments.map((s) => (
+        <div
+          key={s.key}
+          className="parked-bar__segment"
+          style={{ flexGrow: (s.kwh / total) * 100, flexBasis: 0, background: s.color }}
+          title={`${s.label}: ${fmt(s.kwh, 1)} kWh`}
+        />
+      ))}
+    </div>
   );
 }

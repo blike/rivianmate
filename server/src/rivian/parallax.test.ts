@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { b64, double, float, graphBar, int, message, string } from "../testing/protobuf.js";
 import {
+  chargerStateFromStatus,
   decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
   decodeChargingGraphBar,
+  decodeChargingStatus,
   decodeColdWeather,
   decodeNetwork,
   decodeParkedEnergy,
+  decodeSocSlider,
+  decodeTimeEstimation,
   decodeTripInfo,
   decodeTripProgress,
   readProtoFields,
@@ -71,6 +75,21 @@ describe("decodeChargeBreakdown", () => {
     ]);
     expect(decodeChargeBreakdown(payload)).toEqual({
       totalKwh: 35.8, packKwh: 34.4, thermalKwh: 1.4, chargingMinutes: 313, rangeAddedKm: 162, cost: null,
+      powerKw: 0, rangeKmPerHour: 0, minutesRemaining: 0,
+    });
+  });
+
+  it("reads live power, range rate and time left from a charge in progress", () => {
+    // Captured from a home L2 charge at 90.3% with a 95% limit.
+    expect(decodeChargeBreakdown("DZmZJUIVMzMfQi3NzMw/MOsCOCpAwgFNzczsQFAfWgBgAWgD")).toMatchObject({
+      totalKwh: 41.4,
+      packKwh: 39.8,
+      thermalKwh: 1.6,
+      chargingMinutes: 363,
+      minutesRemaining: 42,
+      rangeAddedKm: 194,
+      powerKw: 7.4,
+      rangeKmPerHour: 31,
     });
   });
 
@@ -106,10 +125,17 @@ describe("decodeParkedEnergy", () => {
     const window = (kwh: number, km: number, minutes: number) =>
       [...float(1, kwh), ...float(2, 0.3), ...float(4, 0.8), ...float(6, km), ...float(7, 1.449), ...float(9, 3.865), ...int(11, minutes)];
     const payload = b64([...message(1, window(1.1, 5.314, 1440)), ...message(2, window(0.4, 1.932, 480))]);
+    const uses = { climate: 0.3, system: 0.8, gearGuardAndOutlets: 0 };
     expect(decodeParkedEnergy(payload)).toEqual([
-      { minutes: 1440, kwh: 1.1, rangeKm: 5.314 },
-      { minutes: 480, kwh: 0.4, rangeKm: 1.932 },
+      { minutes: 1440, kwh: 1.1, rangeKm: 5.314, uses },
+      { minutes: 480, kwh: 0.4, rangeKm: 1.932, uses },
     ]);
+  });
+
+  it("splits energy by use, matching the Rivian app", () => {
+    // Captured; the app showed climate 0.4, system 1.7, Gear Guard and outlets 0 kWh.
+    const [day] = decodeParkedEnergy("CiENZ2YGQBXNzMw+JZuZ2T81oFEiQT3PV/c/TaZmA0FYoAsSIQ3OzEw/Fc3MzD0lNDMzPzXQV3dAPc9X9z5N1mxYQFjgAxoCWB0=");
+    expect(day?.uses).toEqual({ climate: 0.4, system: 1.7, gearGuardAndOutlets: 0 });
   });
 });
 
@@ -174,5 +200,46 @@ describe("decodeTripInfo / decodeTripProgress", () => {
       ...message(6, [...message(1, [...double(1, 40.5), ...double(2, -89)]), ...float(2, 7.9)]),
     ]);
     expect(decodeTripProgress(progress)).toEqual({ etaMs: 1790869380000, remainingKm: 30.506, remainingS: 2220 });
+  });
+});
+
+describe("decodeChargingStatus", () => {
+  it("reads the enums, with omitted ones as 0", () => {
+    expect(decodeChargingStatus(b64([...int(1, 2), ...int(3, 1)]))).toEqual({
+      plugConnection: 2,
+      displayStatus: 0,
+      evseType: 1,
+    });
+    expect(decodeChargingStatus("")).toBeNull();
+  });
+});
+
+describe("decodeTimeEstimation", () => {
+  it("reads the hold time in seconds", () => {
+    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({ holdTimeSeconds: 5400, minutesRemaining: 0 });
+  });
+
+  it("reads minutes remaining from a live charge", () => {
+    expect(decodeTimeEstimation(b64(int(2, 42)))).toEqual({ holdTimeSeconds: 0, minutesRemaining: 42 });
+    expect(decodeTimeEstimation("")).toBeNull();
+  });
+});
+
+describe("decodeSocSlider", () => {
+  it("reads the charge limit", () => {
+    expect(decodeSocSlider("CF8=")).toEqual({ limit: 95 }); // captured
+    expect(decodeSocSlider("")).toBeNull();
+  });
+});
+
+describe("chargerStateFromStatus", () => {
+  it("maps the display statuses seen on a live charge", () => {
+    // Captured: scheduled, ready, then charging.
+    expect(["CAIQBRgB", "CAIQAhgB", "CAIQAxgB"].map((p) => chargerStateFromStatus(decodeChargingStatus(p)!))).toEqual([
+      "charging_scheduled",
+      "charging_ready",
+      "charging_active",
+    ]);
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
   });
 });

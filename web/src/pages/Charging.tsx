@@ -38,6 +38,7 @@ export function Charging(props: { vehicleId: string }) {
   });
 
   const isLive = live?.vehicleChargerState?.value === "charging_active";
+  const secondsLeft = num(live?.timeRemaining?.value);
   // The live session arrives over SSE just after the page loads; if the
   // vehicle state already says it's charging, hold its place meanwhile.
   const liveExpected =
@@ -86,19 +87,24 @@ export function Charging(props: { vehicleId: string }) {
       {(isLive || liveExpected) && (
         <LoadingScope loading={!isLive}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatCard label="Power" value={`${fmt(num(live?.power?.value), 1)} kW`} />
-            <StatCard label="State of charge" value={`${fmt(num(live?.soc?.value), 0)}%`} />
+            <StatCard
+              label="Power"
+              value={`${fmt(num(live?.power?.value), 1)} kW`}
+              sub={live?.kilometersChargedPerHour ? u.formatChargeRate(num(live.kilometersChargedPerHour.value)) : undefined}
+            />
+            <StatCard
+              label="State of charge"
+              value={`${fmt(num(live?.soc?.value), 0)}%`}
+              sub={live?.socLimit ? `Limit ${fmt(num(live.socLimit.value), 0)}%` : undefined}
+            />
             <StatCard
               label="Energy added"
               value={`${fmt(num(live?.totalChargedEnergy?.value), 1)} kWh`}
+              sub={live?.rangeAddedThisSession ? `${u.formatDistance(num(live.rangeAddedThisSession.value))} of range` : undefined}
             />
             <StatCard
               label="Time remaining"
-              value={
-                live?.timeRemaining?.value != null
-                  ? `${fmt(num(live.timeRemaining.value)! / 60, 0)} min`
-                  : "—"
-              }
+              value={secondsLeft != null ? fmtSeconds(secondsLeft) : "—"}
             />
           </div>
         </LoadingScope>

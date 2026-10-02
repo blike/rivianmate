@@ -265,6 +265,28 @@ export const parallaxLatest = pgTable(
 );
 
 /**
+ * Every distinct payload of the logged Parallax topics, kept for 30 days so
+ * undocumented fields can be decoded against how they change.
+ */
+export const parallaxMessages = pgTable(
+  "parallax_messages",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    vehicleId: text("vehicle_id")
+      .notNull()
+      .references(() => vehicles.id),
+    rvm: text("rvm").notNull(),
+    payload: text("payload").notNull(),
+    messageAt: timestamp("message_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("parallax_messages_vehicle_rvm_idx").on(t.vehicleId, t.rvm, t.receivedAt),
+    index("parallax_messages_received_idx").on(t.receivedAt),
+  ],
+);
+
+/**
  * Reverse-geocoding results by rounded coordinates (~11 m), so a place is
  * looked up once. A null place means nothing was found there.
  */
