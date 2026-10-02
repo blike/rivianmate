@@ -182,6 +182,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         updatedAt: now,
       },
       vehicleChargerState: { value: "charging_active", updatedAt: now },
+      socLimit: { value: 85, updatedAt: now },
     };
   }
 

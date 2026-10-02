@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { b64, double, float, graphBar, int, message, string } from "../testing/protobuf.js";
 import {
+  chargerStateFromStatus,
   decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
@@ -9,6 +10,7 @@ import {
   decodeColdWeather,
   decodeNetwork,
   decodeParkedEnergy,
+  decodeSocSlider,
   decodeTimeEstimation,
   decodeTripInfo,
   decodeTripProgress,
@@ -213,5 +215,24 @@ describe("decodeTimeEstimation", () => {
   it("reads minutes remaining from a live charge", () => {
     expect(decodeTimeEstimation(b64(int(2, 42)))).toEqual({ holdTimeSeconds: 0, minutesRemaining: 42 });
     expect(decodeTimeEstimation("")).toBeNull();
+  });
+});
+
+describe("decodeSocSlider", () => {
+  it("reads the charge limit", () => {
+    expect(decodeSocSlider("CF8=")).toEqual({ limit: 95 }); // captured
+    expect(decodeSocSlider("")).toBeNull();
+  });
+});
+
+describe("chargerStateFromStatus", () => {
+  it("maps the display statuses seen on a live charge", () => {
+    // Captured: scheduled, ready, then charging.
+    expect(["CAIQBRgB", "CAIQAhgB", "CAIQAxgB"].map((p) => chargerStateFromStatus(decodeChargingStatus(p)!))).toEqual([
+      "charging_scheduled",
+      "charging_ready",
+      "charging_active",
+    ]);
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
   });
 });

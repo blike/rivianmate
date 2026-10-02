@@ -10,7 +10,7 @@ import { createDb, runMigrations } from "../db/client.js";
 import { chargingCurvePoints, chargingSessions, vehicles } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { LiveSessionData, VehicleState } from "../rivian/types.js";
-import { RVM_CHARGE_BREAKDOWN, RVM_CHARGING_GRAPH } from "../rivian/parallax.js";
+import { RVM_CHARGE_BREAKDOWN, RVM_CHARGING_GRAPH, RVM_SOC_SLIDER, RVM_TIME_ESTIMATION } from "../rivian/parallax.js";
 import { b64, chargingGraph, float, graphBar, int } from "../testing/protobuf.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { LiveBus } from "./live-bus.js";
@@ -286,6 +286,28 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     await m.ingest("v1", null); // drains the queue
 
     expect(bus.latestChargingSession("v1")?.power?.value).toBeCloseTo(5.2);
+    m.stop();
+  });
+
+  it("takes time left and the limit from Parallax over vehicle state", async () => {
+    const bus = new LiveBus();
+    const m = monitor(bus);
+    await m.start();
+    m.noteState("v1", {
+      ...vehicle(CHARGING, "charging_active", 90.3, "2026-10-01T07:00:00Z"),
+      timeToEndOfCharge: { value: 45, timeStamp: "2026-10-01T07:00:00Z" },
+    });
+    await m.ingestParallax("v1", { rvm: RVM_TIME_ESTIMATION, timestamp: null, payload: b64(int(2, 42)) });
+    await m.ingestParallax("v1", { rvm: RVM_SOC_SLIDER, timestamp: null, payload: b64(int(1, 95)) });
+    await m.ingest("v1", null); // drains the queue
+    let live = bus.latestChargingSession("v1");
+    expect(live?.timeRemaining?.value).toBe(42 * 60);
+    expect(live?.socLimit?.value).toBe(95);
+
+    await m.ingestParallax("v1", { rvm: RVM_TIME_ESTIMATION, timestamp: null, payload: "" });
+    await m.ingest("v1", null);
+    live = bus.latestChargingSession("v1");
+    expect(live?.timeRemaining).toBeNull();
     m.stop();
   });
 

@@ -10,10 +10,19 @@ import type { RivianApi } from "../rivian/client.js";
 import {
   type ChargeBreakdown,
   type ParallaxMessage,
+  RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,
+  RVM_CHARGING_STATUS,
   RVM_CHARGING_GRAPH,
+  RVM_SOC_SLIDER,
+  RVM_TIME_ESTIMATION,
+  decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
+  decodeChargingStatus,
+  chargerStateFromStatus,
+  decodeSocSlider,
+  decodeTimeEstimation,
 } from "../rivian/parallax.js";
 import {
   LiveSessionData,
@@ -22,7 +31,7 @@ import {
   type VehicleState,
 } from "../rivian/types.js";
 import { isChargingState, stampedAt } from "./charging-time.js";
-import { type DerivedChargeInputs, derivedLiveSession } from "./derived-session.js";
+import { type DerivedChargeInputs, currentChargerState, derivedLiveSession, emptyChargeInputs } from "./derived-session.js";
 import { nearbySpot } from "./home-charging.js";
 import type { LiveBus } from "./live-bus.js";
 import { type ResumableSession, closeTime } from "./session-resume.js";
@@ -134,11 +143,18 @@ export class ChargingMonitor {
     const status = stateString(state, "chargerStatus");
     if (status === null) return;
     const now = this.now();
+    const at = new Date(now).toISOString();
+    const soc = stateNumber(state, "batteryLevel");
+    const chargerState = stateString(state, "chargerState");
+    const previous = this.derived.get(vehicleId);
     this.updateDerived(vehicleId, {
-      chargerState: stateString(state, "chargerState"),
-      soc: stateNumber(state, "batteryLevel"),
+      chargerState,
+      soc,
+      // Re-reports of the same value don't make it newer than Parallax's.
+      ...(chargerState !== previous?.chargerState ? { chargerStateAt: at } : {}),
+      ...(soc !== previous?.soc ? { socAt: at } : {}),
       minutesLeft: stateNumber(state, "timeToEndOfCharge"),
-      stateAt: new Date(now).toISOString(),
+      stateAt: at,
     });
     this.applyPlugReading(vehicleId, {
       plugged: status !== "chrgr_sts_not_connected",
@@ -178,6 +194,31 @@ export class ChargingMonitor {
    * session they fall within.
    */
   ingestParallax(vehicleId: string, message: ParallaxMessage): Promise<void> {
+    const at = new Date(this.now()).toISOString();
+    if (message.rvm === RVM_TIME_ESTIMATION) {
+      // Empty once charging stops; null then means no estimate.
+      const minutes = decodeTimeEstimation(message.payload)?.minutesRemaining || null;
+      this.updateDerived(vehicleId, { parallaxMinutesLeft: minutes, parallaxMinutesAt: at });
+      return Promise.resolve();
+    }
+    if (message.rvm === RVM_BATTERY_STATE) {
+      const battery = decodeBatteryState(message.payload);
+      if (battery?.soc != null) {
+        this.updateDerived(vehicleId, { parallaxSoc: battery.soc, parallaxSocAt: at, capacityKwh: battery.capacityKwh });
+      }
+      return Promise.resolve();
+    }
+    if (message.rvm === RVM_CHARGING_STATUS) {
+      const status = decodeChargingStatus(message.payload);
+      const state = status && chargerStateFromStatus(status);
+      if (state) this.updateDerived(vehicleId, { parallaxChargerState: state, parallaxChargerStateAt: at });
+      return Promise.resolve();
+    }
+    if (message.rvm === RVM_SOC_SLIDER) {
+      const slider = decodeSocSlider(message.payload);
+      if (slider) this.updateDerived(vehicleId, { socLimit: slider.limit, socLimitAt: at });
+      return Promise.resolve();
+    }
     if (message.rvm === RVM_CHARGE_BREAKDOWN) {
       const breakdown = decodeChargeBreakdown(message.payload);
       if (!breakdown || breakdown.totalKwh <= 0) return Promise.resolve();
@@ -242,9 +283,12 @@ export class ChargingMonitor {
         })
         .where(eq(chargingSessions.id, open.id));
       const at = new Date(this.now()).toISOString();
-      // Live power only means something while charging; otherwise it's the last reading.
-      const live = isChargingState(this.derived.get(vehicleId)?.chargerState ?? null) ? { powerKw: b.powerKw, powerAt: at } : {};
-      this.updateDerived(vehicleId, { energyKwh: b.totalKwh, energyAt: at, ...live });
+      // Live readings only mean something while charging; otherwise they're the last ones.
+      const inputs = this.derived.get(vehicleId);
+      const live = inputs && isChargingState(currentChargerState(inputs))
+        ? { powerKw: b.powerKw, powerAt: at, rangeKmPerHour: b.rangeKmPerHour, rateAt: at }
+        : {};
+      this.updateDerived(vehicleId, { energyKwh: b.totalKwh, energyAt: at, rangeAddedKm: b.rangeAddedKm, ...live });
       return;
     }
 
@@ -319,16 +363,7 @@ export class ChargingMonitor {
   }
 
   private updateDerived(vehicleId: string, changes: Partial<DerivedChargeInputs>): void {
-    const current = this.derived.get(vehicleId) ?? {
-      chargerState: null,
-      soc: null,
-      minutesLeft: null,
-      stateAt: new Date(this.now()).toISOString(),
-      powerKw: null,
-      powerAt: null,
-      energyKwh: null,
-      energyAt: null,
-    };
+    const current = this.derived.get(vehicleId) ?? emptyChargeInputs(new Date(this.now()).toISOString());
     this.derived.set(vehicleId, { ...current, ...changes });
     // After queued work, so a plug-in has opened its session first.
     void this.enqueue(vehicleId, async () => this.emitDerived(vehicleId));
@@ -344,7 +379,9 @@ export class ChargingMonitor {
     const inputs = this.derived.get(vehicleId);
     const session = open && inputs ? derivedLiveSession(open.startedAt, inputs) : null;
     // Compare without timestamps: each state report re-stamps them.
-    const signature = JSON.stringify(session && { ...session, soc: session.soc?.value, timeRemaining: session.timeRemaining?.value, vehicleChargerState: session.vehicleChargerState?.value });
+    const signature = JSON.stringify(session, (_key, v: unknown) =>
+      v && typeof v === "object" && "updatedAt" in v && "value" in v ? v.value : v,
+    );
     if (this.derivedSent.get(vehicleId) === signature) return;
     this.derivedSent.set(vehicleId, signature);
     this.bus.emitChargingSession(vehicleId, session);

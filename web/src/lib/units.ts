@@ -47,6 +47,9 @@ export function unitFormatter(units: UnitPreferences) {
     /** `kmh` in km/h (same conversion factor as distance). */
     formatSpeed: (kmh: number | null | undefined, digits = 0) =>
       kmh == null ? "—" : `${fmt(distance(kmh), digits)} ${speedUnit}`,
+    /** Range added per hour of charging, e.g. "+19 mi/h"; `kmh` in km/h. */
+    formatChargeRate: (kmh: number | null | undefined) =>
+      kmh == null ? "—" : `+${fmt(distance(kmh), 0)} ${distanceUnit}/h`,
     formatPressure: (bar: number | null | undefined) =>
       bar == null ? "—" : `${fmt(pressure(bar), miles ? 0 : 2)} ${pressureUnit}`,
     /** `m` in metres; feet when distances are in miles. */

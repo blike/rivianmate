@@ -474,3 +474,18 @@ export function decodeTimeEstimation(
   if (!m) return null;
   return { holdTimeSeconds: Math.max(0, m.int(1) ?? 0), minutesRemaining: Math.max(0, m.int(2) ?? 0) };
 }
+
+/** `charging.session.soc_slider`: 1 charge limit (%), matching batteryLimit. */
+export function decodeSocSlider(payloadBase64: string): { limit: number } | null {
+  const limit = decode(payloadBase64)?.int(1);
+  return limit != null && limit > 0 && limit <= 100 ? { limit } : null;
+}
+
+/**
+ * The legacy chargerState matching a status's display status, for the
+ * values seen so far (5 scheduled, 2 ready, 3 charging); null otherwise.
+ * Parallax reports these about 30 s before vehicle state does.
+ */
+export function chargerStateFromStatus(status: ChargingStatus): string | null {
+  return { 2: "charging_ready", 3: "charging_active", 5: "charging_scheduled" }[status.displayStatus] ?? null;
+}
