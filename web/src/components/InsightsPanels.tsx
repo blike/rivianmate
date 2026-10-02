@@ -3,6 +3,7 @@ import { useUnits } from "../api/hooks.js";
 import { PARKED_USES, parkedSegments, parkedWindows, signalLabel, wifiBand, windowLabel } from "../lib/insights.js";
 import { fmt } from "../lib/state.js";
 import { Skeleton, useLoading } from "./loading.js";
+import { SplitBar, SplitLegend } from "./SplitBar.js";
 import { Row } from "./panels.js";
 
 const time = (iso: string) =>
@@ -93,8 +94,6 @@ export function NavigationCard(props: { navigation: NonNullable<VehicleInsightsD
   );
 }
 
-type ParkedWindow = NonNullable<VehicleInsightsDto["parkedEnergy"]>["windows"][number];
-
 /** Energy used while parked: one bar per window, split by use. */
 export function ParkedEnergyPanel(props: { insights: VehicleInsightsDto | undefined }) {
   const u = useUnits();
@@ -115,40 +114,10 @@ export function ParkedEnergyPanel(props: { insights: VehicleInsightsDto | undefi
               {w ? `${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}` : <Skeleton className="w-[6em]" />}
             </span>
           </div>
-          <ParkedBar window={w} />
+          <SplitBar segments={w ? parkedSegments(w.uses) : []} emptyLabel="No parked energy used" />
         </div>
       ))}
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-muted)]">
-        {PARKED_USES.map((use) => (
-          <li key={use.key} className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ background: use.color }} />
-            {use.label}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ParkedBar(props: { window: ParkedWindow | null }) {
-  const segments = props.window ? parkedSegments(props.window.uses) : [];
-  // Shares of the bar, summing to 100: flex-grow values summing below 1
-  // would leave part of the bar empty.
-  const total = segments.reduce((sum, s) => sum + s.kwh, 0);
-  return (
-    <div
-      className="parked-bar"
-      role="img"
-      aria-label={segments.map((s) => `${s.label} ${fmt(s.kwh, 1)} kWh`).join(", ") || "No parked energy used"}
-    >
-      {segments.map((s) => (
-        <div
-          key={s.key}
-          className="parked-bar__segment"
-          style={{ flexGrow: (s.kwh / total) * 100, flexBasis: 0, background: s.color }}
-          title={`${s.label}: ${fmt(s.kwh, 1)} kWh`}
-        />
-      ))}
+      <SplitLegend items={[...PARKED_USES]} />
     </div>
   );
 }
