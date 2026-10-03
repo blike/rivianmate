@@ -1,0 +1,67 @@
+import { describe, expect, it } from "vitest";
+import { type CurvePoint, type CurveSource, curveForDisplay } from "./charging-curve.js";
+
+const p = (source: CurveSource, ts: string, powerKw: number | null, soc: number | null): CurvePoint => ({
+  source,
+  ts: new Date(ts),
+  powerKw,
+  soc,
+});
+
+describe("curveForDisplay", () => {
+  it("drops points whose SoC fell further than charging allows (a real DC session)", () => {
+    // Recorded before sources were kept apart: stray 0 kW points at an
+    // older SoC interleaved with the real readings.
+    const rows = [
+      p("legacy", "2026-10-02T23:10:56.908Z", 0, 58),
+      p("legacy", "2026-10-02T23:10:57.708Z", 124.7, 63),
+      p("legacy", "2026-10-02T23:11:01.172Z", 0, 57),
+      p("legacy", "2026-10-02T23:11:01.572Z", 124.7, 64),
+      p("legacy", "2026-10-02T23:11:05.840Z", 124.7, 64),
+      p("legacy", "2026-10-02T23:11:07.572Z", 0, 55),
+      p("legacy", "2026-10-02T23:11:16.248Z", 0, 54),
+      p("legacy", "2026-10-02T23:11:22.508Z", 0, 55),
+      p("legacy", "2026-10-02T23:12:25.038Z", 109.8, 66),
+      p("legacy", "2026-10-02T23:12:27.208Z", 109.8, 66),
+    ];
+    const curve = curveForDisplay(rows);
+    expect(curve.map((r) => r.powerKw)).toEqual([0, 124.7, 124.7, 124.7, 109.8, 109.8]);
+    expect(curve.map((r) => r.soc)).toEqual([58, 63, 64, 64, 66, 66]);
+  });
+
+  it("draws one source, never an interleaving, preferring the vehicle's graph", () => {
+    const rows = [
+      p("push_live", "2026-10-02T23:00:01Z", 120, null),
+      p("graph", "2026-10-02T23:00:00Z", 118, 50),
+      p("push_chart", "2026-10-02T23:00:30Z", 119, 51),
+      p("graph", "2026-10-02T23:01:00Z", 117, 52),
+      p("push_live", "2026-10-02T23:01:01Z", 121, null),
+    ];
+    const curve = curveForDisplay(rows);
+    expect(curve.every((r) => r.source === "graph")).toBe(true);
+    expect(curve).toHaveLength(2);
+  });
+
+  it("falls back when a source has no power readings", () => {
+    const rows = [
+      p("graph", "2026-10-02T23:00:00Z", null, 50),
+      p("graph", "2026-10-02T23:01:00Z", null, 51),
+      p("push_live", "2026-10-02T23:00:10Z", 120, null),
+      p("push_live", "2026-10-02T23:00:40Z", 118, null),
+    ];
+    expect(curveForDisplay(rows).map((r) => r.source)).toEqual(["push_live", "push_live"]);
+  });
+
+  it("keeps SoC-only series when nothing has power, and allows a slow drop over time", () => {
+    const rows = [
+      p("graph", "2026-10-02T20:00:00Z", null, 80),
+      // Hours later, plugged in but idle, the pack has drifted down: real.
+      p("graph", "2026-10-02T23:00:00Z", null, 76),
+    ];
+    expect(curveForDisplay(rows).map((r) => r.soc)).toEqual([80, 76]);
+  });
+
+  it("is empty without points", () => {
+    expect(curveForDisplay([])).toEqual([]);
+  });
+});

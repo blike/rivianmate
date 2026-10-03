@@ -23,6 +23,7 @@ import {
   wallboxes,
 } from "../db/schema.js";
 import type { VehicleState } from "../rivian/types.js";
+import { curveForDisplay } from "../services/charging-curve.js";
 import { socReadingsBetween } from "../services/charging-time.js";
 
 const patchSchema = z.object({
@@ -56,9 +57,10 @@ export async function chargingRoutes(
         .from(chargingCurvePoints)
         .where(eq(chargingCurvePoints.sessionId, sessionId))
         .orderBy(chargingCurvePoints.ts)
-        .limit(5000);
-      if (rows.length > 0) {
-        return rows.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc }));
+        .limit(20_000);
+      const curve = curveForDisplay(rows);
+      if (curve.length > 0) {
+        return curve.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc }));
       }
       return socCurveFromState(ctx, sessionId);
     },
