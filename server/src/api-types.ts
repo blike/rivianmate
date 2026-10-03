@@ -167,6 +167,8 @@ export interface ChargingCurvePointDto {
   ts: string;
   powerKw: number | null;
   soc: number | null;
+  /** The vehicle's forecast for a charge in progress, not a reading. */
+  projected?: boolean;
 }
 
 export interface ChargingSessionDto {

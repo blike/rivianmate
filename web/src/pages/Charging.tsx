@@ -66,17 +66,27 @@ export function Charging(props: { vehicleId: string }) {
     // Keep the previous curve on screen (dimmed) while the next one loads.
     placeholderData: keepPreviousData,
   });
-  // Minutes since plug-in (or the first point, if earlier).
+  // Minutes since plug-in (or the first point, if earlier). The vehicle's
+  // forecast for a charge in progress is its own dashed series, starting
+  // from the last recorded point so the two lines meet.
   const curveData = useMemo(() => {
     const points = curve ?? [];
     const plugIn = curveSession ? Date.parse(curveSession.startedAt) : Number.POSITIVE_INFINITY;
     const origin = Math.min(plugIn, points[0] ? Date.parse(points[0].ts) : plugIn);
-    return points.map((p) => ({
+    // Recorded points come first, then the forecast.
+    const lastRecorded = points.filter((p) => !p.projected).length - 1;
+    const hasForecast = points.some((p) => p.projected);
+    return points.map((p, i) => ({
       minutes: (Date.parse(p.ts) - origin) / 60_000,
-      power: p.powerKw,
-      soc: p.soc,
+      power: p.projected ? null : p.powerKw,
+      soc: p.projected ? null : p.soc,
+      forecast: p.projected ? p.soc : hasForecast && i === lastRecorded ? p.soc : null,
     }));
   }, [curve, curveSession]);
+  const curveHasForecast = curve?.some((p) => p.projected) ?? false;
+  const forecastSeries = curveHasForecast
+    ? [{ key: "forecast", label: "Forecast", color: "var(--accent)", mark: "line" as const, dashed: true, unit: "%", digits: 0 }]
+    : [];
   // Without power, the curve is battery level from recorded vehicle state.
   const curveHasPower = curveData.some((p) => p.power != null);
   const curveMinutes = curveData.at(-1)?.minutes ?? 0;
@@ -159,6 +169,7 @@ export function Charging(props: { vehicleId: string }) {
                     series={[
                       { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
                       { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
+                      ...forecastSeries.map((f) => ({ ...f, right: true })),
                     ]}
                   />
                 ) : (
@@ -170,6 +181,7 @@ export function Charging(props: { vehicleId: string }) {
                     leftDomain={[0, 100]}
                     series={[
                       { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", unit: "%", digits: 0, dots: true },
+                      ...forecastSeries,
                     ]}
                   />
                 )}
@@ -178,6 +190,9 @@ export function Charging(props: { vehicleId: string }) {
                 <EnergySplit packKwh={curveSession.packKwh} thermalKwh={curveSession.thermalKwh} />
               )}
               <div className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
+                {curveHasForecast && (
+                  <p>Dashed: the vehicle's forecast to the end of this charge.</p>
+                )}
                 {!curveHasPower && curveData.length > 1 && (
                   <p>
                     Battery level from recorded vehicle state. Rivian didn't provide power data for this

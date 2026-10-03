@@ -358,6 +358,56 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     expect(points.filter((pt) => pt.source === "graph").map((pt) => [pt.powerKw, pt.soc])).toEqual([[null, 57]]);
   });
 
+  it("keeps the graph's forecast apart from its readings, and drops it when the charge ends", async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 54);
+    const t = Date.parse("2026-10-01T11:00:00Z");
+    const min = 60_000;
+    const graph = (sentAt: number, ...bars: number[][]) =>
+      m.ingestParallax("v1", { rvm: RVM_CHARGING_GRAPH, timestamp: sentAt, payload: chargingGraph(...bars) });
+    const sources = async () =>
+      (await handle.db.select().from(chargingCurvePoints).orderBy(chargingCurvePoints.ts)).map((r) => [
+        r.source,
+        (r.ts.getTime() - t) / min,
+        r.soc,
+      ]);
+
+    // Sent 6 minutes in: two bars so far, then the vehicle's projection.
+    clock = t + 6 * min;
+    await graph(
+      t + 6 * min,
+      graphBar(54, 107, t, t + 3 * min),
+      graphBar(57, 111, t + 3 * min, t + 6 * min),
+      [...int(1, 63), ...int(3, t + 10 * min), ...int(4, t + 14 * min), ...int(6, 3)],
+      [...int(1, 70), ...int(3, t + 14 * min), ...int(4, t + 17 * min), ...int(6, 3)],
+    );
+    await m.ingest("v1", null); // drains the queue
+    expect(await sources()).toEqual([
+      ["graph", 0, 54],
+      ["graph", 3, 57],
+      ["forecast", 10, 63],
+      ["forecast", 14, 70],
+    ]);
+
+    // The next graph replaces the forecast.
+    clock = t + 9 * min;
+    await graph(
+      t + 9 * min,
+      graphBar(54, 107, t, t + 3 * min),
+      graphBar(57, 111, t + 3 * min, t + 6 * min),
+      graphBar(60, 99, t + 6 * min, t + 9 * min),
+      [...int(1, 66), ...int(3, t + 12 * min), ...int(6, 3)],
+    );
+    await m.ingest("v1", null);
+    expect((await sources()).filter(([s]) => s === "forecast")).toEqual([["forecast", 12, 66]]);
+
+    await note(m, "2026-10-01T11:20:00Z", UNPLUGGED, "charging_complete", 72);
+    expect((await sources()).filter(([s]) => s === "forecast")).toEqual([]);
+    expect((await sources()).filter(([s]) => s === "graph")).toHaveLength(3);
+    m.stop();
+  });
+
   it("resumes a session left open by a restart when the same charge continues", async () => {
     const id = await leftover("2026-10-01T11:00:00Z", [
       ["2026-10-01T11:10:00Z", 11],
