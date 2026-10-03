@@ -8,6 +8,7 @@ import { SchedulesPanel } from "../components/SchedulesPanel.js";
 import { SplitBar, SplitLegend } from "../components/SplitBar.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { chargerLabel, chargingSecondsNow, formatMoney, socRange } from "../lib/charging.js";
+import { smoothByTime, smoothingWindowMinutes } from "../lib/smoothing.js";
 import { fmt, fmtDuration, fmtSeconds, sv, titleCase } from "../lib/state.js";
 import { useRemainingHeight } from "../lib/useRemainingHeight.js";
 
@@ -68,20 +69,34 @@ export function Charging(props: { vehicleId: string }) {
   });
   // Minutes since plug-in (or the first point, if earlier). The vehicle's
   // forecast for a charge in progress is its own dashed series, starting
-  // from the last recorded point so the two lines meet.
+  // from the last recorded point so the two lines meet. Readings are
+  // smoothed for display, recorded and forecast each on their own, so
+  // sampling jitter and whole-percent SoC steps don't zig-zag the lines.
   const curveData = useMemo(() => {
     const points = curve ?? [];
     const plugIn = curveSession ? Date.parse(curveSession.startedAt) : Number.POSITIVE_INFINITY;
     const origin = Math.min(plugIn, points[0] ? Date.parse(points[0].ts) : plugIn);
+    const minutes = points.map((p) => (Date.parse(p.ts) - origin) / 60_000);
     // Recorded points come first, then the forecast.
-    const lastRecorded = points.filter((p) => !p.projected).length - 1;
-    const hasForecast = points.some((p) => p.projected);
-    return points.map((p, i) => ({
-      minutes: (Date.parse(p.ts) - origin) / 60_000,
-      power: p.projected ? null : p.powerKw,
-      soc: p.projected ? null : p.soc,
-      forecast: p.projected ? p.soc : hasForecast && i === lastRecorded ? p.soc : null,
-    }));
+    const recordedCount = points.filter((p) => !p.projected).length;
+    const window = smoothingWindowMinutes((minutes.at(-1) ?? 0) - (minutes[0] ?? 0));
+    const recordedMinutes = minutes.slice(0, recordedCount);
+    const recorded = points.slice(0, recordedCount);
+    const power = smoothByTime(recordedMinutes, recorded.map((p) => p.powerKw), window);
+    const soc = smoothByTime(recordedMinutes, recorded.map((p) => p.soc), window);
+    const forecast = smoothByTime(minutes.slice(recordedCount), points.slice(recordedCount).map((p) => p.soc), window);
+    const hasForecast = forecast.length > 0;
+    return points.map((_, i) => {
+      const isRecorded = i < recordedCount;
+      return {
+        minutes: minutes[i]!,
+        power: isRecorded ? power[i]! : null,
+        soc: isRecorded ? soc[i]! : null,
+        forecast: isRecorded
+          ? hasForecast && i === recordedCount - 1 ? soc[i]! : null
+          : forecast[i - recordedCount]!,
+      };
+    });
   }, [curve, curveSession]);
   const curveHasForecast = curve?.some((p) => p.projected) ?? false;
   const forecastSeries = curveHasForecast
