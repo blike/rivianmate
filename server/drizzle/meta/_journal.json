@@ -78,6 +78,13 @@
       "when": 1790947121958,
       "tag": "0010_parallax_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791048136583,
+      "tag": "0011_curve_point_sources",
+      "breakpoints": true
     }
   ]
 }

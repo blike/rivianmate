@@ -20,7 +20,7 @@ import {
   decodeTripProgress,
 } from "../rivian/parallax.js";
 
-/** Topics kept for the insights view (the charging graph is stored as curves). */
+/** Topics kept for the insights view, plus the logged charging topics. */
 const STORED_RVMS = new Set([
   RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,

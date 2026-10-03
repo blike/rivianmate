@@ -89,7 +89,8 @@ export function readProtoFields(bytes: Uint8Array): ProtoField[] | null {
 
 export interface ChargingGraphBar {
   soc: number | null;
-  powerKw: number;
+  /** Null when the bar carries no power reading. */
+  powerKw: number | null;
   startMs: number;
   endMs: number | null;
   chargingState: number | null;
@@ -99,10 +100,17 @@ export interface ChargingGraphBar {
 const MIN_MS = Date.UTC(2015, 0, 1);
 const MAX_MS = Date.UTC(2100, 0, 1);
 
+/** Readings outside these ranges are misreads, not data. */
+const MAX_POWER_KW = 500;
+const validSoc = (n: number | null) => (n != null && n >= 0 && n <= 100 ? n : null);
+/** In range, with float32 noise rounded off (124.7 arrives as 124.69999…). */
+const validPower = (n: number | null) =>
+  n != null && Number.isFinite(n) && n >= 0 && n <= MAX_POWER_KW ? Math.round(n * 1000) / 1000 : null;
+
 /**
  * `k70/g` graph bar: 1 SOC (int32), 2 power (float, kW), 3 start (int64 ms),
- * 4 end (int64 ms), 6 charging state. Proto3 omits zero values, so a
- * missing power is 0 kW; a missing SOC is unknown.
+ * 4 end (int64 ms), 6 charging state. A missing power or SOC is unknown,
+ * never 0: treating absence as zero put phantom 0 kW points on DC charges.
  */
 export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | null {
   const fields = readProtoFields(bytes);
@@ -118,11 +126,12 @@ export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | nu
   const end = get(4);
   const state = get(6);
   return {
-    soc: soc?.wire === 0 ? Number(BigInt.asIntN(32, soc.value)) : null,
-    powerKw:
+    soc: validSoc(soc?.wire === 0 ? Number(BigInt.asIntN(32, soc.value)) : null),
+    powerKw: validPower(
       power?.wire === 5
         ? new DataView(power.value.buffer, power.value.byteOffset, 4).getFloat32(0, true)
-        : 0,
+        : null,
+    ),
     startMs,
     endMs: end?.wire === 0 && Number(end.value) >= startMs ? Number(end.value) : null,
     chargingState: state?.wire === 0 ? Number(state.value) : null,
@@ -130,16 +139,15 @@ export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | nu
 }
 
 /**
- * `charging_graph_global` (`k70/i`): repeated graph bars. The repeated
- * field's number isn't documented, so every embedded message that decodes
- * as a bar is taken.
+ * `charging_graph_global` (`k70/i`): bars repeated in field 1. Other
+ * embedded messages aren't bars, even when they happen to decode as one.
  */
 export function decodeChargingGraph(payloadBase64: string): ChargingGraphBar[] {
   if (!payloadBase64) return [];
   const fields = readProtoFields(Buffer.from(payloadBase64, "base64"));
   if (!fields) return [];
   return fields
-    .filter((f): f is ProtoField & { wire: 2 } => f.wire === 2)
+    .filter((f): f is ProtoField & { wire: 2 } => f.field === 1 && f.wire === 2)
     .map((f) => decodeChargingGraphBar(f.value))
     .filter((bar): bar is ChargingGraphBar => bar !== null)
     .sort((a, b) => a.startMs - b.startMs);
@@ -173,6 +181,7 @@ export const RVM_CHARGING_TIME_WINDOW = "charging.schedule.time_window";
  * their fields can be decoded against how they change during a charge.
  */
 export const PARALLAX_LOGGED_RVMS: readonly string[] = [
+  RVM_CHARGING_GRAPH,
   RVM_CHARGE_BREAKDOWN,
   RVM_BATTERY_CHARACTERISTICS,
   RVM_CHARGING_STATUS,
@@ -185,7 +194,6 @@ export const PARALLAX_LOGGED_RVMS: readonly string[] = [
 
 /** Topics the monitor subscribes to. */
 export const PARALLAX_MONITOR_RVMS: readonly string[] = [
-  RVM_CHARGING_GRAPH,
   RVM_BATTERY_STATE,
   RVM_COLD_WEATHER,
   RVM_PARKED_ENERGY,
@@ -240,9 +248,9 @@ export interface ChargeBreakdown {
   chargingMinutes: number;
   rangeAddedKm: number | null;
   cost: { amount: number; currency: string } | null;
-  /** Live readings, updated every few seconds; stale once charging stops. */
-  powerKw: number;
-  rangeKmPerHour: number;
+  /** Live readings, updated every few seconds; stale once charging stops. Null when absent. */
+  powerKw: number | null;
+  rangeKmPerHour: number | null;
   minutesRemaining: number;
 }
 
@@ -254,7 +262,8 @@ export interface ChargeBreakdown {
  * matching timeToEndOfCharge); 12 and 13 are unknown enums. Rivian keeps
  * the last session's breakdown and sends it on subscribe. Confirmed against
  * a home session: 35.8 = 34.4 + 1.4 kWh, 313 min, 162 km, matching Rivian's
- * history. Proto3 omits zeros, so missing numbers read as 0.
+ * history. Missing totals read as 0 (proto3 omits zeros); missing live
+ * readings (power, range rate) are unknown, never 0.
  */
 export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | null {
   const m = decode(payloadBase64);
@@ -274,8 +283,11 @@ export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | 
     chargingMinutes: Math.max(0, m.int(6) ?? 0),
     rangeAddedKm: m.int(8),
     cost: currency ? { amount: units + nanos / 1e9, currency } : null,
-    powerKw: Math.max(0, f32(m.float(9)) ?? 0),
-    rangeKmPerHour: Math.max(0, m.int(10) ?? 0),
+    powerKw: validPower(f32(m.float(9))),
+    rangeKmPerHour: (() => {
+      const rate = m.int(10);
+      return rate != null && rate >= 0 ? rate : null;
+    })(),
     minutesRemaining: Math.max(0, m.int(7) ?? 0),
   };
 }

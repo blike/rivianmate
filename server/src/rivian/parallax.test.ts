@@ -44,20 +44,35 @@ describe("decodeChargingGraphBar", () => {
     });
   });
 
-  it("treats a missing power as 0 kW (proto3 omits zeros) and needs a sane start", () => {
-    expect(decodeChargingGraphBar(new Uint8Array([...int(1, 80), ...int(3, START)]))?.powerKw).toBe(0);
+  it("treats a missing power as unknown, never 0 kW, and needs a sane start", () => {
+    expect(decodeChargingGraphBar(new Uint8Array([...int(1, 80), ...int(3, START)]))?.powerKw).toBeNull();
     expect(decodeChargingGraphBar(new Uint8Array([...int(1, 80), ...int(3, 12345)]))).toBeNull();
+  });
+
+  it("drops readings outside physical ranges", () => {
+    const bad = decodeChargingGraphBar(new Uint8Array([...int(1, 140), ...float(2, 9000), ...int(3, START)]));
+    expect(bad).toMatchObject({ soc: null, powerKw: null });
   });
 });
 
 describe("decodeChargingGraph", () => {
-  it("collects every embedded bar in time order, whatever the repeated field number", () => {
+  it("collects the bars repeated in field 1, in time order", () => {
     const payload = b64([
       ...message(1, bar(41, 11, START + 60_000, START + 120_000)),
       ...message(1, bar(40, 10.5, START, START + 60_000)),
       ...message(5, [...int(1, 7)]), // some other submessage: not a bar
     ]);
     expect(decodeChargingGraph(payload).map((b) => [b.soc, b.powerKw])).toEqual([[40, 10.5], [41, 11]]);
+  });
+
+  it("ignores other submessages that happen to decode as bars", () => {
+    // A stray SoC-and-time message outside field 1 became a 0 kW point at
+    // the wrong SoC on a DC charge.
+    const payload = b64([
+      ...message(1, bar(64, 124.7, START, START + 4_000)),
+      ...message(2, [...int(1, 57), ...int(3, START + 1_000)]),
+    ]);
+    expect(decodeChargingGraph(payload).map((b) => [b.soc, b.powerKw])).toEqual([[64, 124.7]]);
   });
 
   it("returns nothing for empty or malformed payloads", () => {
@@ -75,7 +90,8 @@ describe("decodeChargeBreakdown", () => {
     ]);
     expect(decodeChargeBreakdown(payload)).toEqual({
       totalKwh: 35.8, packKwh: 34.4, thermalKwh: 1.4, chargingMinutes: 313, rangeAddedKm: 162, cost: null,
-      powerKw: 0, rangeKmPerHour: 0, minutesRemaining: 0,
+      // A finished session's breakdown carries no live readings: unknown, not 0.
+      powerKw: null, rangeKmPerHour: null, minutesRemaining: 0,
     });
   });
 

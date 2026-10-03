@@ -323,6 +323,41 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     m.stop();
   });
 
+  it("keeps the live power through messages that carry none and a quiet push feed (DC)", async () => {
+    const bus = new LiveBus();
+    const m = monitor(bus);
+    await m.start();
+    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 50);
+    clock = Date.parse("2026-10-01T11:10:00Z");
+    await m.ingest("v1", {
+      ...live("2026-10-01T11:00:00Z", 124.7, 63),
+      power: { value: 124.7, updatedAt: "2026-10-01T11:10:00Z" },
+    } as LiveSessionData);
+    expect(bus.latestChargingSession("v1")?.power?.value).toBe(124.7);
+
+    // A breakdown and a graph bar without power readings: unknown, not 0.
+    clock = Date.parse("2026-10-01T11:10:05Z");
+    await m.ingestParallax("v1", { rvm: RVM_CHARGE_BREAKDOWN, timestamp: null, payload: b64([...float(1, 3.6), ...int(6, 10)]) });
+    await m.ingestParallax("v1", {
+      rvm: RVM_CHARGING_GRAPH,
+      timestamp: null,
+      payload: chargingGraph([...int(1, 57), ...int(3, clock), ...int(6, 3)]),
+    });
+    await m.ingest("v1", { ...live("2026-10-01T11:00:00Z", 124.7, 63), power: { value: 124.7, updatedAt: "2026-10-01T11:10:00Z" } } as LiveSessionData);
+    expect(bus.latestChargingSession("v1")?.power?.value).toBe(124.7);
+
+    // The push briefly reports no session while the vehicle still charges.
+    await m.ingestParallax("v1", { rvm: RVM_CHARGE_BREAKDOWN, timestamp: null, payload: b64([...float(1, 3.7), ...int(6, 10), ...float(9, 118)]) });
+    await m.ingest("v1", null);
+    expect(bus.latestChargingSession("v1")?.power?.value).toBe(118);
+    m.stop();
+
+    // Each source keeps its own series; the push's reading carries no SoC.
+    const points = await handle.db.select().from(chargingCurvePoints).orderBy(chargingCurvePoints.ts);
+    expect(points.filter((pt) => pt.source === "push_live").map((pt) => [pt.powerKw, pt.soc])).toEqual([[124.7, null]]);
+    expect(points.filter((pt) => pt.source === "graph").map((pt) => [pt.powerKw, pt.soc])).toEqual([[null, 57]]);
+  });
+
   it("resumes a session left open by a restart when the same charge continues", async () => {
     const id = await leftover("2026-10-01T11:00:00Z", [
       ["2026-10-01T11:10:00Z", 11],

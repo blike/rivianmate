@@ -215,7 +215,10 @@ export const chargingSessions = pgTable(
   ],
 );
 
-/** Observed power/SoC samples per charging session, for the curve chart. */
+/**
+ * Observed power/SoC samples per charging session, for the curve chart.
+ * Each source keeps its own series; a chart draws one source per session.
+ */
 export const chargingCurvePoints = pgTable(
   "charging_curve_points",
   {
@@ -223,11 +226,19 @@ export const chargingCurvePoints = pgTable(
     sessionId: bigint("session_id", { mode: "number" })
       .notNull()
       .references(() => chargingSessions.id, { onDelete: "cascade" }),
+    /**
+     * graph = Parallax charging graph; push_chart = the push feed's chart;
+     * push_live = the push feed's current reading; legacy = recorded before
+     * sources were kept apart.
+     */
+    source: text("source", { enum: ["graph", "push_chart", "push_live", "legacy"] })
+      .notNull()
+      .default("legacy"),
     ts: timestamp("ts", { withTimezone: true }).notNull(),
     powerKw: real("power_kw"),
     soc: real("soc"),
   },
-  (t) => [uniqueIndex("charging_curve_session_ts_idx").on(t.sessionId, t.ts)],
+  (t) => [uniqueIndex("charging_curve_session_source_ts_idx").on(t.sessionId, t.source, t.ts)],
 );
 
 /** Release-notes links Rivian returned, per vehicle and software version. */
