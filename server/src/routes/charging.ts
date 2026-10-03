@@ -65,10 +65,13 @@ export async function chargingRoutes(
       const latest = Date.now() + CLOCK_SLACK_MS;
       const curve = curveForDisplay(rows.filter((r) => r.source === "forecast" || r.ts.getTime() <= latest));
       const [session] = await ctx.db
-        .select({ endedAt: chargingSessions.endedAt })
+        .select({ endedAt: chargingSessions.endedAt, chargingSince: chargingSessions.chargingSince })
         .from(chargingSessions)
         .where(eq(chargingSessions.id, sessionId));
-      const forecast = forecastForDisplay(rows, curve, session != null && session.endedAt == null);
+      // Only while it's actually charging: stopped but still plugged in, or
+      // unplugged, there's nothing left to forecast.
+      const charging = session != null && session.endedAt == null && session.chargingSince != null;
+      const forecast = forecastForDisplay(rows, curve, charging);
       if (curve.length > 0) {
         return [
           ...curve.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
