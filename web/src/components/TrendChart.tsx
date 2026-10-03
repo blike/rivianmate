@@ -25,6 +25,8 @@ export interface TrendSeries {
   digits?: number;
   /** Draw a dot per data point (for sparse series). */
   dots?: boolean;
+  /** Dashed, for estimates rather than readings (lines only). */
+  dashed?: boolean;
 }
 
 type Row = Record<string, number | null>;
@@ -126,6 +128,7 @@ export function TrendChart(props: {
                   type="monotone"
                   stroke={s.color}
                   strokeWidth={2}
+                  strokeDasharray={s.dashed ? "5 4" : undefined}
                   dot={s.dots ? { r: 3, fill: s.color, strokeWidth: 0 } : false}
                   connectNulls
                 />

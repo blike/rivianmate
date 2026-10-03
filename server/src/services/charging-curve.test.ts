@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type CurvePoint, type CurveSource, curveForDisplay } from "./charging-curve.js";
+import { type CurvePoint, type CurveSource, curveForDisplay, forecastForDisplay } from "./charging-curve.js";
 
 const p = (source: CurveSource, ts: string, powerKw: number | null, soc: number | null): CurvePoint => ({
   source,
@@ -63,5 +63,52 @@ describe("curveForDisplay", () => {
 
   it("is empty without points", () => {
     expect(curveForDisplay([])).toEqual([]);
+  });
+});
+
+describe("curveForDisplay: forecasts stored as readings", () => {
+  it("drops a tail where SoC keeps rising without power (an L2 session's stored forecast)", () => {
+    const rows = [
+      p("graph", "2026-10-03T19:58:00Z", 107, 54),
+      p("graph", "2026-10-03T20:00:00Z", 111, 57),
+      p("graph", "2026-10-03T20:04:00Z", 99, 60),
+      // Stored before forecasts were kept apart: no power, SoC still climbing.
+      p("graph", "2026-10-03T20:08:00Z", null, 63),
+      p("graph", "2026-10-03T20:12:00Z", null, 66),
+      p("graph", "2026-10-03T20:15:00Z", null, 70),
+    ];
+    expect(curveForDisplay(rows).map((r) => r.soc)).toEqual([54, 57, 60]);
+  });
+
+  it("keeps an idle tail after the charge finished (no power, SoC flat)", () => {
+    const rows = [
+      p("graph", "2026-10-03T19:00:00Z", 11, 80),
+      p("graph", "2026-10-03T20:00:00Z", 11, 90),
+      p("graph", "2026-10-03T21:00:00Z", 0, 90),
+      p("graph", "2026-10-03T23:00:00Z", null, 89),
+    ];
+    expect(curveForDisplay(rows)).toHaveLength(4);
+  });
+});
+
+describe("forecastForDisplay", () => {
+  const recorded = [p("graph", "2026-10-03T20:00:00Z", 110, 57), p("graph", "2026-10-03T20:05:00Z", 100, 61)];
+  const rows = [
+    ...recorded,
+    p("forecast", "2026-10-03T20:04:00Z", null, 60), // overlaps what's recorded
+    p("forecast", "2026-10-03T20:20:00Z", null, 70),
+    p("forecast", "2026-10-03T20:10:00Z", null, 65),
+  ];
+
+  it("returns the forecast after the last recorded point, in time order", () => {
+    expect(forecastForDisplay(rows, recorded, true).map((r) => r.soc)).toEqual([65, 70]);
+  });
+
+  it("is empty once the charge has ended", () => {
+    expect(forecastForDisplay(rows, recorded, false)).toEqual([]);
+  });
+
+  it("is never chosen as the recorded curve", () => {
+    expect(curveForDisplay(rows).every((r) => r.source === "graph")).toBe(true);
   });
 });
