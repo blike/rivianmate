@@ -120,6 +120,7 @@ export class VehicleMonitor {
       if (driveId != null) this.drivePlaces?.enqueue(driveId);
     });
     this.driveDetector.onDriveEnded = (driveId) => this.drivePlaces?.enqueue(driveId);
+    this.driveDetector.log = log;
   }
 
   get isRunning(): boolean {

@@ -94,6 +94,8 @@ export function VehicleMap(props: {
   trail?: [number, number][];
   height?: string;
   follow?: boolean;
+  /** The position is out of date (no GPS fix since). */
+  stale?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -176,11 +178,12 @@ export function VehicleMap(props: {
     const map = mapRef.current;
     if (!marker || !map) return;
     marker.setLngLat([props.lon, props.lat]);
+    marker.getElement().classList.toggle("rm-vehicle--stale", props.stale === true);
     const hasHeading = props.bearing != null;
     marker.getElement().classList.toggle("rm-vehicle--heading", hasHeading);
     marker.setRotation(props.bearing ?? 0);
     if (props.follow !== false) map.easeTo({ center: [props.lon, props.lat], duration: 800 });
-  }, [props.lat, props.lon, props.bearing, props.follow, ready]);
+  }, [props.lat, props.lon, props.bearing, props.follow, props.stale, ready]);
 
   // Route data, framed to fit when it isn't following the vehicle.
   const trail = props.trail;

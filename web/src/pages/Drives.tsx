@@ -8,6 +8,7 @@ import { Panel, Row } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { averageSpeedKmh, driveProfile, rangeUsedKm } from "../lib/drives.js";
+import { isPosition } from "../lib/geo.js";
 import { fmt, fmtDuration, fmtSeconds, titleCase } from "../lib/state.js";
 import { useRemainingHeight } from "../lib/useRemainingHeight.js";
 
@@ -45,7 +46,10 @@ export function Drives(props: { vehicleId: string }) {
   const loading = drivesPending || (driveId != null && detailPending);
 
   const trail = useMemo(
-    () => (detail?.points ?? []).map((p) => [p.lat, p.lon] as [number, number]),
+    () =>
+      (detail?.points ?? [])
+        .filter((p) => isPosition(p.lat, p.lon))
+        .map((p) => [p.lat, p.lon] as [number, number]),
     [detail],
   );
   const lastPoint = trail.at(-1);
@@ -127,7 +131,7 @@ export function Drives(props: { vehicleId: string }) {
               </div>
             ) : (
               <p className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
-                No GPS points recorded for this drive.
+                No GPS from the vehicle during this drive (it may have had no signal).
               </p>
             )}
           </div>

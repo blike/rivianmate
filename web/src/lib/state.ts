@@ -1,4 +1,5 @@
 import type { VehicleState } from "@server/api-types.js";
+import { isPosition } from "./geo.js";
 
 interface ValueRecord {
   timeStamp?: string;
@@ -22,7 +23,7 @@ export function location(
   state: VehicleState | undefined,
 ): { lat: number; lon: number; ts: string } | null {
   const loc = state?.gnssLocation;
-  if (!loc || typeof loc.latitude !== "number") return null;
+  if (!loc || !isPosition(loc.latitude, loc.longitude)) return null;
   return { lat: loc.latitude, lon: loc.longitude, ts: loc.timeStamp };
 }
 

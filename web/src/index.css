@@ -140,6 +140,15 @@ body {
   opacity: 1;
 }
 
+/* Out of date: no pulse, and dimmed. */
+.rm-vehicle--stale {
+  opacity: 0.55;
+}
+
+.rm-vehicle--stale .rm-vehicle__pulse {
+  display: none;
+}
+
 @keyframes rm-pulse {
   from {
     transform: scale(0.55);
