@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { freshness, lastSeenAt } from "./freshness.js";
+import { freshness, lastSeenAt, locationIsBehind } from "./freshness.js";
 
 const NOW = Date.parse("2026-10-01T12:00:00Z");
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
@@ -35,5 +35,23 @@ describe("freshness", () => {
 
   it("handles no state", () => {
     expect(freshness(undefined, NOW).label).toBe("No data yet");
+  });
+});
+
+describe("locationIsBehind", () => {
+  const loc = (ts: string) => ({ latitude: 34, longitude: -116, timeStamp: ts });
+
+  it("flags a fix well behind the vehicle's other readings", () => {
+    // Oct 4 morning: gear updating live, GPS still yesterday's.
+    expect(locationIsBehind({ gearStatus: v(ago(1)), gnssLocation: loc(ago(19 * 60)) })).toBe(true);
+  });
+
+  it("ignores the other GPS fields, which go stale with the fix", () => {
+    expect(locationIsBehind({ gnssSpeed: v(ago(1)), gnssLocation: loc(ago(60)) })).toBe(false);
+  });
+
+  it("accepts a fix that keeps up", () => {
+    expect(locationIsBehind({ gearStatus: v(ago(1)), gnssLocation: loc(ago(3)) })).toBe(false);
+    expect(locationIsBehind({ gnssLocation: loc(ago(600)) })).toBe(false);
   });
 });

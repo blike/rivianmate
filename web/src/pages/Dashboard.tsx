@@ -16,7 +16,7 @@ import { FreshnessBadge } from "../components/FreshnessBadge.js";
 import { LoadingScope, Skeleton, SkeletonBlock, useLoading } from "../components/loading.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { chargeOutlook, chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
-import { relativeTime } from "../lib/freshness.js";
+import { locationIsBehind, relativeTime } from "../lib/freshness.js";
 import { fmt, fmtDuration, fmtSeconds, location, nv, sv, titleCase } from "../lib/state.js";
 import { type ActivityKind, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
 
@@ -131,6 +131,7 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
   const mileageM = nv(state, "vehicleMileage");
   const speedMps = nv(state, "gnssSpeed");
   const loc = location(state);
+  const locBehind = locationIsBehind(state);
   const security = securitySummary(state, vehicle?.model);
   const chargePower = live(liveSession?.power);
   const chargeRate = live(liveSession?.kilometersChargedPerHour);
@@ -263,10 +264,23 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
           ) : loc ? (
             <>
               <div className="absolute inset-0">
-                <VehicleMap lat={loc.lat} lon={loc.lon} bearing={nv(state, "gnssBearing")} height="100%" />
+                <VehicleMap
+                  lat={loc.lat}
+                  lon={loc.lon}
+                  bearing={nv(state, "gnssBearing")}
+                  stale={locBehind}
+                  height="100%"
+                />
               </div>
-              <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-[var(--border)] bg-[color-mix(in_srgb,var(--surface-1)_85%,transparent)] px-2.5 py-1 text-xs text-[var(--text-secondary)] backdrop-blur">
+              <div
+                className={`pointer-events-none absolute left-3 top-3 max-w-[calc(100%-4.5rem)] rounded-md border bg-[color-mix(in_srgb,var(--surface-1)_85%,transparent)] px-2.5 py-1 text-xs backdrop-blur ${
+                  locBehind
+                    ? "border-[var(--status-warning)] text-[var(--text-primary)]"
+                    : "border-[var(--border)] text-[var(--text-secondary)]"
+                }`}
+              >
                 Location from {new Date(loc.ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                {locBehind && <span className="text-[var(--text-secondary)]"> · no GPS from the vehicle since</span>}
               </div>
             </>
           ) : (

@@ -128,7 +128,7 @@ export const locationPoints = pgTable(
     altitude: real("altitude"),
     driveId: bigint("drive_id", { mode: "number" }).references(() => drives.id),
   },
-  (t) => [index("locations_vehicle_ts_idx").on(t.vehicleId, t.ts)],
+  (t) => [uniqueIndex("locations_vehicle_ts_idx").on(t.vehicleId, t.ts)],
 );
 
 export const wallboxes = pgTable("wallboxes", {

@@ -114,6 +114,71 @@ describe.skipIf(!url)("DriveDetector with Postgres", () => {
     expect(all).toHaveLength(3); // and a new drive started
   });
 
+  it("records drives Rivian delivers hours late at their own times", async () => {
+    // Recorded on Oct 3–4, 2026: the vehicle lost signal mid-drive at 21:37Z,
+    // was driven twice more without it, and Rivian delivered those readings
+    // the next morning. A restart happened in between.
+    const [open] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: "v1", startedAt: new Date("2026-10-03T21:20:50Z"), startMileageM: 6_974_436 })
+      .returning();
+    await handle.db.insert(locationPoints).values({
+      vehicleId: "v1", driveId: open!.id, ts: new Date("2026-10-03T21:36:58Z"), lat: 34.0, lon: -116.05,
+    });
+
+    // Restarted overnight; Rivian's last known state is from before the signal was lost.
+    clock = at("2026-10-04T10:16:16Z");
+    const d = detector();
+    await d.onState("v1", state("drive", "2026-10-03T21:36:55Z", { km: 6993.172 }));
+    expect((await rows())[0]!.endedAt).toBeNull();
+
+    // The morning's late delivery, in order.
+    clock = at("2026-10-04T16:19:52Z");
+    await d.onState("v1", state("drive", "2026-10-03T21:36:55Z", { km: 6993.172 }));
+    await d.onState("v1", state("park", "2026-10-03T21:42:11Z", { km: 6996.145 }));
+    // Powered on now, with yesterday's speed still in the state: not moving.
+    await d.onState("v1", {
+      ...state("park", "2026-10-03T21:42:11Z", { km: 6996.145 }),
+      powerState: { value: "go", timeStamp: "2026-10-04T16:20:40Z" },
+      gnssSpeed: { value: 23.14, timeStamp: "2026-10-03T21:37:03Z" },
+    });
+    await d.onState("v1", state("drive", "2026-10-04T00:13:20Z", { km: 6996.145 }));
+    await d.onState("v1", state("park", "2026-10-04T00:15:12Z", { km: 6998.044 }));
+    await d.onState("v1", state("drive", "2026-10-04T00:48:37Z", { km: 6998.047 }));
+    await d.onState("v1", state("reverse", "2026-10-04T00:53:13Z", { km: 6999.9 }));
+    await d.onState("v1", state("park", "2026-10-04T00:58:45Z", { km: 6999.989 }));
+    await d.onState("v1", state("park", "2026-10-04T14:05:20Z", { km: 6999.989 }));
+
+    // Then live again.
+    clock = at("2026-10-04T16:21:40Z");
+    await d.onState("v1", state("drive", "2026-10-04T16:21:32Z", { km: 6999.989 }));
+    clock = at("2026-10-04T16:43:00Z");
+    await d.onState("v1", state("park", "2026-10-04T16:42:42Z", { km: 7028.705 }));
+    await settle();
+
+    const all = await rows();
+    expect(all.map((r) => [r.startedAt.toISOString(), r.endedAt!.toISOString()])).toEqual([
+      ["2026-10-03T21:20:50.000Z", "2026-10-03T21:42:11.000Z"],
+      ["2026-10-04T00:13:20.000Z", "2026-10-04T00:15:12.000Z"],
+      ["2026-10-04T00:48:37.000Z", "2026-10-04T00:58:45.000Z"],
+      ["2026-10-04T16:21:32.000Z", "2026-10-04T16:42:42.000Z"],
+    ]);
+    expect(all.map((r) => r.distanceKm)).toEqual([
+      expect.closeTo(21.709), expect.closeTo(1.899), expect.closeTo(1.942), expect.closeTo(28.716),
+    ]);
+  });
+
+  it("doesn't let a park from before the drive's latest movement end it", async () => {
+    const d = detector();
+    clock = at("2026-10-01T15:00:00Z");
+    await d.onState("v1", state("drive", "2026-10-01T15:00:00Z"));
+    clock = at("2026-10-01T15:10:00Z");
+    await d.onState("v1", state("drive", "2026-10-01T15:10:00Z"));
+    await d.onState("v1", state("park", "2026-10-01T14:50:00Z")); // last night's, delivered late
+    await new Promise((r) => setTimeout(r, 120));
+    expect((await rows())[0]!.endedAt).toBeNull();
+  });
+
   it("records the navigation destination on the drive", async () => {
     const d = detector();
     const destination = { name: "100 Main St", lat: 32.88, lon: -117.22 };

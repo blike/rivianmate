@@ -10,9 +10,14 @@ export interface Freshness {
 
 const STALE_MS = 24 * 3600_000;
 const LIVE_MS = 10 * 60_000;
+/** GPS this far behind the vehicle's other readings is out of date. */
+const LOCATION_LAG_MS = 10 * 60_000;
 
-/** Most recent time the vehicle reported anything. */
-export function lastSeenAt(state: VehicleState | undefined): Date | null {
+/** Most recent time the vehicle reported anything (`except` these fields). */
+export function lastSeenAt(
+  state: VehicleState | undefined,
+  except: (key: string) => boolean = () => false,
+): Date | null {
   if (!state) return null;
   let latest = 0;
   const consider = (iso: unknown) => {
@@ -21,12 +26,23 @@ export function lastSeenAt(state: VehicleState | undefined): Date | null {
     if (Number.isFinite(t) && t > latest) latest = t;
   };
   consider(state.cloudConnection?.lastSync);
-  for (const value of Object.values(state)) {
+  for (const [key, value] of Object.entries(state)) {
+    if (except(key)) continue;
     if (value && typeof value === "object" && "timeStamp" in value) {
       consider((value as { timeStamp?: unknown }).timeStamp);
     }
   }
   return latest > 0 ? new Date(latest) : null;
+}
+
+/**
+ * Whether the GPS fix is well behind the vehicle's other readings: Rivian
+ * keeps showing the last fix while the vehicle has no GPS signal.
+ */
+export function locationIsBehind(state: VehicleState | undefined): boolean {
+  const fixAt = Date.parse(state?.gnssLocation?.timeStamp ?? "");
+  const othersAt = lastSeenAt(state, (key) => key.startsWith("gnss"));
+  return Number.isFinite(fixAt) && othersAt !== null && othersAt.getTime() - fixAt > LOCATION_LAG_MS;
 }
 
 export function relativeTime(date: Date, now: number): string {
