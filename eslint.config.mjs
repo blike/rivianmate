@@ -3,7 +3,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/drizzle/**", "home-assistant-rivian/**"] },
+  { ignores: ["**/dist/**", "**/drizzle/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -1,6 +1,5 @@
 /**
- * GraphQL documents and field lists, ported from rivian-python-client
- * (src/rivian/const.py and rivian.py).
+ * GraphQL documents and field lists for the Rivian API.
  */
 
 export const GRAPHQL_GATEWAY = "https://rivian.com/api/gql/gateway/graphql";

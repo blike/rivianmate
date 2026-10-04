@@ -183,7 +183,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         {
           id: MOCK_VEHICLE_ID,
           vin: MOCK_VIN,
-          name: "Mock R1T",
+          name: "Mock R1S",
           roles: ["owner"],
           state: "ACTIVE",
           vehicle: {
@@ -191,11 +191,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
             vin: MOCK_VIN,
             modelYear: 2023,
             make: "RIVIAN",
-            model: "R1T",
+            model: "R1S",
             vehicleState: {
               supportedFeatures: [
-                { name: "SIDE_BIN_NXT_ACT", status: "AVAILABLE" },
-                { name: "TAILGATE_CMD", status: "AVAILABLE" },
+                { name: "LIFTGATE_CMD", status: "AVAILABLE" },
               ],
             },
           },
@@ -337,9 +336,16 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.emit(this.fullState());
     this.emitParallax(RVM_COLD_WEATHER, [...int(1, 85), ...int(2, 6), ...int(3, 24)]);
+    // Uses: 2 climate, 3 outlets, 4 system, 5 Gear Guard (see decodeParkedEnergy).
     this.emitParallax(RVM_PARKED_ENERGY, [
-      ...message(1, [...float(1, 1.3), ...float(6, 5.9), ...int(11, 1440)]),
-      ...message(2, [...float(1, 0.4), ...float(6, 1.8), ...int(11, 480)]),
+      ...message(1, [
+        ...float(1, 1.3), ...float(2, 0.45), ...float(3, 0.1), ...float(4, 0.5), ...float(5, 0.25),
+        ...float(6, 5.9), ...int(11, 1440),
+      ]),
+      ...message(2, [
+        ...float(1, 0.4), ...float(2, 0.08), ...float(4, 0.2), ...float(5, 0.12),
+        ...float(6, 1.8), ...int(11, 480),
+      ]),
     ]);
     this.emitParallax(RVM_NETWORK, [
       ...message(4, [...string(3, "Garage"), ...int(8, -58), ...int(10, 5180)]),
@@ -552,14 +558,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       doorRearRightLocked: v("locked"),
       closureFrunkClosed: v("closed"),
       closureFrunkLocked: v("locked"),
-      closureTailgateClosed: v("closed"),
-      closureTailgateLocked: v("locked"),
-      closureTonneauClosed: v("closed"),
-      closureTonneauLocked: v("locked"),
-      closureSideBinLeftClosed: v("closed"),
-      closureSideBinLeftLocked: v("locked"),
-      closureSideBinRightClosed: v("closed"),
-      closureSideBinRightLocked: v("locked"),
+      closureLiftgateClosed: v("closed"),
+      closureLiftgateLocked: v("locked"),
       windowFrontLeftClosed: v("closed"),
       windowFrontRightClosed: v("closed"),
       windowRearLeftClosed: v("closed"),

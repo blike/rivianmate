@@ -10,14 +10,12 @@ then shows them on a dashboard you can open from anywhere.
 - **Your data, your server.** One Docker Compose file runs the app and its
   database. Nothing is sent to a third-party service.
 - **Read-only and gentle.** RivianMate never sends commands to the vehicle. It
-  keeps its Rivian traffic low so your phone app keeps working (see
-  [How RivianMate talks to Rivian](#how-rivianmate-talks-to-rivian)).
-- **No Home Assistant required.** It's a standalone web app, written in
-  TypeScript end to end.
+  keeps its Rivian traffic low so your phone app keeps working.
+- **Standalone.** It's a single web app, written in TypeScript end to end.
 
-> Screenshots show the built-in demo mode: a simulated R1T with six weeks of
+> Screenshots show the built-in demo mode: a simulated R1S with six weeks of
 > history around Bloomington–Normal, Illinois. Map data © OpenStreetMap
-> contributors and the Overture Maps Foundation.
+> contributors, OpenMapTiles, and the Overture Maps Foundation.
 
 ## Contents
 
@@ -25,7 +23,6 @@ then shows them on a dashboard you can open from anywhere.
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Updating](#updating)
-- [How RivianMate talks to Rivian](#how-rivianmate-talks-to-rivian)
 - [Privacy and security](#privacy-and-security)
 - [Development](#development)
 - [License](#license)
@@ -39,9 +36,10 @@ that follows it as it drives. Every door, window, and closure (frunk,
 tailgate, tonneau, gear tunnel) is shown and adjusts to your model. The
 dashboard also shows tire pressures, climate, software version, drive mode,
 and active navigation with arrival time and battery on arrival. Battery
-details include cell temperature, cold-weather range impact, and parked
-energy use. Updates are pushed to the browser as they arrive, and a freshness
-badge shows how recent the data is.
+details include cell temperature and cold-weather range impact, and bars
+show the energy used while parked over the last 24 and 8 hours, split into
+system, climate, Gear Guard, and outlets. Updates are pushed to the browser
+as they arrive, and a freshness badge shows how recent the data is.
 
 ### Drives
 
@@ -60,12 +58,13 @@ navigation destinations are recorded too.
 
 Every session is logged with plug-in and charging time, SoC gained, energy,
 range added, peak power, and cost. You can see the full power curve for each
-session and how much energy went to heating or cooling the pack. Charging
-history from your Rivian account is imported automatically, so public
-sessions from before you installed RivianMate appear too, with Rivian's
-prices. Set your home electricity rate to get estimated costs for home
-sessions. The page also shows your charging and departure schedules and the
-status of a Rivian Wall Charger.
+session, with a bar splitting the energy added into what was stored and what
+went to heating or cooling the pack. Charging history from your Rivian
+account is imported automatically, so public sessions from before you
+installed RivianMate appear too, with Rivian's prices. Set your home
+electricity rate to get estimated costs for home sessions. The page also
+shows your charging and departure schedules and the status of a Rivian Wall
+Charger.
 
 ### Health
 
@@ -163,38 +162,6 @@ version with the `image:` tag in `docker-compose.yml`:
 
 Pre-releases (e.g. `0.5.0-beta.1`) are published under their exact tag only.
 
-## How RivianMate talks to Rivian
-
-RivianMate uses the same unofficial cloud API as the Rivian mobile app and the
-[home-assistant-rivian](https://github.com/bretterer/home-assistant-rivian)
-integration. Your Rivian account is shared with the phone app. If a client
-floods the Rivian cloud, or keeps retrying after it's told to back off, the
-phone app can lose its connection to the vehicle. RivianMate keeps its
-traffic low:
-
-- **Push, not polling.** Vehicle state and live charging data arrive over one
-  WebSocket, with one subscription per vehicle and data type. Dead sockets
-  are detected with WebSocket pings, which don't generate API traffic.
-- **One session.** The session from sign-in is reused everywhere and rotated
-  only when Rivian rejects it.
-- **Polling only as a fallback.** If the socket has been down for more than 5
-  minutes, state is polled every 5 minutes while the vehicle is awake and
-  every 30 minutes while it's asleep.
-- **Occasional extras.** Charging schedules are fetched every 6 hours. Charge
-  history and the latest session's power curve are synced at startup, after
-  each charge, and daily. Release notes are fetched once per software
-  version. Each extra turns itself off if Rivian rejects it.
-- **Backing off.** All requests share one queue, spaced at least 2 seconds
-  apart. A rate-limit response pauses *all* traffic for 5 minutes, doubling
-  up to an hour. Reconnects back off from 10 seconds to 15 minutes.
-- **Tolerant auth.** You're asked to sign in again only after Rivian rejects
-  the session three times in a row.
-
-**Settings → Rivian API usage** shows request counts, reconnects, and rate
-limits for the last 24 hours. Run only **one** RivianMate instance per Rivian
-account: a second instance (including a development server) doubles the
-traffic.
-
 ## Privacy and security
 
 - Your Rivian password is passed to Rivian once, at sign-in, and never stored.
@@ -221,7 +188,7 @@ pnpm dev:web                # web app with hot reload on http://localhost:5173
 ```
 
 With `MOCK_RIVIAN=1` you don't need a Rivian account. Any email and password
-work, the verification code is `000000`, and a simulated R1T loops through
+work, the verification code is `000000`, and a simulated R1S loops through
 parking, a drive around the neighborhood, and charging, so every page fills
 in within a few minutes. Leave it unset to use the real Rivian API.
 
@@ -242,10 +209,7 @@ See [RELEASING.md](RELEASING.md) for the release process.
 
 ## License
 
-RivianMate is licensed under the [PolyForm Strict License 1.0.0](LICENSE.md).
-You're free to download, install, and run it for personal and other
-noncommercial use. You may not modify it, distribute it, or sell it or
-anything based on it. For other uses, open an issue to ask.
+RivianMate is licensed under the [MIT License](LICENSE).
 
 ## Disclaimer
 
