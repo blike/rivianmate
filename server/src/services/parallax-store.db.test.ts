@@ -64,7 +64,7 @@ describe.skipIf(!url)("ParallaxStore with Postgres", () => {
 
     const insights = await store.insights("v1");
     expect(insights.parkedEnergy?.windows).toEqual([
-      { minutes: 1440, kwh: expect.closeTo(1.1), rangeKm: expect.closeTo(5.3), uses: { climate: 0, system: 0, gearGuardAndOutlets: 0 } },
+      { minutes: 1440, kwh: expect.closeTo(1.1), rangeKm: expect.closeTo(5.3), uses: { climate: 0, system: 0, gearGuard: 0, outlets: 0 } },
     ]);
     expect(insights.connectivity).toEqual({
       wifi: null,

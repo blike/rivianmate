@@ -16,11 +16,20 @@ describe("wifiBand / signalLabel", () => {
 });
 
 describe("parkedSegments", () => {
+  it("shows Gear Guard and outlets as distinct segments", () => {
+    const segments = parkedSegments({ climate: 0.5, system: 1.6, gearGuard: 0.2, outlets: 0.1 });
+    expect(segments.map((s) => [s.label, s.kwh])).toEqual([
+      ["System", 1.6], ["Climate", 0.5], ["Gear Guard", 0.2], ["Outlets", 0.1],
+    ]);
+    expect(new Set(segments.map((s) => s.color)).size).toBe(4);
+    expect(parkedSegments({ climate: 0, system: 0, gearGuard: 0, outlets: 0.1 }).map((s) => s.label)).toEqual(["Outlets"]);
+  });
+
   it("keeps the uses that drew energy, in legend order", () => {
-    expect(parkedSegments({ climate: 0.4, system: 1.7, gearGuardAndOutlets: 0 }).map((s) => [s.label, s.kwh])).toEqual([
+    expect(parkedSegments({ climate: 0.4, system: 1.7, gearGuard: 0, outlets: 0 }).map((s) => [s.label, s.kwh])).toEqual([
       ["System", 1.7],
       ["Climate", 0.4],
     ]);
-    expect(parkedSegments({ climate: 0, system: 0, gearGuardAndOutlets: 0 })).toEqual([]);
+    expect(parkedSegments({ climate: 0, system: 0, gearGuard: 0, outlets: 0 })).toEqual([]);
   });
 });

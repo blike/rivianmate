@@ -27,10 +27,11 @@ export function signalLabel(rssiDbm: number | null): string | null {
 export const PARKED_USES = [
   { key: "system", label: "System", color: "var(--series-1)" },
   { key: "climate", label: "Climate", color: "var(--series-2)" },
-  { key: "gearGuardAndOutlets", label: "Gear Guard & outlets", color: "var(--series-3)" },
+  { key: "gearGuard", label: "Gear Guard", color: "var(--series-3)" },
+  { key: "outlets", label: "Outlets", color: "var(--series-4)" },
 ] as const;
 
 /** A window's uses that drew energy, in legend order, for the split bar. */
-export function parkedSegments(uses: { climate: number; system: number; gearGuardAndOutlets: number }) {
+export function parkedSegments(uses: { climate: number; system: number; gearGuard: number; outlets: number }) {
   return PARKED_USES.map((u) => ({ ...u, kwh: uses[u.key] })).filter((s) => s.kwh >= 0.05);
 }

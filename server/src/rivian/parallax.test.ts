@@ -137,11 +137,29 @@ describe("decodeColdWeather", () => {
 });
 
 describe("decodeParkedEnergy", () => {
+  it("identifies outlets from the captured outlet-use sample", () => {
+    const windows = decodeParkedEnergy("CisNzcwMQBUAAAA/Hc3MzD0lzszMPzVeDCpBPeGWGkBFz1f3Pk3QV/dAWKALEisNAQDAPxWamZk+Hc3MzD0lzcyMPzVT4udAPduBuT9Fz1f3Pk1eDKpAWOADGhYNzczMPSXNzMw9Nc9X9z5Nz1f3Plhv");
+    expect(windows.map((w) => ({ minutes: w.minutes, uses: w.uses }))).toEqual([
+      { minutes: 1440, uses: { climate: 0.5, system: 1.6, gearGuard: 0, outlets: 0.1 } },
+      { minutes: 480, uses: { climate: 0.3, system: 1.1, gearGuard: 0, outlets: 0.1 } },
+      { minutes: 111, uses: { climate: 0, system: 0.1, gearGuard: 0, outlets: 0 } },
+    ]);
+  });
+
+  it("keeps simultaneous Gear Guard and outlet usage separate", () => {
+    const payload = b64(message(1, [
+      ...float(1, 0.7), ...float(3, 0.2), ...float(5, 0.5), ...int(11, 1440),
+    ]));
+    expect(decodeParkedEnergy(payload)[0]?.uses).toEqual({
+      climate: 0, system: 0, gearGuard: 0.5, outlets: 0.2,
+    });
+  });
+
   it("reads each window's energy, range and length", () => {
     const window = (kwh: number, km: number, minutes: number) =>
       [...float(1, kwh), ...float(2, 0.3), ...float(4, 0.8), ...float(6, km), ...float(7, 1.449), ...float(9, 3.865), ...int(11, minutes)];
     const payload = b64([...message(1, window(1.1, 5.314, 1440)), ...message(2, window(0.4, 1.932, 480))]);
-    const uses = { climate: 0.3, system: 0.8, gearGuardAndOutlets: 0 };
+    const uses = { climate: 0.3, system: 0.8, gearGuard: 0, outlets: 0 };
     expect(decodeParkedEnergy(payload)).toEqual([
       { minutes: 1440, kwh: 1.1, rangeKm: 5.314, uses },
       { minutes: 480, kwh: 0.4, rangeKm: 1.932, uses },
@@ -151,7 +169,7 @@ describe("decodeParkedEnergy", () => {
   it("splits energy by use, matching the Rivian app", () => {
     // Captured; the app showed climate 0.4, system 1.7, Gear Guard and outlets 0 kWh.
     const [day] = decodeParkedEnergy("CiENZ2YGQBXNzMw+JZuZ2T81oFEiQT3PV/c/TaZmA0FYoAsSIQ3OzEw/Fc3MzD0lNDMzPzXQV3dAPc9X9z5N1mxYQFjgAxoCWB0=");
-    expect(day?.uses).toEqual({ climate: 0.4, system: 1.7, gearGuardAndOutlets: 0 });
+    expect(day?.uses).toEqual({ climate: 0.4, system: 1.7, gearGuard: 0, outlets: 0 });
   });
 });
 
