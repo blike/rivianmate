@@ -243,7 +243,7 @@ export interface VehicleInsightsDto {
       minutes: number;
       kwh: number;
       rangeKm: number;
-      uses: { climate: number; system: number; gearGuardAndOutlets: number };
+      uses: { climate: number; system: number; gearGuard: number; outlets: number };
     }[];
     at: string;
   } | null;

@@ -339,16 +339,16 @@ export interface ParkedEnergyWindow {
   kwh: number;
   rangeKm: number;
   /** Where the energy went, kWh. */
-  uses: { climate: number; system: number; gearGuardAndOutlets: number };
+  uses: { climate: number; system: number; gearGuard: number; outlets: number };
 }
 
 /**
  * `parked_energy_distributions` (`k70/o`): repeated windows {1 total kWh,
  * 2–5 kWh by use, 6 total range km, 7–10 range by use, 11 window length in
- * minutes}. Matched against the Rivian app's last-24 h parked usage: 2
- * climate (0.4), 4 system (1.7), with Gear Guard and outlets at 0, so 3 and
- * 5 are those two in an order not yet known. 1440- and 480-minute windows
- * drain at the same rate, which supports reading 11 as minutes.
+ * minutes}. Uses: 2 climate, 3 outlets, 4 system, 5 Gear Guard. An outlet-use
+ * capture on 2026-10-04 identifies field 3 (0.1 kWh), with field 5 omitted.
+ * 1440- and 480-minute windows drain at the same rate, which supports
+ * reading 11 as minutes.
  */
 export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] {
   const m = decode(payloadBase64);
@@ -363,7 +363,7 @@ export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] 
       minutes,
       kwh: kwh(1),
       rangeKm: kwh(6),
-      uses: { climate: kwh(2), system: kwh(4), gearGuardAndOutlets: f32(kwh(3) + kwh(5))! },
+      uses: { climate: kwh(2), system: kwh(4), gearGuard: kwh(5), outlets: kwh(3) },
     });
   }
   return windows;
