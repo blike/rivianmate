@@ -161,7 +161,16 @@ export function Settings() {
                 <div className="flex items-center gap-2">
                   {diagnostics && (
                     <span
-                      className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
+                      className={
+                        diagnostics.monitor.parallaxMode === "parallax"
+                          ? "rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                          : "rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
+                      }
+                      style={
+                        diagnostics.monitor.parallaxMode === "parallax"
+                          ? { background: "var(--series-3)" }
+                          : undefined
+                      }
                       title="Read-only: Rivian reports this per vehicle; it can't be changed here."
                     >
                       {diagnostics.monitor.parallaxMode === "parallax" ? "w/ Parallax" : "Classic"}
