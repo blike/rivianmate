@@ -22,6 +22,8 @@ import {
   RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,
   RVM_COLD_WEATHER,
+  PARALLAX_FEATURE_FLAG,
+  RVM_GNSS,
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
   RVM_TRIP_INFO,
@@ -195,6 +197,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
             vehicleState: {
               supportedFeatures: [
                 { name: "LIFTGATE_CMD", status: "AVAILABLE" },
+                { name: PARALLAX_FEATURE_FLAG, status: "AVAILABLE" },
               ],
             },
           },
@@ -352,6 +355,13 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ...message(5, [...string(1, "AT&T"), ...string(2, "LTE")]),
     ]);
     this.emitBatteryState();
+    this.emitParallax(RVM_GNSS, [
+      ...double(1, this.lat),
+      ...double(2, this.lon),
+      ...double(3, 240),
+      ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
+      ...float(6, 0),
+    ]);
   }
 
   /** Parallax topics come in as base64 protobuf, as from Rivian. */

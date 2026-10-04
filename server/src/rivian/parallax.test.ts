@@ -8,6 +8,7 @@ import {
   decodeChargingGraphBar,
   decodeChargingStatus,
   decodeColdWeather,
+  decodeGnss,
   decodeNetwork,
   decodeParkedEnergy,
   decodeSocSlider,
@@ -15,6 +16,7 @@ import {
   decodeTripInfo,
   decodeTripProgress,
   readProtoFields,
+  vehicleSupportsParallax,
 } from "./parallax.js";
 
 const START = Date.parse("2026-10-01T07:00:00Z");
@@ -275,5 +277,45 @@ describe("chargerStateFromStatus", () => {
       "charging_active",
     ]);
     expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
+  });
+});
+
+describe("vehicleSupportsParallax", () => {
+  it("is true only when VEHICLE_CONNECTIVITY_PARALLAX is present", () => {
+    expect(vehicleSupportsParallax(["VEHICLE_CONNECTIVITY_PARALLAX", "OTHER"])).toBe(true);
+    expect(vehicleSupportsParallax(["OTHER"])).toBe(false);
+    expect(vehicleSupportsParallax([])).toBe(false);
+    expect(vehicleSupportsParallax(null)).toBe(false);
+    expect(vehicleSupportsParallax(undefined)).toBe(false);
+  });
+});
+
+describe("decodeGnss", () => {
+  it("reads latitude/longitude/altitude", () => {
+    const payload = b64([...double(1, 37.774929), ...double(2, -122.419418), ...double(3, 15.3)]);
+    expect(decodeGnss(payload)).toEqual({
+      latitude: 37.774929,
+      longitude: -122.419418,
+      altitude: 15.3,
+      bearing: null,
+      speedKmh: null,
+    });
+  });
+
+  it("normalizes a signed -180..180 heading to a 0-360 compass bearing", () => {
+    // Captured against a real R2 (2026-09-29): raw -80.6 doesn't fit 0-360,
+    // but reads as a plausible heading once treated as signed.
+    expect(decodeGnss(b64(float(5, -80.6)))?.bearing).toBeCloseTo(279.4, 1);
+    expect(decodeGnss(b64(float(5, 45)))?.bearing).toBeCloseTo(45, 1);
+  });
+
+  it("converts speed from m/s to km/h", () => {
+    // Raw 3.185 (captured while parked) only reads as a plausible
+    // "just came to a stop" speed once converted from m/s.
+    expect(decodeGnss(b64(float(6, 3.185)))?.speedKmh).toBeCloseTo(11.47, 1);
+  });
+
+  it("returns null for an empty payload", () => {
+    expect(decodeGnss("")).toBeNull();
   });
 });

@@ -106,6 +106,22 @@ export function Settings() {
               label="Rate limited"
               value={diagnostics ? String(diagnostics.traffic.last24h.rateLimited) : "—"}
             />
+            <Row
+              label="Data source"
+              value={
+                diagnostics
+                  ? diagnostics.monitor.parallaxMode === "parallax"
+                    ? "Classic + Parallax"
+                    : "Classic"
+                  : "—"
+              }
+            />
+            {diagnostics && diagnostics.monitor.parallaxDroppedFields.length > 0 && (
+              <Row
+                label="Fields Rivian rejected"
+                value={diagnostics.monitor.parallaxDroppedFields.join(", ")}
+              />
+            )}
             {diagnostics?.traffic.cooldownUntil && (
               <Row
                 label="Paused until"
@@ -143,6 +159,14 @@ export function Settings() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {diagnostics && (
+                    <span
+                      className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
+                      title="Read-only: Rivian reports this per vehicle; it can't be changed here."
+                    >
+                      {diagnostics.monitor.parallaxMode === "parallax" ? "w/ Parallax" : "Classic"}
+                    </span>
+                  )}
                   <span className="font-mono text-xs tracking-wide text-[var(--text-secondary)] select-all">
                     {v.vin}
                   </span>

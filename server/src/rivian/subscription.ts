@@ -47,6 +47,8 @@ export interface VehicleStateStream {
   subscribeParallax?(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void;
   /** True once Rivian has refused an optional subscription. */
   isUnsupported?(kind: OptionalSubKind): boolean;
+  /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
+  readonly droppedFields?: readonly string[];
   start(): void;
   stop(): void;
   /**

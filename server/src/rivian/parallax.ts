@@ -203,6 +203,30 @@ export const PARALLAX_MONITOR_RVMS: readonly string[] = [
   ...PARALLAX_LOGGED_RVMS,
 ];
 
+/**
+ * Vehicles without this feature don't accept the Parallax subscription at
+ * all — checked proactively so we never even attempt it for them, rather
+ * than relying solely on Rivian rejecting it after the fact.
+ */
+export const PARALLAX_FEATURE_FLAG = "VEHICLE_CONNECTIVITY_PARALLAX";
+
+export function vehicleSupportsParallax(
+  supportedFeatures: readonly string[] | null | undefined,
+): boolean {
+  return (supportedFeatures ?? []).includes(PARALLAX_FEATURE_FLAG);
+}
+
+/** Live vehicle position topic — not part of PARALLAX_MONITOR_RVMS; only subscribed when supported. */
+export const RVM_GNSS = "dynamics.vehicle.gnss";
+
+export interface GnssReading {
+  latitude: number | null;
+  longitude: number | null;
+  altitude: number | null;
+  bearing: number | null;
+  speedKmh: number | null;
+}
+
 /** Field accessors over one decoded message; wrong wire types read as absent. */
 function fieldsOf(bytes: Uint8Array | null | undefined) {
   const fields = bytes ? readProtoFields(bytes) : null;
@@ -316,6 +340,27 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
     soc: f32(charge?.double(1) ?? null),
     capacityKwh: f32(charge?.double(2) ?? null),
     cellTemps: avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
+  };
+}
+
+/**
+ * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
+ * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
+ * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
+ * 6 speed (float, m/s, converted to km/h). No .proto; field numbers from a
+ * live capture against a real R2 (2026-09-29/30), not community docs.
+ */
+export function decodeGnss(payloadBase64: string): GnssReading | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  const bearing = m.float(5);
+  const speedMps = m.float(6);
+  return {
+    latitude: m.double(1),
+    longitude: m.double(2),
+    altitude: m.double(3),
+    bearing: bearing != null ? ((bearing % 360) + 360) % 360 : null,
+    speedKmh: speedMps != null ? Math.round(speedMps * 3.6 * 10) / 10 : null,
   };
 }
 

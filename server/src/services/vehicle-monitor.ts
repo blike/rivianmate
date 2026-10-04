@@ -3,7 +3,14 @@ import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
 import type { VehicleStateStream } from "../rivian/subscription.js";
 import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
-import { PARALLAX_MONITOR_RVMS, RVM_TRIP_INFO, decodeTripInfo } from "../rivian/parallax.js";
+import {
+  PARALLAX_MONITOR_RVMS,
+  RVM_GNSS,
+  RVM_TRIP_INFO,
+  decodeGnss,
+  decodeTripInfo,
+  vehicleSupportsParallax,
+} from "../rivian/parallax.js";
 import type { SchedulesDto, VehicleInsightsDto } from "../api-types.js";
 import {
   ChargingSchedule,
@@ -58,6 +65,10 @@ export interface MonitorDiagnostics {
   streamConnected: boolean;
   fallbackPolling: boolean;
   consecutiveAuthFailures: number;
+  /** Whether the vehicle's supportedFeatures include VEHICLE_CONNECTIVITY_PARALLAX. */
+  parallaxMode: "classic" | "parallax";
+  /** Legacy fields Rivian has rejected from the subscription (e.g. gnssLocation). */
+  parallaxDroppedFields: readonly string[];
 }
 
 export interface MonitoredVehicle {
@@ -67,6 +78,7 @@ export interface MonitoredVehicle {
   make: string | null;
   model: string | null;
   modelYear: number | null;
+  supportedFeatures: readonly string[];
 }
 
 export interface RivianConnection {
@@ -100,6 +112,7 @@ export class VehicleMonitor {
   private authFailures = 0;
   /** Set once Rivian rejects the full state query; sticky for the process. */
   private coreStateQuery = false;
+  private parallaxMode: "classic" | "parallax" = "classic";
   /** Bumped on every start/stop so a superseded start() bails out. */
   private generation = 0;
 
@@ -141,6 +154,8 @@ export class VehicleMonitor {
       streamConnected: this.streamConnected,
       fallbackPolling: this.fallbackPollTimer !== undefined,
       consecutiveAuthFailures: this.authFailures,
+      parallaxMode: this.parallaxMode,
+      parallaxDroppedFields: this.connection?.stream.droppedFields ?? [],
     };
   }
 
@@ -184,6 +199,11 @@ export class VehicleMonitor {
     const superseded = () => generation !== this.generation;
     const info = await connection.api.getUserInfo();
     if (superseded()) return;
+    const supportedFeaturesOf = (uv: (typeof info.vehicles)[number]): string[] =>
+      uv.vehicle?.vehicleState?.supportedFeatures
+        ?.filter((f) => f.status === "AVAILABLE")
+        .map((f) => f.name) ?? [];
+
     this.vehicles = info.vehicles.map((uv) => ({
       id: uv.id,
       vin: uv.vin,
@@ -191,6 +211,7 @@ export class VehicleMonitor {
       make: uv.vehicle?.make ?? null,
       model: uv.vehicle?.model ?? null,
       modelYear: uv.vehicle?.modelYear ?? null,
+      supportedFeatures: supportedFeaturesOf(uv),
     }));
 
     for (const uv of info.vehicles) {
@@ -203,10 +224,7 @@ export class VehicleMonitor {
           make: uv.vehicle?.make,
           model: uv.vehicle?.model,
           modelYear: uv.vehicle?.modelYear,
-          supportedFeatures:
-            uv.vehicle?.vehicleState?.supportedFeatures
-              ?.filter((f) => f.status === "AVAILABLE")
-              .map((f) => f.name) ?? [],
+          supportedFeatures: supportedFeaturesOf(uv),
         })
         .onConflictDoUpdate({
           target: vehiclesTable.id,
@@ -273,16 +291,37 @@ export class VehicleMonitor {
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
       });
-      stream.subscribeParallax?.(vehicle.id, PARALLAX_MONITOR_RVMS, (_vehicleId, message) => {
-        void chargingMonitor.ingestParallax(vehicle.id, message);
-        void this.parallaxStore.ingest(vehicle.id, message);
-        if (message.rvm === RVM_TRIP_INFO) {
-          const destination = decodeTripInfo(message.payload)?.destination ?? null;
-          void this.driveDetector.noteDestination(vehicle.id, destination).catch((err: Error) =>
-            this.log(`drive destination: ${err.message}`),
-          );
-        }
-      });
+      if (vehicleSupportsParallax(vehicle.supportedFeatures)) {
+        this.parallaxMode = "parallax";
+        stream.subscribeParallax?.(vehicle.id, [...PARALLAX_MONITOR_RVMS, RVM_GNSS], (_vehicleId, message) => {
+          void chargingMonitor.ingestParallax(vehicle.id, message);
+          void this.parallaxStore.ingest(vehicle.id, message);
+          if (message.rvm === RVM_TRIP_INFO) {
+            const destination = decodeTripInfo(message.payload)?.destination ?? null;
+            void this.driveDetector.noteDestination(vehicle.id, destination).catch((err: Error) =>
+              this.log(`drive destination: ${err.message}`),
+            );
+          } else if (message.rvm === RVM_GNSS) {
+            const reading = decodeGnss(message.payload);
+            if (reading) {
+              const ts =
+                message.timestamp != null
+                  ? new Date(message.timestamp).toISOString()
+                  : new Date().toISOString();
+              const delta: VehicleState = {};
+              if (reading.latitude != null && reading.longitude != null) {
+                delta.gnssLocation = { latitude: reading.latitude, longitude: reading.longitude, timeStamp: ts };
+              }
+              if (reading.altitude != null) delta.gnssAltitude = { timeStamp: ts, value: reading.altitude };
+              if (reading.bearing != null) delta.gnssBearing = { timeStamp: ts, value: reading.bearing };
+              if (reading.speedKmh != null) delta.gnssSpeed = { timeStamp: ts, value: reading.speedKmh };
+              if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
+            }
+          }
+        });
+      } else {
+        this.parallaxMode = "classic";
+      }
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
         const entry = this.scheduleEntry(vehicle.id);
         entry.departures = departures;
