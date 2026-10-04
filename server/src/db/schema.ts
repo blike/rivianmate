@@ -128,7 +128,7 @@ export const locationPoints = pgTable(
     altitude: real("altitude"),
     driveId: bigint("drive_id", { mode: "number" }).references(() => drives.id),
   },
-  (t) => [index("locations_vehicle_ts_idx").on(t.vehicleId, t.ts)],
+  (t) => [uniqueIndex("locations_vehicle_ts_idx").on(t.vehicleId, t.ts)],
 );
 
 export const wallboxes = pgTable("wallboxes", {
@@ -215,7 +215,10 @@ export const chargingSessions = pgTable(
   ],
 );
 
-/** Observed power/SoC samples per charging session, for the curve chart. */
+/**
+ * Observed power/SoC samples per charging session, for the curve chart.
+ * Each source keeps its own series; a chart draws one source per session.
+ */
 export const chargingCurvePoints = pgTable(
   "charging_curve_points",
   {
@@ -223,11 +226,21 @@ export const chargingCurvePoints = pgTable(
     sessionId: bigint("session_id", { mode: "number" })
       .notNull()
       .references(() => chargingSessions.id, { onDelete: "cascade" }),
+    /**
+     * graph = Parallax charging graph; push_chart = the push feed's chart;
+     * push_live = the push feed's current reading; forecast = the vehicle's
+     * projection to the limit for a charge in progress (replaced by each
+     * graph, never a reading); legacy = recorded before sources were kept
+     * apart.
+     */
+    source: text("source", { enum: ["graph", "push_chart", "push_live", "forecast", "legacy"] })
+      .notNull()
+      .default("legacy"),
     ts: timestamp("ts", { withTimezone: true }).notNull(),
     powerKw: real("power_kw"),
     soc: real("soc"),
   },
-  (t) => [uniqueIndex("charging_curve_session_ts_idx").on(t.sessionId, t.ts)],
+  (t) => [uniqueIndex("charging_curve_session_source_ts_idx").on(t.sessionId, t.source, t.ts)],
 );
 
 /** Release-notes links Rivian returned, per vehicle and software version. */
@@ -262,6 +275,28 @@ export const parallaxLatest = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.vehicleId, t.rvm] })],
+);
+
+/**
+ * Every distinct payload of the logged Parallax topics, kept for 30 days so
+ * undocumented fields can be decoded against how they change.
+ */
+export const parallaxMessages = pgTable(
+  "parallax_messages",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    vehicleId: text("vehicle_id")
+      .notNull()
+      .references(() => vehicles.id),
+    rvm: text("rvm").notNull(),
+    payload: text("payload").notNull(),
+    messageAt: timestamp("message_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("parallax_messages_vehicle_rvm_idx").on(t.vehicleId, t.rvm, t.receivedAt),
+    index("parallax_messages_received_idx").on(t.receivedAt),
+  ],
 );
 
 /**

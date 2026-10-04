@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import {
   chargingCurvePoints,
@@ -9,11 +9,21 @@ import {
 import type { RivianApi } from "../rivian/client.js";
 import {
   type ChargeBreakdown,
+  type ChargingGraphBar,
   type ParallaxMessage,
+  RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,
+  RVM_CHARGING_STATUS,
   RVM_CHARGING_GRAPH,
+  RVM_SOC_SLIDER,
+  RVM_TIME_ESTIMATION,
+  decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
+  decodeChargingStatus,
+  chargerStateFromStatus,
+  decodeSocSlider,
+  decodeTimeEstimation,
 } from "../rivian/parallax.js";
 import {
   LiveSessionData,
@@ -22,6 +32,7 @@ import {
   type VehicleState,
 } from "../rivian/types.js";
 import { isChargingState, stampedAt } from "./charging-time.js";
+import { LiveChargeState, type LiveSource } from "./live-charging.js";
 import { nearbySpot } from "./home-charging.js";
 import type { LiveBus } from "./live-bus.js";
 import { type ResumableSession, closeTime } from "./session-resume.js";
@@ -35,8 +46,14 @@ const WALLBOX_INTERVAL_MS = 15 * 60_000;
  * older bars are dropped rather than risk attaching a previous session's.
  */
 const GRAPH_LOOKBACK_MS = 12 * 3600_000;
-/** Tolerance at session edges: a graph bar starts on Rivian's clock. */
+/** Tolerance at a finished session's edges: a graph bar starts on Rivian's clock. */
 const GRAPH_SLACK_MS = 10 * 60_000;
+/**
+ * Rivian's charging graph carries the charge so far and, after it, the
+ * vehicle's forecast to the limit (SoC without power). A bar starting more
+ * than this after the message was sent is forecast, not a reading.
+ */
+const GRAPH_CLOCK_SLACK_MS = 60_000;
 /**
  * A breakdown carries no session id or time, only minutes spent charging,
  * so it goes to the session whose charging time matches. Rivian resends the
@@ -44,6 +61,8 @@ const GRAPH_SLACK_MS = 10 * 60_000;
  */
 const BREAKDOWN_MATCH_MIN_S = 5 * 60;
 const BREAKDOWN_MATCH_FRACTION = 0.1;
+/** How far apart a power reading and the SoC paired with it may be. */
+const LIVE_SOC_MAX_GAP_MS = 5 * 60_000;
 /** Finished sessions older than this don't take a breakdown. */
 const BREAKDOWN_MAX_AGE_MS = 7 * 86_400_000;
 
@@ -95,6 +114,10 @@ export class ChargingMonitor {
   /** Rivian vehicle ids (from getUserInfo, not VINs). */
   private vehicles = new Set<string>();
   private latestLocation = new Map<string, { lat: number; lon: number }>();
+  /** Live readings from every source, merged field by field. */
+  private live = new Map<string, LiveChargeState>();
+  /** What was last emitted per vehicle, so repeats aren't re-sent. */
+  private liveSent = new Map<string, string>();
 
   /** Rivian rejected credentials even after a session rotation. */
   onAuthFailure?: () => void;
@@ -127,6 +150,16 @@ export class ChargingMonitor {
     const status = stateString(state, "chargerStatus");
     if (status === null) return;
     const now = this.now();
+    const soc = stateNumber(state, "batteryLevel");
+    const chargerState = stateString(state, "chargerState");
+    const minutesLeft = stateNumber(state, "timeToEndOfCharge");
+    this.observe(vehicleId, "state", stampedAt(state, "chargerState", now), [
+      ["chargerState", chargerState],
+      ["soc", soc],
+    ]);
+    if (minutesLeft != null) {
+      this.observe(vehicleId, "state", stampedAt(state, "timeToEndOfCharge", now), [["secondsLeft", minutesLeft * 60]]);
+    }
     this.applyPlugReading(vehicleId, {
       plugged: status !== "chrgr_sts_not_connected",
       pluggedAt: stampedAt(state, "chargerStatus", now),
@@ -165,39 +198,95 @@ export class ChargingMonitor {
    * session they fall within.
    */
   ingestParallax(vehicleId: string, message: ParallaxMessage): Promise<void> {
+    const at = parallaxTime(message.timestamp) ?? this.now();
+    if (message.rvm === RVM_TIME_ESTIMATION) {
+      // Empty once charging stops; null then means no estimate.
+      const minutes = decodeTimeEstimation(message.payload)?.minutesRemaining || null;
+      this.observe(vehicleId, "parallax", at, [["secondsLeft", minutes == null ? null : minutes * 60]]);
+      return Promise.resolve();
+    }
+    if (message.rvm === RVM_BATTERY_STATE) {
+      const battery = decodeBatteryState(message.payload);
+      if (battery?.soc != null) {
+        this.observe(vehicleId, "parallax", at, [
+          ["soc", battery.soc],
+          ...(battery.capacityKwh != null ? [["capacityKwh", battery.capacityKwh] as const] : []),
+        ]);
+      }
+      return Promise.resolve();
+    }
+    if (message.rvm === RVM_CHARGING_STATUS) {
+      const status = decodeChargingStatus(message.payload);
+      const state = status && chargerStateFromStatus(status);
+      if (state) this.observe(vehicleId, "parallax", at, [["chargerState", state]]);
+      return Promise.resolve();
+    }
+    if (message.rvm === RVM_SOC_SLIDER) {
+      const slider = decodeSocSlider(message.payload);
+      if (slider) this.observe(vehicleId, "parallax", at, [["socLimit", slider.limit]]);
+      return Promise.resolve();
+    }
     if (message.rvm === RVM_CHARGE_BREAKDOWN) {
       const breakdown = decodeChargeBreakdown(message.payload);
       if (!breakdown || breakdown.totalKwh <= 0) return Promise.resolve();
-      return this.enqueue(vehicleId, () => this.applyBreakdown(vehicleId, breakdown));
+      return this.enqueue(vehicleId, () => this.applyBreakdown(vehicleId, breakdown, at));
     }
     if (message.rvm !== RVM_CHARGING_GRAPH) return Promise.resolve();
     const bars = decodeChargingGraph(message.payload);
     if (bars.length === 0) return Promise.resolve();
+    const sentAt = graphSentAt(message.timestamp, bars[0]!.startMs, this.now());
+    const recorded = bars.filter((b) => b.startMs <= sentAt + GRAPH_CLOCK_SLACK_MS);
+    const forecast = bars.filter((b) => b.startMs > sentAt + GRAPH_CLOCK_SLACK_MS);
     return this.enqueue(vehicleId, async () => {
       const target = await this.graphTarget(vehicleId, bars[0]!.startMs, bars.at(-1)!.startMs);
       if (!target) return;
-      const rows = bars
-        .filter((b) => b.startMs >= target.from && b.startMs <= target.to)
-        .map((b) => ({ sessionId: target.id, ts: new Date(b.startMs), powerKw: b.powerKw, soc: b.soc }));
+      const open = target.id === this.openSessions.get(vehicleId)?.id;
+      // The forecast belongs to a charge in progress, and each message
+      // replaces the last one's.
+      if (open) await this.replaceForecast(target.id, forecast);
+      const inWindow = recorded.filter((b) => b.startMs >= target.from && b.startMs <= target.to);
+      const rows = inWindow
+        .filter((b) => b.powerKw != null || b.soc != null)
+        .map((b) => ({ sessionId: target.id, source: "graph" as const, ts: new Date(b.startMs), powerKw: b.powerKw, soc: b.soc }));
       if (rows.length === 0) return;
+      // The latest bar that carries power, timed by its end (or its start
+      // while it's still running). The breakdown's live power is fresher.
+      const latest = inWindow.filter((b) => b.powerKw != null).at(-1);
+      if (latest && open) {
+        this.observe(vehicleId, "parallax", latest.endMs ?? latest.startMs, [["powerKw", latest.powerKw]]);
+      }
       await this.db
         .insert(chargingCurvePoints)
         .values(rows)
         .onConflictDoUpdate({
-          target: [chargingCurvePoints.sessionId, chargingCurvePoints.ts],
-          set: { powerKw: sql`excluded.power_kw`, soc: sql`COALESCE(excluded.soc, ${chargingCurvePoints.soc})` },
+          target: [chargingCurvePoints.sessionId, chargingCurvePoints.source, chargingCurvePoints.ts],
+          set: {
+            powerKw: sql`COALESCE(excluded.power_kw, ${chargingCurvePoints.powerKw})`,
+            soc: sql`COALESCE(excluded.soc, ${chargingCurvePoints.soc})`,
+          },
         });
       await this.db
         .update(chargingSessions)
         .set({
-          maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE session_id = ${target.id})`,
-          avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND power_kw > 0)`,
+          maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND source = 'graph')`,
+          avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND source = 'graph' AND power_kw > 0)`,
         })
         .where(eq(chargingSessions.id, target.id));
     });
   }
 
-  private async applyBreakdown(vehicleId: string, b: ChargeBreakdown): Promise<void> {
+  /** Swaps a charge's stored forecast for the latest one (none clears it). */
+  private async replaceForecast(sessionId: number, bars: readonly ChargingGraphBar[]): Promise<void> {
+    await this.db
+      .delete(chargingCurvePoints)
+      .where(and(eq(chargingCurvePoints.sessionId, sessionId), eq(chargingCurvePoints.source, "forecast")));
+    const rows = bars
+      .filter((b) => b.soc != null)
+      .map((b) => ({ sessionId, source: "forecast" as const, ts: new Date(b.startMs), powerKw: b.powerKw, soc: b.soc }));
+    if (rows.length > 0) await this.db.insert(chargingCurvePoints).values(rows).onConflictDoNothing();
+  }
+
+  private async applyBreakdown(vehicleId: string, b: ChargeBreakdown, at: number): Promise<void> {
     const matches = (chargingSeconds: number) =>
       Math.abs(b.chargingMinutes * 60 - chargingSeconds) <=
       Math.max(BREAKDOWN_MATCH_MIN_S, chargingSeconds * BREAKDOWN_MATCH_FRACTION);
@@ -222,6 +311,15 @@ export class ChargingMonitor {
             : {}),
         })
         .where(eq(chargingSessions.id, open.id));
+      // Live readings only mean something while charging; otherwise they're
+      // the last ones. Readings the message doesn't carry stay unknown.
+      const charging = this.liveState(vehicleId).isCharging(this.now());
+      this.observe(vehicleId, "parallax", at, [
+        ["energyKwh", b.totalKwh],
+        ...(b.rangeAddedKm != null ? [["rangeAddedKm", b.rangeAddedKm] as const] : []),
+        ...(charging && b.powerKw != null ? [["powerKw", b.powerKw] as const] : []),
+        ...(charging && b.rangeKmPerHour != null ? [["rangeKmPerHour", b.rangeKmPerHour] as const] : []),
+      ]);
       return;
     }
 
@@ -257,7 +355,7 @@ export class ChargingMonitor {
   ): Promise<{ id: number; from: number; to: number } | null> {
     const open = this.openSessions.get(vehicleId);
     if (open) {
-      return { id: open.id, from: open.startedAt - GRAPH_LOOKBACK_MS, to: this.now() + GRAPH_SLACK_MS };
+      return { id: open.id, from: open.startedAt - GRAPH_LOOKBACK_MS, to: this.now() + GRAPH_CLOCK_SLACK_MS };
     }
     const [closed] = await this.db
       .select({ id: chargingSessions.id, startedAt: chargingSessions.startedAt, endedAt: chargingSessions.endedAt })
@@ -284,8 +382,76 @@ export class ChargingMonitor {
   ingest(vehicleId: string, session: LiveSessionData | null): Promise<void> {
     return this.enqueue(vehicleId, async () => {
       await this.processSession(vehicleId, session);
-      this.bus.emitChargingSession(vehicleId, session);
+      const live = this.liveState(vehicleId);
+      if (isActiveSession(session) && session) {
+        live.setPushDetails(session);
+        const now = this.now();
+        const field = (r: LiveSessionData["power"], scale = 1): number | null => {
+          const n = num(r?.value);
+          return n == null ? null : n * scale;
+        };
+        const reading = (
+          name: Parameters<LiveChargeState["observe"]>[0],
+          r: LiveSessionData["power"],
+        ) => {
+          const value = name === "chargerState" ? (r?.value == null ? null : String(r.value)) : field(r);
+          // Only what the push actually carried: absent is unknown, not 0.
+          if (value == null) return;
+          live.observe(name, "push", value, r?.updatedAt ? Date.parse(r.updatedAt) : now, now);
+        };
+        reading("chargerState", session.vehicleChargerState);
+        reading("powerKw", session.power);
+        // No SoC: the push copies it from its last chart point, which can be
+        // minutes behind; vehicle state and Parallax report it directly.
+        reading("secondsLeft", session.timeRemaining);
+        reading("energyKwh", session.totalChargedEnergy);
+        reading("rangeAddedKm", session.rangeAddedThisSession);
+        reading("rangeKmPerHour", session.kilometersChargedPerHour);
+      } else {
+        live.clearPush();
+      }
+      this.emitLive(vehicleId);
     });
+  }
+
+  private liveState(vehicleId: string): LiveChargeState {
+    let live = this.live.get(vehicleId);
+    if (!live) {
+      live = new LiveChargeState();
+      this.live.set(vehicleId, live);
+    }
+    return live;
+  }
+
+  /** Records readings from one source, then re-emits the merged session. */
+  private observe(
+    vehicleId: string,
+    source: LiveSource,
+    at: number,
+    readings: readonly (readonly [Parameters<LiveChargeState["observe"]>[0], number | string | null])[],
+  ): void {
+    const live = this.liveState(vehicleId);
+    const now = this.now();
+    for (const [field, value] of readings) live.observe(field, source, value, at, now);
+    // After queued work, so a plug-in has opened its session first.
+    void this.enqueue(vehicleId, async () => this.emitLive(vehicleId));
+  }
+
+  /**
+   * The one live session for the vehicle, merged field by field from the
+   * push feed, Parallax and vehicle state, so the dashboard never flips
+   * between sources (Rivian's push is silent for some chargers).
+   */
+  private emitLive(vehicleId: string): void {
+    const open = this.openSessions.get(vehicleId);
+    const session = open ? this.liveState(vehicleId).session(open.startedAt, this.now()) : null;
+    // Compare without timestamps: each report re-stamps them.
+    const signature = JSON.stringify(session, (_key, v: unknown) =>
+      v && typeof v === "object" && "updatedAt" in v && "value" in v ? v.value : v,
+    );
+    if (this.liveSent.get(vehicleId) === signature) return;
+    this.liveSent.set(vehicleId, signature);
+    this.bus.emitChargingSession(vehicleId, session);
   }
 
   async start(): Promise<void> {
@@ -353,7 +519,7 @@ export class ChargingMonitor {
       if (open) {
         const endedAt = Math.min(Math.max(reading.pluggedAt, open.startedAt), this.now());
         await this.closeOpen(vehicleId, open, endedAt, reading.soc);
-        this.bus.emitChargingSession(vehicleId, null);
+        this.emitLive(vehicleId);
       }
       return;
     }
@@ -426,6 +592,7 @@ export class ChargingMonitor {
       chargingSince: init.chargingSince,
     };
     this.openSessions.set(vehicleId, open);
+    this.liveState(vehicleId).forgetSessionReadings(init.startedAt);
     this.log(`charging session started for ${vehicleId}`);
     return open;
   }
@@ -450,6 +617,9 @@ export class ChargingMonitor {
       })
       .where(eq(chargingSessions.id, open.id));
     this.openSessions.delete(vehicleId);
+    this.liveState(vehicleId).forgetSessionReadings(endedAt);
+    // A finished charge has no forecast.
+    await this.replaceForecast(open.id, []);
     this.log(`charging session ended for ${vehicleId}`);
     this.onSessionEnded?.(vehicleId);
   }
@@ -508,27 +678,36 @@ export class ChargingMonitor {
         rawFinal: session,
       })
       .where(eq(chargingSessions.id, open.id));
-    await this.recordCurve(open.id, session);
+    await this.recordCurve(vehicleId, open.id, session);
   }
 
   /**
-   * Stores curve samples: the subscription's chart points when present,
-   * plus the current reading. Repeats of the same timestamp are ignored.
+   * Stores curve samples, each series under its own source: the
+   * subscription's chart points, and the current reading. The reading's SoC
+   * is the vehicle's own, when recent: the push copies its SoC from its last
+   * chart point, and pairing that with fresh power put stale SoC on the curve.
    */
-  private async recordCurve(sessionId: number, session: LiveSessionData): Promise<void> {
-    const samples = [...(session.chart ?? [])];
+  private async recordCurve(vehicleId: string, sessionId: number, session: LiveSessionData): Promise<void> {
+    const rows: (typeof chargingCurvePoints.$inferInsert)[] = [];
+    for (const s of session.chart ?? []) {
+      const ts = Date.parse(s.ts);
+      if (Number.isNaN(ts) || (s.powerKw == null && s.soc == null)) continue;
+      rows.push({ sessionId, source: "push_chart", ts: new Date(ts), powerKw: s.powerKw, soc: s.soc });
+    }
     const power = num(session.power?.value);
-    const soc = num(session.soc?.value);
-    if (power != null || soc != null) {
-      samples.push({
-        ts: session.power?.updatedAt ?? session.soc?.updatedAt ?? new Date().toISOString(),
+    const at = Date.parse(session.power?.updatedAt ?? "");
+    if (power != null) {
+      const now = this.now();
+      const ts = Number.isNaN(at) ? now : Math.min(at, now);
+      const soc = this.liveState(vehicleId).resolve<number | null>("soc", now);
+      rows.push({
+        sessionId,
+        source: "push_live",
+        ts: new Date(ts),
         powerKw: power,
-        soc,
+        soc: soc && soc.source !== "push" && Math.abs(ts - soc.at) <= LIVE_SOC_MAX_GAP_MS ? soc.value : null,
       });
     }
-    const rows = samples
-      .filter((s) => !Number.isNaN(Date.parse(s.ts)))
-      .map((s) => ({ sessionId, ts: new Date(s.ts), powerKw: s.powerKw, soc: s.soc }));
     if (rows.length === 0) return;
     await this.db.insert(chargingCurvePoints).values(rows).onConflictDoNothing();
   }
@@ -605,7 +784,7 @@ export class ChargingMonitor {
         startedAt: chargingSessions.startedAt,
         chargingSeconds: chargingSessions.chargingSeconds,
         chargingSince: chargingSessions.chargingSince,
-        lastSampleAt: sql<string | null>`(SELECT MAX(ts) FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id})`,
+        lastSampleAt: sql<string | null>`(SELECT MAX(ts) FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id} AND p.source <> 'forecast')`,
       })
       .from(chargingSessions)
       .where(isNull(chargingSessions.endedAt))
@@ -647,7 +826,7 @@ export class ChargingMonitor {
         count: sql<number>`COUNT(power_kw)::int`,
       })
       .from(chargingCurvePoints)
-      .where(eq(chargingCurvePoints.sessionId, leftover.id));
+      .where(and(eq(chargingCurvePoints.sessionId, leftover.id), ne(chargingCurvePoints.source, "forecast")));
     const count = stats?.count ?? 0;
     this.openSessions.set(vehicleId, {
       id: leftover.id,
@@ -696,6 +875,22 @@ export function isActiveSession(session: LiveSessionData | null): boolean {
     return ACTIVE_CHARGER_STATES.has(state.toLowerCase());
   }
   return session.startTime != null;
+}
+
+/**
+ * When a charging graph was sent: Rivian's message time, or now when it's
+ * missing, in the future, or before the graph's own first bar (implausible).
+ */
+function graphSentAt(timestamp: number | null, firstBarMs: number, now: number): number {
+  const sent = parallaxTime(timestamp);
+  if (sent == null || sent > now || sent < firstBarMs) return now;
+  return sent;
+}
+
+/** Rivian's Parallax message time (seconds or milliseconds), if given. */
+function parallaxTime(timestamp: number | null): number | null {
+  if (!timestamp) return null;
+  return timestamp < 1e12 ? timestamp * 1000 : timestamp;
 }
 
 function num(value: string | number | null | undefined): number | null {

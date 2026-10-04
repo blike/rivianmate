@@ -15,6 +15,7 @@ import { useUnits } from "../api/hooks.js";
 import { ContentFrame } from "../components/loading.js";
 import { Panel } from "../components/panels.js";
 import { VehicleMap } from "../components/VehicleMap.js";
+import { isPosition } from "../lib/geo.js";
 import { fmt } from "../lib/state.js";
 import { timeTicks } from "../lib/timeAxis.js";
 
@@ -98,7 +99,10 @@ export function History(props: { vehicleId: string }) {
   );
 
   const trailPositions = useMemo(
-    () => (trail ?? []).map((p) => [p.lat, p.lon] as [number, number]),
+    () =>
+      (trail ?? [])
+        .filter((p) => isPosition(p.lat, p.lon))
+        .map((p) => [p.lat, p.lon] as [number, number]),
     [trail],
   );
   const lastPosition = trailPositions.at(-1);

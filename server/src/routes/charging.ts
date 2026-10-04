@@ -23,6 +23,10 @@ import {
   wallboxes,
 } from "../db/schema.js";
 import type { VehicleState } from "../rivian/types.js";
+import { curveForDisplay, forecastForDisplay } from "../services/charging-curve.js";
+
+/** Tolerance for Rivian's clock running ahead of the server's. */
+const CLOCK_SLACK_MS = 60_000;
 import { socReadingsBetween } from "../services/charging-time.js";
 
 const patchSchema = z.object({
@@ -56,9 +60,23 @@ export async function chargingRoutes(
         .from(chargingCurvePoints)
         .where(eq(chargingCurvePoints.sessionId, sessionId))
         .orderBy(chargingCurvePoints.ts)
-        .limit(5000);
-      if (rows.length > 0) {
-        return rows.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc }));
+        .limit(20_000);
+      // Nothing recorded can be from the future; such rows were forecast.
+      const latest = Date.now() + CLOCK_SLACK_MS;
+      const curve = curveForDisplay(rows.filter((r) => r.source === "forecast" || r.ts.getTime() <= latest));
+      const [session] = await ctx.db
+        .select({ endedAt: chargingSessions.endedAt, chargingSince: chargingSessions.chargingSince })
+        .from(chargingSessions)
+        .where(eq(chargingSessions.id, sessionId));
+      // Only while it's actually charging: stopped but still plugged in, or
+      // unplugged, there's nothing left to forecast.
+      const charging = session != null && session.endedAt == null && session.chargingSince != null;
+      const forecast = forecastForDisplay(rows, curve, charging);
+      if (curve.length > 0) {
+        return [
+          ...curve.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
+          ...forecast.map((r) => ({ ts: r.ts.toISOString(), powerKw: null, soc: r.soc, projected: true })),
+        ];
       }
       return socCurveFromState(ctx, sessionId);
     },

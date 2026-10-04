@@ -18,3 +18,11 @@ export function withCumulativeKm<T extends { lat: number; lon: number }>(
     return { ...p, km };
   });
 }
+
+/** A real position: finite, in range, and not the 0,0 Rivian sends without a fix. */
+export function isPosition(lat: unknown, lon: unknown): lat is number {
+  if (typeof lat !== "number" || typeof lon !== "number") return false;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
+  return Math.abs(lat) > 1e-4 || Math.abs(lon) > 1e-4;
+}

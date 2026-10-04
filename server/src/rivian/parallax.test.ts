@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { b64, double, float, graphBar, int, message, string } from "../testing/protobuf.js";
 import {
+  chargerStateFromStatus,
   decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
   decodeChargingGraphBar,
+  decodeChargingStatus,
   decodeColdWeather,
   decodeNetwork,
   decodeParkedEnergy,
+  decodeSocSlider,
+  decodeTimeEstimation,
   decodeTripInfo,
   decodeTripProgress,
   readProtoFields,
@@ -40,20 +44,35 @@ describe("decodeChargingGraphBar", () => {
     });
   });
 
-  it("treats a missing power as 0 kW (proto3 omits zeros) and needs a sane start", () => {
-    expect(decodeChargingGraphBar(new Uint8Array([...int(1, 80), ...int(3, START)]))?.powerKw).toBe(0);
+  it("treats a missing power as unknown, never 0 kW, and needs a sane start", () => {
+    expect(decodeChargingGraphBar(new Uint8Array([...int(1, 80), ...int(3, START)]))?.powerKw).toBeNull();
     expect(decodeChargingGraphBar(new Uint8Array([...int(1, 80), ...int(3, 12345)]))).toBeNull();
+  });
+
+  it("drops readings outside physical ranges", () => {
+    const bad = decodeChargingGraphBar(new Uint8Array([...int(1, 140), ...float(2, 9000), ...int(3, START)]));
+    expect(bad).toMatchObject({ soc: null, powerKw: null });
   });
 });
 
 describe("decodeChargingGraph", () => {
-  it("collects every embedded bar in time order, whatever the repeated field number", () => {
+  it("collects the bars repeated in field 1, in time order", () => {
     const payload = b64([
       ...message(1, bar(41, 11, START + 60_000, START + 120_000)),
       ...message(1, bar(40, 10.5, START, START + 60_000)),
       ...message(5, [...int(1, 7)]), // some other submessage: not a bar
     ]);
     expect(decodeChargingGraph(payload).map((b) => [b.soc, b.powerKw])).toEqual([[40, 10.5], [41, 11]]);
+  });
+
+  it("ignores other submessages that happen to decode as bars", () => {
+    // A stray SoC-and-time message outside field 1 became a 0 kW point at
+    // the wrong SoC on a DC charge.
+    const payload = b64([
+      ...message(1, bar(64, 124.7, START, START + 4_000)),
+      ...message(2, [...int(1, 57), ...int(3, START + 1_000)]),
+    ]);
+    expect(decodeChargingGraph(payload).map((b) => [b.soc, b.powerKw])).toEqual([[64, 124.7]]);
   });
 
   it("returns nothing for empty or malformed payloads", () => {
@@ -71,6 +90,22 @@ describe("decodeChargeBreakdown", () => {
     ]);
     expect(decodeChargeBreakdown(payload)).toEqual({
       totalKwh: 35.8, packKwh: 34.4, thermalKwh: 1.4, chargingMinutes: 313, rangeAddedKm: 162, cost: null,
+      // A finished session's breakdown carries no live readings: unknown, not 0.
+      powerKw: null, rangeKmPerHour: null, minutesRemaining: 0,
+    });
+  });
+
+  it("reads live power, range rate and time left from a charge in progress", () => {
+    // Captured from a home L2 charge at 90.3% with a 95% limit.
+    expect(decodeChargeBreakdown("DZmZJUIVMzMfQi3NzMw/MOsCOCpAwgFNzczsQFAfWgBgAWgD")).toMatchObject({
+      totalKwh: 41.4,
+      packKwh: 39.8,
+      thermalKwh: 1.6,
+      chargingMinutes: 363,
+      minutesRemaining: 42,
+      rangeAddedKm: 194,
+      powerKw: 7.4,
+      rangeKmPerHour: 31,
     });
   });
 
@@ -102,14 +137,39 @@ describe("decodeColdWeather", () => {
 });
 
 describe("decodeParkedEnergy", () => {
+  it("identifies outlets from the captured outlet-use sample", () => {
+    const windows = decodeParkedEnergy("CisNzcwMQBUAAAA/Hc3MzD0lzszMPzVeDCpBPeGWGkBFz1f3Pk3QV/dAWKALEisNAQDAPxWamZk+Hc3MzD0lzcyMPzVT4udAPduBuT9Fz1f3Pk1eDKpAWOADGhYNzczMPSXNzMw9Nc9X9z5Nz1f3Plhv");
+    expect(windows.map((w) => ({ minutes: w.minutes, uses: w.uses }))).toEqual([
+      { minutes: 1440, uses: { climate: 0.5, system: 1.6, gearGuard: 0, outlets: 0.1 } },
+      { minutes: 480, uses: { climate: 0.3, system: 1.1, gearGuard: 0, outlets: 0.1 } },
+      { minutes: 111, uses: { climate: 0, system: 0.1, gearGuard: 0, outlets: 0 } },
+    ]);
+  });
+
+  it("keeps simultaneous Gear Guard and outlet usage separate", () => {
+    const payload = b64(message(1, [
+      ...float(1, 0.7), ...float(3, 0.2), ...float(5, 0.5), ...int(11, 1440),
+    ]));
+    expect(decodeParkedEnergy(payload)[0]?.uses).toEqual({
+      climate: 0, system: 0, gearGuard: 0.5, outlets: 0.2,
+    });
+  });
+
   it("reads each window's energy, range and length", () => {
     const window = (kwh: number, km: number, minutes: number) =>
       [...float(1, kwh), ...float(2, 0.3), ...float(4, 0.8), ...float(6, km), ...float(7, 1.449), ...float(9, 3.865), ...int(11, minutes)];
     const payload = b64([...message(1, window(1.1, 5.314, 1440)), ...message(2, window(0.4, 1.932, 480))]);
+    const uses = { climate: 0.3, system: 0.8, gearGuard: 0, outlets: 0 };
     expect(decodeParkedEnergy(payload)).toEqual([
-      { minutes: 1440, kwh: 1.1, rangeKm: 5.314 },
-      { minutes: 480, kwh: 0.4, rangeKm: 1.932 },
+      { minutes: 1440, kwh: 1.1, rangeKm: 5.314, uses },
+      { minutes: 480, kwh: 0.4, rangeKm: 1.932, uses },
     ]);
+  });
+
+  it("splits energy by use, matching the Rivian app", () => {
+    // Captured; the app showed climate 0.4, system 1.7, Gear Guard and outlets 0 kWh.
+    const [day] = decodeParkedEnergy("CiENZ2YGQBXNzMw+JZuZ2T81oFEiQT3PV/c/TaZmA0FYoAsSIQ3OzEw/Fc3MzD0lNDMzPzXQV3dAPc9X9z5N1mxYQFjgAxoCWB0=");
+    expect(day?.uses).toEqual({ climate: 0.4, system: 1.7, gearGuard: 0, outlets: 0 });
   });
 });
 
@@ -174,5 +234,46 @@ describe("decodeTripInfo / decodeTripProgress", () => {
       ...message(6, [...message(1, [...double(1, 40.5), ...double(2, -89)]), ...float(2, 7.9)]),
     ]);
     expect(decodeTripProgress(progress)).toEqual({ etaMs: 1790869380000, remainingKm: 30.506, remainingS: 2220 });
+  });
+});
+
+describe("decodeChargingStatus", () => {
+  it("reads the enums, with omitted ones as 0", () => {
+    expect(decodeChargingStatus(b64([...int(1, 2), ...int(3, 1)]))).toEqual({
+      plugConnection: 2,
+      displayStatus: 0,
+      evseType: 1,
+    });
+    expect(decodeChargingStatus("")).toBeNull();
+  });
+});
+
+describe("decodeTimeEstimation", () => {
+  it("reads the hold time in seconds", () => {
+    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({ holdTimeSeconds: 5400, minutesRemaining: 0 });
+  });
+
+  it("reads minutes remaining from a live charge", () => {
+    expect(decodeTimeEstimation(b64(int(2, 42)))).toEqual({ holdTimeSeconds: 0, minutesRemaining: 42 });
+    expect(decodeTimeEstimation("")).toBeNull();
+  });
+});
+
+describe("decodeSocSlider", () => {
+  it("reads the charge limit", () => {
+    expect(decodeSocSlider("CF8=")).toEqual({ limit: 95 }); // captured
+    expect(decodeSocSlider("")).toBeNull();
+  });
+});
+
+describe("chargerStateFromStatus", () => {
+  it("maps the display statuses seen on a live charge", () => {
+    // Captured: scheduled, ready, then charging.
+    expect(["CAIQBRgB", "CAIQAhgB", "CAIQAxgB"].map((p) => chargerStateFromStatus(decodeChargingStatus(p)!))).toEqual([
+      "charging_scheduled",
+      "charging_ready",
+      "charging_active",
+    ]);
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
   });
 });

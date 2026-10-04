@@ -5,8 +5,10 @@ import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
 import { ContentFrame, LoadingScope, SkeletonRows } from "../components/loading.js";
 import { Panel, Row, StatCard } from "../components/panels.js";
 import { SchedulesPanel } from "../components/SchedulesPanel.js";
+import { SplitBar, SplitLegend } from "../components/SplitBar.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { chargerLabel, chargingSecondsNow, formatMoney, socRange } from "../lib/charging.js";
+import { smoothByTime, smoothingWindowMinutes } from "../lib/smoothing.js";
 import { fmt, fmtDuration, fmtSeconds, sv, titleCase } from "../lib/state.js";
 import { useRemainingHeight } from "../lib/useRemainingHeight.js";
 
@@ -38,6 +40,7 @@ export function Charging(props: { vehicleId: string }) {
   });
 
   const isLive = live?.vehicleChargerState?.value === "charging_active";
+  const secondsLeft = num(live?.timeRemaining?.value);
   // The live session arrives over SSE just after the page loads; if the
   // vehicle state already says it's charging, hold its place meanwhile.
   const liveExpected =
@@ -64,17 +67,41 @@ export function Charging(props: { vehicleId: string }) {
     // Keep the previous curve on screen (dimmed) while the next one loads.
     placeholderData: keepPreviousData,
   });
-  // Minutes since plug-in (or the first point, if earlier).
+  // Minutes since plug-in (or the first point, if earlier). The vehicle's
+  // forecast for a charge in progress is its own dashed series, starting
+  // from the last recorded point so the two lines meet. Readings are
+  // smoothed for display, recorded and forecast each on their own, so
+  // sampling jitter and whole-percent SoC steps don't zig-zag the lines.
   const curveData = useMemo(() => {
     const points = curve ?? [];
     const plugIn = curveSession ? Date.parse(curveSession.startedAt) : Number.POSITIVE_INFINITY;
     const origin = Math.min(plugIn, points[0] ? Date.parse(points[0].ts) : plugIn);
-    return points.map((p) => ({
-      minutes: (Date.parse(p.ts) - origin) / 60_000,
-      power: p.powerKw,
-      soc: p.soc,
-    }));
+    const minutes = points.map((p) => (Date.parse(p.ts) - origin) / 60_000);
+    // Recorded points come first, then the forecast.
+    const recordedCount = points.filter((p) => !p.projected).length;
+    const window = smoothingWindowMinutes((minutes.at(-1) ?? 0) - (minutes[0] ?? 0));
+    const recordedMinutes = minutes.slice(0, recordedCount);
+    const recorded = points.slice(0, recordedCount);
+    const power = smoothByTime(recordedMinutes, recorded.map((p) => p.powerKw), window);
+    const soc = smoothByTime(recordedMinutes, recorded.map((p) => p.soc), window);
+    const forecast = smoothByTime(minutes.slice(recordedCount), points.slice(recordedCount).map((p) => p.soc), window);
+    const hasForecast = forecast.length > 0;
+    return points.map((_, i) => {
+      const isRecorded = i < recordedCount;
+      return {
+        minutes: minutes[i]!,
+        power: isRecorded ? power[i]! : null,
+        soc: isRecorded ? soc[i]! : null,
+        forecast: isRecorded
+          ? hasForecast && i === recordedCount - 1 ? soc[i]! : null
+          : forecast[i - recordedCount]!,
+      };
+    });
   }, [curve, curveSession]);
+  const curveHasForecast = curve?.some((p) => p.projected) ?? false;
+  const forecastSeries = curveHasForecast
+    ? [{ key: "forecast", label: "Forecast", color: "var(--accent)", mark: "line" as const, dashed: true, unit: "%", digits: 0 }]
+    : [];
   // Without power, the curve is battery level from recorded vehicle state.
   const curveHasPower = curveData.some((p) => p.power != null);
   const curveMinutes = curveData.at(-1)?.minutes ?? 0;
@@ -86,19 +113,24 @@ export function Charging(props: { vehicleId: string }) {
       {(isLive || liveExpected) && (
         <LoadingScope loading={!isLive}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatCard label="Power" value={`${fmt(num(live?.power?.value), 1)} kW`} />
-            <StatCard label="State of charge" value={`${fmt(num(live?.soc?.value), 0)}%`} />
+            <StatCard
+              label="Power"
+              value={`${fmt(num(live?.power?.value), 1)} kW`}
+              sub={live?.kilometersChargedPerHour ? u.formatChargeRate(num(live.kilometersChargedPerHour.value)) : undefined}
+            />
+            <StatCard
+              label="State of charge"
+              value={`${fmt(num(live?.soc?.value), 0)}%`}
+              sub={live?.socLimit ? `Limit ${fmt(num(live.socLimit.value), 0)}%` : undefined}
+            />
             <StatCard
               label="Energy added"
               value={`${fmt(num(live?.totalChargedEnergy?.value), 1)} kWh`}
+              sub={live?.rangeAddedThisSession ? `${u.formatDistance(num(live.rangeAddedThisSession.value))} of range` : undefined}
             />
             <StatCard
               label="Time remaining"
-              value={
-                live?.timeRemaining?.value != null
-                  ? `${fmt(num(live.timeRemaining.value)! / 60, 0)} min`
-                  : "—"
-              }
+              value={secondsLeft != null ? fmtSeconds(secondsLeft) : "—"}
             />
           </div>
         </LoadingScope>
@@ -152,6 +184,7 @@ export function Charging(props: { vehicleId: string }) {
                     series={[
                       { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
                       { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
+                      ...forecastSeries.map((f) => ({ ...f, right: true })),
                     ]}
                   />
                 ) : (
@@ -163,19 +196,17 @@ export function Charging(props: { vehicleId: string }) {
                     leftDomain={[0, 100]}
                     series={[
                       { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", unit: "%", digits: 0, dots: true },
+                      ...forecastSeries,
                     ]}
                   />
                 )}
               </ContentFrame>
-              {/* Room for both notes, so the panel keeps its height between sessions. */}
-              <div className="mt-2 min-h-9 space-y-1 text-xs text-[var(--text-muted)]">
-                {curveSession?.packKwh != null && curveSession.thermalKwh != null && (
-                  <p>
-                    {fmt(curveSession.packKwh, 1)} kWh went into the battery
-                    {curveSession.thermalKwh >= 0.05
-                      ? ` and ${fmt(curveSession.thermalKwh, 1)} kWh to heating or cooling it.`
-                      : "."}
-                  </p>
+              {curveSession?.packKwh != null && curveSession.thermalKwh != null && (
+                <EnergySplit packKwh={curveSession.packKwh} thermalKwh={curveSession.thermalKwh} />
+              )}
+              <div className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
+                {curveHasForecast && (
+                  <p>Dashed: the vehicle's forecast to the end of this charge.</p>
                 )}
                 {!curveHasPower && curveData.length > 1 && (
                   <p>
@@ -381,3 +412,20 @@ function num(value: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Where a session's energy went: into the pack, or heating or cooling it. */
+function EnergySplit(props: { packKwh: number; thermalKwh: number }) {
+  const segments = [
+    { key: "pack", label: "Stored", kwh: props.packKwh, color: "var(--series-1)" },
+    { key: "thermal", label: "Heating & cooling", kwh: props.thermalKwh, color: "var(--series-2)" },
+  ];
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-baseline justify-between gap-4 text-sm">
+        <span className="text-[var(--text-secondary)]">Energy added</span>
+        <span className="tabular-nums">{fmt(props.packKwh + props.thermalKwh, 1)} kWh</span>
+      </div>
+      <SplitBar segments={segments} />
+      <SplitLegend items={segments} />
+    </div>
+  );
+}

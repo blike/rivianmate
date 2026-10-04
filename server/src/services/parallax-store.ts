@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import type { VehicleInsightsDto } from "../api-types.js";
 import type { Db } from "../db/client.js";
-import { parallaxLatest } from "../db/schema.js";
+import { parallaxLatest, parallaxMessages } from "../db/schema.js";
 import {
+  PARALLAX_LOGGED_RVMS,
   type ParallaxMessage,
   RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,
@@ -19,7 +20,7 @@ import {
   decodeTripProgress,
 } from "../rivian/parallax.js";
 
-/** Topics kept for the insights view (the charging graph is stored as curves). */
+/** Topics kept for the insights view, plus the logged charging topics. */
 const STORED_RVMS = new Set([
   RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,
@@ -28,7 +29,11 @@ const STORED_RVMS = new Set([
   RVM_NETWORK,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
+  ...PARALLAX_LOGGED_RVMS,
 ]);
+const LOGGED_RVMS = new Set(PARALLAX_LOGGED_RVMS);
+const LOG_RETENTION_MS = 30 * 24 * 3600_000;
+const PRUNE_EVERY_MS = 3600_000;
 /** Rivian's message time; seconds or milliseconds since the epoch. */
 function messageTime(timestamp: number | null): Date | null {
   if (!timestamp) return null;
@@ -44,6 +49,7 @@ const AWAKE = ":awake";
  */
 export class ParallaxStore {
   private lastPayload = new Map<string, string>();
+  private prunedAt = 0;
 
   constructor(
     private readonly db: Db,
@@ -69,11 +75,24 @@ export class ParallaxStore {
           .insert(parallaxLatest)
           .values({ vehicleId, rvm, ...values })
           .onConflictDoUpdate({ target: [parallaxLatest.vehicleId, parallaxLatest.rvm], set: values });
+        if (LOGGED_RVMS.has(rvm)) {
+          await this.db.insert(parallaxMessages).values({ vehicleId, rvm, ...values });
+          await this.pruneLog(values.receivedAt);
+        }
         this.lastPayload.set(cacheKey, message.payload);
       }
     } catch (err) {
       this.log(`parallax store failed for ${message.rvm}: ${String(err)}`);
     }
+  }
+
+  /** Drops logged payloads past retention, at most hourly. */
+  private async pruneLog(now: Date): Promise<void> {
+    if (now.getTime() - this.prunedAt < PRUNE_EVERY_MS) return;
+    this.prunedAt = now.getTime();
+    await this.db
+      .delete(parallaxMessages)
+      .where(lt(parallaxMessages.receivedAt, new Date(now.getTime() - LOG_RETENTION_MS)));
   }
 
   async insights(vehicleId: string): Promise<VehicleInsightsDto> {

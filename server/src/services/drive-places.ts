@@ -133,7 +133,19 @@ export class DrivePlaces {
 
   private async fill(driveId: number): Promise<void> {
     const [drive] = await this.db.select().from(drives).where(eq(drives.id, driveId));
-    if (!drive || !drive.endedAt) return;
+    if (!drive) return;
+    if (!drive.endedAt) {
+      // In progress: only the start is known. The end fills both, the start from cache.
+      if (drive.startPlace != null) return;
+      const start = await this.lookup(drive.startLat, drive.startLon);
+      if (start) {
+        await this.db
+          .update(drives)
+          .set({ startPlace: start.place, startAddress: start.address })
+          .where(eq(drives.id, driveId));
+      }
+      return;
+    }
     const start = await this.lookup(drive.startLat, drive.startLon);
     const end = await this.lookup(drive.endLat, drive.endLon);
     await this.db

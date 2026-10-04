@@ -71,6 +71,27 @@
       "when": 1790869561753,
       "tag": "0009_drive_places",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790947121958,
+      "tag": "0010_parallax_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791048136583,
+      "tag": "0011_curve_point_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791146715259,
+      "tag": "0012_location_points_unique",
+      "breakpoints": true
     }
   ]
 }

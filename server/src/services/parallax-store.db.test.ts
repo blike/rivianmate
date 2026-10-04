@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, runMigrations } from "../db/client.js";
-import { parallaxLatest, vehicles } from "../db/schema.js";
-import { RVM_BATTERY_STATE, RVM_NETWORK, RVM_PARKED_ENERGY } from "../rivian/parallax.js";
+import { parallaxLatest, parallaxMessages, vehicles } from "../db/schema.js";
+import { RVM_BATTERY_STATE, RVM_NETWORK, RVM_PARKED_ENERGY, RVM_TIME_ESTIMATION } from "../rivian/parallax.js";
 import { b64, double, float, int, message, string } from "../testing/protobuf.js";
 import { ParallaxStore } from "./parallax-store.js";
 
@@ -63,7 +63,9 @@ describe.skipIf(!url)("ParallaxStore with Postgres", () => {
     await store.ingest("v1", { rvm: "body.locks.states", timestamp: null, payload: "CAE=" });
 
     const insights = await store.insights("v1");
-    expect(insights.parkedEnergy?.windows).toEqual([{ minutes: 1440, kwh: expect.closeTo(1.1), rangeKm: expect.closeTo(5.3) }]);
+    expect(insights.parkedEnergy?.windows).toEqual([
+      { minutes: 1440, kwh: expect.closeTo(1.1), rangeKm: expect.closeTo(5.3), uses: { climate: 0, system: 0, gearGuard: 0, outlets: 0 } },
+    ]);
     expect(insights.connectivity).toEqual({
       wifi: null,
       cellular: { carrier: "AT&T", technology: "LTE" },
@@ -72,5 +74,34 @@ describe.skipIf(!url)("ParallaxStore with Postgres", () => {
     expect(insights.coldWeather).toBeNull();
     const rows = await handle.db.select({ rvm: parallaxLatest.rvm }).from(parallaxLatest);
     expect(rows.map((r) => r.rvm).sort()).toEqual([RVM_PARKED_ENERGY, RVM_NETWORK]);
+  });
+
+  it("logs each distinct payload of logged topics, but not other topics", async () => {
+    const store = new ParallaxStore(handle.db);
+    const estimate = (seconds: number) => ({ rvm: RVM_TIME_ESTIMATION, timestamp: at, payload: b64(int(1, seconds)) });
+    await store.ingest("v1", estimate(3600));
+    await store.ingest("v1", estimate(3600)); // repeat
+    await store.ingest("v1", estimate(3000));
+    await store.ingest("v1", battery(60));
+
+    const logged = await handle.db.select().from(parallaxMessages).orderBy(parallaxMessages.id);
+    expect(logged.map((r) => [r.rvm, r.payload])).toEqual([
+      [RVM_TIME_ESTIMATION, b64(int(1, 3600))],
+      [RVM_TIME_ESTIMATION, b64(int(1, 3000))],
+    ]);
+  });
+
+  it("prunes logged payloads older than 30 days", async () => {
+    await handle.db.insert(parallaxMessages).values({
+      vehicleId: "v1",
+      rvm: RVM_TIME_ESTIMATION,
+      payload: "old",
+      receivedAt: new Date(Date.now() - 31 * 24 * 3600_000),
+    });
+    const store = new ParallaxStore(handle.db);
+    await store.ingest("v1", { rvm: RVM_TIME_ESTIMATION, timestamp: at, payload: b64(int(1, 60)) });
+
+    const logged = await handle.db.select({ payload: parallaxMessages.payload }).from(parallaxMessages);
+    expect(logged.map((r) => r.payload)).toEqual([b64(int(1, 60))]);
   });
 });

@@ -34,3 +34,27 @@ export function chargerLabel(
   if (s.vendor) return titleCase(s.vendor.toLowerCase());
   return s.chargerId ?? titleCase(s.chargerType);
 }
+
+/**
+ * Where a charge in progress is headed. Rivian's time remaining runs to the
+ * end of the session, which a charging schedule can cut short of the limit;
+ * the SoC it will reach by then is estimated from power and pack size.
+ * "session" when it stops more than a point short of the limit.
+ */
+export function chargeOutlook(i: {
+  soc: number | null;
+  limit: number | null;
+  powerKw: number | null;
+  capacityKwh: number | null;
+  minutesLeft: number | null;
+}): { kind: "limit" | "session"; minutes: number | null; endSoc: number | null } {
+  const { soc, limit, powerKw, capacityKwh, minutesLeft } = i;
+  // Percent per minute, ignoring charging losses (a slight overestimate).
+  const rate = powerKw && capacityKwh ? (powerKw / capacityKwh) * 100 / 60 : null;
+  if (minutesLeft != null && rate != null && soc != null && limit != null) {
+    const endSoc = Math.min(limit, soc + rate * minutesLeft);
+    if (endSoc < limit - 1) return { kind: "session", minutes: minutesLeft, endSoc };
+  }
+  const toLimit = rate != null && soc != null && limit != null && soc < limit ? (limit - soc) / rate : null;
+  return { kind: "limit", minutes: minutesLeft ?? toLimit, endSoc: limit };
+}

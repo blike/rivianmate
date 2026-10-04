@@ -12,6 +12,8 @@
   --text-muted: #8b8a80;
   --series-1: #3987e5; /* validated on dark surface */
   --series-2: #199e70;
+  --series-3: #a77de8;
+  --series-4: #e6a23c;
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-critical: #d03b3b;
@@ -137,6 +139,15 @@ body {
 
 .rm-vehicle--heading .rm-vehicle__puck svg {
   opacity: 1;
+}
+
+/* Out of date: no pulse, and dimmed. */
+.rm-vehicle--stale {
+  opacity: 0.55;
+}
+
+.rm-vehicle--stale .rm-vehicle__pulse {
+  display: none;
 }
 
 @keyframes rm-pulse {
@@ -344,5 +355,26 @@ body {
   .otp-caret,
   .otp-shake {
     animation: none;
+  }
+}
+
+/* ---- Parked energy: one bar per window, split by use ---- */
+.parked-bar {
+  display: flex;
+  gap: 2px;
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--surface-2);
+}
+
+.parked-bar__segment {
+  min-width: 3px;
+  transition: flex-grow 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parked-bar__segment {
+    transition: none;
   }
 }

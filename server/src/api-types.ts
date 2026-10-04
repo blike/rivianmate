@@ -167,6 +167,8 @@ export interface ChargingCurvePointDto {
   ts: string;
   powerKw: number | null;
   soc: number | null;
+  /** The vehicle's forecast for a charge in progress, not a reading. */
+  projected?: boolean;
 }
 
 export interface ChargingSessionDto {
@@ -236,7 +238,15 @@ export interface VehicleInsightsDto {
   cellTempsCurrent: boolean;
   coldWeather: { usableSoc: number | null; coldSoc: number; rangeImpactKm: number; at: string } | null;
   /** Energy used while parked, over Rivian's windows (e.g. last 24 h). */
-  parkedEnergy: { windows: { minutes: number; kwh: number; rangeKm: number }[]; at: string } | null;
+  parkedEnergy: {
+    windows: {
+      minutes: number;
+      kwh: number;
+      rangeKm: number;
+      uses: { climate: number; system: number; gearGuard: number; outlets: number };
+    }[];
+    at: string;
+  } | null;
   /** The vehicle's active navigation; null when it isn't navigating. */
   navigation: {
     destination: { name: string | null; lat: number; lon: number };

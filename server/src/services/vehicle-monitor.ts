@@ -114,10 +114,13 @@ export class VehicleMonitor {
   ) {
     this.snapshotWriter = new SnapshotWriter(db);
     this.parallaxStore = new ParallaxStore(db, log);
-    this.driveDetector = new DriveDetector(db, (vehicleId, driveId) =>
-      this.snapshotWriter.setCurrentDrive(vehicleId, driveId),
-    );
+    this.driveDetector = new DriveDetector(db, (vehicleId, driveId) => {
+      this.snapshotWriter.setCurrentDrive(vehicleId, driveId);
+      // Name the start while the drive is under way.
+      if (driveId != null) this.drivePlaces?.enqueue(driveId);
+    });
     this.driveDetector.onDriveEnded = (driveId) => this.drivePlaces?.enqueue(driveId);
+    this.driveDetector.log = log;
   }
 
   get isRunning(): boolean {
