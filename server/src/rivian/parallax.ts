@@ -219,6 +219,22 @@ export function vehicleSupportsParallax(
 /** Live vehicle position topic — not part of PARALLAX_MONITOR_RVMS; only subscribed when supported. */
 export const RVM_GNSS = "dynamics.vehicle.gnss";
 
+/** Live tire pressure topic — not part of PARALLAX_MONITOR_RVMS; only subscribed when supported. */
+export const RVM_TIRES = "dynamics.tires.state";
+
+const TIRE_POSITION_SUFFIX: Record<number, string> = {
+  1: "FrontLeft",
+  2: "FrontRight",
+  3: "RearLeft",
+  4: "RearRight",
+};
+
+export interface TireReading {
+  position: string;
+  pressureBar: number | null;
+  status: "OK" | "Warning" | null;
+}
+
 export interface GnssReading {
   latitude: number | null;
   longitude: number | null;
@@ -362,6 +378,33 @@ export function decodeGnss(payloadBase64: string): GnssReading | null {
     bearing: bearing != null ? ((bearing % 360) + 360) % 360 : null,
     speedKmh: speedMps != null ? Math.round(speedMps * 3.6 * 10) / 10 : null,
   };
+}
+
+/**
+ * `dynamics.tires.state`: repeated field 2, each a nested message with
+ * 1 position (1-4 → FL/FR/RL/RR), 2 status (1=OK, else Warning), 3 pressure
+ * (double, bar). Field numbers from a live capture against a real R2
+ * (2026-09-29), not community docs.
+ */
+export function decodeTires(payloadBase64: string): TireReading[] {
+  if (!payloadBase64) return [];
+  const fields = readProtoFields(Buffer.from(payloadBase64, "base64"));
+  if (!fields) return [];
+  const readings: TireReading[] = [];
+  for (const f of fields) {
+    if (f.field !== 2 || f.wire !== 2) continue;
+    const inner = fieldsOf(f.value);
+    const position = inner?.int(1);
+    const suffix = position != null ? TIRE_POSITION_SUFFIX[position] : undefined;
+    if (!suffix) continue;
+    const status = inner?.int(2);
+    readings.push({
+      position: suffix,
+      pressureBar: inner?.double(3) ?? null,
+      status: status == null ? null : status === 1 ? "OK" : "Warning",
+    });
+  }
+  return readings;
 }
 
 export interface ColdWeather {

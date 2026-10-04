@@ -26,6 +26,7 @@ import {
   RVM_GNSS,
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
+  RVM_TIRES,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
 } from "./parallax.js";
@@ -362,6 +363,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
       ...float(6, 0),
     ]);
+    const tire = (pos: number, bar: number) => message(2, [...int(1, pos), ...int(2, 1), ...double(3, bar)]);
+    this.emitParallax(RVM_TIRES, [...tire(1, 2.8), ...tire(2, 2.85), ...tire(3, 2.75), ...tire(4, 2.8)]);
   }
 
   /** Parallax topics come in as base64 protobuf, as from Rivian. */

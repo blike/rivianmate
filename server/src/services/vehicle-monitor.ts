@@ -6,8 +6,10 @@ import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
 import {
   PARALLAX_MONITOR_RVMS,
   RVM_GNSS,
+  RVM_TIRES,
   RVM_TRIP_INFO,
   decodeGnss,
+  decodeTires,
   decodeTripInfo,
   vehicleSupportsParallax,
 } from "../rivian/parallax.js";
@@ -293,7 +295,7 @@ export class VehicleMonitor {
       });
       if (vehicleSupportsParallax(vehicle.supportedFeatures)) {
         this.parallaxMode = "parallax";
-        stream.subscribeParallax?.(vehicle.id, [...PARALLAX_MONITOR_RVMS, RVM_GNSS], (_vehicleId, message) => {
+        stream.subscribeParallax?.(vehicle.id, [...PARALLAX_MONITOR_RVMS, RVM_GNSS, RVM_TIRES], (_vehicleId, message) => {
           void chargingMonitor.ingestParallax(vehicle.id, message);
           void this.parallaxStore.ingest(vehicle.id, message);
           if (message.rvm === RVM_TRIP_INFO) {
@@ -317,6 +319,21 @@ export class VehicleMonitor {
               if (reading.speedKmh != null) delta.gnssSpeed = { timeStamp: ts, value: reading.speedKmh };
               if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
             }
+          } else if (message.rvm === RVM_TIRES) {
+            const ts =
+              message.timestamp != null
+                ? new Date(message.timestamp).toISOString()
+                : new Date().toISOString();
+            const delta: VehicleState = {};
+            for (const tire of decodeTires(message.payload)) {
+              if (tire.pressureBar != null) {
+                delta[`tirePressure${tire.position}`] = { timeStamp: ts, value: tire.pressureBar };
+              }
+              if (tire.status != null) {
+                delta[`tirePressureStatus${tire.position}`] = { timeStamp: ts, value: tire.status };
+              }
+            }
+            if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
           }
         });
       } else {

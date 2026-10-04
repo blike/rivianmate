@@ -13,6 +13,7 @@ import {
   decodeParkedEnergy,
   decodeSocSlider,
   decodeTimeEstimation,
+  decodeTires,
   decodeTripInfo,
   decodeTripProgress,
   readProtoFields,
@@ -317,5 +318,24 @@ describe("decodeGnss", () => {
 
   it("returns null for an empty payload", () => {
     expect(decodeGnss("")).toBeNull();
+  });
+});
+
+describe("decodeTires", () => {
+  const tire = (pos: number, status: number, bar: number) =>
+    message(2, [...int(1, pos), ...int(2, status), ...double(3, bar)]);
+
+  it("reads position, status and pressure (bar) for each tire", () => {
+    const payload = b64([...tire(1, 1, 2.8), ...tire(2, 1, 2.85), ...tire(3, 2, 2.75), ...tire(4, 1, 2.8)]);
+    expect(decodeTires(payload)).toEqual([
+      { position: "FrontLeft", pressureBar: 2.8, status: "OK" },
+      { position: "FrontRight", pressureBar: 2.85, status: "OK" },
+      { position: "RearLeft", pressureBar: 2.75, status: "Warning" },
+      { position: "RearRight", pressureBar: 2.8, status: "OK" },
+    ]);
+  });
+
+  it("returns [] for an empty payload", () => {
+    expect(decodeTires("")).toEqual([]);
   });
 });
