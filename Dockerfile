@@ -11,9 +11,11 @@ COPY server ./server
 COPY web ./web
 RUN pnpm -r build
 
-# Keep runtime dependencies target-specific, including any native modules.
+# Runtime dependencies are pure JavaScript, so they're installed on the build
+# platform too: nothing runs under QEMU, where pnpm crashes on arm64. A native
+# dependency would need this stage to run on the target platform again.
 # Source edits must not invalidate installation or production packaging.
-FROM node:22-alpine AS runtime-deps
+FROM --platform=$BUILDPLATFORM node:22-alpine AS runtime-deps
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
