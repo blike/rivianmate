@@ -206,6 +206,7 @@ export function History(props: { vehicleId: string }) {
               lat={lastPosition[0]}
               lon={lastPosition[1]}
               trail={trailPositions}
+              variant="history"
               height="24rem"
               follow={false}
             />

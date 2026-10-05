@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { b64, double, float, graphBar, int, message, string } from "../testing/protobuf.js";
 import {
   chargerStateFromStatus,
+  decodeBatteryCharacteristics,
   decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
@@ -22,6 +23,27 @@ import {
 
 const START = Date.parse("2026-10-01T07:00:00Z");
 const bar = graphBar;
+
+describe("decodeBatteryCharacteristics", () => {
+  it("reads reported and rated capacity independently from a captured payload", () => {
+    expect(decodeBatteryCharacteristics("LaSw30I1AADcQg==")).toEqual({ capacityKwh: 111.845, ratedCapacityKwh: 110 });
+    expect(decodeBatteryCharacteristics(b64(float(6, 110)))).toEqual({ capacityKwh: null, ratedCapacityKwh: 110 });
+    expect(decodeBatteryCharacteristics(b64(float(5, 111)))).toEqual({ capacityKwh: 111, ratedCapacityKwh: null });
+  });
+
+  it("rejects absent, malformed, wrong-type and invalid capacity readings", () => {
+    for (const payload of ["", "LQ==", b64(int(5, 110)), ...[0, -1, NaN, Infinity, 501].map(n => b64(float(5, n)))]) {
+      expect(decodeBatteryCharacteristics(payload)).toBeNull();
+    }
+  });
+  it("does not replace missing or invalid rated capacity with the reported estimate", () => {
+    for (const value of [0, -1, NaN, Infinity, 501]) {
+      expect(decodeBatteryCharacteristics(b64([...float(5, 111), ...float(6, value)]))).toEqual({ capacityKwh: 111, ratedCapacityKwh: null });
+    }
+    expect(decodeBatteryCharacteristics(b64([...float(5, 111), ...int(6, 110)]))).toEqual({ capacityKwh: 111, ratedCapacityKwh: null });
+  });
+
+});
 
 describe("readProtoFields", () => {
   it("reads varint, fixed32 and length-delimited fields", () => {
@@ -271,11 +293,12 @@ describe("decodeSocSlider", () => {
 
 describe("chargerStateFromStatus", () => {
   it("maps the display statuses seen on a live charge", () => {
-    // Captured: scheduled, ready, then charging.
-    expect(["CAIQBRgB", "CAIQAhgB", "CAIQAxgB"].map((p) => chargerStateFromStatus(decodeChargingStatus(p)!))).toEqual([
+    // Captured: scheduled, ready, charging, and complete.
+    expect(["CAIQBRgB", "CAIQAhgB", "CAIQAxgB", "CAIQBBgB"].map((p) => chargerStateFromStatus(decodeChargingStatus(p)!))).toEqual([
       "charging_scheduled",
       "charging_ready",
       "charging_active",
+      "charging_complete",
     ]);
     expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
   });

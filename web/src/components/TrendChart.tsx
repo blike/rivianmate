@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import {
   Area,
   Bar,
@@ -27,6 +27,8 @@ export interface TrendSeries {
   dots?: boolean;
   /** Dashed, for estimates rather than readings (lines only). */
   dashed?: boolean;
+  interpolation?: "linear" | "monotone";
+  connectNulls?: boolean;
 }
 
 type Row = Record<string, number | null>;
@@ -37,10 +39,12 @@ export function TrendChart(props: {
   xKey: string;
   series: TrendSeries[];
   xFormatter?: (x: number) => string;
-  tooltipLabel?: (x: number) => string;
+  tooltipLabel?: (x: number) => ReactNode;
   xType?: "number" | "category";
   leftDomain?: [number | "auto", number | "auto"];
   rightDomain?: [number | "auto", number | "auto"];
+  leftUnit?: string;
+  rightUnit?: string;
   height?: number;
 }) {
   const gradientId = useId().replace(/:/g, "");
@@ -80,8 +84,8 @@ export function TrendChart(props: {
             tick={tick}
             tickLine={false}
             axisLine={false}
-            width={44}
-            tickFormatter={(v: number) => fmt(v, leftDigits)}
+            width={props.leftUnit ? 64 : 44}
+            tickFormatter={(v: number) => `${fmt(v, props.leftUnit && Number.isInteger(v) ? 0 : leftDigits)}${props.leftUnit ? ` ${props.leftUnit}` : ""}`}
           />
           {hasRight && (
             <YAxis
@@ -91,22 +95,39 @@ export function TrendChart(props: {
               tick={tick}
               tickLine={false}
               axisLine={false}
-              width={40}
-              tickFormatter={(v: number) => fmt(v, rightDigits)}
+              width={props.rightUnit ? 52 : 40}
+              tickFormatter={(v: number) => `${fmt(v, rightDigits)}${props.rightUnit ? ` ${props.rightUnit}` : ""}`}
             />
           )}
           <Tooltip
-            contentStyle={{
-              background: "var(--surface-2)",
-              border: "1px solid var(--border)",
-              borderRadius: "0.5rem",
-              color: "var(--text-primary)",
-              fontSize: 12,
-            }}
-            labelFormatter={(x) => (props.tooltipLabel ?? xFormatter)(Number(x))}
-            formatter={(value, _name, item) => {
-              const s = props.series.find((x) => x.key === item.dataKey);
-              return [`${fmt(typeof value === "number" ? value : null, s?.digits ?? 1)}${s?.unit ? ` ${s.unit}` : ""}`, s?.label ?? ""];
+            cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              // One row per series, in declared order, skipping gaps.
+              const rows = props.series.flatMap((s) => {
+                const value = payload.find((p) => p.dataKey === s.key)?.value;
+                return typeof value === "number" ? [{ s, value }] : [];
+              });
+              if (rows.length === 0) return null;
+              return (
+                <div className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs shadow-lg">
+                  <div className="text-[var(--text-primary)]">
+                    {(props.tooltipLabel ?? xFormatter)(Number(label))}
+                  </div>
+                  <div className="mt-2 space-y-1 border-t border-[var(--border)] pt-2">
+                    {rows.map(({ s, value }) => (
+                      <div key={s.key} className="flex items-center gap-2">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+                        <span className="text-[var(--text-secondary)]">{s.label}</span>
+                        <span className="ml-auto pl-4 font-medium tabular-nums text-[var(--text-primary)]">
+                          {fmt(value, s.digits ?? 1)}
+                          {s.unit && <span className="ml-0.5 font-normal text-[var(--text-muted)]">{s.unit}</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
             }}
           />
           {props.series.length > 1 && (
@@ -125,24 +146,24 @@ export function TrendChart(props: {
               return (
                 <Line
                   {...common}
-                  type="monotone"
+                  type={s.interpolation ?? "monotone"}
                   stroke={s.color}
                   strokeWidth={2}
                   strokeDasharray={s.dashed ? "5 4" : undefined}
                   dot={s.dots ? { r: 3, fill: s.color, strokeWidth: 0 } : false}
-                  connectNulls
+                  connectNulls={s.connectNulls ?? true}
                 />
               );
             }
             return (
               <Area
                 {...common}
-                type="monotone"
+                type={s.interpolation ?? "monotone"}
                 stroke={s.color}
                 strokeWidth={2}
                 fill={`url(#${gradientId}-${s.key})`}
                 dot={false}
-                connectNulls
+                connectNulls={s.connectNulls ?? true}
               />
             );
           })}

@@ -70,9 +70,8 @@ Charger.
 
 ![Health](docs/screenshots/health.png)
 
-Battery lost per day while parked, tire pressure trends that make a slow leak
-obvious, and usable battery capacity estimated from your own charging
-sessions over time. It also lists every software version the vehicle has run,
+Vehicle-reported parked energy by use, tire pressure trends that make a slow leak
+obvious, and the vehicle’s own battery-capacity readings over time. It also lists every software version the vehicle has run,
 with links to the release notes.
 
 ### History
