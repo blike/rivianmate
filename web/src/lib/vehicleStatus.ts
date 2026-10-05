@@ -1,6 +1,23 @@
 import type { VehicleState } from "@server/api-types.js";
 import { closureStatuses } from "./closures.js";
-import { nv, sv } from "./state.js";
+import { nv, sv, titleCase } from "./state.js";
+
+/** Explicit null is an absent warning, not a measured fluid level. */
+export function brakeFluidLabel(state: VehicleState | undefined): string {
+  if (!state || !("brakeFluidLow" in state)) return "Unknown";
+  if (state.brakeFluidLow === null) return "Normal";
+  const value = sv(state, "brakeFluidLow");
+  if (value === "false") return "OK";
+  if (value === "true") return "Low";
+  return value == null ? "Unknown" : titleCase(value);
+}
+
+/** Rivian's literal "undefined" is observed when cabin preconditioning is off. */
+export function preconditioningLabel(state: VehicleState | undefined): string {
+  const value = sv(state, "cabinPreconditioningStatus");
+  if (value === "undefined") return "Off";
+  return value == null ? "Unknown" : titleCase(value);
+}
 
 export type ActivityKind = "driving" | "charging" | "plugged" | "parked" | "asleep";
 
