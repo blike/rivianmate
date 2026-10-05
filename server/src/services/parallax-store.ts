@@ -35,7 +35,7 @@ const LOGGED_RVMS = new Set(PARALLAX_LOGGED_RVMS);
 const LOG_RETENTION_MS = 30 * 24 * 3600_000;
 const PRUNE_EVERY_MS = 3600_000;
 /** Rivian's message time; seconds or milliseconds since the epoch. */
-function messageTime(timestamp: number | null): Date | null {
+export function messageTime(timestamp: number | null): Date | null {
   if (!timestamp) return null;
   return new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
 }

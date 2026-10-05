@@ -45,6 +45,13 @@ export interface VehicleStateStream {
   subscribeDepartureSchedules?(vehicleId: string, callback: DepartureSchedulesCallback): void;
   /** Parallax protobuf messages for the given topics (RVMs). */
   subscribeParallax?(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void;
+  /**
+   * A second, independent Parallax subscription (own id, own rejection
+   * fate) for topics not every vehicle accepts (e.g. an R1 may not accept
+   * dynamics.vehicle.gnss) — so a rejection here can't mark the main
+   * Parallax subscription (battery/charging/trip) unsupported too.
+   */
+  subscribeParallaxDynamics?(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void;
   /** True once Rivian has refused an optional subscription. */
   isUnsupported?(kind: OptionalSubKind): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
@@ -85,7 +92,7 @@ export interface SubscriptionManagerOptions {
   heartbeatIntervalMs?: number;
 }
 
-type OptionalSubKind = "chargingSession" | "departureSchedules" | "parallax";
+type OptionalSubKind = "chargingSession" | "departureSchedules" | "parallax" | "parallaxDynamics";
 type SubKind = "vehicleState" | OptionalSubKind;
 
 interface Subscription {
@@ -189,6 +196,16 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     this.addSubscription({
       id: `parallax:${vehicleId}`,
       kind: "parallax",
+      vehicleId,
+      rvms,
+      onParallax: callback,
+    });
+  }
+
+  subscribeParallaxDynamics(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void {
+    this.addSubscription({
+      id: `parallax-dynamics:${vehicleId}`,
+      kind: "parallaxDynamics",
       vehicleId,
       rvms,
       onParallax: callback,
@@ -377,7 +394,11 @@ export class RivianSubscriptionManager implements VehicleStateStream {
           sub.onCharging?.(sub.vehicleId, mapChargingSession(data.chargingSession));
         } else if (sub.kind === "departureSchedules" && data && "vehicleDepartureSchedules" in data) {
           sub.onDepartures?.(sub.vehicleId, mapDepartureSchedules(data.vehicleDepartureSchedules));
-        } else if (sub.kind === "parallax" && data && "parallaxMessages" in data) {
+        } else if (
+          (sub.kind === "parallax" || sub.kind === "parallaxDynamics") &&
+          data &&
+          "parallaxMessages" in data
+        ) {
           const m = data.parallaxMessages as Partial<Record<keyof ParallaxMessage, unknown>> | null;
           if (m && typeof m.rvm === "string") {
             const timestamp = Number(m.timestamp);
@@ -464,7 +485,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
               query: CHARGING_SESSION_SUBSCRIPTION,
               variables: { vehicleID: sub.vehicleId },
             }
-          : sub.kind === "parallax"
+          : sub.kind === "parallax" || sub.kind === "parallaxDynamics"
             ? {
                 operationName: "ParallaxMessages",
                 query: PARALLAX_MESSAGES_SUBSCRIPTION,

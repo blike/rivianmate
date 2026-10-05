@@ -299,7 +299,7 @@ describe("decodeGnss", () => {
       longitude: -122.419418,
       altitude: 15.3,
       bearing: null,
-      speedKmh: null,
+      speedMps: null,
     });
   });
 
@@ -310,10 +310,11 @@ describe("decodeGnss", () => {
     expect(decodeGnss(b64(float(5, 45)))?.bearing).toBeCloseTo(45, 1);
   });
 
-  it("converts speed from m/s to km/h", () => {
-    // Raw 3.185 (captured while parked) only reads as a plausible
-    // "just came to a stop" speed once converted from m/s.
-    expect(decodeGnss(b64(float(6, 3.185)))?.speedKmh).toBeCloseTo(11.47, 1);
+  it("keeps speed in m/s, matching what drive-detector/vehicleStatus/snapshot-writer expect", () => {
+    // Raw 3.185 m/s (captured while parked) is a plausible "just came to a
+    // stop" speed; converting it to km/h would make drive-detection's
+    // "speed > 1" (m/s) threshold trip on ordinary GPS jitter at rest.
+    expect(decodeGnss(b64(float(6, 3.185)))?.speedMps).toBeCloseTo(3.185, 2);
   });
 
   it("returns null for an empty payload", () => {

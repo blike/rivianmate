@@ -329,6 +329,26 @@ describe("RivianSubscriptionManager", () => {
     expect(manager.isUnsupported("departureSchedules")).toBe(true);
   });
 
+  it("isolates a rejected dynamics-Parallax subscription from the main one", async () => {
+    manager = createManager();
+    manager.subscribe("VIN1", () => {});
+    manager.subscribeParallax("VIN1", ["energy.high_voltage.battery_state"], () => {});
+    manager.subscribeParallaxDynamics("VIN1", ["dynamics.vehicle.gnss"], () => {});
+    manager.start();
+    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3);
+    server.conns[0]!.socket.send(
+      JSON.stringify({
+        id: "parallax-dynamics:VIN1",
+        type: "error",
+        payload: [{ message: "Cannot query field" }],
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 200));
+    expect(manager.isUnsupported("parallaxDynamics")).toBe(true);
+    expect(manager.isUnsupported("parallax")).toBe(false);
+    expect(server.conns).toHaveLength(1);
+  });
+
   it("keeps the socket when only the charging subscription is refused", async () => {
     manager = createManager();
     manager.subscribe("VIN1", () => {});

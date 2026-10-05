@@ -216,11 +216,36 @@ export function vehicleSupportsParallax(
   return (supportedFeatures ?? []).includes(PARALLAX_FEATURE_FLAG);
 }
 
-/** Live vehicle position topic — not part of PARALLAX_MONITOR_RVMS; only subscribed when supported. */
+/** Live vehicle position topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
 export const RVM_GNSS = "dynamics.vehicle.gnss";
 
-/** Live tire pressure topic — not part of PARALLAX_MONITOR_RVMS; only subscribed when supported. */
+/** Live tire pressure topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
 export const RVM_TIRES = "dynamics.tires.state";
+
+/** Topics for the isolated "dynamics" Parallax subscription (own id/fate — see subscription.ts). */
+export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
+
+/**
+ * VehicleState fields the dynamics topics own. When a vehicle supports
+ * Parallax, the legacy subscription's delta for these fields is dropped
+ * before merging (see vehicle-monitor.ts) — Parallax wins structurally,
+ * rather than racing last-write-wins against a legacy delivery that can
+ * now arrive late (see blike/rivianmate#16).
+ */
+export const PARALLAX_DYNAMICS_FIELDS: readonly string[] = [
+  "gnssLocation",
+  "gnssAltitude",
+  "gnssBearing",
+  "gnssSpeed",
+  "tirePressureFrontLeft",
+  "tirePressureFrontRight",
+  "tirePressureRearLeft",
+  "tirePressureRearRight",
+  "tirePressureStatusFrontLeft",
+  "tirePressureStatusFrontRight",
+  "tirePressureStatusRearLeft",
+  "tirePressureStatusRearRight",
+];
 
 const TIRE_POSITION_SUFFIX: Record<number, string> = {
   1: "FrontLeft",
@@ -240,7 +265,8 @@ export interface GnssReading {
   longitude: number | null;
   altitude: number | null;
   bearing: number | null;
-  speedKmh: number | null;
+  /** m/s — matches what snapshot-writer.ts/drive-detector.ts/vehicleStatus.ts expect; don't convert to km/h here. */
+  speedMps: number | null;
 }
 
 /** Field accessors over one decoded message; wrong wire types read as absent. */
@@ -370,13 +396,12 @@ export function decodeGnss(payloadBase64: string): GnssReading | null {
   const m = decode(payloadBase64);
   if (!m) return null;
   const bearing = m.float(5);
-  const speedMps = m.float(6);
   return {
     latitude: m.double(1),
     longitude: m.double(2),
     altitude: m.double(3),
     bearing: bearing != null ? ((bearing % 360) + 360) % 360 : null,
-    speedKmh: speedMps != null ? Math.round(speedMps * 3.6 * 10) / 10 : null,
+    speedMps: m.float(6),
   };
 }
 

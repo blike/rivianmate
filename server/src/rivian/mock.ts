@@ -137,6 +137,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   private callback?: VehicleStateCallback;
   private chargingCallback?: ChargingSessionCallback;
   private parallaxCallback?: ParallaxCallback;
+  private parallaxDynamicsCallback?: ParallaxCallback;
   private subscribedId = MOCK_VEHICLE_ID;
   private timer?: NodeJS.Timeout;
   private phase: Phase = "parked";
@@ -333,6 +334,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.parallaxCallback = callback;
   }
 
+  subscribeParallaxDynamics(_vehicleId: string, _rvms: readonly string[], callback: ParallaxCallback): void {
+    this.parallaxDynamicsCallback = callback;
+  }
+
   start(): void {
     if (this.timer) return;
     this.onConnectionChange?.(true);
@@ -356,7 +361,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ...message(5, [...string(1, "AT&T"), ...string(2, "LTE")]),
     ]);
     this.emitBatteryState();
-    this.emitParallax(RVM_GNSS, [
+    this.emitParallaxDynamics(RVM_GNSS, [
       ...double(1, this.lat),
       ...double(2, this.lon),
       ...double(3, 240),
@@ -364,12 +369,17 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ...float(6, 0),
     ]);
     const tire = (pos: number, bar: number) => message(2, [...int(1, pos), ...int(2, 1), ...double(3, bar)]);
-    this.emitParallax(RVM_TIRES, [...tire(1, 2.8), ...tire(2, 2.85), ...tire(3, 2.75), ...tire(4, 2.8)]);
+    this.emitParallaxDynamics(RVM_TIRES, [...tire(1, 2.8), ...tire(2, 2.85), ...tire(3, 2.75), ...tire(4, 2.8)]);
   }
 
   /** Parallax topics come in as base64 protobuf, as from Rivian. */
   private emitParallax(rvm: string, bytes: number[]): void {
     this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
+  }
+
+  /** The isolated GNSS/tires subscription, separate from the main Parallax one. */
+  private emitParallaxDynamics(rvm: string, bytes: number[]): void {
+    this.parallaxDynamicsCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
   }
 
   /** Navigating to the Rivian service center for the length of the drive. */
