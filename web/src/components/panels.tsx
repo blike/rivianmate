@@ -1,3 +1,4 @@
+import { preconditioningLabel } from "../lib/vehicleStatus.js";
 import type { ReactNode } from "react";
 import type { VehicleState } from "@server/api-types.js";
 import { nv, sv, titleCase } from "../lib/state.js";
@@ -108,7 +109,7 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
     <dl className="space-y-1 text-sm">
       <Row label="Cabin temperature" value={u.formatTemperature(interior)} />
       <Row label="Set temperature" value={u.formatTemperature(nv(s, "cabinClimateDriverTemperature"))} />
-      <Row label="Preconditioning" value={titleCase(sv(s, "cabinPreconditioningStatus"))} />
+      <Row label="Preconditioning" value={preconditioningLabel(s)} />
       <Row label="Defrost" value={titleCase(sv(s, "defrostDefogStatus"))} />
       <Row label="Pet mode" value={titleCase(sv(s, "petModeStatus"))} />
     </dl>

@@ -18,7 +18,7 @@ import { VehicleMap } from "../components/VehicleMap.js";
 import { chargeOutlook, chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
 import { locationIsBehind, relativeTime } from "../lib/freshness.js";
 import { fmt, fmtDuration, fmtSeconds, location, nv, sv, titleCase } from "../lib/state.js";
-import { type ActivityKind, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
+import { type ActivityKind, brakeFluidLabel, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
 
 export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
   const { data: state, isPending } = useVehicleState(props.vehicleId);
@@ -63,7 +63,7 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
             <Panel title="Vehicle health">
               <dl className="space-y-1 text-sm">
                 <Row label="12V battery" value={titleCase(sv(state, "twelveVoltBatteryHealth"))} />
-                <Row label="Brake fluid" value={sv(state, "brakeFluidLow") === "false" ? "OK" : titleCase(sv(state, "brakeFluidLow"))} />
+                <Row label="Brake fluid" value={brakeFluidLabel(state)} />
                 <Row label="Wiper fluid" value={titleCase(sv(state, "wiperFluidState"))} />
                 <Row label="Drive mode" value={titleCase(sv(state, "driveMode"))} />
                 <Row label="Gear guard" value={titleCase(sv(state, "gearGuardLocked"))} />
