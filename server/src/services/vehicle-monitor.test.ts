@@ -47,3 +47,25 @@ describe("monitor startup failure", () => {
     expect(store.setAuthState).toHaveBeenCalledWith("unauthenticated");
   });
 });
+
+
+describe("per-vehicle Parallax diagnostics", () => {
+  it("reports mixed capabilities independently of vehicle ordering", () => {
+    const { monitor } = setup(new Error("unused"));
+    const vehicles = monitor.getVehicles();
+    const common = { vin: "VIN", name: null, make: null, model: null, modelYear: null };
+    vehicles.push(
+      { ...common, id: "parallax", supportedFeatures: ["VEHICLE_CONNECTIVITY_PARALLAX"] },
+      { ...common, id: "classic", supportedFeatures: [] },
+    );
+    const expected = { parallax: "parallax", classic: "classic" };
+    expect(monitor.diagnostics().parallaxModes).toEqual(expected);
+    expect(monitor.diagnostics().parallaxMode).toBe("parallax");
+    vehicles.reverse();
+    expect(monitor.diagnostics().parallaxModes).toEqual(expected);
+    expect(monitor.diagnostics().parallaxMode).toBe("parallax");
+    vehicles.splice(0);
+    expect(monitor.diagnostics().parallaxModes).toEqual({});
+    expect(monitor.diagnostics().parallaxMode).toBe("classic");
+  });
+});

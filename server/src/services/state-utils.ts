@@ -18,6 +18,7 @@ const INVALID_SENSOR_STATES = new Set([
 export function mergeVehicleState(
   cached: VehicleState,
   delta: VehicleState,
+  timestampOrderedFields: readonly string[] = [],
 ): string[] {
   const changed: string[] = [];
   for (const [key, incoming] of Object.entries(delta)) {
@@ -30,6 +31,13 @@ export function mergeVehicleState(
       continue;
     }
     const prev = cached[key];
+    // GPS and tires can arrive from either stream. Keep the newest reading,
+    // while allowing legacy updates before Parallax reports or after it stops.
+    if (timestampOrderedFields.includes(key) && prev) {
+      const previousAt = Date.parse((prev as TimeStampedValue).timeStamp);
+      const incomingAt = Date.parse(record.timeStamp);
+      if (Number.isFinite(previousAt) && Number.isFinite(incomingAt) && incomingAt < previousAt) continue;
+    }
     cached[key] = incoming;
     if (JSON.stringify(prev) !== JSON.stringify(incoming)) changed.push(key);
   }

@@ -162,18 +162,18 @@ export function Settings() {
                   {diagnostics && (
                     <span
                       className={
-                        diagnostics.monitor.parallaxMode === "parallax"
+                        diagnostics.monitor.parallaxModes[v.id] === "parallax"
                           ? "rounded-full px-2 py-0.5 text-xs font-medium text-white"
                           : "rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
                       }
                       style={
-                        diagnostics.monitor.parallaxMode === "parallax"
+                        diagnostics.monitor.parallaxModes[v.id] === "parallax"
                           ? { background: "var(--series-3)" }
                           : undefined
                       }
                       title="Read-only: Rivian reports this per vehicle; it can't be changed here."
                     >
-                      {diagnostics.monitor.parallaxMode === "parallax" ? "w/ Parallax" : "Classic"}
+                      {diagnostics.monitor.parallaxModes[v.id] === "parallax" ? "w/ Parallax" : "Classic"}
                     </span>
                   )}
                   <span className="font-mono text-xs tracking-wide text-[var(--text-secondary)] select-all">

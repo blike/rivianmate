@@ -69,8 +69,9 @@ export interface MonitorDiagnostics {
   streamConnected: boolean;
   fallbackPolling: boolean;
   consecutiveAuthFailures: number;
-  /** Whether the vehicle's supportedFeatures include VEHICLE_CONNECTIVITY_PARALLAX. */
+  /** Whether any monitored vehicle supports dynamics Parallax. */
   parallaxMode: "classic" | "parallax";
+  parallaxModes: Record<string, "classic" | "parallax">;
   /** Legacy fields Rivian has rejected from the subscription (e.g. gnssLocation). */
   parallaxDroppedFields: readonly string[];
 }
@@ -116,7 +117,6 @@ export class VehicleMonitor {
   private authFailures = 0;
   /** Set once Rivian rejects the full state query; sticky for the process. */
   private coreStateQuery = false;
-  private parallaxMode: "classic" | "parallax" = "classic";
   /** Bumped on every start/stop so a superseded start() bails out. */
   private generation = 0;
 
@@ -158,7 +158,10 @@ export class VehicleMonitor {
       streamConnected: this.streamConnected,
       fallbackPolling: this.fallbackPollTimer !== undefined,
       consecutiveAuthFailures: this.authFailures,
-      parallaxMode: this.parallaxMode,
+      parallaxMode: this.vehicles.some((v) => vehicleSupportsParallax(v.supportedFeatures)) ? "parallax" : "classic",
+      parallaxModes: Object.fromEntries(this.vehicles.map((v) => [
+        v.id, vehicleSupportsParallax(v.supportedFeatures) ? "parallax" : "classic",
+      ])),
       parallaxDroppedFields: this.connection?.stream.droppedFields ?? [],
     };
   }
@@ -288,17 +291,9 @@ export class VehicleMonitor {
       this.handleStreamConnection(connected);
     for (const vehicle of this.vehicles) {
       const parallaxActive = vehicleSupportsParallax(vehicle.supportedFeatures);
-      this.parallaxMode = parallaxActive ? "parallax" : "classic";
       // Rivian's vehicleState/chargingSession take the vehicle id from
       // getUserInfo, not the VIN (a VIN yields VEHICLE_NOT_FOUND).
       stream.subscribe(vehicle.id, (vehicleId, delta) => {
-        // Parallax wins structurally for fields it owns: drop legacy's
-        // delta for them rather than racing last-write-wins, since late
-        // legacy deliveries (blike/rivianmate#16) could otherwise clobber
-        // a fresher Parallax value.
-        if (parallaxActive) {
-          for (const field of PARALLAX_DYNAMICS_FIELDS) delete delta[field];
-        }
         void this.handleDelta(vehicleId, delta);
       });
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
@@ -396,7 +391,7 @@ export class VehicleMonitor {
   private async handleDelta(vehicleId: string, delta: VehicleState): Promise<void> {
     if (!this.vehicles.some((v) => v.id === vehicleId)) return;
     const cached = this.states.get(vehicleId) ?? {};
-    const changed = mergeVehicleState(cached, delta);
+    const changed = mergeVehicleState(cached, delta, PARALLAX_DYNAMICS_FIELDS);
     this.states.set(vehicleId, cached);
     if (changed.length === 0) return;
 

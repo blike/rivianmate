@@ -361,13 +361,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ...message(5, [...string(1, "AT&T"), ...string(2, "LTE")]),
     ]);
     this.emitBatteryState();
-    this.emitParallaxDynamics(RVM_GNSS, [
-      ...double(1, this.lat),
-      ...double(2, this.lon),
-      ...double(3, 240),
-      ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
-      ...float(6, 0),
-    ]);
+    this.emitGnss();
     const tire = (pos: number, bar: number) => message(2, [...int(1, pos), ...int(2, 1), ...double(3, bar)]);
     this.emitParallaxDynamics(RVM_TIRES, [...tire(1, 2.8), ...tire(2, 2.85), ...tire(3, 2.75), ...tire(4, 2.8)]);
   }
@@ -375,6 +369,17 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   /** Parallax topics come in as base64 protobuf, as from Rivian. */
   private emitParallax(rvm: string, bytes: number[]): void {
     this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
+  }
+
+  private emitGnss(): void {
+    const driving = this.phase === "driving";
+    this.emitParallaxDynamics(RVM_GNSS, [
+      ...double(1, this.lat),
+      ...double(2, this.lon),
+      ...double(3, driving ? Math.round(240 + 35 * Math.sin(this.tickInPhase / 8)) : 240),
+      ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
+      ...float(6, driving ? LOOP_M / PHASE_TICKS.driving / (TICK_MS / 1000) : 0),
+    ]);
   }
 
   /** The isolated GNSS/tires subscription, separate from the main Parallax one. */
@@ -460,6 +465,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         vehicleMileage: v(Math.round(this.mileageM)),
         cabinClimateInteriorTemperature: v(21),
       });
+      this.emitGnss();
       this.emitTripProgress();
     } else if (this.phase === "charging") {
       this.battery = Math.min(85, this.battery + 0.12);
@@ -534,6 +540,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         });
         break;
     }
+    this.emitGnss();
   }
 
   private emit(state: VehicleState): void {

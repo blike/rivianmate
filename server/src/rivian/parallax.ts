@@ -226,11 +226,8 @@ export const RVM_TIRES = "dynamics.tires.state";
 export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
 
 /**
- * VehicleState fields the dynamics topics own. When a vehicle supports
- * Parallax, the legacy subscription's delta for these fields is dropped
- * before merging (see vehicle-monitor.ts) — Parallax wins structurally,
- * rather than racing last-write-wins against a legacy delivery that can
- * now arrive late (see blike/rivianmate#16).
+ * VehicleState fields shared by legacy and dynamics subscriptions. Merge
+ * these by timestamp so delayed readings cannot replace newer data.
  */
 export const PARALLAX_DYNAMICS_FIELDS: readonly string[] = [
   "gnssLocation",
@@ -389,7 +386,7 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
  * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
  * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
  * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
- * 6 speed (float, m/s, converted to km/h). No .proto; field numbers from a
+ * 6 speed (float, m/s, preserved for VehicleState consumers). No .proto; field numbers from a
  * live capture against a real R2 (2026-09-29/30), not community docs.
  */
 export function decodeGnss(payloadBase64: string): GnssReading | null {

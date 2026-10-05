@@ -1,5 +1,22 @@
 # Conditional Parallax GNSS Integration — Design Spec
 
+## Implemented review corrections
+
+The implementation supersedes the original proposal below in these areas:
+
+- The existing battery/charging/trip Parallax subscription remains unconditional.
+  GPS and tires use a separate, capability-gated dynamics subscription.
+- GPS speed stays in m/s in `VehicleState`; consumers convert it for display
+  and persistence. Parallax timestamps accept both seconds and milliseconds.
+- GPS and tire fields from either stream merge by timestamp. Older readings
+  cannot replace newer ones, and legacy data remains usable when dynamics
+  is rejected, silent, or has not reported a particular field.
+- Diagnostics expose a mode per vehicle for Settings badges. The overall
+  mode reports Parallax when any monitored vehicle supports it.
+- Mock dynamics GPS reports at startup, during driving, and at phase changes,
+  including zero speed when the vehicle stops.
+
+
 **Goal:** On top of upstream's existing (always-on, reactive) Parallax
 integration, add a proactive per-vehicle capability check
 (`VEHICLE_CONNECTIVITY_PARALLAX` in `supportedFeatures`) that gates *all*
