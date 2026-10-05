@@ -73,7 +73,7 @@ export function Dashboard(props: { vehicleId: string; vehicle?: VehicleDto }) {
 
             <LoadingScope loading={insightsPending}>
               <Panel title="Battery & energy">
-                <BatteryEnergyPanel insights={insights} />
+                <BatteryEnergyPanel insights={insights} cellType={sv(state, "batteryCellType")} />
               </Panel>
 
               <Panel title="Connectivity">

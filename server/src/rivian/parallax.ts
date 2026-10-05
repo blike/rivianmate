@@ -166,8 +166,7 @@ export const RVM_NETWORK = "vehicle.network.state";
 export const RVM_TRIP_INFO = "navigation.navigation_service.trip_info";
 export const RVM_TRIP_PROGRESS = "navigation.navigation_service.trip_progress";
 
-// Charging topics recorded while their formats are worked out. Only status
-// and time estimation have documented fields.
+// Charging topics recorded while their formats are worked out.
 export const RVM_BATTERY_CHARACTERISTICS = "energy.high_voltage.battery_characteristics";
 export const RVM_CHARGING_STATUS = "charging.session.status";
 export const RVM_TIME_ESTIMATION = "charging.session.time_estimation";
@@ -383,6 +382,22 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
 }
 
 /**
+ * `battery_characteristics`: field 5 is the reported capacity estimate;
+ * field 6 is rated capacity (both float, kWh; field 6 identified by the owner).
+ * Decode independently: a missing rated value must not use the estimate.
+ */
+export function decodeBatteryCharacteristics(payloadBase64: string): { capacityKwh: number | null; ratedCapacityKwh: number | null } | null {
+  const fields = decode(payloadBase64);
+  const capacity = (field: number) => {
+    const value = fields?.float(field);
+    return value != null && Number.isFinite(value) && value > 0 && value <= 500 ? f32(value) : null;
+  };
+  const capacityKwh = capacity(5);
+  const ratedCapacityKwh = capacity(6);
+  return capacityKwh != null || ratedCapacityKwh != null ? { capacityKwh, ratedCapacityKwh } : null;
+}
+
+/**
  * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
  * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
  * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
@@ -581,7 +596,8 @@ export interface ChargingStatus {
  * `charging.session.status` (`f70/v`): 1 plug connection status, 2 display
  * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
  * Seen on a home L2 charger: plug 2 while plugged in; display 5 scheduled,
- * 2 ready, 3 charging (matching chargerState); EVSE type 1.
+ * 2 ready, 3 charging (matching chargerState); EVSE type 1. Display 4
+ * matched charging_complete on October 2, 2026 at 19:01:41 UTC.
  */
 export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
   const m = decode(payloadBase64);
@@ -615,9 +631,9 @@ export function decodeSocSlider(payloadBase64: string): { limit: number } | null
 
 /**
  * The legacy chargerState matching a status's display status, for the
- * values seen so far (5 scheduled, 2 ready, 3 charging); null otherwise.
+ * values seen so far (5 scheduled, 2 ready, 3 charging, 4 complete); null otherwise.
  * Parallax reports these about 30 s before vehicle state does.
  */
 export function chargerStateFromStatus(status: ChargingStatus): string | null {
-  return { 2: "charging_ready", 3: "charging_active", 5: "charging_scheduled" }[status.displayStatus] ?? null;
+  return { 2: "charging_ready", 3: "charging_active", 4: "charging_complete", 5: "charging_scheduled" }[status.displayStatus] ?? null;
 }

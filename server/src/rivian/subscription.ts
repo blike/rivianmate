@@ -56,6 +56,7 @@ export interface VehicleStateStream {
   isUnsupported?(kind: OptionalSubKind): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
   readonly droppedFields?: readonly string[];
+  diagnostics?(): StreamDiagnostics;
   start(): void;
   stop(): void;
   /**
@@ -95,10 +96,31 @@ export interface SubscriptionManagerOptions {
 type OptionalSubKind = "chargingSession" | "departureSchedules" | "parallax" | "parallaxDynamics";
 type SubKind = "vehicleState" | OptionalSubKind;
 
+export interface FeedDiagnostics {
+  id: string;
+  vehicleId: string;
+  kind: SubKind;
+  domain: string | null;
+  topics: string[];
+  status: "receiving" | "waiting" | "unsupported" | "errored";
+  lastMessageAt: string | null;
+}
+
+export interface StreamDiagnostics {
+  state: "connected" | "connecting" | "reconnecting" | "stopped";
+  lastMessageAt: string | null;
+  feeds: FeedDiagnostics[];
+}
+
 interface Subscription {
   id: string;
   kind: SubKind;
   vehicleId: string;
+  lastMessageAt?: number;
+  receivedOnConnection?: boolean;
+  topicMessages?: Map<string, number>;
+  topicsOnConnection?: Set<string>;
+  errored?: boolean;
   onState?: VehicleStateCallback;
   onCharging?: ChargingSessionCallback;
   onDepartures?: DepartureSchedulesCallback;
@@ -138,6 +160,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private started = false;
   private connected = false;
   private everConnected = false;
+  private lastMessageAt: number | null = null;
   private reconnectAttempt = 0;
   private reconnectTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
@@ -215,6 +238,51 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   /** Optional subscriptions Rivian refused (for diagnostics/UI). */
   isUnsupported(kind: OptionalSubKind): boolean {
     return this.unsupported.has(kind);
+  }
+
+  diagnostics(): StreamDiagnostics {
+    const now = Date.now();
+    return {
+      state: !this.started ? "stopped" : this.connected ? "connected"
+        : this.reconnectTimer ? "reconnecting" : "connecting",
+      lastMessageAt: this.lastMessageAt == null ? null : new Date(this.lastMessageAt).toISOString(),
+      feeds: [...this.subscriptions.values()].flatMap(sub => {
+        const domains = new Map<string | null, string[]>();
+        if (sub.kind === "parallax" || sub.kind === "parallaxDynamics") {
+          for (const topic of sub.rvms ?? []) {
+            const prefix = topic.split(".")[0]!;
+            const domain = prefix === "energy_edge_compute" ? "energy" : prefix;
+            domains.set(domain, [...(domains.get(domain) ?? []), topic]);
+          }
+        } else domains.set(null, []);
+        return [...domains].map(([domain, topics]): FeedDiagnostics => {
+          const lastMessageAt = domain == null ? sub.lastMessageAt
+            : topics.reduce<number | undefined>((latest, topic) => {
+              const at = sub.topicMessages?.get(topic);
+              return at == null ? latest : Math.max(latest ?? at, at);
+            }, undefined);
+          const received = domain == null ? sub.receivedOnConnection
+            : topics.some(topic => sub.topicsOnConnection?.has(topic));
+          return {
+            id: domain == null ? sub.id : `${sub.id}:${domain}`,
+            vehicleId: sub.vehicleId,
+            kind: sub.kind,
+            domain,
+            topics,
+            status: this.unsupported.has(sub.kind) ? "unsupported"
+              : sub.errored && this.started ? "errored"
+              : this.connected && this.sentIds.has(sub.id) && received
+                && lastMessageAt != null && now - lastMessageAt < 5 * 60_000 ? "receiving" : "waiting",
+            lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
+          };
+        });
+      }),
+    };
+  }
+
+  private noteFeedMessage(sub: Subscription): void {
+    sub.lastMessageAt = Date.now();
+    sub.receivedOnConnection = true;
   }
 
   start(): void {
@@ -333,6 +401,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       } catch {
         return;
       }
+      this.lastMessageAt = Date.now();
       const reason = this.handleMessage(ws, msg);
       if (reason) {
         finish(reason);
@@ -368,6 +437,11 @@ export class RivianSubscriptionManager implements VehicleStateStream {
         this.everConnected = true;
         this.gotVehicleData = false;
         this.sentIds.clear();
+        for (const sub of this.subscriptions.values()) {
+          sub.receivedOnConnection = false;
+          sub.topicsOnConnection?.clear();
+          sub.errored = false;
+        }
         this.setConnected(true);
         this.onAuthenticated?.();
         this.startHeartbeat(ws);
@@ -379,11 +453,13 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       case "next": {
         const sub = msg.id ? this.subscriptions.get(msg.id) : undefined;
         if (!sub) return undefined;
-        const data = (msg.payload as { data?: Record<string, unknown> } | undefined)
-          ?.data;
+        const payload = msg.payload as { data?: Record<string, unknown>; errors?: unknown[] } | undefined;
+        const data = payload?.data;
+        sub.errored = Array.isArray(payload?.errors) && payload.errors.length > 0;
         if (sub.kind === "vehicleState") {
           const state = data?.vehicleState as VehicleState | undefined;
           if (state) {
+            this.noteFeedMessage(sub);
             if (!this.gotVehicleData) {
               this.gotVehicleData = true;
               this.reconnectAttempt = 0;
@@ -391,8 +467,10 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             sub.onState?.(sub.vehicleId, state);
           }
         } else if (sub.kind === "chargingSession" && data && "chargingSession" in data) {
+          this.noteFeedMessage(sub);
           sub.onCharging?.(sub.vehicleId, mapChargingSession(data.chargingSession));
         } else if (sub.kind === "departureSchedules" && data && "vehicleDepartureSchedules" in data) {
+          this.noteFeedMessage(sub);
           sub.onDepartures?.(sub.vehicleId, mapDepartureSchedules(data.vehicleDepartureSchedules));
         } else if (
           (sub.kind === "parallax" || sub.kind === "parallaxDynamics") &&
@@ -401,6 +479,12 @@ export class RivianSubscriptionManager implements VehicleStateStream {
         ) {
           const m = data.parallaxMessages as Partial<Record<keyof ParallaxMessage, unknown>> | null;
           if (m && typeof m.rvm === "string") {
+            this.noteFeedMessage(sub);
+            // Only subscribed topics contribute to domain health.
+            if (sub.rvms?.includes(m.rvm)) {
+              (sub.topicMessages ??= new Map()).set(m.rvm, Date.now());
+              (sub.topicsOnConnection ??= new Set()).add(m.rvm);
+            }
             const timestamp = Number(m.timestamp);
             sub.onParallax?.(sub.vehicleId, {
               rvm: m.rvm,
@@ -426,6 +510,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   }): DisconnectReason | undefined {
     const sub = msg.id ? this.subscriptions.get(msg.id) : undefined;
     if (msg.id) this.sentIds.delete(msg.id);
+    if (sub) sub.errored = msg.type === "error";
     const errors = Array.isArray(msg.payload)
       ? (msg.payload as { message?: string; extensions?: { code?: string } }[])
       : [];

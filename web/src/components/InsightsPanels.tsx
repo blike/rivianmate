@@ -10,7 +10,7 @@ const time = (iso: string) =>
   new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Battery temperatures and cold-weather impact. */
-export function BatteryEnergyPanel(props: { insights: VehicleInsightsDto | undefined }) {
+export function BatteryEnergyPanel(props: { insights: VehicleInsightsDto | undefined; cellType?: string | null }) {
   const u = useUnits();
   const { cellTemps, cellTempsCurrent, coldWeather } = props.insights ?? {};
   const cold = coldWeather && coldWeather.rangeImpactKm > 0 ? coldWeather : null;
@@ -18,6 +18,7 @@ export function BatteryEnergyPanel(props: { insights: VehicleInsightsDto | undef
   return (
     <>
       <dl className="space-y-1 text-sm">
+      <Row label="Battery cells" value={props.cellType ?? "—"} />
         <Row
           label="Cell temperature"
           value={

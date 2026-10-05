@@ -1,6 +1,6 @@
 import type { IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { RivianGovernor } from "./governor.js";
 import {
@@ -86,6 +86,7 @@ describe("RivianSubscriptionManager", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     manager?.stop();
     await server.close();
   });
@@ -105,6 +106,67 @@ describe("RivianSubscriptionManager", () => {
       heartbeatIntervalMs: overrides.heartbeatIntervalMs,
     });
   }
+
+  it("distinguishes feed delivery, idle, errors, unsupported and reconnect waiting", async () => {
+    manager = createManager();
+    manager.subscribe("VIN1", () => {});
+    manager.subscribeCharging("VIN1", () => {});
+    manager.subscribeParallax("VIN1", ["battery"], () => {});
+    const feed = (kind: string) => manager.diagnostics().feeds.find(f => f.kind === kind)!;
+    expect(manager.diagnostics().state).toBe("stopped");
+    expect(feed("vehicleState").lastMessageAt).toBeNull();
+    manager.start();
+    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3);
+    const conn = server.conns[0]!;
+    expect(manager.diagnostics().state).toBe("connected");
+    expect(manager.diagnostics().lastMessageAt).not.toBeNull(); // ack, not feed data
+    expect(feed("vehicleState").status).toBe("waiting");
+    conn.socket.send(JSON.stringify({ type: "next", id: "chargingSession:VIN1", payload: { data: { chargingSession: null } } }));
+    conn.socket.send(JSON.stringify({ type: "next", id: "vehicleState:VIN1", payload: { data: { vehicleState: {} } } }));
+    await server.until(() => feed("vehicleState").status === "receiving" && feed("chargingSession").status === "receiving");
+    const lastData = feed("vehicleState").lastMessageAt;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(lastData!) + 5 * 60_000);
+    expect(feed("vehicleState").status).toBe("waiting");
+    clock.mockRestore();
+    conn.socket.send(JSON.stringify({ type: "next", id: "vehicleState:VIN1", payload: { errors: [{ message: "temporary error" }] } }));
+    await server.until(() => feed("vehicleState").status === "errored");
+    expect(feed("vehicleState").lastMessageAt).toBe(lastData);
+    conn.socket.send(JSON.stringify({ type: "error", id: "parallax:VIN1", payload: [{ message: "unsupported" }] }));
+    await server.until(() => feed("parallax").status === "unsupported");
+    conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, "renew");
+    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 2);
+    expect(feed("vehicleState").status).toBe("waiting");
+    expect(feed("vehicleState").lastMessageAt).toBe(lastData);
+    expect(feed("parallax").status).toBe("unsupported");
+    server.conns[1]!.socket.send(JSON.stringify({ type: "next", id: "vehicleState:VIN1", payload: { data: { vehicleState: {} } } }));
+    await server.until(() => feed("vehicleState").status === "receiving");
+    manager.stop();
+    expect(manager.diagnostics().state).toBe("stopped");
+    expect(feed("vehicleState").status).toBe("waiting");
+  });
+
+  it("tracks Parallax domains independently, including empty cleared payloads", async () => {
+    manager = createManager();
+    manager.subscribeParallax("v1", ["charging.session.status", "energy.high_voltage.battery_state", "energy_edge_compute.graphs.parked_energy_distributions", "navigation.navigation_service.trip_info"], () => {});
+    manager.start();
+    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
+    const feed = (domain: string) => manager.diagnostics().feeds.find(f => f.domain === domain)!;
+    expect(manager.diagnostics().feeds).toHaveLength(3);
+    expect(feed("energy").topics).toHaveLength(2);
+    const conn = server.conns[0]!;
+    const send = (rvm: string) => conn.socket.send(JSON.stringify({ type: "next", id: "parallax:v1", payload: { data: { parallaxMessages: { rvm, payload: "" } } } }));
+    send("charging.session.status");
+    await server.until(() => feed("charging").status === "receiving");
+    expect(feed("energy").status).toBe("waiting");
+    expect(feed("navigation").lastMessageAt).toBeNull();
+    send("navigation.navigation_service.trip_info");
+    await server.until(() => feed("navigation").status === "receiving");
+    expect(feed("energy").lastMessageAt).toBeNull();
+    conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, "renew");
+    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1);
+    expect(feed("charging").status).toBe("waiting");
+    expect(feed("navigation").status).toBe("waiting");
+  });
 
   it("sends session headers and subscribes once per vehicle and kind", async () => {
     manager = createManager();

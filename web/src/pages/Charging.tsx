@@ -1,3 +1,4 @@
+import { chargingCurveWindow } from "../lib/chargingCurve.js";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { api, type ChargingSessionDto, type WallboxDto } from "../api/client.js";
@@ -67,22 +68,17 @@ export function Charging(props: { vehicleId: string }) {
     // Keep the previous curve on screen (dimmed) while the next one loads.
     placeholderData: keepPreviousData,
   });
-  // Minutes since plug-in (or the first point, if earlier). The vehicle's
-  // forecast for a charge in progress is its own dashed series, starting
-  // from the last recorded point so the two lines meet. Readings are
-  // smoothed for display, recorded and forecast each on their own, so
-  // sampling jitter and whole-percent SoC steps don't zig-zag the lines.
+  // Start elapsed time at the first recorded power reading, not plug-in.
+  const curveWindow = useMemo(() => chargingCurveWindow(curve ?? []), [curve]);
   const curveData = useMemo(() => {
-    const points = curve ?? [];
-    const plugIn = curveSession ? Date.parse(curveSession.startedAt) : Number.POSITIVE_INFINITY;
-    const origin = Math.min(plugIn, points[0] ? Date.parse(points[0].ts) : plugIn);
-    const minutes = points.map((p) => (Date.parse(p.ts) - origin) / 60_000);
+    const { points, originMs } = curveWindow;
+    const minutes = points.map((p) => (Date.parse(p.ts) - (originMs ?? 0)) / 60_000);
     // Recorded points come first, then the forecast.
     const recordedCount = points.filter((p) => !p.projected).length;
     const window = smoothingWindowMinutes((minutes.at(-1) ?? 0) - (minutes[0] ?? 0));
     const recordedMinutes = minutes.slice(0, recordedCount);
     const recorded = points.slice(0, recordedCount);
-    const power = smoothByTime(recordedMinutes, recorded.map((p) => p.powerKw), window);
+    const power = recorded.map((p) => p.powerKw);
     const soc = smoothByTime(recordedMinutes, recorded.map((p) => p.soc), window);
     const forecast = smoothByTime(minutes.slice(recordedCount), points.slice(recordedCount).map((p) => p.soc), window);
     const hasForecast = forecast.length > 0;
@@ -97,8 +93,8 @@ export function Charging(props: { vehicleId: string }) {
           : forecast[i - recordedCount]!,
       };
     });
-  }, [curve, curveSession]);
-  const curveHasForecast = curve?.some((p) => p.projected) ?? false;
+  }, [curveWindow]);
+  const curveHasForecast = curveWindow.points.some((p) => p.projected);
   const forecastSeries = curveHasForecast
     ? [{ key: "forecast", label: "Forecast", color: "var(--accent)", mark: "line" as const, dashed: true, unit: "%", digits: 0 }]
     : [];
@@ -107,6 +103,22 @@ export function Charging(props: { vehicleId: string }) {
   const curveMinutes = curveData.at(-1)?.minutes ?? 0;
   const formatCurveTime = (m: number) =>
     curveMinutes >= 120 ? fmtSeconds(m * 60) : `${fmt(m, curveMinutes < 10 ? 1 : 0)} min`;
+  const curveTooltipTime = (minutes: number) => {
+    const elapsed = formatCurveTime(minutes);
+    if (curveWindow.originMs == null) {
+      return elapsed;
+    }
+    return (
+      <>
+        <div className="font-medium">
+          {new Date(curveWindow.originMs + minutes * 60_000).toLocaleString([], {
+            month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+          })}
+        </div>
+        <div className="text-[var(--text-muted)]">{elapsed} elapsed</div>
+      </>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -158,7 +170,7 @@ export function Charging(props: { vehicleId: string }) {
           <Panel
             title={
               curveSession
-                ? `Charging curve · ${new Date(curveSession.startedAt).toLocaleString([], {
+                ? `Charging curve · ${new Date(curveWindow.originMs ?? Date.parse(curveSession.startedAt)).toLocaleString([], {
                     month: "short",
                     day: "numeric",
                     hour: "2-digit",
@@ -180,9 +192,13 @@ export function Charging(props: { vehicleId: string }) {
                     xKey="minutes"
                     height={240}
                     xFormatter={formatCurveTime}
+                    tooltipLabel={curveTooltipTime}
+                    leftDomain={[0, "auto"]}
+                    leftUnit="kW"
+                    rightUnit="%"
                     rightDomain={[0, 100]}
                     series={[
-                      { key: "power", label: "Power", color: "var(--series-1)", unit: "kW" },
+                      { key: "power", label: "Power", interpolation: "linear", connectNulls: false, color: "var(--series-1)", unit: "kW", digits: 1 },
                       { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
                       ...forecastSeries.map((f) => ({ ...f, right: true })),
                     ]}
@@ -193,7 +209,9 @@ export function Charging(props: { vehicleId: string }) {
                     xKey="minutes"
                     height={240}
                     xFormatter={formatCurveTime}
+                    tooltipLabel={curveTooltipTime}
                     leftDomain={[0, 100]}
+                    leftUnit="%"
                     series={[
                       { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", unit: "%", digits: 0, dots: true },
                       ...forecastSeries,
@@ -205,6 +223,7 @@ export function Charging(props: { vehicleId: string }) {
                 <EnergySplit packKwh={curveSession.packKwh} thermalKwh={curveSession.thermalKwh} />
               )}
               <div className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
+                {curveHasPower && <p>Elapsed from the first recorded charging power. Waiting before and after charging is excluded; pauses within the charge remain. Tooltip times are local.</p>}
                 {curveHasForecast && (
                   <p>Dashed: the vehicle's forecast to the end of this charge.</p>
                 )}

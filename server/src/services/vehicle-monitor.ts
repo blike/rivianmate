@@ -1,3 +1,4 @@
+import type { StreamDiagnostics } from "../rivian/subscription.js";
 import type { Db } from "../db/client.js";
 import { vehicles as vehiclesTable } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
@@ -68,6 +69,8 @@ export interface MonitorDiagnostics {
   running: boolean;
   streamConnected: boolean;
   fallbackPolling: boolean;
+  pollingStatus: "stopped" | "standby" | "waiting" | "fallback";
+  subscriptions: StreamDiagnostics | null;
   consecutiveAuthFailures: number;
   /** Whether any monitored vehicle supports dynamics Parallax. */
   parallaxMode: "classic" | "parallax";
@@ -157,6 +160,9 @@ export class VehicleMonitor {
       running: this.running,
       streamConnected: this.streamConnected,
       fallbackPolling: this.fallbackPollTimer !== undefined,
+      pollingStatus: !this.running ? "stopped" : this.fallbackPollTimer !== undefined ? "fallback"
+        : this.streamConnected ? "standby" : "waiting",
+      subscriptions: this.connection?.stream.diagnostics?.() ?? null,
       consecutiveAuthFailures: this.authFailures,
       parallaxMode: this.vehicles.some((v) => vehicleSupportsParallax(v.supportedFeatures)) ? "parallax" : "classic",
       parallaxModes: Object.fromEntries(this.vehicles.map((v) => [

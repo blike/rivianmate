@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client.js";
 import {
   useRivianDiagnostics,
@@ -9,18 +10,29 @@ import {
   useVehicles,
   useVersion,
 } from "../api/hooks.js";
-import { LoadingScope, Skeleton } from "../components/loading.js";
+import { LoadingScope } from "../components/loading.js";
 import { HomeChargingPanel } from "../components/HomeChargingPanel.js";
 import { Panel, Row } from "../components/panels.js";
 import { passwordProblem } from "@server/password-policy.js";
 import { TextField } from "../components/AuthCard.js";
 import { REPO_URL, shortCommit, versionLabel } from "../lib/version.js";
+import { ApiConnectionsPanel } from "../components/ApiConnectionsPanel.js";
 import { PasswordHint } from "../components/PasswordHint.js";
 
+const sections = [
+  { id: "general", label: "General", description: "Your Rivian account, vehicles, and display preferences." },
+  { id: "charging", label: "Charging", description: "Home location and electricity costs." },
+  { id: "api", label: "API & feeds", description: "Live data delivery and connection diagnostics." },
+  { id: "security", label: "Security", description: "Manage your app password and session." },
+  { id: "about", label: "About", description: "Version, build, and release notes." },
+];
+
 export function Settings() {
+  const [params] = useSearchParams();
+  const section = sections.find(item => item.id === params.get("section")) ?? sections[0]!;
   const { data: status, refetch } = useStatus();
   const disconnect = useRivianDisconnect();
-  const { data: diagnostics, isPending: diagnosticsPending } = useRivianDiagnostics();
+  const { data: diagnostics, isPending: diagnosticsPending, isError: diagnosticsError } = useRivianDiagnostics(section.id === "api");
   const { data: vehicles } = useVehicles();
   const { units } = useUnits();
   const setUnits = useSetUnits();
@@ -49,7 +61,26 @@ export function Settings() {
   };
 
   return (
-    <div className="grid max-w-2xl grid-cols-1 gap-4">
+    <div className="grid items-start gap-6 md:grid-cols-[11rem_minmax(0,1fr)]">
+      <nav aria-label="Settings" className="flex gap-1 overflow-x-auto rounded-lg border border-[var(--border)] p-1 md:sticky md:top-4 md:flex-col">
+        {sections.map(item => {
+          const nextParams = new URLSearchParams(params);
+          nextParams.set("section", item.id);
+          return <Link
+            key={item.id}
+            to={{ search: `?${nextParams}` }}
+            aria-current={section.id === item.id ? "page" : undefined}
+            className={`whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors ${section.id === item.id ? "bg-[var(--surface-2)] font-medium text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"}`}
+          >{item.label}</Link>;
+        })}
+      </nav>
+      <section aria-label={section.label} className="min-w-0 space-y-4">
+        <header>
+          <h2 className="text-lg font-semibold">{section.label}</h2>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">{section.description}</p>
+        </header>
+        {section.id === "api" && <ApiConnectionsPanel diagnostics={diagnostics} loading={diagnosticsPending} error={diagnosticsError} vehicles={vehicles ?? []} mockMode={status?.mockMode ?? false} />}
+        {section.id === "general" && <>
       <Panel title="Rivian account">
         <dl className="space-y-1 text-sm">
           <Row label="Account" value={status?.rivianEmail ?? "—"} />
@@ -71,81 +102,6 @@ export function Settings() {
         </button>
       </Panel>
 
-      <Panel title="Rivian API usage (last 24h)">
-        <LoadingScope loading={diagnosticsPending}>
-          <dl className="space-y-1 text-sm">
-            <Row
-              label="Live stream"
-              value={
-                !diagnostics
-                  ? "—"
-                  : diagnostics.monitor.streamConnected
-                    ? "Connected"
-                    : diagnostics.monitor.fallbackPolling
-                      ? "Down (slow polling)"
-                      : "Down"
-              }
-            />
-            <Row
-              label="Requests"
-              value={diagnostics ? String(diagnostics.traffic.last24h.httpRequests) : "—"}
-            />
-            <Row
-              label="Stream connects / reconnects"
-              value={
-                diagnostics
-                  ? `${diagnostics.traffic.last24h.wsConnects} / ${diagnostics.traffic.last24h.wsReconnects}`
-                  : "—"
-              }
-            />
-            <Row
-              label="Session refreshes"
-              value={diagnostics ? String(diagnostics.traffic.last24h.sessionRefreshes) : "—"}
-            />
-            <Row
-              label="Rate limited"
-              value={diagnostics ? String(diagnostics.traffic.last24h.rateLimited) : "—"}
-            />
-            <Row
-              label="Data source"
-              value={
-                diagnostics
-                  ? diagnostics.monitor.parallaxMode === "parallax"
-                    ? "Classic + Parallax"
-                    : "Classic"
-                  : "—"
-              }
-            />
-            {diagnostics && diagnostics.monitor.parallaxDroppedFields.length > 0 && (
-              <Row
-                label="Fields Rivian rejected"
-                value={diagnostics.monitor.parallaxDroppedFields.join(", ")}
-              />
-            )}
-            {diagnostics?.traffic.cooldownUntil && (
-              <Row
-                label="Paused until"
-                value={new Date(diagnostics.traffic.cooldownUntil).toLocaleTimeString()}
-              />
-            )}
-          </dl>
-        </LoadingScope>
-        {diagnosticsPending ? (
-          <p className="mt-3 text-xs">
-            <Skeleton className="w-[24em] max-w-full" />
-          </p>
-        ) : (
-          diagnostics &&
-          Object.keys(diagnostics.traffic.requestsByOperation24h).length > 0 && (
-            <p className="mt-3 text-xs text-[var(--text-secondary)]">
-              {Object.entries(diagnostics.traffic.requestsByOperation24h)
-                .sort((a, b) => b[1] - a[1])
-                .map(([op, n]) => `${op} ${n}`)
-                .join(" · ")}
-            </p>
-          )
-        )}
-      </Panel>
 
       {vehicles && vehicles.length > 0 && (
         <Panel title={vehicles.length > 1 ? "Vehicles" : "Vehicle"}>
@@ -210,7 +166,9 @@ export function Settings() {
         </div>
       </Panel>
 
-      <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />
+        </>}
+      {section.id === "charging" && <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />}
+      {section.id === "security" && <>
 
       <Panel title="App password">
         <div className="space-y-3">
@@ -242,6 +200,16 @@ export function Settings() {
         </div>
       </Panel>
 
+      <Panel title="Session">
+        <button
+          className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          onClick={logout}
+        >
+          Sign out
+        </button>
+      </Panel>
+      </>}
+      {section.id === "about" && <>
       <Panel title="About">
         <LoadingScope loading={versionPending}>
           <dl className="space-y-1 text-sm">
@@ -275,14 +243,8 @@ export function Settings() {
         </a>
       </Panel>
 
-      <Panel title="Session">
-        <button
-          className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          onClick={logout}
-        >
-          Sign out
-        </button>
-      </Panel>
+      </>}
+      </section>
     </div>
   );
 }

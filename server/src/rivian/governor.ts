@@ -38,6 +38,7 @@ export interface RivianTrafficSnapshot {
   requestsByOperation24h: Record<string, number>;
   cooldownUntil: string | null;
   lastRateLimitedAt: string | null;
+  lastSuccessfulRequestAt: string | null;
 }
 
 interface HourBucket {
@@ -64,6 +65,7 @@ export class RivianGovernor {
   private consecutiveRateLimits = 0;
   private lastRateLimitedAt: number | null = null;
   private buckets: HourBucket[] = [];
+  private lastSuccessfulRequestAt: number | null = null;
 
   constructor(options: GovernorOptions = {}) {
     this.minSpacingMs = options.minSpacingMs ?? DEFAULT_MIN_SPACING_MS;
@@ -117,6 +119,7 @@ export class RivianGovernor {
   /** A successful response ends the rate-limit escalation. */
   noteSuccess(): void {
     this.consecutiveRateLimits = 0;
+    this.lastSuccessfulRequestAt = this.now();
   }
 
   count(counter: RivianTrafficCounter, by = 1): void {
@@ -147,6 +150,7 @@ export class RivianGovernor {
     }
     return {
       since: new Date(this.startedAt).toISOString(),
+      lastSuccessfulRequestAt: this.lastSuccessfulRequestAt == null ? null : new Date(this.lastSuccessfulRequestAt).toISOString(),
       last24h,
       requestsByOperation24h,
       cooldownUntil:

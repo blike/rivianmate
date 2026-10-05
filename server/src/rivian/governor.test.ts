@@ -16,6 +16,20 @@ function fakeClock() {
 }
 
 describe("RivianGovernor", () => {
+  it("records only successful HTTP responses, independently of attempts and socket traffic", async () => {
+    const clock = fakeClock();
+    const gov = new RivianGovernor({ minSpacingMs: 0, ...clock });
+    expect(gov.snapshot().lastSuccessfulRequestAt).toBeNull();
+    await expect(gov.schedule("failed", async () => { throw new Error("failed"); })).rejects.toThrow("failed");
+    expect(gov.snapshot().lastSuccessfulRequestAt).toBeNull();
+    gov.noteSuccess();
+    const successAt = new Date(clock.now()).toISOString();
+    clock.advance(1000);
+    gov.count("wsMessages");
+    gov.noteRateLimited();
+    expect(gov.snapshot().lastSuccessfulRequestAt).toBe(successAt);
+  });
+
   it("spaces consecutive requests apart", async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 2_000, ...clock });

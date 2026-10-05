@@ -24,8 +24,8 @@ function vehicleElement(): HTMLDivElement {
   return el;
 }
 
-/** Route glow + a line that brightens from start to finish, and a start ring. */
-function addRouteLayers(map: MapLibreMap) {
+/** History uses a uniform trail; individual routes retain direction and endpoints. */
+function addRouteLayers(map: MapLibreMap, history: boolean) {
   map.addSource(ROUTE, { type: "geojson", data: EMPTY, lineMetrics: true });
   map.addSource(ROUTE_START, { type: "geojson", data: EMPTY });
   map.addLayer({
@@ -47,15 +47,13 @@ function addRouteLayers(map: MapLibreMap) {
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2, 16, 4.5],
-      "line-gradient": [
-        "interpolate",
-        ["linear"],
-        ["line-progress"],
-        0,
-        MAP_THEME.accentDim,
-        1,
-        MAP_THEME.accent,
-      ],
+      ...(history ? { "line-color": MAP_THEME.accent } : {
+        "line-gradient": [
+          "interpolate", ["linear"], ["line-progress"],
+          0, MAP_THEME.accentDim,
+          1, MAP_THEME.accent,
+        ],
+      }),
     },
   });
   map.addLayer({
@@ -63,10 +61,10 @@ function addRouteLayers(map: MapLibreMap) {
     type: "circle",
     source: ROUTE_START,
     paint: {
-      "circle-radius": 5,
-      "circle-color": MAP_THEME.background,
+      "circle-radius": history ? 3 : 5,
+      "circle-color": history ? MAP_THEME.accent : MAP_THEME.background,
       "circle-stroke-color": MAP_THEME.accentDim,
-      "circle-stroke-width": 2.5,
+      "circle-stroke-width": history ? 0 : 2.5,
     },
   });
 }
@@ -94,6 +92,8 @@ export function VehicleMap(props: {
   trail?: [number, number][];
   height?: string;
   follow?: boolean;
+  /** History is an overview: no endpoint markers or time-based fade. */
+  variant?: "vehicle" | "history";
   /** The position is out of date (no GPS fix since). */
   stale?: boolean;
 }) {
@@ -139,12 +139,14 @@ export function VehicleMap(props: {
       map.touchZoomRotate.disableRotation();
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), "top-right");
       map.addControl(new maplibre.AttributionControl({ compact: true }), "bottom-right");
-      markerRef.current = new maplibre.Marker({ element: vehicleElement(), rotationAlignment: "map" })
-        .setLngLat([lon, lat])
-        .addTo(map);
+      if (latest.current.variant !== "history") {
+        markerRef.current = new maplibre.Marker({ element: vehicleElement(), rotationAlignment: "map" })
+          .setLngLat([lon, lat])
+          .addTo(map);
+      }
       map.on("load", () => {
         if (!map) return;
-        addRouteLayers(map);
+        addRouteLayers(map, latest.current.variant === "history");
         setReady(true);
       });
       // Until the viewer pans or zooms, a route stays framed as its panel resizes.
@@ -199,8 +201,9 @@ export function VehicleMap(props: {
             features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } }],
           }
         : EMPTY;
+    // A single history position gets a neutral dot; longer trails have no endpoints.
     const start: FeatureCollection =
-      coords.length > 1
+      (latest.current.variant === "history" ? coords.length === 1 : coords.length > 1)
         ? {
             type: "FeatureCollection",
             features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: coords[0]! } }],
@@ -210,6 +213,7 @@ export function VehicleMap(props: {
     (map.getSource(ROUTE_START) as GeoJSONSource | undefined)?.setData(start);
     const route = latest.current.follow === false ? routeBounds(latest.current.trail) : null;
     if (route) map.fitBounds(route, { ...FIT, duration: 0 });
+    else if (latest.current.variant === "history" && coords.length === 1) map.jumpTo({ center: coords[0]!, zoom: 14 });
   }, [trailKey, ready]);
 
   return (

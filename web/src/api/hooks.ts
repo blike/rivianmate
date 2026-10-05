@@ -108,11 +108,11 @@ export function useVersion() {
   return useQuery({ queryKey: ["version"], queryFn: api.version, staleTime: Infinity });
 }
 
-export function useRivianDiagnostics() {
+export function useRivianDiagnostics(live = true) {
   return useQuery({
     queryKey: ["rivianDiagnostics"],
     queryFn: api.rivianDiagnostics,
-    refetchInterval: 30_000,
+    refetchInterval: live ? 10_000 : false,
   });
 }
 

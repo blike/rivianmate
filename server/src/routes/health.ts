@@ -1,4 +1,7 @@
-import { and, asc, eq, gte, isNotNull } from "drizzle-orm";
+import { reportedCapacity, type CapacityReading } from "../services/reported-capacity.js";
+import { RVM_BATTERY_CHARACTERISTICS, RVM_BATTERY_STATE, decodeBatteryCharacteristics, decodeBatteryState } from "../rivian/parallax.js";
+import { stateNumber } from "../services/state-utils.js";
+import { and, asc, eq, gte } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -9,9 +12,9 @@ import type {
   TirePressurePointDto,
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
-import { chargingSessions, otaReleaseNotes, vehicleStateSnapshots } from "../db/schema.js";
+import { parallaxLatest, otaReleaseNotes, vehicleStateSnapshots } from "../db/schema.js";
 import { stateString } from "../services/state-utils.js";
-import { capacityEstimates, phantomDrain } from "../services/health.js";
+import { phantomDrain } from "../services/health.js";
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -31,7 +34,7 @@ function validTimeZone(tz: string | undefined): string {
 /** Numeric value of a state field in the snapshot JSON; NULL for placeholders. */
 function numericField(field: string) {
   const path = sql.raw(`data->'${field}'->>'value'`);
-  return sql`CASE WHEN ${path} ~ '^-?[0-9]+(\.[0-9]+)?$' THEN (${path})::float8 END`;
+  return sql`CASE WHEN ${path} ~ '^-?[0-9]+([.][0-9]+)?$' THEN (${path})::float8 END`;
 }
 
 const TIRES = {
@@ -147,41 +150,39 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   app.get<{ Params: { id: string } }>(
     "/api/vehicles/:id/health/battery",
     async (request): Promise<BatteryHealthDto> => {
-      const sessions = await ctx.db
-        .select({
-          id: chargingSessions.id,
-          startedAt: chargingSessions.startedAt,
-          startSoc: chargingSessions.startSoc,
-          endSoc: chargingSessions.endSoc,
-          energyKwh: chargingSessions.energyKwh,
-        })
-        .from(chargingSessions)
-        .where(
-          and(
-            eq(chargingSessions.vehicleId, request.params.id),
-            isNotNull(chargingSessions.endedAt),
-          ),
-        )
-        .orderBy(asc(chargingSessions.startedAt));
-
-      const reported = await ctx.db.execute<{ day: string; kwh: number }>(sql`
-        SELECT date_trunc('day', ts) AS day,
-               MAX((data->'batteryCapacity'->>'value')::float8) AS kwh
+      const snapshots = await ctx.db.execute<{ at: string; reported_at: string | null; kwh: number }>(sql`
+        SELECT DISTINCT ON (date_trunc('day', ts AT TIME ZONE 'UTC'))
+               ts AS at, data->'batteryCapacity'->>'timeStamp' AS reported_at,
+               ${numericField("batteryCapacity")} AS kwh
         FROM vehicle_state_snapshots
-        WHERE vehicle_id = ${request.params.id} AND data ? 'batteryCapacity'
-        GROUP BY 1 ORDER BY 1
+        WHERE vehicle_id = ${request.params.id}
+          AND ${numericField("batteryCapacity")} > 0
+          AND ${numericField("batteryCapacity")} <= 500
+        ORDER BY date_trunc('day', ts AT TIME ZONE 'UTC'), ts DESC, id DESC
       `);
-      const cellType = await ctx.db.execute<{ value: string | null }>(sql`
-        SELECT data->'batteryCellType'->>'value' AS value
-        FROM vehicle_state_snapshots
-        WHERE vehicle_id = ${request.params.id} AND data ? 'batteryCellType'
-        ORDER BY ts DESC LIMIT 1
-      `);
+      const readings: CapacityReading[] = snapshots.map(r => ({
+        at: r.reported_at && Number.isFinite(Date.parse(r.reported_at)) ? r.reported_at : new Date(r.at).toISOString(),
+        kwh: r.kwh,
+      }));
+      const state = ctx.monitor.getState(request.params.id);
+      const liveCapacity = stateNumber(state ?? {}, "batteryCapacity");
+      const liveRecord = state?.batteryCapacity;
+      const liveAt = liveRecord && "timeStamp" in liveRecord ? liveRecord.timeStamp : null;
+      if (liveCapacity != null && typeof liveAt === "string") readings.push({ kwh: liveCapacity, at: liveAt });
+      const messages = await ctx.db.select().from(parallaxLatest).where(eq(parallaxLatest.vehicleId, request.params.id));
+      let ratedCapacity: CapacityReading | null = null;
+      for (const message of messages) {
+        const characteristics = message.rvm === RVM_BATTERY_CHARACTERISTICS ? decodeBatteryCharacteristics(message.payload) : null;
+        const at = (message.messageAt ?? message.receivedAt).toISOString();
+        if (characteristics?.ratedCapacityKwh != null) ratedCapacity = { kwh: characteristics.ratedCapacityKwh, at };
+        const capacity = message.rvm === RVM_BATTERY_CHARACTERISTICS ? characteristics?.capacityKwh
+          : message.rvm === RVM_BATTERY_STATE ? decodeBatteryState(message.payload)?.capacityKwh : null;
+        if (capacity != null) readings.push({ kwh: capacity, at: (message.messageAt ?? message.receivedAt).toISOString() });
+      }
 
       return {
-        estimates: capacityEstimates(sessions),
-        reported: reported.map((r) => ({ day: new Date(r.day).toISOString(), kwh: r.kwh })),
-        cellType: cellType[0]?.value ?? null,
+        ...reportedCapacity(readings),
+        ratedCapacity,
       };
     },
   );

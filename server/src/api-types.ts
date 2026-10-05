@@ -156,11 +156,12 @@ export interface PhantomDrainDto {
 }
 
 export interface BatteryHealthDto {
-  /** Usable-capacity estimates from charging sessions (energy ÷ SoC gained). */
-  estimates: { sessionId: number; date: string; socGain: number; estimatedKwh: number }[];
-  /** Pack capacity as reported by the vehicle, max per day. */
-  reported: { day: string; kwh: number }[];
-  cellType: string | null;
+  /** Newest valid capacity reading from the vehicle. */
+  latest: { kwh: number; at: string } | null;
+  /** Last recorded vehicle reading per UTC day, not a daily maximum. */
+  reported: { day: string; at: string; kwh: number }[];
+  /** Rated pack capacity from Parallax battery_characteristics field 6. */
+  ratedCapacity: { kwh: number; at: string } | null;
 }
 
 export interface ChargingCurvePointDto {
