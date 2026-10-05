@@ -203,6 +203,69 @@ export const PARALLAX_MONITOR_RVMS: readonly string[] = [
   ...PARALLAX_LOGGED_RVMS,
 ];
 
+/**
+ * Vehicles without this feature don't accept the Parallax subscription at
+ * all — checked proactively so we never even attempt it for them, rather
+ * than relying solely on Rivian rejecting it after the fact.
+ */
+export const PARALLAX_FEATURE_FLAG = "VEHICLE_CONNECTIVITY_PARALLAX";
+
+export function vehicleSupportsParallax(
+  supportedFeatures: readonly string[] | null | undefined,
+): boolean {
+  return (supportedFeatures ?? []).includes(PARALLAX_FEATURE_FLAG);
+}
+
+/** Live vehicle position topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
+export const RVM_GNSS = "dynamics.vehicle.gnss";
+
+/** Live tire pressure topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
+export const RVM_TIRES = "dynamics.tires.state";
+
+/** Topics for the isolated "dynamics" Parallax subscription (own id/fate — see subscription.ts). */
+export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
+
+/**
+ * VehicleState fields shared by legacy and dynamics subscriptions. Merge
+ * these by timestamp so delayed readings cannot replace newer data.
+ */
+export const PARALLAX_DYNAMICS_FIELDS: readonly string[] = [
+  "gnssLocation",
+  "gnssAltitude",
+  "gnssBearing",
+  "gnssSpeed",
+  "tirePressureFrontLeft",
+  "tirePressureFrontRight",
+  "tirePressureRearLeft",
+  "tirePressureRearRight",
+  "tirePressureStatusFrontLeft",
+  "tirePressureStatusFrontRight",
+  "tirePressureStatusRearLeft",
+  "tirePressureStatusRearRight",
+];
+
+const TIRE_POSITION_SUFFIX: Record<number, string> = {
+  1: "FrontLeft",
+  2: "FrontRight",
+  3: "RearLeft",
+  4: "RearRight",
+};
+
+export interface TireReading {
+  position: string;
+  pressureBar: number | null;
+  status: "OK" | "Warning" | null;
+}
+
+export interface GnssReading {
+  latitude: number | null;
+  longitude: number | null;
+  altitude: number | null;
+  bearing: number | null;
+  /** m/s — matches what snapshot-writer.ts/drive-detector.ts/vehicleStatus.ts expect; don't convert to km/h here. */
+  speedMps: number | null;
+}
+
 /** Field accessors over one decoded message; wrong wire types read as absent. */
 function fieldsOf(bytes: Uint8Array | null | undefined) {
   const fields = bytes ? readProtoFields(bytes) : null;
@@ -317,6 +380,53 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
     capacityKwh: f32(charge?.double(2) ?? null),
     cellTemps: avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
   };
+}
+
+/**
+ * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
+ * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
+ * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
+ * 6 speed (float, m/s, preserved for VehicleState consumers). No .proto; field numbers from a
+ * live capture against a real R2 (2026-09-29/30), not community docs.
+ */
+export function decodeGnss(payloadBase64: string): GnssReading | null {
+  const m = decode(payloadBase64);
+  if (!m) return null;
+  const bearing = m.float(5);
+  return {
+    latitude: m.double(1),
+    longitude: m.double(2),
+    altitude: m.double(3),
+    bearing: bearing != null ? ((bearing % 360) + 360) % 360 : null,
+    speedMps: m.float(6),
+  };
+}
+
+/**
+ * `dynamics.tires.state`: repeated field 2, each a nested message with
+ * 1 position (1-4 → FL/FR/RL/RR), 2 status (1=OK, else Warning), 3 pressure
+ * (double, bar). Field numbers from a live capture against a real R2
+ * (2026-09-29), not community docs.
+ */
+export function decodeTires(payloadBase64: string): TireReading[] {
+  if (!payloadBase64) return [];
+  const fields = readProtoFields(Buffer.from(payloadBase64, "base64"));
+  if (!fields) return [];
+  const readings: TireReading[] = [];
+  for (const f of fields) {
+    if (f.field !== 2 || f.wire !== 2) continue;
+    const inner = fieldsOf(f.value);
+    const position = inner?.int(1);
+    const suffix = position != null ? TIRE_POSITION_SUFFIX[position] : undefined;
+    if (!suffix) continue;
+    const status = inner?.int(2);
+    readings.push({
+      position: suffix,
+      pressureBar: inner?.double(3) ?? null,
+      status: status == null ? null : status === 1 ? "OK" : "Warning",
+    });
+  }
+  return readings;
 }
 
 export interface ColdWeather {
