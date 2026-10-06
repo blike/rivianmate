@@ -28,6 +28,16 @@ export function unitFormatter(units: UnitPreferences) {
   const pressure = (bar: number | null | undefined): number | null =>
     bar == null ? null : miles ? bar * 14.5038 : bar;
   const speedUnit = miles ? "mph" : "km/h";
+  /**
+   * Driving efficiency: mi/kWh for miles (higher is better), kWh/100 km
+   * for kilometres (lower is better), as each region usually quotes it.
+   */
+  const efficiency = (distanceKm: number | null | undefined, energyKwh: number | null | undefined): number | null => {
+    if (distanceKm == null || energyKwh == null || !(energyKwh > 0) || !(distanceKm > 0)) return null;
+    return miles ? (distanceKm * KM_TO_MI) / energyKwh : (energyKwh / distanceKm) * 100;
+  };
+  const efficiencyUnit = miles ? "mi/kWh" : "kWh/100 km";
+  const efficiencyDigits = miles ? 2 : 1;
   const temperatureUnit = fahrenheit ? "°F" : "°C";
 
   return {
@@ -37,10 +47,15 @@ export function unitFormatter(units: UnitPreferences) {
     pressureUnit,
     speedUnit,
     temperatureUnit,
+    efficiencyUnit,
+    efficiencyDigits,
+    /** Whether a larger efficiency figure is the better one (mi/kWh). */
+    efficiencyHigherIsBetter: miles,
     distance,
     temperature,
     elevation,
     pressure,
+    efficiency,
     /** e.g. "212 mi" — `km` in kilometres. */
     formatDistance: (km: number | null | undefined, digits = 0) =>
       km == null ? "—" : `${fmt(distance(km), digits)} ${distanceUnit}`,
@@ -55,15 +70,10 @@ export function unitFormatter(units: UnitPreferences) {
     /** `m` in metres; feet when distances are in miles. */
     formatElevation: (m: number | null | undefined) =>
       m == null ? "—" : `${fmt(elevation(m), 0)} ${elevationUnit}`,
-    /**
-     * Driving efficiency: mi/kWh for miles (higher is better), kWh/100 km
-     * for kilometres (lower is better), as each region usually quotes it.
-     */
+    /** e.g. "2.41 mi/kWh" or "25.8 kWh/100 km"; see `efficiency`. */
     formatEfficiency: (distanceKm: number | null | undefined, energyKwh: number | null | undefined) => {
-      if (distanceKm == null || energyKwh == null || !(energyKwh > 0) || !(distanceKm > 0)) return "—";
-      return miles
-        ? `${fmt((distanceKm * KM_TO_MI) / energyKwh, 2)} mi/kWh`
-        : `${fmt((energyKwh / distanceKm) * 100, 1)} kWh/100 km`;
+      const value = efficiency(distanceKm, energyKwh);
+      return value == null ? "—" : `${fmt(value, efficiencyDigits)} ${efficiencyUnit}`;
     },
     /** `c` in °C. */
     formatTemperature: (c: number | null | undefined, digits = 0) =>

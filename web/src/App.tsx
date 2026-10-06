@@ -11,6 +11,7 @@ import { Login } from "./pages/Login.js";
 import { RivianConnect } from "./pages/RivianConnect.js";
 import { Settings } from "./pages/Settings.js";
 import { Setup } from "./pages/Setup.js";
+import { Stats } from "./pages/Stats.js";
 
 export default function App() {
   const { data: status, isLoading, refetch } = useStatus();
@@ -62,6 +63,7 @@ function Shell() {
             <Route path="/drives" element={<Drives vehicleId={vehicleId} />} />
             <Route path="/charging" element={<Charging vehicleId={vehicleId} />} />
             <Route path="/health" element={<Health vehicleId={vehicleId} />} />
+            <Route path="/stats" element={<Stats vehicleId={vehicleId} />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

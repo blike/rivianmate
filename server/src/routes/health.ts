@@ -9,6 +9,7 @@ import type {
   BatteryHealthDto,
   OtaTimelineDto,
   PhantomDrainDto,
+  ProjectedRangeDto,
   TirePressurePointDto,
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
@@ -20,8 +21,14 @@ const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).defau
 
 const drainQuery = daysQuery.extend({ tz: z.string().max(64).optional() });
 
+/**
+ * Below this battery level the vehicle's range estimate is too coarse to
+ * scale up to 100%: a kilometre of rounding becomes several.
+ */
+const PROJECTED_RANGE_MIN_SOC = 40;
+
 /** An IANA time zone the runtime knows, or UTC. */
-function validTimeZone(tz: string | undefined): string {
+export function validTimeZone(tz: string | undefined): string {
   if (!tz) return "UTC";
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
@@ -67,6 +74,27 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
         )
         .orderBy(asc(vehicleStateSnapshots.ts));
       return phantomDrain(rows, validTimeZone(tz));
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/vehicles/:id/health/projected-range",
+    async (request): Promise<ProjectedRangeDto> => {
+      const { days, tz } = drainQuery.parse(request.query);
+      const since = new Date(Date.now() - days * 86_400_000);
+      // Range ÷ battery level, scaled to 100%: the median per local day.
+      const rows = await ctx.db.execute<{ day: string; range_km: number; readings: number }>(sql`
+        SELECT to_char(ts AT TIME ZONE ${validTimeZone(tz)}, 'YYYY-MM-DD') AS day,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY range_km::float8 / battery_level::float8 * 100) AS range_km,
+               COUNT(*)::int AS readings
+        FROM vehicle_state_snapshots
+        WHERE vehicle_id = ${request.params.id}
+          AND ts >= ${since.toISOString()}::timestamptz
+          AND battery_level BETWEEN ${PROJECTED_RANGE_MIN_SOC} AND 100
+          AND range_km > 0
+        GROUP BY 1 ORDER BY 1
+      `);
+      return { days: rows.map((r) => ({ day: r.day, rangeKm: r.range_km, readings: r.readings })) };
     },
   );
 

@@ -17,8 +17,10 @@ export interface TrendSeries {
   key: string;
   label: string;
   color: string;
-  /** "area" (default), "line" or "bar". */
-  mark?: "area" | "line" | "bar";
+  /** "area" (default), "line", "bar", or "dots" (a dot per point, unjoined). */
+  mark?: "area" | "line" | "bar" | "dots";
+  /** Bars sharing a stack id are drawn stacked. */
+  stack?: string;
   /** Put the series on a second Y axis on the right. */
   right?: boolean;
   unit?: string;
@@ -141,7 +143,23 @@ export function TrendChart(props: {
               yAxisId: s.right ? "right" : "left",
               isAnimationActive: false,
             };
-            if (s.mark === "bar") return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
+            if (s.mark === "bar") {
+              return <Bar {...common} fill={s.color} stackId={s.stack} radius={s.stack ? 0 : [3, 3, 0, 0]} />;
+            }
+            if (s.mark === "dots") {
+              return (
+                <Line
+                  {...common}
+                  // Coloured for the legend, but zero width: points aren't joined.
+                  stroke={s.color}
+                  strokeWidth={0}
+                  dot={{ r: 2.5, fill: s.color, fillOpacity: 0.75, strokeWidth: 0 }}
+                  activeDot={{ r: 4, fill: s.color, strokeWidth: 0 }}
+                  connectNulls={false}
+                  legendType="circle"
+                />
+              );
+            }
             if (s.mark === "line") {
               return (
                 <Line

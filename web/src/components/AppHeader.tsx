@@ -8,6 +8,7 @@ export const NAV = [
   { to: "/drives", label: "Drives" },
   { to: "/charging", label: "Charging" },
   { to: "/health", label: "Health" },
+  { to: "/stats", label: "Stats" },
   { to: "/settings", label: "Settings" },
 ];
 

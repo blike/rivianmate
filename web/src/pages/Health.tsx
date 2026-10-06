@@ -7,14 +7,20 @@ import { Panel, StatCard } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { ParkedEnergyPanel } from "../components/InsightsPanels.js";
 import { fmt } from "../lib/state.js";
+import { localDay } from "../lib/stats.js";
 
-const WINDOWS = [7, 30, 90] as const;
+/** Matches the server: lower battery levels are left out of the projection. */
+const PROJECTED_RANGE_MIN_SOC = 40;
+
+const TIRE_WINDOWS = [7, 30, 90] as const;
+const RANGE_WINDOWS = [30, 90, 365] as const;
 
 const shortDate = (ms: number) =>
   new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
 
 export function Health(props: { vehicleId: string }) {
   const [tireDays, setTireDays] = useState<number>(30);
+  const [rangeDays, setRangeDays] = useState<number>(90);
   const u = useUnits();
 
   // Window changes keep the previous chart until the new one loads.
@@ -26,6 +32,12 @@ export function Health(props: { vehicleId: string }) {
   const { data: tires, isPending: tiresPending } = useQuery({
     queryKey: ["tirePressures", props.vehicleId, tireDays],
     queryFn: () => api.tirePressures(props.vehicleId, tireDays),
+    refetchInterval: 15 * 60_000,
+    placeholderData: keepPreviousData,
+  });
+  const { data: projected, isPending: projectedPending } = useQuery({
+    queryKey: ["projectedRange", props.vehicleId, rangeDays],
+    queryFn: () => api.projectedRange(props.vehicleId, rangeDays),
     refetchInterval: 15 * 60_000,
     placeholderData: keepPreviousData,
   });
@@ -56,11 +68,16 @@ export function Health(props: { vehicleId: string }) {
     ts: Date.parse(r.at), reported: r.kwh,
   })), [battery]);
   const latestReported = battery?.latest ?? null;
+  const rangeData = useMemo(
+    () => (projected?.days ?? []).map((d) => ({ ts: localDay(d.day).getTime(), range: u.distance(d.rangeKm) })),
+    [projected, u],
+  );
+  const latestProjected = projected?.days.at(-1);
   const parkedDay = insights?.parkedEnergy?.windows.find(w => w.minutes === 1440);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <LoadingScope loading={insightsPending}>
           <StatCard
             label="Parked energy · 24h"
@@ -78,6 +95,13 @@ export function Health(props: { vehicleId: string }) {
             label="Rated capacity"
             value={battery?.ratedCapacity ? `${fmt(battery.ratedCapacity.kwh, 1)} kWh` : "—"}
             sub="Vehicle-reported rated pack size"
+          />
+        </LoadingScope>
+        <LoadingScope loading={projectedPending}>
+          <StatCard
+            label="Projected full range"
+            value={u.formatDistance(latestProjected?.rangeKm)}
+            sub={latestProjected ? `Range estimate at 100%, ${localDay(latestProjected.day).toLocaleDateString()}` : "Awaiting range readings"}
           />
         </LoadingScope>
       </div>
@@ -114,12 +138,40 @@ export function Health(props: { vehicleId: string }) {
           />
         </ContentFrame>
       </Panel>
+      <Panel title="Projected full range">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-[var(--text-muted)]">
+            The vehicle’s range estimate scaled to a full battery: the median each day of readings at{" "}
+            {PROJECTED_RANGE_MIN_SOC}% or more. Rivian’s estimate follows recent driving and temperature, so it moves
+            with the seasons; a slow decline across years reflects the pack.
+          </p>
+          <WindowPicker options={RANGE_WINDOWS} value={rangeDays} onChange={setRangeDays} />
+        </div>
+        <ContentFrame
+          height={220}
+          loading={projectedPending}
+          empty={rangeData.length === 0}
+          emptyText="No range readings in this window yet."
+        >
+          <TrendChart
+            data={rangeData}
+            xKey="ts"
+            height={220}
+            xFormatter={shortDate}
+            tooltipLabel={(ms) => new Date(ms).toLocaleDateString()}
+            series={[
+              { key: "range", label: "Projected full range", color: "var(--series-1)", mark: "line", dots: rangeData.length <= 60, unit: u.distanceUnit, digits: 0 },
+            ]}
+          />
+        </ContentFrame>
+      </Panel>
+
       <Panel title="Tire pressure">
         <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-xs text-[var(--text-muted)]">
             A tire that keeps drifting below the others usually has a slow leak.
           </p>
-          <WindowPicker value={tireDays} onChange={setTireDays} />
+          <WindowPicker options={TIRE_WINDOWS} value={tireDays} onChange={setTireDays} />
         </div>
         <ContentFrame
           height={220}
@@ -189,10 +241,10 @@ export function Health(props: { vehicleId: string }) {
   );
 }
 
-function WindowPicker(props: { value: number; onChange: (days: number) => void }) {
+function WindowPicker(props: { options: readonly number[]; value: number; onChange: (days: number) => void }) {
   return (
     <div className="flex shrink-0 rounded-md border border-[var(--border)] p-0.5">
-      {WINDOWS.map((d) => (
+      {props.options.map((d) => (
         <button
           key={d}
           onClick={() => props.onChange(d)}
@@ -202,7 +254,7 @@ function WindowPicker(props: { value: number; onChange: (days: number) => void }
               : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
-          {d}d
+          {d === 365 ? "1y" : `${d}d`}
         </button>
       ))}
     </div>

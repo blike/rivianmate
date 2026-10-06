@@ -10,8 +10,9 @@ import type {
   VehicleState,
 } from "./rivian/types.js";
 import type { MonitorDiagnostics } from "./services/vehicle-monitor.js";
+import type { MoneyTotal } from "./services/stats.js";
 
-export type { ChargingSchedule, DepartureSchedule, LiveSessionData, VehicleState };
+export type { ChargingSchedule, DepartureSchedule, LiveSessionData, MoneyTotal, VehicleState };
 
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */
@@ -265,4 +266,59 @@ export interface VehicleInsightsDto {
     cellular: { carrier: string | null; technology: string | null } | null;
     at: string;
   } | null;
+}
+
+
+/** A completed drive, trimmed to what the Stats page aggregates. */
+export interface StatDriveDto {
+  id: number;
+  startedAt: string;
+  durationS: number;
+  distanceKm: number | null;
+  /** Battery-% drop × pack capacity; null when not computable. */
+  energyKwh: number | null;
+  driveMode: string | null;
+}
+
+export interface StatsDto {
+  /** Start of the period; null = all time. */
+  since: string | null;
+  /** Latest odometer reading, in km. */
+  odometerKm: number | null;
+  drives: StatDriveDto[];
+  driving: {
+    drives: number;
+    distanceKm: number;
+    /** Energy over the drives where it's known, and their distance. */
+    energyKwh: number;
+    energyDistanceKm: number;
+    drivingSeconds: number;
+    longest: { id: number; startedAt: string; distanceKm: number } | null;
+    topSpeedKmh: number | null;
+  };
+  charging: {
+    sessions: number;
+    energyKwh: number;
+    /** Recorded, entered and estimated home costs, per currency. */
+    cost: MoneyTotal[];
+    homeKwh: number;
+    awayKwh: number;
+    acSessions: number;
+    dcSessions: number;
+    /** Energy per local day (by session start), split by AC and DC. */
+    days: { day: string; acKwh: number; dcKwh: number; unknownKwh: number }[];
+    networks: { name: string; sessions: number; energyKwh: number; cost: MoneyTotal[] }[];
+    pricePerKwh: { currency: string; amount: number } | null;
+  };
+}
+
+/** DC sessions' power by SoC (one point per session and whole percent). */
+export interface DcCurvesDto {
+  sessions: { id: number; startedAt: string; network: string; maxPowerKw: number | null }[];
+  points: { sessionId: number; soc: number; powerKw: number }[];
+}
+
+/** Range the vehicle would estimate at 100%, per local day. */
+export interface ProjectedRangeDto {
+  days: { day: string; rangeKm: number; readings: number }[];
 }

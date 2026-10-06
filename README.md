@@ -71,8 +71,20 @@ Charger.
 ![Health](docs/screenshots/health.png)
 
 Vehicle-reported parked energy by use, tire pressure trends that make a slow leak
-obvious, and the vehicle’s own battery-capacity readings over time. It also lists every software version the vehicle has run,
+obvious, the vehicle’s own battery-capacity readings over time, and its
+range estimate projected to a full battery, day by day. It also lists every software version the vehicle has run,
 with links to the release notes.
+
+### Stats
+
+Totals for the last 30 or 90 days, the last year, or all time: distance,
+drives, time driving, energy used and charged, charging cost and cost per
+mile, longest drive, top speed, and odometer. Efficiency is charted per drive
+with a rolling average, and broken down by drive mode and by average speed.
+Energy charged is charted over time split into AC and DC fast charging, with
+a breakdown of home versus away and of the charging networks you use. DC fast
+charging curves from every session are plotted together by battery level,
+so you can see whether charging speed changes over time.
 
 ### History
 

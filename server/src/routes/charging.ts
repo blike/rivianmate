@@ -181,7 +181,7 @@ async function socCurveFromState(ctx: AppContext, sessionId: number): Promise<Ch
   ).map((r) => ({ ts: new Date(r.at).toISOString(), powerKw: null, soc: r.soc }));
 }
 
-function toSessionDto(
+export function toSessionDto(
   row: typeof chargingSessions.$inferSelect,
   home: HomeContext,
 ): ChargingSessionDto {

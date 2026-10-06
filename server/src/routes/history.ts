@@ -183,7 +183,7 @@ export async function historyRoutes(
 }
 
 /** Latest pack capacity seen for the vehicle (for drives without one). */
-async function latestCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
+export async function latestCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
   const rows = await ctx.db.execute<{ kwh: number | null }>(sql`
     SELECT (data->'batteryCapacity'->>'value')::float8 AS kwh
     FROM vehicle_state_snapshots

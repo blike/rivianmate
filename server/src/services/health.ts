@@ -35,7 +35,7 @@ function parkedBetween(prev: DrainSnapshot, cur: DrainSnapshot): boolean {
   return true;
 }
 
-function dayFormatter(timeZone: string): (d: Date) => string {
+export function dayFormatter(timeZone: string): (d: Date) => string {
   // en-CA formats as YYYY-MM-DD.
   const f = new Intl.DateTimeFormat("en-CA", {
     timeZone,

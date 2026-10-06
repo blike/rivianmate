@@ -3,6 +3,7 @@ import type {
   ChargingCurvePointDto,
   ChargingSessionDto,
   ConnectResponse,
+  DcCurvesDto,
   DriveDetailDto,
   DriveDto,
   HistoryMetric,
@@ -11,7 +12,9 @@ import type {
   RivianDiagnosticsResponse,
   OtaTimelineDto,
   PhantomDrainDto,
+  ProjectedRangeDto,
   SchedulesDto,
+  StatsDto,
   StatusResponse,
   TirePressurePointDto,
   UnitPreferences,
@@ -25,6 +28,9 @@ import type {
 } from "@server/api-types.js";
 
 export type {
+  DcCurvesDto,
+  ProjectedRangeDto,
+  StatsDto,
   HomeChargingSettings,
   BatteryHealthDto,
   ChargingCurvePointDto,
@@ -51,6 +57,10 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -142,9 +152,7 @@ export const api = {
   wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
   phantomDrain: (vehicleId: string, days: number) =>
     request<PhantomDrainDto>(
-      `/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}&tz=${encodeURIComponent(
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-      )}`,
+      `/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}&tz=${encodeURIComponent(localTimeZone())}`,
     ),
   insights: (vehicleId: string) => request<VehicleInsightsDto>(`/api/vehicles/${vehicleId}/insights`),
   schedules: (vehicleId: string) => request<SchedulesDto>(`/api/vehicles/${vehicleId}/schedules`),
@@ -153,6 +161,17 @@ export const api = {
     request<TirePressurePointDto[]>(`/api/vehicles/${vehicleId}/health/tires?days=${days}`),
   batteryHealth: (vehicleId: string) =>
     request<BatteryHealthDto>(`/api/vehicles/${vehicleId}/health/battery`),
+  projectedRange: (vehicleId: string, days: number) =>
+    request<ProjectedRangeDto>(
+      `/api/vehicles/${vehicleId}/health/projected-range?days=${days}&tz=${encodeURIComponent(localTimeZone())}`,
+    ),
+  /** `days` null = all time. */
+  stats: (vehicleId: string, days: number | null) =>
+    request<StatsDto>(
+      `/api/vehicles/${vehicleId}/stats?${days != null ? `days=${days}&` : ""}tz=${encodeURIComponent(localTimeZone())}`,
+    ),
+  dcCurves: (vehicleId: string, days: number | null) =>
+    request<DcCurvesDto>(`/api/vehicles/${vehicleId}/stats/dc-curves${days != null ? `?days=${days}` : ""}`),
   chargingCurve: (sessionId: number) =>
     request<ChargingCurvePointDto[]>(`/api/charging-sessions/${sessionId}/curve`),
 };

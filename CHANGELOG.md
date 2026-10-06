@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- New Stats page with totals for 30 days, 90 days, a year, or all time:
+  distance, drives, driving time, energy used and charged, charging cost and
+  cost per mile, longest drive, top speed, and odometer.
+- Efficiency on the Stats page: every drive charted with a rolling
+  average, the typical range, and efficiency by drive mode and by average
+  speed. Drives under 5 km (3 mi) are left out as too short to measure.
+- Charging on the Stats page: energy charged per day, week, or month split
+  into AC and DC fast charging, home versus away, a breakdown by charging
+  network with sessions and cost, and DC fast charging curves from all
+  sessions plotted by battery level.
+- Health shows the vehicle's range estimate projected to a full battery, as
+  a daily trend and a stat card.
+
 ## v0.5.0 — 2026-10-04
 
 - Redesigned dashboard with a themed MapLibre GL map, active navigation
