@@ -26,6 +26,8 @@ const SIGNIFICANT_ENUM_FIELDS = [
   "chargePortState",
   "driveMode",
   "otaStatus",
+  "otaCurrentStatus",
+  "otaInstallReady",
 ];
 
 interface PerVehicle {

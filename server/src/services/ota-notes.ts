@@ -1,25 +1,14 @@
-import { and, eq } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { otaReleaseNotes } from "../db/schema.js";
 import type { RivianApi } from "../rivian/client.js";
-import { type VehicleState, isGraphqlValidationError } from "../rivian/types.js";
-import { stateString } from "./state-utils.js";
-
-const NO_VERSION = new Set(["", "0.0.0"]);
+import { type OtaUpdateDetails, isGraphqlValidationError } from "../rivian/types.js";
 
 /**
- * Version the release-notes link most likely describes: the pending update
- * when one is available, otherwise what's installed.
+ * Rivian's links are presigned for an hour; reuse a fetch for well under
+ * that so a link handed out is never close to expiring.
  */
-export function releaseNotesVersion(state: VehicleState): string | null {
-  const current = stateString(state, "otaCurrentVersion")?.trim() ?? "";
-  const available = stateString(state, "otaAvailableVersion")?.trim() ?? "";
-  if (!NO_VERSION.has(available) && available !== current) return available;
-  return NO_VERSION.has(current) ? null : current;
-}
+const CACHE_MS = 20 * 60_000;
 
-/** Only plain https links are shown in the UI. */
-export function safeUrl(url: string | null): string | null {
+/** Only plain https links are handed out. */
+export function safeUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
     return new URL(url).protocol === "https:" ? url : null;
@@ -28,52 +17,46 @@ export function safeUrl(url: string | null): string | null {
   }
 }
 
+/** The release-notes link for `version`, if it's the installed or pending one. */
+export function notesUrlFor(details: OtaUpdateDetails, version: string): string | null {
+  for (const notes of [details.available, details.current]) {
+    if (notes?.version === version) return safeUrl(notes.url);
+  }
+  return null;
+}
+
 /**
- * Fetches Rivian's release-notes link once per (vehicle, version): at most
- * one request whenever the installed or available version changes.
+ * Looks up release notes on demand. Rivian only describes the installed and
+ * pending versions, and its links expire, so nothing is stored.
  */
-export class OtaNotesTracker {
-  private checked = new Map<string, string>();
+export class OtaNotesResolver {
+  private cache = new Map<string, { at: number; details: Promise<OtaUpdateDetails> }>();
   private unsupported = false;
 
   constructor(
-    private readonly db: Db,
     private readonly api: RivianApi,
     private readonly log: (msg: string) => void = () => {},
   ) {}
 
-  async check(vehicleId: string, state: VehicleState): Promise<void> {
-    if (this.unsupported) return;
-    const version = releaseNotesVersion(state);
-    if (!version || this.checked.get(vehicleId) === version) return;
-    this.checked.set(vehicleId, version);
-
-    const existing = await this.db
-      .select({ url: otaReleaseNotes.url })
-      .from(otaReleaseNotes)
-      .where(and(eq(otaReleaseNotes.vehicleId, vehicleId), eq(otaReleaseNotes.version, version)))
-      .limit(1);
-    if (existing[0]) return;
-
+  async notesUrl(vehicleId: string, version: string): Promise<string | null> {
+    if (this.unsupported) return null;
+    const hit = this.cache.get(vehicleId);
+    let details = hit && Date.now() - hit.at < CACHE_MS ? hit.details : undefined;
+    if (!details) {
+      details = this.api.getOtaUpdateDetails(vehicleId);
+      this.cache.set(vehicleId, { at: Date.now(), details });
+    }
     try {
-      const url = safeUrl(await this.api.getOtaReleaseNotesUrl(vehicleId));
-      if (!url) return;
-      await this.db
-        .insert(otaReleaseNotes)
-        .values({ vehicleId, version, url })
-        .onConflictDoUpdate({
-          target: [otaReleaseNotes.vehicleId, otaReleaseNotes.version],
-          set: { url, fetchedAt: new Date() },
-        });
+      return notesUrlFor(await details, version);
     } catch (err) {
+      this.cache.delete(vehicleId);
       if (isGraphqlValidationError(err)) {
         this.unsupported = true;
         this.log("OTA release notes query not supported; disabling");
-        return;
+        return null;
       }
-      // Try again on the next version change or restart.
-      this.checked.delete(vehicleId);
       this.log(`OTA release notes fetch failed: ${(err as Error).message}`);
+      return null;
     }
   }
 }

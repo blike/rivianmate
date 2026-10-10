@@ -12,7 +12,7 @@ import type {
   TirePressurePointDto,
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
-import { parallaxLatest, otaReleaseNotes, vehicleStateSnapshots } from "../db/schema.js";
+import { parallaxLatest, vehicleStateSnapshots } from "../db/schema.js";
 import { stateString } from "../services/state-utils.js";
 import { phantomDrain } from "../services/health.js";
 
@@ -85,12 +85,6 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
         GROUP BY version
         ORDER BY first_seen DESC
       `);
-      const notes = await ctx.db
-        .select({ version: otaReleaseNotes.version, url: otaReleaseNotes.url })
-        .from(otaReleaseNotes)
-        .where(eq(otaReleaseNotes.vehicleId, vehicleId));
-      const notesByVersion = new Map(notes.map((n) => [n.version, n.url]));
-
       const state = ctx.monitor.getState(vehicleId) ?? {};
       const current = stateString(state, "otaCurrentVersion");
       const availableRaw = stateString(state, "otaAvailableVersion");
@@ -100,13 +94,26 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
       return {
         current,
         available,
-        availableNotesUrl: available ? (notesByVersion.get(available) ?? null) : null,
         versions: history.map((h) => ({
           version: h.version,
           firstSeen: new Date(h.first_seen).toISOString(),
-          notesUrl: notesByVersion.get(h.version) ?? null,
         })),
       };
+    },
+  );
+
+  // Rivian's links expire within the hour, so each click gets a fresh one.
+  app.get<{ Params: { id: string; version: string } }>(
+    "/api/vehicles/:id/ota/notes/:version",
+    async (request, reply) => {
+      const url = await ctx.monitor.getReleaseNotesUrl(request.params.id, request.params.version);
+      if (!url) {
+        return reply
+          .code(404)
+          .type("text/plain")
+          .send("Rivian doesn't have release notes for this version right now.");
+      }
+      return reply.redirect(url);
     },
   );
 

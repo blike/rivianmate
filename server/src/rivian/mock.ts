@@ -11,6 +11,7 @@ import {
   ChargingSchedule,
   LiveSessionData,
   LoginResult,
+  OtaUpdateDetails,
   RivianInvalidOtpError,
   RivianTokens,
   TimeStampedValue,
@@ -315,8 +316,13 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ]);
   }
 
-  async getOtaReleaseNotesUrl(_vehicleId: string): Promise<string | null> {
-    return "https://example.com/rivian-release-notes/2026.36.2";
+  async getOtaUpdateDetails(_vehicleId: string): Promise<OtaUpdateDetails> {
+    const notes = (version: string) => ({
+      url: `https://example.com/rivian-release-notes/${version}.pdf`,
+      version,
+      locale: "en-US",
+    });
+    return { current: notes("2026.34.1"), available: notes("2026.36.2") };
   }
 
   // --- VehicleStateStream ---
@@ -607,10 +613,15 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       twelveVoltBatteryHealth: v("OK"),
       wiperFluidState: v("normal"),
       brakeFluidLow: v("false"),
-      otaCurrentVersion: v("2026.36.2"),
+      otaCurrentVersion: v("2026.34.1"),
       otaAvailableVersion: v("2026.36.2"),
-      otaStatus: v("Idle"),
+      otaStatus: v("Ready_To_Install"),
+      otaCurrentStatus: v("Install_Success"),
+      otaInstallReady: v("ota_available"),
+      otaDownloadProgress: v(0),
       otaInstallProgress: v(0),
+      otaInstallDuration: v(65),
+      otaInstallType: v("Convenience"),
       serviceMode: v("off"),
       carWashMode: v("off"),
       petModeStatus: v("off"),

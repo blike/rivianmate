@@ -93,6 +93,18 @@ export interface DepartureSchedule {
 }
 
 /** A completed session from Rivian's charging history (account-wide). */
+/** A release-notes PDF; `url` is presigned and expires after about an hour. */
+export interface OtaReleaseNotes {
+  url: string | null;
+  version: string | null;
+  locale: string | null;
+}
+
+export interface OtaUpdateDetails {
+  current: OtaReleaseNotes | null;
+  available: OtaReleaseNotes | null;
+}
+
 export interface ChargeSessionSummary {
   transactionId: string | null;
   startInstant: string | null;

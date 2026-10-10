@@ -9,6 +9,7 @@ export const MAP_HEIGHT = "20rem";
 
 const ROUTE = "route";
 const ROUTE_START = "route-start";
+const ROUTE_HOVER = "route-hover";
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /** Puck with a heading arrow and a soft pulse; rotation is applied by MapLibre. */
@@ -56,6 +57,7 @@ function addRouteLayers(map: MapLibreMap, history: boolean) {
       }),
     },
   });
+  map.addSource(ROUTE_HOVER, { type: "geojson", data: EMPTY });
   map.addLayer({
     id: "route-start",
     type: "circle",
@@ -65,6 +67,23 @@ function addRouteLayers(map: MapLibreMap, history: boolean) {
       "circle-color": history ? MAP_THEME.accent : MAP_THEME.background,
       "circle-stroke-color": MAP_THEME.accentDim,
       "circle-stroke-width": history ? 0 : 2.5,
+    },
+  });
+  map.addLayer({
+    id: "route-hover-halo",
+    type: "circle",
+    source: ROUTE_HOVER,
+    paint: { "circle-radius": 13, "circle-color": MAP_THEME.accent, "circle-opacity": 0.2, "circle-blur": 0.4 },
+  });
+  map.addLayer({
+    id: "route-hover",
+    type: "circle",
+    source: ROUTE_HOVER,
+    paint: {
+      "circle-radius": 5.5,
+      "circle-color": "#ffffff",
+      "circle-stroke-color": MAP_THEME.accent,
+      "circle-stroke-width": 2.5,
     },
   });
 }
@@ -96,6 +115,8 @@ export function VehicleMap(props: {
   variant?: "vehicle" | "history";
   /** The position is out of date (no GPS fix since). */
   stale?: boolean;
+  /** [lat, lon] to mark on the route, e.g. the point hovered on a chart. */
+  highlight?: [number, number] | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -215,6 +236,21 @@ export function VehicleMap(props: {
     if (route) map.fitBounds(route, { ...FIT, duration: 0 });
     else if (latest.current.variant === "history" && coords.length === 1) map.jumpTo({ center: coords[0]!, zoom: 14 });
   }, [trailKey, ready]);
+
+  // A marked point on the route, moved without re-framing the map.
+  const [hoverLat, hoverLon] = props.highlight ?? [null, null];
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    (map.getSource(ROUTE_HOVER) as GeoJSONSource | undefined)?.setData(
+      hoverLat != null && hoverLon != null
+        ? {
+            type: "FeatureCollection",
+            features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [hoverLon, hoverLat] } }],
+          }
+        : EMPTY,
+    );
+  }, [hoverLat, hoverLon, ready]);
 
   return (
     <div

@@ -17,6 +17,7 @@ import { LoadingScope, Skeleton, SkeletonBlock, useLoading } from "../components
 import { VehicleMap } from "../components/VehicleMap.js";
 import { chargeOutlook, chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
 import { locationIsBehind, relativeTime } from "../lib/freshness.js";
+import { softwareUpdate } from "../lib/ota.js";
 import { fmt, fmtDuration, fmtSeconds, location, nv, sv, titleCase } from "../lib/state.js";
 import { type ActivityKind, brakeFluidLabel, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
 
@@ -188,7 +189,12 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
                 <Chip dot={security.open.length === 0 ? "var(--status-good)" : "var(--status-warning)"}>
                   <span title={security.open.join(", ") || undefined}>{security.openLabel}</span>
                 </Chip>
-                {ota && <Chip dot="var(--accent)" pulse={ota.installing}>{ota.label}</Chip>}
+                {ota && (
+                  <Chip dot="var(--accent)" pulse={ota.phase === "downloading" || ota.phase === "installing"}>
+                    {ota.label}
+                    {ota.progress == null && ota.version && ` · ${ota.version}`}
+                  </Chip>
+                )}
                 {nv(state, "cabinClimateInteriorTemperature") != null && (
                   <Chip>Cabin {u.formatTemperature(nv(state, "cabinClimateInteriorTemperature"))}</Chip>
                 )}
@@ -292,20 +298,6 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
       </div>
     </section>
   );
-}
-
-/** A software update that's waiting or installing, if any. */
-function softwareUpdate(state: VehicleState | undefined): { label: string; installing: boolean } | null {
-  const current = sv(state, "otaCurrentVersion");
-  const available = sv(state, "otaAvailableVersion");
-  const progress = nv(state, "otaInstallProgress");
-  if (progress != null && progress > 0 && progress < 100) {
-    return { label: `Installing update · ${fmt(progress, 0)}%`, installing: true };
-  }
-  if (available && available !== "0.0.0" && available !== current) {
-    return { label: `Update ${available} available`, installing: false };
-  }
-  return null;
 }
 
 function Chip(props: { children: ReactNode; dot?: string; pulse?: boolean }) {

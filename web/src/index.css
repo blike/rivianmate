@@ -249,12 +249,36 @@ body {
   }
 }
 
+/* ---- Software update ---- */
+.ota-pending {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 9%, transparent),
+    color-mix(in srgb, var(--accent) 2%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.ota-progress--indeterminate {
+  animation: ota-indeterminate 1.6s ease-in-out infinite;
+}
+
+@keyframes ota-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .battery-bar__fill {
     transition: none;
   }
   .battery-bar__fill--charging::after,
-  .chip-dot--pulse {
+  .chip-dot--pulse,
+  .ota-progress--indeterminate {
     animation: none;
   }
 }

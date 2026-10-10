@@ -30,7 +30,7 @@ import { ChargeHistoryImporter } from "./charge-history.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { DriveDetector } from "./drive-detector.js";
 import type { DrivePlaces } from "./drive-places.js";
-import { OtaNotesTracker } from "./ota-notes.js";
+import { OtaNotesResolver } from "./ota-notes.js";
 import { ParallaxStore, messageTime } from "./parallax-store.js";
 import type { LiveBus } from "./live-bus.js";
 import { SnapshotWriter } from "./snapshot-writer.js";
@@ -106,7 +106,7 @@ export class VehicleMonitor {
   private snapshotWriter: SnapshotWriter;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
-  private otaNotes?: OtaNotesTracker;
+  private otaNotes?: OtaNotesResolver;
   private readonly parallaxStore: ParallaxStore;
   private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
@@ -260,13 +260,7 @@ export class VehicleMonitor {
       if (superseded()) return;
     }
 
-    const otaNotes = new OtaNotesTracker(this.db, connection.api, this.log);
-    this.otaNotes = otaNotes;
-    for (const vehicle of this.vehicles) {
-      const state = this.states.get(vehicle.id);
-      if (state) await otaNotes.check(vehicle.id, state);
-      if (superseded()) return;
-    }
+    this.otaNotes = new OtaNotesResolver(connection.api, this.log);
 
     const chargingMonitor = new ChargingMonitor(
       this.db,
@@ -406,10 +400,6 @@ export class VehicleMonitor {
     const loc = stateLocation(cached);
     if (loc) this.chargingMonitor?.noteLocation(vehicleId, loc.latitude, loc.longitude);
 
-    if (changed.includes("otaCurrentVersion") || changed.includes("otaAvailableVersion")) {
-      void this.otaNotes?.check(vehicleId, cached);
-    }
-
     if (CHARGING_FIELDS.some((f) => changed.includes(f))) {
       this.chargingMonitor?.noteState(vehicleId, cached);
     }
@@ -425,6 +415,11 @@ export class VehicleMonitor {
   /** Latest Parallax readings (battery temperatures, parked energy, …). */
   getInsights(vehicleId: string): Promise<VehicleInsightsDto> {
     return this.parallaxStore.insights(vehicleId);
+  }
+
+  /** A fresh release-notes link for the installed or pending version. */
+  getReleaseNotesUrl(vehicleId: string, version: string): Promise<string | null> {
+    return this.otaNotes?.notesUrl(vehicleId, version) ?? Promise.resolve(null);
   }
 
   getSchedules(vehicleId: string): SchedulesDto {

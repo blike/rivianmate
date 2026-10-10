@@ -135,9 +135,11 @@ export interface DriveDetailDto extends DriveDto {
 export interface OtaTimelineDto {
   current: string | null;
   available: string | null;
-  availableNotesUrl: string | null;
-  /** Installed versions, newest first; firstSeen is when RivianMate first saw it. */
-  versions: { version: string; firstSeen: string; notesUrl: string | null }[];
+  /**
+   * Installed versions, newest first; firstSeen is when RivianMate first saw
+   * it. Release notes exist only for the installed and pending versions.
+   */
+  versions: { version: string; firstSeen: string }[];
 }
 
 /** Average tire pressures per time bucket, in bar. */

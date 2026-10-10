@@ -243,20 +243,6 @@ export const chargingCurvePoints = pgTable(
   (t) => [uniqueIndex("charging_curve_session_source_ts_idx").on(t.sessionId, t.source, t.ts)],
 );
 
-/** Release-notes links Rivian returned, per vehicle and software version. */
-export const otaReleaseNotes = pgTable(
-  "ota_release_notes",
-  {
-    vehicleId: text("vehicle_id")
-      .notNull()
-      .references(() => vehicles.id),
-    version: text("version").notNull(),
-    url: text("url").notNull(),
-    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.vehicleId, t.version] })],
-);
-
 /**
  * The latest Parallax message per vehicle and topic, kept raw (base64
  * protobuf) and decoded when read, so better decoding applies to stored

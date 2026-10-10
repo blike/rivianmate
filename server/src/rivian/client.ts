@@ -20,6 +20,8 @@ import {
   ChargeSessionSummary,
   ChargingSchedule,
   LoginResult,
+  OtaReleaseNotes,
+  OtaUpdateDetails,
   RivianApiError,
   RivianAppSession,
   RivianCooldownError,
@@ -61,8 +63,8 @@ export interface RivianApi {
     properties?: readonly string[],
   ): Promise<VehicleState>;
   getRegisteredWallboxes(): Promise<Wallbox[]>;
-  /** Release-notes link for the vehicle's current/pending OTA update. */
-  getOtaReleaseNotesUrl(vehicleId: string): Promise<string | null>;
+  /** Release notes for the vehicle's installed and pending software. */
+  getOtaUpdateDetails(vehicleId: string): Promise<OtaUpdateDetails>;
   getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]>;
   /** Completed charging sessions for the whole account. */
   getChargeHistory(): Promise<ChargeSessionSummary[]>;
@@ -216,15 +218,21 @@ export class RivianClient implements RivianApi {
     return data.getRegisteredWallboxes ?? [];
   }
 
-  async getOtaReleaseNotesUrl(vehicleId: string): Promise<string | null> {
+  async getOtaUpdateDetails(vehicleId: string): Promise<OtaUpdateDetails> {
     const data = await this.authenticatedRequest<{
-      getOTAUpdateDetails: { releaseNotesUrl: string | null } | null;
+      getVehicle: {
+        currentOTAUpdateDetails: OtaReleaseNotes | null;
+        availableOTAUpdateDetails: OtaReleaseNotes | null;
+      } | null;
     }>(GRAPHQL_GATEWAY, {
       operationName: "getOTAUpdateDetails",
       query: GET_OTA_UPDATE_DETAILS,
       variables: { vehicleId },
     });
-    return data.getOTAUpdateDetails?.releaseNotesUrl ?? null;
+    return {
+      current: data.getVehicle?.currentOTAUpdateDetails ?? null,
+      available: data.getVehicle?.availableOTAUpdateDetails ?? null,
+    };
   }
 
   async getChargingSchedules(vehicleId: string): Promise<ChargingSchedule[]> {
