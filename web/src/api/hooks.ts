@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import type { LiveSessionData, VehicleState } from "@server/api-types.js";
+import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from "@server/api-types.js";
 import { DEFAULT_UNITS, unitFormatter } from "../lib/units.js";
 import { api, type HomeChargingSettings, type UnitPreferences } from "./client.js";
 
@@ -97,6 +97,22 @@ export function useSetHomeCharging() {
       void queryClient.invalidateQueries({ queryKey: ["chargingSessions"] });
     },
   });
+}
+
+export function useNotificationSettings() {
+  return useQuery({ queryKey: ["notificationSettings"], queryFn: api.notificationSettings });
+}
+
+export function useSetNotificationSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: NotificationSettingsUpdate) => api.setNotificationSettings(settings),
+    onSuccess: (settings) => queryClient.setQueryData(["notificationSettings"], settings),
+  });
+}
+
+export function useTestNotifications() {
+  return useMutation({ mutationFn: api.testNotifications });
 }
 
 /** Basemap overrides from the server; fetched once per session. */

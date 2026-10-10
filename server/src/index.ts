@@ -15,6 +15,7 @@ import { RivianSubscriptionManager } from "./rivian/subscription.js";
 import { getPasswordHash } from "./routes/auth.js";
 import { DrivePlaces, nominatimGeocoder } from "./services/drive-places.js";
 import { LiveBus } from "./services/live-bus.js";
+import { NotificationService } from "./services/notifications.js";
 import { TokenStore } from "./services/token-store.js";
 import { VehicleMonitor } from "./services/vehicle-monitor.js";
 import { loadVersion } from "./version.js";
@@ -68,6 +69,15 @@ async function main(): Promise<void> {
       : undefined,
   );
 
+  const notifications = new NotificationService(
+    db,
+    crypto,
+    () => monitor.getVehicles(),
+    (vehicleId) => monitor.getState(vehicleId),
+    (msg) => console.log(`[notify] ${msg}`),
+  );
+  notifications.start(bus);
+
   const ctx: AppContext = {
     config: {
       ...config,
@@ -78,6 +88,7 @@ async function main(): Promise<void> {
     tokenStore,
     bus,
     monitor,
+    notifications,
     rivianFactory,
     governor,
     pendingConnect: null,
@@ -133,6 +144,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     clearTimeout(startRetry);
+    notifications.stop();
     await monitor.stop();
     await app.close();
     process.exit(0);

@@ -44,7 +44,7 @@ const unitsSchema = z.object({
   temperature: z.enum(["F", "C"]),
 });
 
-export async function getUnitPreferences(ctx: AppContext): Promise<UnitPreferences> {
+export async function getUnitPreferences(ctx: Pick<AppContext, "db">): Promise<UnitPreferences> {
   const rows = await ctx.db
     .select()
     .from(appSettings)

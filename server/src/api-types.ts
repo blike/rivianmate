@@ -268,3 +268,72 @@ export interface VehicleInsightsDto {
     at: string;
   } | null;
 }
+
+/** A timed alert: fires once the condition has lasted `minutes`. */
+export interface TimedAlertSettings {
+  enabled: boolean;
+  minutes: number;
+  /** Skip while the vehicle is at home. */
+  awayOnly: boolean;
+}
+
+export interface NotificationEvents {
+  doorOpen: TimedAlertSettings;
+  windowOpen: TimedAlertSettings;
+  unlocked: TimedAlertSettings;
+  tirePressure: { enabled: boolean };
+  updateAvailable: { enabled: boolean };
+  updateInstalled: { enabled: boolean };
+  updateFailed: { enabled: boolean };
+  chargingComplete: { enabled: boolean };
+  lowBattery: { enabled: boolean; percent: number };
+}
+
+export type NotificationChannelKind = "apprise" | "discord";
+
+/** A saved destination; the URL itself isn't sent back, since it holds a secret. */
+export interface NotificationDestinationDto {
+  id: string;
+  kind: NotificationChannelKind;
+  /** The user's label, e.g. "Family Discord"; null shows the service name. */
+  name: string | null;
+  /** Enough of the URL to recognize it, e.g. "apprise:8000/notify/…". */
+  preview: string;
+}
+
+export interface NotificationSettingsDto {
+  enabled: boolean;
+  destinations: NotificationDestinationDto[];
+  /** Where RivianMate is reached, for links in alerts (e.g. release notes). */
+  appUrl: string | null;
+  events: NotificationEvents;
+  /** Whether a home location or wallbox is known, for "not at home" alerts. */
+  homeKnown: boolean;
+}
+
+/**
+ * The full destination list: an `id` without a `url` keeps that saved
+ * destination (renamed if `name` changed); a `url` sets a new one. Saved
+ * destinations left out are removed.
+ */
+export interface NotificationDestinationUpdate {
+  id?: string;
+  kind: NotificationChannelKind;
+  name: string | null;
+  url?: string;
+}
+
+export interface NotificationSettingsUpdate {
+  enabled: boolean;
+  destinations: NotificationDestinationUpdate[];
+  appUrl: string | null;
+  events: NotificationEvents;
+}
+
+export interface NotificationTestResult {
+  id: string;
+  kind: NotificationChannelKind;
+  name: string | null;
+  ok: boolean;
+  error: string | null;
+}

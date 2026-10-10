@@ -62,7 +62,7 @@ export function AuthCard(props: {
             type="submit"
             disabled={props.busy || props.submitDisabled}
             aria-busy={props.busy || undefined}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] text-sm font-semibold text-[#1a1a19] transition hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-wait"
+            className="btn-primary h-11 w-full rounded-lg aria-busy:cursor-wait"
           >
             {props.busy && <Spinner />}
             {props.busy ? "Working…" : props.submitLabel}

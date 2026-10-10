@@ -12,6 +12,7 @@ import {
 } from "../api/hooks.js";
 import { LoadingScope } from "../components/loading.js";
 import { HomeChargingPanel } from "../components/HomeChargingPanel.js";
+import { NotificationsPanel } from "../components/NotificationsPanel.js";
 import { Panel, Row } from "../components/panels.js";
 import { passwordProblem } from "@server/password-policy.js";
 import { TextField } from "../components/AuthCard.js";
@@ -22,7 +23,8 @@ import { PasswordHint } from "../components/PasswordHint.js";
 const sections = [
   { id: "general", label: "General", description: "Your Rivian account, vehicles, and display preferences." },
   { id: "charging", label: "Charging", description: "Home location and electricity costs." },
-  { id: "api", label: "API & feeds", description: "Live data delivery and connection diagnostics." },
+  { id: "notifications", label: "Notifications", description: "Alerts for doors, locks, software, charging and tires." },
+  { id: "api", label: "API & Feeds", description: "Live data delivery and connection diagnostics." },
   { id: "security", label: "Security", description: "Manage your app password and session." },
   { id: "about", label: "About", description: "Version, build, and release notes." },
 ];
@@ -119,13 +121,8 @@ export function Settings() {
                     <span
                       className={
                         diagnostics.monitor.parallaxModes[v.id] === "parallax"
-                          ? "rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                          ? "rounded-full bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--accent)]"
                           : "rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]"
-                      }
-                      style={
-                        diagnostics.monitor.parallaxModes[v.id] === "parallax"
-                          ? { background: "var(--series-3)" }
-                          : undefined
                       }
                       title="Read-only: Rivian reports this per vehicle; it can't be changed here."
                     >
@@ -168,6 +165,7 @@ export function Settings() {
 
         </>}
       {section.id === "charging" && <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />}
+      {section.id === "notifications" && <NotificationsPanel />}
       {section.id === "security" && <>
 
       <Panel title="App password">
@@ -191,7 +189,7 @@ export function Settings() {
             <p className="text-sm text-[var(--text-secondary)]">{message}</p>
           )}
           <button
-            className="rounded-md bg-[var(--series-1)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="btn-primary"
             disabled={!current || passwordProblem(next) !== null}
             onClick={changePassword}
           >
@@ -270,7 +268,7 @@ function UnitToggle<T extends string>(props: {
             aria-checked={o.value === props.value}
             className={`rounded px-3 py-1 ${
               o.value === props.value
-                ? "bg-[var(--series-1)] text-white"
+                ? "bg-[var(--accent)] font-medium text-[var(--on-accent)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
             onClick={() => props.onChange(o.value)}
