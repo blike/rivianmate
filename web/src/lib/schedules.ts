@@ -19,10 +19,24 @@ export function formatDuration(minutes: number | null | undefined): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
-/** Rivian seat levels: "Heat2" → "Heat 2", "Off" → "Off". */
+/** Rivian seat levels: "Heat2" → "Heat 2", "level_2" → "Level 2", "OFF" → "Off". */
 export function formatSeatLevel(level: string | number | null | undefined): string {
   if (level == null || level === "") return "—";
-  return String(level).replace(/([a-z])(\d)/gi, "$1 $2");
+  const words = String(level)
+    .replace(/_/g, " ")
+    .replace(/([a-z])(\d)/gi, "$1 $2")
+    .trim()
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Time until something: "45m", "9h 41m", or "2d 9h" past a day. */
+export function formatWait(seconds: number): string {
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
 /** ["Monday", …] → "Weekdays", "Every day", or "Mon, Wed, Fri". */
@@ -75,7 +89,7 @@ export function weekSpans(schedules: readonly ScheduleWindow[]): [number, number
 
 export type ScheduleStatus =
   | { open: true; endsAt: Date }
-  | { open: false; startsAt: Date }
+  | { open: false; startsAt: Date; endsAt: Date }
   | null;
 
 /** Whether a charging window is open now and when it ends, or when the next one starts. */
@@ -100,7 +114,7 @@ export function scheduleStatus(schedules: readonly ScheduleWindow[], now: Date):
     return { open: true, endsAt: new Date(Math.max(...open.map((w) => w.end.getTime()))) };
   }
   const next = windows.filter((w) => w.start.getTime() > t).sort((a, b) => a.start.getTime() - b.start.getTime())[0];
-  return next ? { open: false, startsAt: next.start } : null;
+  return next ? { open: false, startsAt: next.start, endsAt: next.end } : null;
 }
 
 /** "12:00 AM – 6:00 AM". */

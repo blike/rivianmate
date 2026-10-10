@@ -1,0 +1,1 @@
+ALTER TABLE "charging_sessions" ADD COLUMN "cost_edited" boolean DEFAULT false NOT NULL;

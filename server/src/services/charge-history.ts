@@ -276,8 +276,11 @@ export class ChargeHistoryImporter {
             // only partly seen (e.g. started while already plugged in).
             startedAt: startedAt < row.startedAt ? startedAt : row.startedAt,
             endedAt: endedAt ?? row.endedAt,
-            cost: row.cost ?? cost,
-            currency: row.currency ?? s.currencyCode ?? null,
+            // Rivian's billed total is final, so it replaces running totals
+            // recorded while charging; a cost the owner entered stays.
+            ...(!row.costEdited && cost != null
+              ? { cost, currency: s.currencyCode ?? row.currency ?? null }
+              : { currency: row.currency ?? s.currencyCode ?? null }),
           })
           .where(eq(chargingSessions.id, match.id));
         match.rivianTransactionId = match.rivianTransactionId ?? s.transactionId ?? null;

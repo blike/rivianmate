@@ -1,5 +1,6 @@
 import type { OtaTimelineDto } from "@server/api-types.js";
 import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
 import { api } from "../api/client.js";
 import { useVehicleState } from "../api/hooks.js";
 import {
@@ -8,11 +9,16 @@ import {
   lastInstallFailed,
   releaseNotesHref,
   softwareUpdate,
+  typicalUpdateGapDays,
 } from "../lib/ota.js";
 import { Panel } from "./panels.js";
-import { SkeletonRows } from "./loading.js";
+import { SkeletonBlock } from "./loading.js";
 
 const DAY_MS = 86_400_000;
+/** Earlier versions shown before the installed one; older ones are summarized. */
+const MAX_PAST = 4;
+
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
 
 const longDate = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
@@ -22,6 +28,9 @@ const days = (ms: number) => {
   return `${d} day${d === 1 ? "" : "s"}`;
 };
 
+type Version = OtaTimelineDto["versions"][number];
+
+/** Past versions, then what's installed, then what's next, along one track. */
 export function SoftwarePanel(props: { vehicleId: string }) {
   const { data: state, isPending: statePending } = useVehicleState(props.vehicleId);
   const { data: ota, isPending: otaPending } = useQuery({
@@ -29,155 +38,216 @@ export function SoftwarePanel(props: { vehicleId: string }) {
     queryFn: () => api.otaTimeline(props.vehicleId),
     refetchInterval: 15 * 60_000,
   });
+  // Day precision: the mount time is close enough.
+  const [now] = useState(() => Date.now());
   const update = softwareUpdate(state);
+  const failed = lastInstallFailed(state);
+
+  // Oldest first, so the track reads left to right into the future.
+  const versions = [...(ota?.versions ?? [])].reverse();
   const current = ota?.current ?? null;
+  const installedAt = versions.findIndex((v) => v.version === current);
+  const installed = installedAt >= 0 ? versions[installedAt]! : null;
+  const before = installedAt >= 0 ? versions.slice(0, installedAt) : versions;
+  const past = before.slice(-MAX_PAST);
+  const hidden = before.length - past.length;
+  const gap = typicalUpdateGapDays(ota?.versions ?? []);
+  // The oldest version's date is when tracking began, not when it was installed.
+  const tracked = installed && installedAt === 0;
 
   return (
-    <Panel title="Software">
+    <Panel
+      title="Software"
+      action={gap != null && <span className="text-xs text-[var(--text-muted)]">Updates every ~{days(gap * DAY_MS)}</span>}
+    >
       {statePending || otaPending ? (
-        <SkeletonRows rows={3} />
+        <SkeletonBlock height="7rem" />
       ) : (
-        <div className="space-y-5">
-          {update ? (
-            <PendingUpdate vehicleId={props.vehicleId} update={update} current={current} />
-          ) : (
-            current && <UpToDate vehicleId={props.vehicleId} version={current} />
-          )}
-          {lastInstallFailed(state) && (
-            <p role="alert" className="text-sm text-[var(--status-warning)]">
+        <>
+          <ol className="flex flex-col sm:flex-row">
+            {hidden > 0 && (
+              <Stop kind="past" grow={0.8}>
+                <div className="text-sm text-[var(--text-muted)]">
+                  {hidden} earlier
+                </div>
+                <div className="whitespace-nowrap text-xs text-[var(--text-muted)]">Since {shortDate(before[0]!.firstSeen)}</div>
+              </Stop>
+            )}
+            {past.map((v, i) => (
+              <Stop key={v.version} kind="past" grow={1}>
+                <VersionName vehicleId={props.vehicleId} version={v} />
+                <div className="text-xs text-[var(--text-muted)]">
+                  {shortDate(v.firstSeen)} · {days(Date.parse((past[i + 1] ?? installed ?? v).firstSeen) - Date.parse(v.firstSeen))}
+                </div>
+              </Stop>
+            ))}
+            <Stop kind="installed" grow={2} next={update ? "update" : "none"} progress={trackFill(update)}>
+              <Eyebrow color={update || failed ? "var(--text-muted)" : "var(--status-good)"}>
+                {update || failed ? (
+                  "Installed"
+                ) : (
+                  <>
+                    <CheckIcon /> Up to date
+                  </>
+                )}
+              </Eyebrow>
+              <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{current ?? "—"}</div>
+              <div className="mt-0.5 text-sm text-[var(--text-secondary)]">
+                {installed
+                  ? `${tracked ? "Seen since" : "Installed"} ${longDate(installed.firstSeen)} · ${days(now - Date.parse(installed.firstSeen))}`
+                  : "Waiting for the vehicle to report its version"}
+              </div>
+              {current && <NotesLink vehicleId={props.vehicleId} version={current} />}
+            </Stop>
+            {update ? (
+              <Stop kind="update" grow={2} active={update.phase === "downloading" || update.phase === "installing"}>
+                <PendingDetails vehicleId={props.vehicleId} update={update} />
+              </Stop>
+            ) : (
+              <Stop kind="none" grow={1.2}>
+                <div className="text-sm text-[var(--text-muted)]">No update waiting</div>
+                <div className="text-xs text-[var(--text-muted)]">New versions appear here when offered.</div>
+              </Stop>
+            )}
+          </ol>
+          {failed && (
+            <p
+              role="alert"
+              className="mt-4 rounded-lg bg-[color-mix(in_srgb,var(--status-warning)_10%,transparent)] px-4 py-3 text-sm text-[var(--status-warning)]"
+            >
               The vehicle reported that its last update didn’t install. Check the Rivian app for details.
             </p>
           )}
-          <History vehicleId={props.vehicleId} ota={ota} />
-        </div>
+        </>
       )}
     </Panel>
   );
 }
 
-function PendingUpdate(props: { vehicleId: string; update: SoftwareUpdate; current: string | null }) {
+/** How far the installed → update segment is filled: null while progress is unknown. */
+function trackFill(update: SoftwareUpdate | null): number | null {
+  if (!update) return 0;
+  if (update.phase === "downloading" || update.phase === "installing") return update.progress;
+  return 100;
+}
+
+type StopKind = "past" | "installed" | "update" | "none";
+
+/**
+ * One point on the track: a marker, the segment to the next point, and its
+ * details. The track runs across on wide screens and down on phones.
+ */
+function Stop(props: {
+  kind: StopKind;
+  grow: number;
+  /** For the installed stop: what follows it, which colors its segment. */
+  next?: "update" | "none";
+  progress?: number | null;
+  active?: boolean;
+  children: ReactNode;
+}) {
+  const last = props.kind === "update" || props.kind === "none";
+  const toUpdate = props.next === "update";
+  const fill = props.progress;
+
+  return (
+    <li className="relative min-w-0 pb-6 pl-7 last:pb-0 sm:pb-0 sm:pl-0 sm:pr-6 sm:pt-8 sm:last:pr-0" style={{ flexGrow: props.grow, flexBasis: 0 }}>
+      {!last && (
+        <span
+          aria-hidden
+          className={`absolute overflow-hidden rounded-full max-sm:bottom-0 max-sm:left-[5px] max-sm:top-5 max-sm:w-0.5 sm:left-5 sm:right-2 sm:top-[5px] sm:h-0.5 ${
+            toUpdate ? "bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]" : "bg-[var(--border)]"
+          }`}
+        >
+          {toUpdate && (
+            <span
+              className={`absolute left-0 top-0 rounded-full bg-[var(--accent)] transition-all duration-700 max-sm:h-[var(--fill)] max-sm:w-full sm:h-full sm:w-[var(--fill)] ${
+                fill == null ? "ota-progress--indeterminate" : ""
+              }`}
+              style={{ ["--fill" as string]: `${fill ?? 30}%` }}
+            />
+          )}
+        </span>
+      )}
+      <Marker kind={props.kind} active={props.active} />
+      <div className="min-w-0">{props.children}</div>
+    </li>
+  );
+}
+
+function Marker(props: { kind: StopKind; active?: boolean }) {
+  const base = "absolute left-0 top-0 block h-3 w-3 rounded-full";
+  switch (props.kind) {
+    case "past":
+      return <span aria-hidden className={`${base} border-2 border-[var(--text-muted)] bg-[var(--surface-1)]`} />;
+    case "installed":
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-[var(--status-good)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--status-good)_18%,transparent)]`}
+        />
+      );
+    case "update":
+      return (
+        <span
+          aria-hidden
+          className={`${base} bg-[var(--accent)] text-[var(--accent)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--accent)_18%,transparent)] ${
+            props.active ? "chip-dot--pulse" : ""
+          }`}
+        />
+      );
+    case "none":
+      return <span aria-hidden className={`${base} border-2 border-dashed border-[var(--text-muted)]`} />;
+  }
+}
+
+function PendingDetails(props: { vehicleId: string; update: SoftwareUpdate }) {
   const { update } = props;
-  const active = update.phase === "downloading" || update.phase === "installing";
   const facts = [
     update.type && `${update.type} update`,
     update.installMinutes != null && `${installTimeLabel(update.installMinutes)} to install`,
-    props.current && `Replaces ${props.current}`,
   ].filter(Boolean);
+  const hint =
+    update.phase === "ready"
+      ? "Start or schedule the install from the touchscreen or the Rivian app."
+      : update.phase === "installing"
+        ? "The vehicle can’t be driven until the install finishes."
+        : null;
 
   return (
-    <div className="ota-pending rounded-lg p-4">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--accent)]">
-            <span
-              className={`h-1.5 w-1.5 rounded-full bg-[var(--accent)] text-[var(--accent)] ${active ? "chip-dot--pulse" : ""}`}
-            />
-            {update.label}
-          </div>
-          {update.version && (
-            <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight">{update.version}</div>
-          )}
-          {facts.length > 0 && (
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">{facts.join(" · ")}</p>
-          )}
-        </div>
-        {update.version && <NotesLink vehicleId={props.vehicleId} version={update.version} />}
-      </div>
+    <>
+      <Eyebrow color="var(--accent)">{update.label}</Eyebrow>
+      <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{update.version ?? "New version"}</div>
+      {facts.length > 0 && <div className="mt-0.5 text-sm text-[var(--text-secondary)]">{facts.join(" · ")}</div>}
+      {hint && <div className="mt-1 text-xs text-[var(--text-muted)]">{hint}</div>}
+      {update.version && <NotesLink vehicleId={props.vehicleId} version={update.version} />}
+    </>
+  );
+}
 
-      {active && (
-        <div
-          className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]"
-          role="progressbar"
-          aria-label={update.label}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={update.progress ?? undefined}
-        >
-          <div
-            className={`h-full rounded-full bg-[var(--accent)] transition-[width] duration-700 ${update.progress == null ? "ota-progress--indeterminate" : ""}`}
-            style={{ width: update.progress == null ? "30%" : `${update.progress}%` }}
-          />
-        </div>
-      )}
-
-      {update.phase === "ready" && (
-        <p className="mt-3 text-xs text-[var(--text-muted)]">
-          Downloaded to the vehicle. Start or schedule the install from the touchscreen or the Rivian app.
-        </p>
-      )}
-      {update.phase === "installing" && (
-        <p className="mt-3 text-xs text-[var(--text-muted)]">The vehicle can’t be driven until the install finishes.</p>
-      )}
+function Eyebrow(props: { color: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide" style={{ color: props.color }}>
+      {props.children}
     </div>
   );
 }
 
-function UpToDate(props: { vehicleId: string; version: string }) {
+/** A past version's number, linking to its notes when they were saved. */
+function VersionName(props: { vehicleId: string; version: Version }) {
+  const { version } = props.version;
+  if (!props.version.hasNotes) return <div className="flex text-sm tabular-nums text-[var(--text-secondary)]">{version}</div>;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div className="flex items-center gap-3">
-        <span
-          aria-hidden
-          className="grid h-8 w-8 place-items-center rounded-full bg-[color-mix(in_srgb,var(--status-good)_16%,transparent)] text-[var(--status-good)]"
-        >
-          <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-        <div>
-          <div className="text-sm font-medium">Up to date</div>
-          <div className="text-xs tabular-nums text-[var(--text-muted)]">{props.version}</div>
-        </div>
-      </div>
-      <NotesLink vehicleId={props.vehicleId} version={props.version} />
-    </div>
-  );
-}
-
-function History(props: { vehicleId: string; ota: OtaTimelineDto | undefined }) {
-  const versions = props.ota?.versions ?? [];
-  if (versions.length === 0) {
-    return <p className="py-4 text-center text-sm text-[var(--text-muted)]">No software versions recorded yet.</p>;
-  }
-  return (
-    <div>
-      <h4 className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Installed versions</h4>
-      <ol className="relative">
-        {versions.map((v, i) => {
-          const installed = i === 0 && v.version === props.ota?.current;
-          const until = i > 0 ? versions[i - 1]?.firstSeen : undefined;
-          const span = until
-            ? `${longDate(v.firstSeen)} – ${longDate(until)} · ${days(Date.parse(until) - Date.parse(v.firstSeen))}`
-            : `Since ${longDate(v.firstSeen)}`;
-          return (
-            <li key={v.version} className="relative flex gap-3 pb-4 last:pb-0">
-              {i < versions.length - 1 && (
-                <span aria-hidden className="absolute left-[4.5px] top-3 bottom-0 w-px bg-[var(--border)]" />
-              )}
-              <span
-                aria-hidden
-                className={`relative mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full border-2 ${
-                  installed ? "border-[var(--status-good)] bg-[var(--status-good)]" : "border-[var(--border)] bg-[var(--surface-1)]"
-                }`}
-              />
-              <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <div className="min-w-0">
-                  <span className={`text-sm tabular-nums ${installed ? "font-medium" : "text-[var(--text-secondary)]"}`}>
-                    {v.version}
-                  </span>
-                  {installed && <span className="ml-2 text-xs text-[var(--status-good)]">Installed</span>}
-                  <div className="text-xs text-[var(--text-muted)]">{span}</div>
-                </div>
-                {(installed || v.hasNotes) && <NotesLink vehicleId={props.vehicleId} version={v.version} />}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-      <p className="mt-3 text-xs text-[var(--text-muted)]">
-        Dates are when RivianMate first saw each version. Release notes are saved from then on, so older versions may not have them.
-      </p>
-    </div>
+    <a
+      href={releaseNotesHref(props.vehicleId, version)}
+      target="_blank"
+      rel="noreferrer noopener"
+      title="Release notes"
+      className="flex w-fit items-center gap-1 text-sm tabular-nums text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline"
+    >
+      {version}
+      <ArrowIcon />
+    </a>
   );
 }
 
@@ -187,12 +257,27 @@ function NotesLink(props: { vehicleId: string; version: string }) {
       href={releaseNotesHref(props.vehicleId, props.version)}
       target="_blank"
       rel="noreferrer noopener"
-      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]"
+      className="mt-2 inline-flex items-center gap-1 text-xs text-[var(--text-secondary)] underline-offset-4 transition-colors hover:text-[var(--text-primary)] hover:underline"
     >
       Release notes
-      <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-        <path d="M4.5 2.5h5v5M9.5 2.5l-7 7" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <ArrowIcon />
     </a>
   );
 }
+
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path d="M4.5 2.5h5v5M9.5 2.5l-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+      <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+

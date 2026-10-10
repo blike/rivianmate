@@ -1,6 +1,6 @@
 import type { VehicleState } from "@server/api-types.js";
 import { describe, expect, it } from "vitest";
-import { installTimeLabel, lastInstallFailed, softwareUpdate } from "./ota.js";
+import { installTimeLabel, lastInstallFailed, softwareUpdate, typicalUpdateGapDays } from "./ota.js";
 
 const v = (value: string | number) => ({ timeStamp: "t", value });
 const state = (fields: Record<string, string | number>) =>
@@ -51,5 +51,18 @@ describe("installTimeLabel", () => {
     expect(installTimeLabel(25)).toBe("About 25 min");
     expect(installTimeLabel(60)).toBe("About 1 hr");
     expect(installTimeLabel(65)).toBe("About 1 hr 5 min");
+  });
+});
+
+describe("typicalUpdateGapDays", () => {
+  const seen = (...days: number[]) => days.map((d) => ({ firstSeen: new Date(Date.UTC(2026, 0, d)).toISOString() }));
+
+  it("needs two installs after tracking began", () => {
+    expect(typicalUpdateGapDays(seen(20, 1))).toBeNull();
+    expect(typicalUpdateGapDays(seen(30, 10, 1))).toBe(20);
+  });
+
+  it("takes the median gap", () => {
+    expect(typicalUpdateGapDays(seen(60, 40, 30, 2, 1))).toBe(20);
   });
 });

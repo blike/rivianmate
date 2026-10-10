@@ -11,7 +11,7 @@ import { chargingCurvePoints, chargingSessions, vehicles } from "../db/schema.js
 import type { RivianApi } from "../rivian/client.js";
 import type { LiveSessionData, VehicleState } from "../rivian/types.js";
 import { RVM_CHARGE_BREAKDOWN, RVM_CHARGING_GRAPH, RVM_SOC_SLIDER, RVM_TIME_ESTIMATION } from "../rivian/parallax.js";
-import { b64, chargingGraph, float, graphBar, int } from "../testing/protobuf.js";
+import { b64, chargingGraph, float, graphBar, int, message, string } from "../testing/protobuf.js";
 import { ChargingMonitor } from "./charging-monitor.js";
 import { LiveBus } from "./live-bus.js";
 
@@ -223,6 +223,36 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
       expect.closeTo(0.2),
     ]);
     expect(row!.rangeAddedKm).toBe(33);
+  });
+
+  it("tracks Rivian's running cost while charging, leaving a cost the owner entered", async () => {
+    /** A breakdown carrying the session's cost so far, in USD. */
+    const costing = (minutes: number, dollars: number, cents: number) => ({
+      ...breakdown(minutes * 0.2, minutes * 0.2, 0, minutes, minutes),
+      payload: b64([
+        ...float(1, minutes * 0.2),
+        ...float(2, minutes * 0.2),
+        ...int(6, minutes),
+        ...message(11, [...string(1, "USD"), ...int(2, dollars), ...int(3, cents * 10_000_000)]),
+      ]),
+    });
+    const m = monitor();
+    await m.start();
+    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
+    clock = Date.parse("2026-10-01T07:02:00Z");
+    await m.ingestParallax("v1", costing(2, 1, 6));
+    clock = Date.parse("2026-10-01T07:30:00Z");
+    await m.ingestParallax("v1", costing(30, 15, 40));
+    let [row] = await sessions();
+    // The latest total, not the first one seen ($1.06).
+    expect([row!.cost, row!.currency]).toEqual(["15.40", "USD"]);
+
+    await handle.db.update(chargingSessions).set({ cost: "12.00", costEdited: true });
+    clock = Date.parse("2026-10-01T07:45:00Z");
+    await m.ingestParallax("v1", costing(45, 23, 10));
+    m.stop();
+    [row] = await sessions();
+    expect(row!.cost).toBe("12.00");
   });
 
   it("adds push-feed power and energy to the plug-in's session", async () => {
