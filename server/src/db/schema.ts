@@ -1,4 +1,5 @@
 import {
+  customType,
   bigint,
   bigserial,
   boolean,
@@ -243,7 +244,15 @@ export const chargingCurvePoints = pgTable(
   (t) => [uniqueIndex("charging_curve_session_source_ts_idx").on(t.sessionId, t.source, t.ts)],
 );
 
-/** Release-notes links Rivian returned, per vehicle and software version. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
+/**
+ * Rivian's release-notes PDFs, kept per vehicle and software version: Rivian
+ * only serves them for the installed and pending versions, via links that
+ * expire within the hour.
+ */
 export const otaReleaseNotes = pgTable(
   "ota_release_notes",
   {
@@ -251,7 +260,7 @@ export const otaReleaseNotes = pgTable(
       .notNull()
       .references(() => vehicles.id),
     version: text("version").notNull(),
-    url: text("url").notNull(),
+    pdf: bytea("pdf").notNull(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.vehicleId, t.version] })],

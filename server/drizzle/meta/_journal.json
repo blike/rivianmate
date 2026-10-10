@@ -92,6 +92,13 @@
       "when": 1791146715259,
       "tag": "0012_location_points_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791638486809,
+      "tag": "0013_ota_release_notes_pdf",
+      "breakpoints": true
     }
   ]
 }

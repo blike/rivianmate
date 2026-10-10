@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { averageSpeedKmh, driveProfile, rangeUsedKm } from "./drives.js";
+import { averageSpeedKmh, driveProfile, profilePosition, rangeUsedKm } from "./drives.js";
 
 describe("driveProfile", () => {
   it("places points by minutes into the drive", () => {
@@ -11,9 +11,27 @@ describe("driveProfile", () => {
         "2026-10-01T15:00:00Z",
       ),
     ).toEqual([
-      { minutes: 0, speedKmh: 0, altitudeM: 10 },
-      { minutes: 1.5, speedKmh: 48, altitudeM: 12 },
+      { minutes: 0, speedKmh: 0, altitudeM: 10, lat: null, lon: null },
+      { minutes: 1.5, speedKmh: 48, altitudeM: 12, lat: null, lon: null },
     ]);
+  });
+
+  it("keeps each reading's position", () => {
+    expect(
+      driveProfile([{ ts: "2026-10-01T15:00:00Z", lat: 40.1, lon: -88.2, bearing: null, speedKmh: 30, altitude: null }], "2026-10-01T15:00:00Z"),
+    ).toEqual([{ minutes: 0, speedKmh: 30, altitudeM: null, lat: 40.1, lon: -88.2 }]);
+  });
+});
+
+describe("profilePosition", () => {
+  const at = (lat: number | null) => ({ lat, lon: lat == null ? null : -88 });
+
+  it("uses the point's own fix, else the nearest one", () => {
+    const profile = [at(40), at(null), at(null), at(41)];
+    expect(profilePosition(profile, 0)).toEqual([40, -88]);
+    expect(profilePosition(profile, 1)).toEqual([40, -88]);
+    expect(profilePosition(profile, 2)).toEqual([41, -88]);
+    expect(profilePosition([at(null)], 0)).toBeNull();
   });
 });
 

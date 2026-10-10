@@ -12,7 +12,7 @@ import type {
   TirePressurePointDto,
 } from "../api-types.js";
 import type { AppContext } from "../context.js";
-import { parallaxLatest, otaReleaseNotes, vehicleStateSnapshots } from "../db/schema.js";
+import { parallaxLatest, vehicleStateSnapshots } from "../db/schema.js";
 import { stateString } from "../services/state-utils.js";
 import { phantomDrain } from "../services/health.js";
 
@@ -85,12 +85,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
         GROUP BY version
         ORDER BY first_seen DESC
       `);
-      const notes = await ctx.db
-        .select({ version: otaReleaseNotes.version, url: otaReleaseNotes.url })
-        .from(otaReleaseNotes)
-        .where(eq(otaReleaseNotes.vehicleId, vehicleId));
-      const notesByVersion = new Map(notes.map((n) => [n.version, n.url]));
-
+      const withNotes = await ctx.monitor.releaseNotesVersions(vehicleId);
       const state = ctx.monitor.getState(vehicleId) ?? {};
       const current = stateString(state, "otaCurrentVersion");
       const availableRaw = stateString(state, "otaAvailableVersion");
@@ -100,13 +95,32 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
       return {
         current,
         available,
-        availableNotesUrl: available ? (notesByVersion.get(available) ?? null) : null,
         versions: history.map((h) => ({
           version: h.version,
           firstSeen: new Date(h.first_seen).toISOString(),
-          notesUrl: notesByVersion.get(h.version) ?? null,
+          hasNotes: withNotes.has(h.version),
         })),
       };
+    },
+  );
+
+  app.get<{ Params: { id: string; version: string } }>(
+    "/api/vehicles/:id/ota/notes/:version",
+    async (request, reply) => {
+      const { id, version } = request.params;
+      const pdf = await ctx.monitor.getReleaseNotes(id, version);
+      if (!pdf) {
+        return reply
+          .code(404)
+          .type("text/plain")
+          .send("Release notes for this version weren't saved before Rivian stopped offering them.");
+      }
+      const filename = `rivian-${version.replace(/[^\w.-]/g, "")}-release-notes.pdf`;
+      return reply
+        .type("application/pdf")
+        .header("Content-Disposition", `inline; filename="${filename}"`)
+        .header("Cache-Control", "private, max-age=86400")
+        .send(pdf);
     },
   );
 

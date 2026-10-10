@@ -46,6 +46,8 @@ export function TrendChart(props: {
   leftUnit?: string;
   rightUnit?: string;
   height?: number;
+  /** Index into `data` of the point under the pointer; null when it leaves. */
+  onHover?: (index: number | null) => void;
 }) {
   const gradientId = useId().replace(/:/g, "");
   const hasRight = props.series.some((s) => s.right);
@@ -58,7 +60,18 @@ export function TrendChart(props: {
   return (
     <div style={{ height: props.height ?? 220 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={props.data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <ComposedChart
+          data={props.data}
+          margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+          onMouseMove={
+            props.onHover &&
+            ((state) => {
+              const index = Number(state.activeTooltipIndex);
+              props.onHover?.(state.isTooltipActive && Number.isInteger(index) ? index : null);
+            })
+          }
+          onMouseLeave={props.onHover && (() => props.onHover?.(null))}
+        >
           <defs>
             {props.series.map((s) => (
               <linearGradient key={s.key} id={`${gradientId}-${s.key}`} x1="0" y1="0" x2="0" y2="1">

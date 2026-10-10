@@ -7,7 +7,7 @@ import { ContentFrame, LoadingScope, Skeleton, SkeletonBlock, SkeletonRows } fro
 import { Panel, Row } from "../components/panels.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { VehicleMap } from "../components/VehicleMap.js";
-import { averageSpeedKmh, driveProfile, rangeUsedKm } from "../lib/drives.js";
+import { averageSpeedKmh, driveProfile, profilePosition, rangeUsedKm } from "../lib/drives.js";
 import { isPosition } from "../lib/geo.js";
 import { fmt, fmtDuration, fmtSeconds, titleCase } from "../lib/state.js";
 import { useRemainingHeight } from "../lib/useRemainingHeight.js";
@@ -61,10 +61,15 @@ export function Drives(props: { vehicleId: string }) {
             minutes: p.minutes,
             speed: u.distance(p.speedKmh),
             elevation: u.elevation(p.altitudeM),
+            lat: p.lat,
+            lon: p.lon,
           }))
         : [],
     [detail, u],
   );
+  // The chart point under the pointer, marked on the route map.
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const hoverPosition = hoverIndex != null ? profilePosition(profile, hoverIndex) : null;
 
   // The drives table fills the rest of the screen and scrolls inside; the
   // gap leaves room for the panel's padding and the page's bottom margin.
@@ -104,7 +109,9 @@ export function Drives(props: { vehicleId: string }) {
                 data={profile}
                 xKey="minutes"
                 height={160}
+                onHover={setHoverIndex}
                 xFormatter={formatMinutes(profile.at(-1)?.minutes ?? 0)}
+                tooltipLabel={detail ? tooltipTime(detail.startedAt) : undefined}
                 series={[
                   { key: "speed", label: "Speed", color: "var(--series-1)", unit: u.speedUnit, digits: 0 },
                   { key: "elevation", label: "Elevation", color: "var(--series-2)", mark: "line", right: true, unit: u.elevationUnit, digits: 0 },
@@ -127,6 +134,7 @@ export function Drives(props: { vehicleId: string }) {
                   trail={trail}
                   height="100%"
                   follow={false}
+                  highlight={hoverPosition}
                 />
               </div>
             ) : (
@@ -222,6 +230,15 @@ function PlaceCell(props: { place: DrivePlaceDto | null }) {
 function formatMinutes(totalMinutes: number) {
   return (m: number) =>
     totalMinutes >= 120 ? fmtSeconds(m * 60) : `${fmt(m, totalMinutes < 10 ? 1 : 0)} min`;
+}
+
+/** "47m (12:52 PM)": time into the drive, then the time of day. */
+function tooltipTime(startedAt: string) {
+  const start = Date.parse(startedAt);
+  return (m: number) => {
+    const clock = new Date(start + m * 60_000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `${fmtSeconds(m * 60)} (${clock})`;
+  };
 }
 
 /** When and where, then the drive's figures; for a drive in progress, its readings so far. */

@@ -25,7 +25,8 @@ export const LOGIN_WITH_OTP = `mutation LoginWithOTP($email: String!, $otpCode: 
 
 export const GET_USER_INFO = `query getUserInfo { currentUser { __typename id vehicles { id vin name roles state createdAt updatedAt vehicle { __typename id vin modelYear make model vehicleState { supportedFeatures { __typename name status } } } } } }`;
 
-export const GET_OTA_UPDATE_DETAILS = `query getOTAUpdateDetails($vehicleId: String!) { getOTAUpdateDetails(vehicleId: $vehicleId) { releaseNotesUrl } }`;
+/** Release-notes PDFs for the installed and pending software; the links are presigned and expire after an hour. */
+export const GET_OTA_UPDATE_DETAILS = `query getOTAUpdateDetails($vehicleId: String!) { getVehicle(id: $vehicleId) { availableOTAUpdateDetails { url version locale } currentOTAUpdateDetails { url version locale } } }`;
 
 export const GET_CHARGING_SCHEDULE = `query GetChargingSchedule($vehicleId: String!) { getVehicle(id: $vehicleId) { chargingSchedules { enabled startTime duration amperage location { latitude longitude } weekDays } } }`;
 
@@ -94,6 +95,11 @@ export const VEHICLE_STATE_PROPERTIES: readonly string[] = [
   "otaCurrentVersion",
   "otaStatus",
   "otaCurrentStatus",
+  "otaDownloadProgress",
+  "otaInstallProgress",
+  "otaInstallReady",
+  "otaInstallDuration",
+  "otaInstallType",
   "cabinClimateInteriorTemperature",
   "cabinClimateDriverTemperature",
   "batteryHvThermalEvent",
