@@ -147,7 +147,7 @@ export function Drives(props: { vehicleId: string }) {
           </div>
         </Panel>
 
-        <Panel title="All drives" className="flex flex-col">
+        <Panel title="All drives" className="hidden flex-col lg:flex">
           <div className="relative min-h-0 flex-1">
             <div className="-mx-4 max-h-[28rem] overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {drivesPending ? (
@@ -272,7 +272,7 @@ function Place(props: { place: DrivePlaceDto | null }) {
   );
 }
 
-/** On narrow screens, where the list sits below the route, a picker up top. */
+/** On narrow screens, a picker up top stands in for the list. */
 function DrivePicker(props: { drives: DriveDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
   const u = useUnits();
   const groups = useMemo(

@@ -103,7 +103,7 @@ export function Charging(props: { vehicleId: string }) {
           )}
         </Panel>
 
-        <Panel title="All sessions" className="flex flex-col">
+        <Panel title="All sessions" className="hidden flex-col lg:flex">
           <div className="relative min-h-0 flex-1">
             <div className="-mx-4 max-h-[28rem] overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {sessionsPending ? (
@@ -423,7 +423,7 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
   );
 }
 
-/** On narrow screens, where the list sits below the curve, a picker up top. */
+/** On narrow screens, a picker up top stands in for the list. */
 function SessionPicker(props: { sessions: ChargingSessionDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
   const groups = useMemo(
     () =>
