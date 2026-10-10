@@ -67,7 +67,7 @@ export function HomeChargingPanel(props: { vehicleId: string | undefined }) {
             </select>
             <span className="text-[var(--text-muted)]">per kWh</span>
             <button
-              className="rounded-md bg-[var(--series-1)] px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="btn-primary"
               disabled={!dirty || rateInvalid || save.isPending}
               onClick={() =>
                 save.mutate({ ...base, ratePerKwh: parsedRate, currency }, { onSuccess: clearDrafts })

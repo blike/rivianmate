@@ -21,6 +21,9 @@ import type {
   VehicleState,
   WallboxDto,
   HomeChargingSettings,
+  NotificationSettingsDto,
+  NotificationSettingsUpdate,
+  NotificationTestResult,
   MapConfigResponse,
 } from "@server/api-types.js";
 
@@ -108,6 +111,14 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  notificationSettings: () => request<NotificationSettingsDto>("/api/settings/notifications"),
+  setNotificationSettings: (settings: NotificationSettingsUpdate) =>
+    request<NotificationSettingsDto>("/api/settings/notifications", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+  testNotifications: () =>
+    request<NotificationTestResult[]>("/api/settings/notifications/test", { method: "POST" }),
   mapConfig: () => request<MapConfigResponse>("/api/map-config"),
   units: () => request<UnitPreferences>("/api/settings/units"),
   setUnits: (units: UnitPreferences) =>

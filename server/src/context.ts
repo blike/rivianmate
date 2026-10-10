@@ -5,6 +5,7 @@ import type { RivianApi } from "./rivian/client.js";
 import type { RivianGovernor } from "./rivian/governor.js";
 import type { RivianTokens } from "./rivian/types.js";
 import type { LiveBus } from "./services/live-bus.js";
+import type { NotificationService } from "./services/notifications.js";
 import type { TokenStore } from "./services/token-store.js";
 import type {
   RivianConnection,
@@ -32,6 +33,7 @@ export interface AppContext {
   tokenStore: TokenStore;
   bus: LiveBus;
   monitor: VehicleMonitor;
+  notifications: NotificationService;
   rivianFactory: RivianFactory;
   /** Shared throttle/cooldown/counters for all Rivian traffic. */
   governor: RivianGovernor;

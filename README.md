@@ -22,6 +22,7 @@ then shows them on a dashboard you can open from anywhere.
 - [Features](#features)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
+- [Notifications](#notifications)
 - [Updating](#updating)
 - [Privacy and security](#privacy-and-security)
 - [Development](#development)
@@ -84,8 +85,8 @@ days, plus the vehicle's location trail on the map.
 ### Settings
 
 Miles or kilometers and °F or °C across the app; home charging rate and
-location; your vehicles and VINs; app password; and a 24-hour report of
-RivianMate's own Rivian API usage.
+location; [notifications](#notifications); your vehicles and VINs; app
+password; and a 24-hour report of RivianMate's own Rivian API usage.
 
 ## Quick start
 
@@ -138,6 +139,45 @@ from `.env`.
 | `MAP_GLYPHS_URL` | no | Font glyph URL template (`{fontstack}`, `{range}`) for map labels. Defaults to OpenFreeMap's |
 | `MAP_STYLE_URL` | no | A complete MapLibre style URL (e.g. MapTiler or Stadia Maps) to replace the built-in dark style. The vehicle and routes are still drawn on top |
 | `DATABASE_URL` | no | Postgres connection string. Compose sets it for the bundled database; set it yourself only to use an external Postgres |
+
+## Notifications
+
+RivianMate can send alerts to Discord webhooks and
+[Apprise API](https://github.com/caronc/apprise-api) servers (which forward to
+Pushover, ntfy, Telegram, Slack, email and
+[many more](https://github.com/caronc/apprise/wiki)). Add as many destinations
+as you like in **Settings → Notifications**, then use
+**Send test notification** to check them.
+
+| Alert | When |
+|---|---|
+| Door left open | A door, the frunk or a gate has been open for a set time |
+| Window left open | A window has been open for a set time |
+| Vehicle unlocked | The vehicle has been unlocked for a set time |
+| Update available / installed / failed | A new software version is offered, finishes installing, or fails to install |
+| Charging complete | The vehicle reaches its charge limit |
+| Low battery | The battery drops below a set level |
+| Tire pressure | The vehicle flags a tire pressure issue |
+
+The door, window and unlock alerts can be limited to when the vehicle isn't at
+home (near your Rivian Wall Charger or the home location in
+**Settings → Charging**). Time only counts while the vehicle is parked, and
+the door and unlock alerts also wait while someone's in it. The tire pressure
+alert sends a follow-up once all tires are back to normal.
+
+To run Apprise next to RivianMate, add it to `docker-compose.yml`:
+
+```yaml
+  apprise:
+    image: caronc/apprise:latest
+    restart: always
+    volumes:
+      - apprise_config:/config
+```
+
+Add `apprise_config:` under `volumes:`, configure your services in Apprise
+under a key such as `rivianmate`, and use
+`http://apprise:8000/notify/rivianmate` as the Apprise API URL.
 
 ## Updating
 
