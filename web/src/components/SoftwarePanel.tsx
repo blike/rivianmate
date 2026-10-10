@@ -168,14 +168,14 @@ function History(props: { vehicleId: string; ota: OtaTimelineDto | undefined }) 
                   {installed && <span className="ml-2 text-xs text-[var(--status-good)]">Installed</span>}
                   <div className="text-xs text-[var(--text-muted)]">{span}</div>
                 </div>
-                {installed && <NotesLink vehicleId={props.vehicleId} version={v.version} />}
+                {(installed || v.hasNotes) && <NotesLink vehicleId={props.vehicleId} version={v.version} />}
               </div>
             </li>
           );
         })}
       </ol>
       <p className="mt-3 text-xs text-[var(--text-muted)]">
-        Dates are when RivianMate first saw each version. Rivian only provides release notes for the installed and pending versions.
+        Dates are when RivianMate first saw each version. Release notes are saved from then on, so older versions may not have them.
       </p>
     </div>
   );

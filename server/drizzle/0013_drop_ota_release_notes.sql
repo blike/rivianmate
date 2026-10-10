@@ -1,1 +1,0 @@
-DROP TABLE "ota_release_notes" CASCADE;

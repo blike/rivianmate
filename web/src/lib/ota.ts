@@ -79,7 +79,7 @@ export function installTimeLabel(minutes: number): string {
   return `About ${h} hr${m % 60 ? ` ${m % 60} min` : ""}`;
 }
 
-/** Server route that redirects to a fresh copy of Rivian's release notes. */
+/** Server route serving the saved copy of Rivian's release notes. */
 export function releaseNotesHref(vehicleId: string, version: string): string {
   return `/api/vehicles/${encodeURIComponent(vehicleId)}/ota/notes/${encodeURIComponent(version)}`;
 }

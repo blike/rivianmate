@@ -137,9 +137,9 @@ export interface OtaTimelineDto {
   available: string | null;
   /**
    * Installed versions, newest first; firstSeen is when RivianMate first saw
-   * it. Release notes exist only for the installed and pending versions.
+   * it. hasNotes is true once its release notes are saved.
    */
-  versions: { version: string; firstSeen: string }[];
+  versions: { version: string; firstSeen: string; hasNotes: boolean }[];
 }
 
 /** Average tire pressures per time bucket, in bar. */

@@ -85,6 +85,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
         GROUP BY version
         ORDER BY first_seen DESC
       `);
+      const withNotes = await ctx.monitor.releaseNotesVersions(vehicleId);
       const state = ctx.monitor.getState(vehicleId) ?? {};
       const current = stateString(state, "otaCurrentVersion");
       const availableRaw = stateString(state, "otaAvailableVersion");
@@ -97,23 +98,29 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
         versions: history.map((h) => ({
           version: h.version,
           firstSeen: new Date(h.first_seen).toISOString(),
+          hasNotes: withNotes.has(h.version),
         })),
       };
     },
   );
 
-  // Rivian's links expire within the hour, so each click gets a fresh one.
   app.get<{ Params: { id: string; version: string } }>(
     "/api/vehicles/:id/ota/notes/:version",
     async (request, reply) => {
-      const url = await ctx.monitor.getReleaseNotesUrl(request.params.id, request.params.version);
-      if (!url) {
+      const { id, version } = request.params;
+      const pdf = await ctx.monitor.getReleaseNotes(id, version);
+      if (!pdf) {
         return reply
           .code(404)
           .type("text/plain")
-          .send("Rivian doesn't have release notes for this version right now.");
+          .send("Release notes for this version weren't saved before Rivian stopped offering them.");
       }
-      return reply.redirect(url);
+      const filename = `rivian-${version.replace(/[^\w.-]/g, "")}-release-notes.pdf`;
+      return reply
+        .type("application/pdf")
+        .header("Content-Disposition", `inline; filename="${filename}"`)
+        .header("Cache-Control", "private, max-age=86400")
+        .send(pdf);
     },
   );
 

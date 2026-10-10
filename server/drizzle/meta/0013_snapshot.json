@@ -1,5 +1,5 @@
 {
-  "id": "e05e54f8-6a78-4ae2-9418-2c54ede55660",
+  "id": "14c2e078-a407-46c8-98de-73928ff5b477",
   "prevId": "aa1ae63f-37c4-4c68-bc5e-e24d425f0531",
   "version": "7",
   "dialect": "postgresql",
@@ -739,6 +739,66 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ota_release_notes": {
+      "name": "ota_release_notes",
+      "schema": "",
+      "columns": {
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf": {
+          "name": "pdf",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ota_release_notes_vehicle_id_vehicles_id_fk": {
+          "name": "ota_release_notes_vehicle_id_vehicles_id_fk",
+          "tableFrom": "ota_release_notes",
+          "tableTo": "vehicles",
+          "columnsFrom": [
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "ota_release_notes_vehicle_id_version_pk": {
+          "name": "ota_release_notes_vehicle_id_version_pk",
+          "columns": [
+            "vehicle_id",
+            "version"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
