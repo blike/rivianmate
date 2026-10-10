@@ -87,4 +87,20 @@ describe.skipIf(!url)("ChargeHistoryImporter with Postgres", () => {
     expect(row!.chargingSeconds).toBe(18779); // 5h 12m 59s
     expect([row!.startSoc, row!.endSoc]).toEqual([39.7, 70]);
   });
+
+  it("replaces a running total recorded while charging with Rivian's billed total, but not a cost the owner entered", async () => {
+    // Real RAN sessions: the first running total seen while charging stuck.
+    const billed = { ...summary, paidTotal: 19.28, currencyCode: "USD", isHomeCharger: false, isPublic: true };
+    const api = { getChargeHistory: async () => [billed] } as unknown as RivianApi;
+    const at = { startedAt: new Date(summary.startInstant), endedAt: new Date(summary.endInstant) };
+    await handle.db.insert(chargingSessions).values({ vehicleId: "v1", ...at, cost: "0.77", currency: "USD" });
+    await new ChargeHistoryImporter(handle.db, api, () => ["v1"]).run();
+    const [auto] = await handle.db.select().from(chargingSessions);
+    expect([auto!.cost, auto!.currency]).toEqual(["19.28", "USD"]);
+
+    await handle.db.update(chargingSessions).set({ cost: "18.00", costEdited: true });
+    await new ChargeHistoryImporter(handle.db, api, () => ["v1"]).run();
+    const [edited] = await handle.db.select().from(chargingSessions);
+    expect(edited!.cost).toBe("18.00");
+  });
 });

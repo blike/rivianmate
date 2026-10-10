@@ -303,10 +303,12 @@ export class ChargingMonitor {
           ...split,
           energyKwh: b.totalKwh,
           ...(b.rangeAddedKm != null ? { rangeAddedKm: b.rangeAddedKm } : {}),
+          // Rivian's running total so far, so each message replaces the last;
+          // a cost the owner entered stays.
           ...(b.cost
             ? {
-                cost: sql`COALESCE(${chargingSessions.cost}, ${b.cost.amount.toFixed(2)})`,
-                currency: sql`COALESCE(${chargingSessions.currency}, ${b.cost.currency})`,
+                cost: sql`CASE WHEN ${chargingSessions.costEdited} THEN ${chargingSessions.cost} ELSE ${b.cost.amount.toFixed(2)}::numeric END`,
+                currency: sql`CASE WHEN ${chargingSessions.costEdited} THEN ${chargingSessions.currency} ELSE ${b.cost.currency} END`,
               }
             : {}),
         })
@@ -674,7 +676,11 @@ export class ChargingMonitor {
           : {}),
         ...(session.isRivianCharger != null ? { isRivianCharger: session.isRivianCharger } : {}),
         ...(session.chargerId ? { chargerId: session.chargerId } : {}),
-        cost: session.currentPrice != null ? String(session.currentPrice) : undefined,
+        ...(session.currentPrice != null
+          ? {
+              cost: sql`CASE WHEN ${chargingSessions.costEdited} THEN ${chargingSessions.cost} ELSE ${String(session.currentPrice)}::numeric END`,
+            }
+          : {}),
         rawFinal: session,
       })
       .where(eq(chargingSessions.id, open.id));

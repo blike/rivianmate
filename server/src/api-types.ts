@@ -78,7 +78,14 @@ export interface HistoryPoint {
   max: number | null;
 }
 
-export type HistoryMetric = "battery" | "range" | "mileage" | "cabinTemp";
+/** Plugged in, split into time spent charging and time just connected. */
+export interface ChargeSpanDto {
+  kind: "charging" | "plugged";
+  from: string;
+  to: string;
+}
+
+export type HistoryMetric = "battery" | "range" | "mileage";
 
 export interface LocationPointDto {
   ts: string;
@@ -189,6 +196,13 @@ export interface ChargingSessionDto {
    */
   chargingSeconds: number | null;
   chargingSince: string | null;
+  /**
+   * First and last moment it was charging within the plug-in, from recorded
+   * charger status; null when that wasn't recorded (e.g. imported sessions).
+   * A charge still running ends at the latest status reading.
+   */
+  chargingStartedAt: string | null;
+  chargingEndedAt: string | null;
   energyKwh: number | null;
   /** Rivian's split of the energy: stored in the pack vs heating/cooling it. */
   packKwh: number | null;

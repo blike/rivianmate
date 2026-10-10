@@ -29,12 +29,18 @@ export function StatCard(props: {
   );
 }
 
-export function Panel(props: { title: string; className?: string; children: ReactNode }) {
+export function Panel(props: { title: string; className?: string; action?: ReactNode; children: ReactNode }) {
+  const heading = <h3 className="text-sm font-medium text-[var(--text-secondary)]">{props.title}</h3>;
   return (
     <section className={`card p-4 ${props.className ?? ""}`}>
-      <h3 className="mb-3 text-sm font-medium text-[var(--text-secondary)]">
-        {props.title}
-      </h3>
+      {props.action ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          {heading}
+          {props.action}
+        </div>
+      ) : (
+        <div className="mb-3">{heading}</div>
+      )}
       {props.children}
     </section>
   );

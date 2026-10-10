@@ -28,6 +28,7 @@ import { curveForDisplay, forecastForDisplay } from "../services/charging-curve.
 /** Tolerance for Rivian's clock running ahead of the server's. */
 const CLOCK_SLACK_MS = 60_000;
 import { socReadingsBetween } from "../services/charging-time.js";
+import { chargingWindow, loadChargeSpans } from "../services/charge-spans.js";
 
 const patchSchema = z.object({
   cost: z.union([z.string(), z.number()]).nullable(),
@@ -47,7 +48,9 @@ export async function chargingRoutes(
         .orderBy(desc(chargingSessions.startedAt))
         .limit(200);
       const home = await homeContext(ctx);
-      return rows.map((row) => toSessionDto(row, home));
+      const oldest = rows.at(-1);
+      const spans = oldest ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date()) : [];
+      return rows.map((row) => toSessionDto(row, home, chargingWindow(spans, row.startedAt, row.endedAt)));
     },
   );
 
@@ -88,7 +91,7 @@ export async function chargingRoutes(
       const body = patchSchema.parse(request.body);
       const updated = await ctx.db
         .update(chargingSessions)
-        .set({ cost: body.cost == null ? null : String(body.cost) })
+        .set({ cost: body.cost == null ? null : String(body.cost), costEdited: body.cost != null })
         .where(eq(chargingSessions.id, Number(request.params.sessionId)))
         .returning();
       if (!updated[0]) return reply.code(404).send({ error: "Not found" });
@@ -184,6 +187,7 @@ async function socCurveFromState(ctx: AppContext, sessionId: number): Promise<Ch
 function toSessionDto(
   row: typeof chargingSessions.$inferSelect,
   home: HomeContext,
+  charging: { from: Date; to: Date } | null = null,
 ): ChargingSessionDto {
   const isHome = isHomeSession(row, home.spots);
   // Estimates use today's rate, so changing the rate reprices past estimates;
@@ -201,6 +205,8 @@ function toSessionDto(
     endSoc: row.endSoc,
     chargingSeconds: row.chargingSeconds,
     chargingSince: row.chargingSince?.toISOString() ?? null,
+    chargingStartedAt: charging?.from.toISOString() ?? null,
+    chargingEndedAt: charging?.to.toISOString() ?? null,
     energyKwh: row.energyKwh,
     packKwh: row.packKwh,
     thermalKwh: row.thermalKwh,

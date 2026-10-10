@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { averageSpeedKmh, driveProfile, profilePosition, rangeUsedKm } from "./drives.js";
+import { averageSpeedKmh, driveProfile, drivesByDay, minuteTicks, profilePosition, rangeUsedKm } from "./drives.js";
 
 describe("driveProfile", () => {
   it("places points by minutes into the drive", () => {
@@ -45,5 +45,37 @@ describe("averageSpeedKmh / rangeUsedKm", () => {
   it("reports range used only when it dropped", () => {
     expect(rangeUsedKm(375, 357)).toBe(18);
     expect(rangeUsedKm(357, 375)).toBeNull();
+  });
+});
+
+describe("drivesByDay", () => {
+  const now = new Date(2026, 9, 10, 18, 0);
+  const at = (day: number, hour: number) => new Date(2026, 9, day, hour).toISOString();
+
+  it("groups newest-first drives by local day with totals", () => {
+    const days = drivesByDay(
+      [
+        { startedAt: at(10, 9), distanceKm: 10 },
+        { startedAt: at(10, 7), distanceKm: 5 },
+        { startedAt: at(9, 17), distanceKm: null },
+        { startedAt: at(7, 8), distanceKm: 20 },
+      ],
+      now,
+    );
+    expect(days.map((d) => [d.label, d.drives.length, d.distanceKm])).toEqual([
+      ["Today", 2, 15],
+      ["Yesterday", 1, 0],
+      [new Date(2026, 9, 7).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }), 1, 20],
+    ]);
+  });
+});
+
+describe("minuteTicks", () => {
+  it("lands on whole minutes", () => {
+    expect(minuteTicks(0.2, 10)).toEqual([2, 4, 6, 8, 10]);
+    expect(minuteTicks(0, 95)).toEqual([0, 30, 60, 90]);
+    expect(minuteTicks(0, 3.5)).toEqual([0, 1, 2, 3]);
+    // Under a minute, no whole minute falls inside.
+    expect(minuteTicks(0.4, 0.6)).toEqual([]);
   });
 });

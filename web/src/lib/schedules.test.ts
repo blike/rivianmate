@@ -4,6 +4,7 @@ import {
   formatDuration,
   formatSeatLevel,
   formatTimeOfDay,
+  formatWait,
   formatTimeRange,
   formatWeekDays,
   scheduleStatus,
@@ -35,6 +36,8 @@ describe("formatSeatLevel", () => {
   it("spaces Rivian's level names", () => {
     expect(formatSeatLevel("Heat2")).toBe("Heat 2");
     expect(formatSeatLevel("Off")).toBe("Off");
+    expect(formatSeatLevel("level_2")).toBe("Level 2");
+    expect(formatSeatLevel("OFF")).toBe("Off");
     expect(formatSeatLevel(null)).toBe("—");
   });
 });
@@ -69,8 +72,8 @@ describe("scheduleStatus", () => {
   });
 
   it("finds the next window, including the weekend's", () => {
-    expect(scheduleStatus(mine, at(2, 9))).toEqual({ open: false, startsAt: at(3, 0) });
-    expect(scheduleStatus(mine, at(4, 15))).toEqual({ open: false, startsAt: at(5, 0) });
+    expect(scheduleStatus(mine, at(2, 9))).toMatchObject({ open: false, startsAt: at(3, 0) });
+    expect(scheduleStatus(mine, at(4, 15))).toMatchObject({ open: false, startsAt: at(5, 0), endsAt: at(5, 6) });
   });
 
   it("follows a window running past midnight", () => {
@@ -94,5 +97,13 @@ describe("time ranges and day labels", () => {
     expect(dayLabel(new Date(2026, 9, 3, 0), now)).toBe("tonight");
     expect(dayLabel(new Date(2026, 9, 3, 9), now)).toBe("tomorrow");
     expect(dayLabel(new Date(2026, 9, 5, 0), now)).toBe("Monday");
+  });
+});
+
+describe("formatWait", () => {
+  it("switches to days past a day", () => {
+    expect(formatWait(45 * 60)).toBe("45m");
+    expect(formatWait((9 * 60 + 41) * 60)).toBe("9h 41m");
+    expect(formatWait((56 * 60 + 38) * 60)).toBe("2d 8h");
   });
 });

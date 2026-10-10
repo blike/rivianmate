@@ -17,6 +17,7 @@ import { LoadingScope, Skeleton, SkeletonBlock, useLoading } from "../components
 import { VehicleMap } from "../components/VehicleMap.js";
 import { chargeOutlook, chargerLabel, chargingSecondsNow, formatMoney } from "../lib/charging.js";
 import { locationIsBehind, relativeTime } from "../lib/freshness.js";
+import { isPosition } from "../lib/geo.js";
 import { softwareUpdate } from "../lib/ota.js";
 import { fmt, fmtDuration, fmtSeconds, location, nv, sv, titleCase } from "../lib/state.js";
 import { type ActivityKind, brakeFluidLabel, securitySummary, vehicleActivity } from "../lib/vehicleStatus.js";
@@ -133,6 +134,7 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
   const speedMps = nv(state, "gnssSpeed");
   const loc = location(state);
   const locBehind = locationIsBehind(state);
+  const trail = useActiveDriveTrail(props.vehicleId, loc);
   const security = securitySummary(state, vehicle?.model);
   const chargePower = live(liveSession?.power);
   const chargeRate = live(liveSession?.kilometersChargedPerHour);
@@ -274,6 +276,7 @@ function Hero(props: { vehicleId: string; vehicle?: VehicleDto; state: VehicleSt
                   lat={loc.lat}
                   lon={loc.lon}
                   bearing={nv(state, "gnssBearing")}
+                  trail={trail}
                   stale={locBehind}
                   height="100%"
                 />
@@ -362,6 +365,29 @@ function BatteryBar(props: { level: number | null; limit: number | null; chargin
       </div>
     </div>
   );
+}
+
+/**
+ * The route so far of a drive under way, ending at the vehicle. The map
+ * keeps following the vehicle; the trail is only drawn behind it.
+ */
+function useActiveDriveTrail(vehicleId: string, loc: { lat: number; lon: number } | null): [number, number][] | undefined {
+  // Shares the drive list and drive detail caches with the other pages.
+  const { data: drives } = useQuery({
+    queryKey: ["drives", vehicleId],
+    queryFn: () => api.drives(vehicleId),
+    refetchInterval: (query) => (query.state.data?.[0] && !query.state.data[0].endedAt ? 15_000 : 60_000),
+  });
+  const active = drives?.[0] && !drives[0].endedAt ? drives[0].id : null;
+  const { data: detail } = useQuery({
+    queryKey: ["drive", active],
+    queryFn: () => api.drive(active!),
+    enabled: active != null,
+    refetchInterval: 15_000,
+  });
+  if (active == null || detail?.id !== active) return undefined;
+  const points = detail.points.filter((p) => isPosition(p.lat, p.lon)).map((p) => [p.lat, p.lon] as [number, number]);
+  return loc ? [...points, [loc.lat, loc.lon]] : points;
 }
 
 /** Last drive and last charge, each linking to its page. */

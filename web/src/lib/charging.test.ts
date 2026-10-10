@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chargeOutlook, chargingSecondsNow, socRange } from "./charging.js";
+import { chargeOutlook, chargerLabel, chargingSecondsNow, sessionCost, sessionTotals, socRange } from "./charging.js";
 import { fmtSeconds } from "./state.js";
 
 describe("chargingSecondsNow", () => {
@@ -53,5 +53,41 @@ describe("chargeOutlook", () => {
 
   it("trusts Rivian's time when power or pack size is unknown", () => {
     expect(chargeOutlook({ ...base, powerKw: null, soc: 50, minutesLeft: 30 })).toMatchObject({ kind: "limit", minutes: 30 });
+  });
+});
+
+describe("sessionCost", () => {
+  it("prefers the recorded cost over the estimate", () => {
+    expect(sessionCost({ cost: "4.25", estimatedCost: "3.00" })).toEqual({ amount: 4.25, estimated: false });
+    expect(sessionCost({ cost: null, estimatedCost: "3.00" })).toEqual({ amount: 3, estimated: true });
+    expect(sessionCost({ cost: null, estimatedCost: null })).toBeNull();
+  });
+});
+
+describe("sessionTotals", () => {
+  it("adds energy and any costs", () => {
+    expect(
+      sessionTotals([
+        { energyKwh: 30, cost: "4.00", estimatedCost: null },
+        { energyKwh: 10, cost: null, estimatedCost: "1.30" },
+        { energyKwh: null, cost: null, estimatedCost: null },
+      ]),
+    ).toEqual({ energyKwh: 40, cost: 5.3, estimated: true });
+    expect(sessionTotals([{ energyKwh: 5, cost: null, estimatedCost: null }]).cost).toBeNull();
+  });
+});
+
+describe("chargerLabel", () => {
+  const base = { chargerType: null, isHome: false, vendor: null, chargerId: null };
+
+  it("names Rivian's chargers Rivian, however they were recorded", () => {
+    expect(chargerLabel({ ...base, chargerType: "rivian_charger" })).toBe("Rivian");
+    expect(chargerLabel({ ...base, vendor: "RIVIAN" })).toBe("Rivian");
+    expect(chargerLabel({ ...base, vendor: "Rivian Adventure Network" })).toBe("Rivian");
+  });
+
+  it("names home and other networks", () => {
+    expect(chargerLabel({ ...base, isHome: true })).toBe("Home");
+    expect(chargerLabel({ ...base, vendor: "ELECTRIFY AMERICA" })).toBe("Electrify America");
   });
 });

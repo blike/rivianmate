@@ -41,6 +41,8 @@ export function TrendChart(props: {
   xFormatter?: (x: number) => string;
   tooltipLabel?: (x: number) => ReactNode;
   xType?: "number" | "category";
+  /** Exact x-axis tick positions; chosen automatically when left out. */
+  xTicks?: number[];
   leftDomain?: [number | "auto", number | "auto"];
   rightDomain?: [number | "auto", number | "auto"];
   leftUnit?: string;
@@ -89,6 +91,7 @@ export function TrendChart(props: {
             tickLine={false}
             axisLine={false}
             tickFormatter={xFormatter}
+            ticks={props.xTicks}
             minTickGap={32}
           />
           <YAxis

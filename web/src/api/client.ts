@@ -1,5 +1,6 @@
 import type {
   BatteryHealthDto,
+  ChargeSpanDto,
   ChargingCurvePointDto,
   ChargingSessionDto,
   ConnectResponse,
@@ -136,6 +137,10 @@ export const api = {
   history: (id: string, metric: HistoryMetric, from: Date, to: Date, bucket: string) =>
     request<HistoryPoint[]>(
       `/api/vehicles/${id}/history?metric=${metric}&from=${from.toISOString()}&to=${to.toISOString()}&bucket=${bucket}`,
+    ),
+  chargeSpans: (id: string, from: Date, to: Date) =>
+    request<ChargeSpanDto[]>(
+      `/api/vehicles/${id}/charge-spans?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
   locations: (id: string, from: Date, to: Date) =>
     request<LocationPointDto[]>(

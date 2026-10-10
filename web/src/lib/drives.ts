@@ -64,3 +64,75 @@ export function rangeUsedKm(startKm: number | null, endKm: number | null): numbe
   if (startKm == null || endKm == null || endKm > startKm) return null;
   return startKm - endKm;
 }
+
+export interface Day<T> {
+  /** Local date, YYYY-MM-DD. */
+  key: string;
+  /** "Today", "Yesterday", or e.g. "Wed, Oct 7". */
+  label: string;
+  items: T[];
+}
+
+const localKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Items grouped by the local day they started (or `at` gives), keeping their order. */
+export function groupByDay<T extends { startedAt: string }>(
+  items: readonly T[],
+  now = new Date(),
+  at: (item: T) => string = (item) => item.startedAt,
+): Day<T>[] {
+  const today = localKey(now);
+  const yesterday = localKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const days: Day<T>[] = [];
+  for (const item of items) {
+    const start = new Date(at(item));
+    const key = localKey(start);
+    let day = days.at(-1);
+    if (day?.key !== key) {
+      const label =
+        key === today
+          ? "Today"
+          : key === yesterday
+            ? "Yesterday"
+            : start.toLocaleDateString([], {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                ...(start.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+              });
+      day = { key, label, items: [] };
+      days.push(day);
+    }
+    day.items.push(item);
+  }
+  return days;
+}
+
+export interface DriveDay<T> extends Omit<Day<T>, "items"> {
+  drives: T[];
+  distanceKm: number;
+}
+
+/** Drives grouped by the local day they started, with each day's distance. */
+export function drivesByDay<T extends { startedAt: string; distanceKm: number | null }>(
+  drives: readonly T[],
+  now = new Date(),
+): DriveDay<T>[] {
+  return groupByDay(drives, now).map(({ items, ...day }) => ({
+    ...day,
+    drives: items,
+    distanceKm: items.reduce((sum, d) => sum + (d.distanceKm ?? 0), 0),
+  }));
+}
+
+const MINUTE_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 240];
+
+/** Whole-minute axis ticks across [min, max] minutes, at most `maxTicks`. */
+export function minuteTicks(min: number, max: number, maxTicks = 6): number[] {
+  if (!(max > min)) return [];
+  const step = MINUTE_STEPS.find((s) => (max - min) / s <= maxTicks - 1) ?? MINUTE_STEPS.at(-1)!;
+  const ticks: number[] = [];
+  for (let t = Math.ceil(min / step) * step; t <= max; t += step) ticks.push(t);
+  return ticks;
+}

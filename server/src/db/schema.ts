@@ -196,6 +196,8 @@ export const chargingSessions = pgTable(
     avgPowerKw: real("avg_power_kw"),
     maxPowerKw: real("max_power_kw"),
     cost: numeric("cost", { precision: 10, scale: 2 }),
+    /** True once the owner entered the cost; automatic figures never replace it. */
+    costEdited: boolean("cost_edited").notNull().default(false),
     currency: text("currency"),
     lat: doublePrecision("lat"),
     lon: doublePrecision("lon"),

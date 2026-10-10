@@ -29,7 +29,8 @@ export function formatMoney(amount: string, currency: string | null): string {
 export function chargerLabel(
   s: Pick<ChargingSessionDto, "chargerType" | "isHome" | "vendor" | "chargerId">,
 ): string {
-  if (s.chargerType === "rivian_charger") return "Rivian Adventure Network";
+  // One name for Rivian's own chargers, however the session recorded it.
+  if (s.chargerType === "rivian_charger" || /^rivian\b/i.test(s.vendor ?? "")) return "Rivian";
   if (s.isHome) return "Home";
   if (s.vendor) return titleCase(s.vendor.toLowerCase());
   return s.chargerId ?? titleCase(s.chargerType);
@@ -57,4 +58,29 @@ export function chargeOutlook(i: {
   }
   const toLimit = rate != null && soc != null && limit != null && soc < limit ? (limit - soc) / rate : null;
   return { kind: "limit", minutes: minutesLeft ?? toLimit, endSoc: limit };
+}
+
+/** A session's cost: the recorded one, else the home-rate estimate. */
+export function sessionCost(
+  s: Pick<ChargingSessionDto, "cost" | "estimatedCost">,
+): { amount: number; estimated: boolean } | null {
+  const raw = s.cost ?? s.estimatedCost;
+  const amount = raw == null || raw === "" ? NaN : Number(raw);
+  return Number.isFinite(amount) ? { amount, estimated: s.cost == null } : null;
+}
+
+/** Energy and cost across sessions; cost is null when none has one. */
+export function sessionTotals(sessions: readonly Pick<ChargingSessionDto, "energyKwh" | "cost" | "estimatedCost">[]) {
+  let energyKwh = 0;
+  let cost: number | null = null;
+  let estimated = false;
+  for (const s of sessions) {
+    energyKwh += s.energyKwh ?? 0;
+    const c = sessionCost(s);
+    if (c) {
+      cost = (cost ?? 0) + c.amount;
+      estimated ||= c.estimated;
+    }
+  }
+  return { energyKwh, cost, estimated };
 }

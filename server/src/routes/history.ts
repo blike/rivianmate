@@ -1,8 +1,9 @@
-import { and, desc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type {
+  ChargeSpanDto,
   DriveDetailDto,
   DriveDto,
   DrivePlaceDto,
@@ -17,19 +18,20 @@ import type { VehicleState } from "../rivian/types.js";
 import { stateNumber } from "../services/state-utils.js";
 import { type Spot, nearbySpot } from "../services/home-charging.js";
 import { homeContext } from "./charging.js";
+import { loadChargeSpans } from "../services/charge-spans.js";
 
 const METRIC_COLUMNS: Record<string, string> = {
   battery: "battery_level",
   range: "range_km",
   mileage: "mileage_m",
-  cabinTemp: "cabin_temp",
 };
 
 const historyQuerySchema = z.object({
-  metric: z.enum(["battery", "range", "mileage", "cabinTemp"]).default("battery"),
+  metric: z.enum(["battery", "range", "mileage"]).default("battery"),
   from: z.coerce.date().default(() => new Date(Date.now() - 7 * 86400_000)),
   to: z.coerce.date().default(() => new Date()),
-  bucket: z.enum(["5m", "15m", "1h", "6h", "1d"]).default("1h"),
+  /** "raw": every snapshot, unaveraged. */
+  bucket: z.enum(["raw", "5m", "15m", "1h", "6h", "1d"]).default("1h"),
 });
 
 const BUCKET_INTERVALS: Record<string, string> = {
@@ -39,6 +41,8 @@ const BUCKET_INTERVALS: Record<string, string> = {
   "6h": "6 hours",
   "1d": "1 day",
 };
+
+const MAX_LOCATIONS = 5000;
 
 const rangeQuerySchema = z.object({
   from: z.coerce.date().default(() => new Date(Date.now() - 86400_000)),
@@ -54,6 +58,17 @@ export async function historyRoutes(
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
       const column = METRIC_COLUMNS[q.metric]!;
+      if (q.bucket === "raw") {
+        const raw = await ctx.db.execute<{ ts: string; value: number }>(sql`
+          SELECT ts, ${sql.raw(column)}::float8 AS value
+          FROM vehicle_state_snapshots
+          WHERE vehicle_id = ${request.params.id}
+            AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
+            AND ${sql.raw(column)} IS NOT NULL
+          ORDER BY ts
+        `);
+        return raw.map((r) => ({ bucket: new Date(r.ts).toISOString(), avg: r.value, min: r.value, max: r.value }));
+      }
       const interval = BUCKET_INTERVALS[q.bucket]!;
       const rows = await ctx.db.execute<{
         bucket: string;
@@ -81,22 +96,47 @@ export async function historyRoutes(
   );
 
   app.get<{ Params: { id: string } }>(
+    "/api/vehicles/:id/charge-spans",
+    async (request): Promise<ChargeSpanDto[]> => {
+      const q = rangeQuerySchema.parse(request.query);
+      const spans = await loadChargeSpans(ctx.db, request.params.id, q.from, q.to);
+      return spans.map((s) => ({ kind: s.kind, from: s.from.toISOString(), to: s.to.toISOString() }));
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
     "/api/vehicles/:id/locations",
     async (request): Promise<LocationPointDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
-      const rows = await ctx.db
-        .select()
-        .from(locationPoints)
-        .where(
-          and(
-            eq(locationPoints.vehicleId, request.params.id),
-            gte(locationPoints.ts, q.from),
-            lte(locationPoints.ts, q.to),
-          ),
-        )
-        .orderBy(locationPoints.ts)
-        .limit(5000);
-      return rows.map(toLocationDto);
+      // Long ranges are thinned evenly to about MAX_LOCATIONS points, so the
+      // whole range is covered rather than just its start.
+      const rows = await ctx.db.execute<{
+        ts: string;
+        lat: number;
+        lon: number;
+        speed_kmh: number | null;
+        bearing: number | null;
+        altitude: number | null;
+      }>(sql`
+        SELECT ts, lat, lon, speed_kmh, bearing, altitude FROM (
+          SELECT ts, lat, lon, speed_kmh, bearing, altitude,
+                 ROW_NUMBER() OVER (ORDER BY ts) AS rn,
+                 COUNT(*) OVER () AS n
+          FROM location_points
+          WHERE vehicle_id = ${request.params.id}
+            AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
+        ) p
+        WHERE rn % CEIL(n / ${MAX_LOCATIONS}::float8)::int = 0 OR rn = n OR rn = 1
+        ORDER BY ts
+      `);
+      return rows.map((r) => ({
+        ts: new Date(r.ts).toISOString(),
+        lat: r.lat,
+        lon: r.lon,
+        speedKmh: r.speed_kmh,
+        bearing: r.bearing,
+        altitude: r.altitude,
+      }));
     },
   );
 

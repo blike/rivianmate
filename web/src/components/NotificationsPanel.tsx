@@ -14,6 +14,7 @@ import { channelUrlProblem } from "@server/services/notify-channels.js";
 import { ApiError, api } from "../api/client.js";
 import { useNotificationSettings, useSetNotificationSettings, useTestNotifications } from "../api/hooks.js";
 import { SkeletonRows } from "./loading.js";
+import { SettingsGroup, Switch } from "./settings.js";
 
 type Toggle = { enabled: boolean };
 type ToggleKey = { [K in keyof NotificationEvents]: NotificationEvents[K] extends TimedAlertSettings ? never : K }[keyof NotificationEvents];
@@ -158,114 +159,65 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
     <span className="text-[var(--text-muted)]">Saved</span>
   ) : null;
 
+  const destinationCount = destinations.filter((d) => d.id).length;
+  const alertsOn = Object.values(events).filter((e) => e.enabled).length;
+  const summary = !enabled
+    ? "Get alerts in Discord, Pushover, ntfy, Telegram and more."
+    : destinationCount === 0
+      ? "Add a destination to start receiving alerts."
+      : `${destinationCount} ${destinationCount === 1 ? "destination" : "destinations"} · ${alertsOn} of ${Object.keys(events).length} alerts on`;
+
   return (
-    <section className="card overflow-hidden">
-      <header className={`flex items-center justify-between gap-4 p-4 ${enabled ? "border-b border-[var(--border)]" : ""}`}>
-        <div className="flex items-center gap-3">
-          <BellIcon />
-          <div>
-            <h3 className="text-sm font-medium">Notifications</h3>
-            <p className="text-xs text-[var(--text-muted)]">Alerts sent through configured destinations.</p>
+    <>
+      <section className="card flex items-center justify-between gap-4 p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <BellIcon on={enabled} />
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium">Send notifications</h3>
+            <p className="text-xs text-[var(--text-muted)]">{summary}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <span aria-live="polite" className="text-xs">
             {status}
           </span>
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              enabled
-                ? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-[var(--accent)]"
-                : "bg-[var(--surface-2)] text-[var(--text-muted)]"
-            }`}
-          >
-            {enabled ? "On" : "Off"}
-          </span>
           <Switch label="Send notifications" checked={enabled} onChange={setEnabled} />
         </div>
-      </header>
+      </section>
 
       {/* Everything else stays hidden (but kept) while notifications are off. */}
       {enabled && (
-        <div className="space-y-6 p-4">
-          <Group title="Destinations">
+        <>
+          <SettingsGroup
+            title="Destinations"
+            action={
+              destinations.some((d) => d.id) && (
+                <span className="flex items-center gap-3">
+                  {test.isError && <span className="text-xs text-[var(--status-critical)]">Couldn't send the test.</span>}
+                  <button
+                    className="text-xs text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline disabled:opacity-50"
+                    disabled={destinationsPending || test.isPending}
+                    onClick={() => test.mutate()}
+                  >
+                    {test.isPending ? "Sending…" : "Send test notification"}
+                  </button>
+                </span>
+              )
+            }
+          >
             <Destinations
               destinations={destinations}
               onChange={setDestinations}
               results={destinationsPending ? undefined : test.data}
-              actions={
-                destinations.some((d) => d.id) && (
-                  <>
-                    {test.isError && <span className="text-xs text-[var(--status-critical)]">Couldn't send the test.</span>}
-                    <button
-                      className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                      disabled={!enabled || destinationsPending || test.isPending}
-                      title={enabled ? undefined : "Turn notifications on to send a test"}
-                      onClick={() => test.mutate()}
-                    >
-                      {test.isPending ? "Sending…" : "Send test notification"}
-                    </button>
-                  </>
-                )
-              }
             />
-          </Group>
+          </SettingsGroup>
 
-          <Group title="RivianMate address">
-            <div className="space-y-1.5">
-              <label htmlFor="app-url" className="sr-only">
-                RivianMate address
-              </label>
-              <form
-                className="flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  commitAppUrl();
-                }}
-              >
-                <input
-                  id="app-url"
-                  type="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="https://rivianmate.example.com"
-                  value={appUrlDraft}
-                  onChange={(e) => setAppUrlDraft(e.target.value)}
-                  aria-invalid={appUrlError != null}
-                  className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
-                />
-                {appUrlChanged && (
-                  <>
-                    {appUrl && (
-                      <button
-                        type="button"
-                        className="px-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        onClick={() => setAppUrlDraft(appUrl)}
-                      >
-                        Cancel
-                      </button>
-                    )}
-                    <button type="submit" className="btn-primary" disabled={appUrlError != null}>
-                      Save
-                    </button>
-                  </>
-                )}
-              </form>
-              <p className={`text-xs ${appUrlError ? "text-[var(--status-critical)]" : "text-[var(--text-muted)]"}`}>
-                {appUrlError ??
-                  (isLocalAddress(appUrlDraft)
-                    ? "Links to this address only work on this computer. Use one your phone can reach to open release notes from alerts."
-                    : "Used for links in alerts, like release notes. Leave blank for no links.")}
-              </p>
-            </div>
-          </Group>
-
-          <Group title="Doors & locks">
+          <SettingsGroup title="Doors & locks">
             <TimedEvent title="Door left open" {...timedProps("doorOpen")} />
             <TimedEvent title="Window left open" {...timedProps("windowOpen")} />
             <TimedEvent title="Vehicle unlocked" {...timedProps("unlocked")} />
             {!settings.homeKnown && (["doorOpen", "windowOpen", "unlocked"] as const).some((k) => events[k].awayOnly) && (
-              <p className="text-xs text-[var(--status-warning)]">
+              <p className="px-4 py-3 text-xs text-[var(--status-warning)]">
                 No home location is set, so “not at home” alerts are always sent.{" "}
                 <Link to="?section=charging" className="underline">
                   Set one in Charging
@@ -273,15 +225,15 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
                 .
               </p>
             )}
-          </Group>
+          </SettingsGroup>
 
-          <Group title="Software">
+          <SettingsGroup title="Software">
             <ToggleEvent title="Update available" detail="When a new version is offered" {...toggleProps("updateAvailable")} />
             <ToggleEvent title="Update installed" detail="When the vehicle finishes installing" {...toggleProps("updateInstalled")} />
             <ToggleEvent title="Update failed" detail="When an install doesn't succeed" {...toggleProps("updateFailed")} />
-          </Group>
+          </SettingsGroup>
 
-          <Group title="Battery, charging & tires">
+          <SettingsGroup title="Battery, charging & tires">
             <ToggleEvent title="Charging complete" detail="When the charge limit is reached" {...toggleProps("chargingComplete")} />
             <EventRow
               title="Low battery"
@@ -307,32 +259,70 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
               }
             />
             <ToggleEvent title="Tire pressure" detail="When the vehicle flags a tire pressure issue" {...toggleProps("tirePressure")} />
-          </Group>
-        </div>
+          </SettingsGroup>
+
+          <SettingsGroup
+            title="Links in alerts"
+            note={
+              <span className={appUrlError ? "text-[var(--status-critical)]" : undefined}>
+                {appUrlError ??
+                  (isLocalAddress(appUrlDraft)
+                    ? "Links to this address only work on this computer. Use one your phone can reach to open release notes from alerts."
+                    : "Alerts link here, for example to release notes. Leave blank for no links.")}
+              </span>
+            }
+          >
+            <form
+              className="flex items-center gap-2 px-4 py-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                commitAppUrl();
+              }}
+            >
+              <label htmlFor="app-url" className="shrink-0 text-sm font-medium">
+                RivianMate address
+              </label>
+              <input
+                id="app-url"
+                type="url"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="https://rivianmate.example.com"
+                value={appUrlDraft}
+                onChange={(e) => setAppUrlDraft(e.target.value)}
+                aria-invalid={appUrlError != null}
+                className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
+              />
+              {appUrlChanged && (
+                <>
+                  {appUrl && (
+                    <button
+                      type="button"
+                      className="px-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      onClick={() => setAppUrlDraft(appUrl)}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button type="submit" className="btn-primary" disabled={appUrlError != null}>
+                    Save
+                  </button>
+                </>
+              )}
+            </form>
+          </SettingsGroup>
+        </>
       )}
-
-    </section>
-  );
-}
-
-function Group(props: { title: string; note?: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline justify-between gap-4">
-        <h4 className="text-xs uppercase tracking-wide text-[var(--text-muted)]">{props.title}</h4>
-        {props.note && <span className="text-xs text-[var(--text-muted)]">{props.note}</span>}
-      </div>
-      <div className="space-y-3">{props.children}</div>
-    </div>
+    </>
   );
 }
 
 function EventRow(props: { title: string; detail?: ReactNode; control: ReactNode; extra?: ReactNode }) {
   return (
-    <div className="rounded-lg bg-[var(--surface-2)] px-3 py-2.5">
+    <div className="px-4 py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-sm">{props.title}</div>
+          <div className="text-sm font-medium">{props.title}</div>
           {props.detail && <div className="mt-0.5 text-xs text-[var(--text-muted)]">{props.detail}</div>}
         </div>
         {props.control}
@@ -484,8 +474,6 @@ function Destinations(props: {
   destinations: DraftDestination[];
   onChange: (destinations: DraftDestination[]) => void;
   results?: NotificationTestResult[];
-  /** Shown at the right of the "Add destination" row. */
-  actions?: ReactNode;
 }) {
   const [picking, setPicking] = useState(false);
   const list = props.destinations;
@@ -499,11 +487,9 @@ function Destinations(props: {
   };
 
   return (
-    <div className="space-y-2">
+    <>
       {list.length === 0 && !picking && (
-        <p className="rounded-lg border border-dashed border-[var(--border)] px-3 py-4 text-center text-sm text-[var(--text-muted)]">
-          No destinations yet. Add one to start receiving alerts.
-        </p>
+        <p className="px-4 py-5 text-center text-sm text-[var(--text-muted)]">No destinations yet. Add one to start receiving alerts.</p>
       )}
       {list.map((d) => (
         <DestinationCard
@@ -516,7 +502,7 @@ function Destinations(props: {
       ))}
 
       {picking ? (
-        <div className="rounded-lg border border-[var(--border)] p-2">
+        <div className="p-3">
           <div className="flex items-center justify-between px-1 pb-2">
             <span className="text-xs text-[var(--text-muted)]">Choose a destination</span>
             <button className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={() => setPicking(false)}>
@@ -539,21 +525,20 @@ function Destinations(props: {
             ))}
           </div>
         </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-3">
-        {!picking && list.length < MAX_DESTINATIONS && (
+      ) : (
+        list.length < MAX_DESTINATIONS && (
           <button
-            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[var(--text-secondary)] transition-colors last:rounded-b-xl hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
             onClick={() => setPicking(true)}
           >
-            <span aria-hidden className="text-base leading-none">+</span>
+            <span aria-hidden className="grid h-8 w-8 place-items-center rounded-full border border-dashed border-[var(--border)] text-base leading-none">
+              +
+            </span>
             Add destination
           </button>
-        )}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">{props.actions}</div>
-      </div>
-    </div>
+        )
+      )}
+    </>
   );
 }
 
@@ -570,7 +555,7 @@ function DestinationCard(props: {
   const title = d.name.trim() || channel.name;
 
   return (
-    <div className="rounded-lg bg-[var(--surface-2)] p-3">
+    <div className="px-4 py-3">
       <div className="flex items-center gap-3">
         {channel.icon}
         <div className="min-w-0 flex-1">
@@ -621,7 +606,7 @@ function DestinationCard(props: {
               placeholder={channel.name}
               value={d.name}
               onChange={(e) => props.onChange({ name: e.target.value })}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-sm"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
             />
           </div>
           <div>
@@ -638,7 +623,7 @@ function DestinationCard(props: {
               value={d.url}
               onChange={(e) => props.onChange({ url: e.target.value })}
               aria-invalid={problem != null}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-sm"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
             />
           </div>
           <p className={`text-xs sm:col-span-2 ${problem ? "text-[var(--status-critical)]" : "text-[var(--text-muted)]"}`}>
@@ -671,35 +656,21 @@ function NumberInput(props: { label: string; value: number; min: number; max: nu
       max={props.max}
       value={Number.isFinite(props.value) ? props.value : ""}
       onChange={(e) => props.onChange(e.target.value === "" ? NaN : Math.round(Number(e.target.value)))}
-      className="w-14 rounded border border-[var(--border)] bg-[var(--surface-1)] px-1.5 py-0.5 text-right text-xs tabular-nums text-[var(--text-primary)]"
+      className="w-14 rounded border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0.5 text-right text-xs tabular-nums text-[var(--text-primary)]"
     />
   );
 }
 
-export function Switch(props: { label: string; checked: boolean; onChange: (on: boolean) => void }) {
+function BellIcon(props: { on: boolean }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={props.checked}
-      aria-label={props.label}
-      onClick={() => props.onChange(!props.checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
-        props.checked ? "bg-[var(--accent)]" : "bg-[var(--border)]"
+    <span
+      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${
+        props.on
+          ? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-[var(--accent)]"
+          : "bg-[var(--surface-2)] text-[var(--text-muted)]"
       }`}
+      aria-hidden
     >
-      <span
-        className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-          props.checked ? "translate-x-[18px]" : "translate-x-0.5"
-        }`}
-      />
-    </button>
-  );
-}
-
-function BellIcon() {
-  return (
-    <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--surface-2)] text-[var(--text-secondary)]" aria-hidden>
       <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M4 6.5a4 4 0 1 1 8 0c0 3 1.5 4.5 1.5 4.5h-11S4 9.5 4 6.5ZM6.5 13.5a1.5 1.5 0 0 0 3 0" strokeLinecap="round" strokeLinejoin="round" />
       </svg>

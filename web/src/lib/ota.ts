@@ -83,3 +83,19 @@ export function installTimeLabel(minutes: number): string {
 export function releaseNotesHref(vehicleId: string, version: string): string {
   return `/api/vehicles/${encodeURIComponent(vehicleId)}/ota/notes/${encodeURIComponent(version)}`;
 }
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Median days between updates, from versions newest first. The oldest
+ * version's date is when tracking began, not an install, so it's left out.
+ */
+export function typicalUpdateGapDays(versions: readonly { firstSeen: string }[]): number | null {
+  const installs = versions.slice(0, -1).map((v) => Date.parse(v.firstSeen));
+  const gaps: number[] = [];
+  for (let i = 0; i < installs.length - 1; i++) gaps.push((installs[i]! - installs[i + 1]!) / DAY_MS);
+  if (gaps.length === 0) return null;
+  gaps.sort((a, b) => a - b);
+  const mid = gaps.length / 2;
+  return gaps.length % 2 ? gaps[Math.floor(mid)]! : (gaps[mid - 1]! + gaps[mid]!) / 2;
+}
