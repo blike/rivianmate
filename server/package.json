@@ -2,7 +2,7 @@
   "name": "@rivianmate/server",
   "private": true,
   "version": "0.5.0",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "node --env-file-if-exists=../.env --import tsx --watch src/index.ts",

@@ -43,4 +43,3 @@ export function driveEnergyKwh(
   if (!(dropPct > 0)) return null;
   return (dropPct / 100) * capacityKwh;
 }
-

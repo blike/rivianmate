@@ -1,12 +1,12 @@
-import type { TimeStampedValue, VehicleState } from "../rivian/types.js";
-import { stateNumber, stateString } from "./state-utils.js";
+import type { TimeStampedValue, VehicleState } from '../rivian/types.js';
+import { stateNumber, stateString } from './state-utils.js';
 
 /** Rivian's clock can run slightly ahead of ours; anything further is bogus. */
 const MAX_CLOCK_SKEW_MS = 5 * 60_000;
 
 /** Vehicle `chargerState` while energy is flowing into the battery. */
 export function isChargingState(value: string | null | undefined): boolean {
-  return value?.toLowerCase() === "charging_active";
+  return value?.toLowerCase() === 'charging_active';
 }
 
 /**
@@ -17,7 +17,9 @@ export function isChargingState(value: string | null | undefined): boolean {
 export function stampedAt(state: VehicleState, key: string, fallback: number): number {
   const stamp = (state[key] as TimeStampedValue | undefined)?.timeStamp;
   const at = stamp ? Date.parse(stamp) : Number.NaN;
-  return Number.isFinite(at) && at <= fallback + MAX_CLOCK_SKEW_MS ? Math.min(at, fallback) : fallback;
+  return Number.isFinite(at) && at <= fallback + MAX_CLOCK_SKEW_MS
+    ? Math.min(at, fallback)
+    : fallback;
 }
 
 export interface ChargerObservation {
@@ -78,10 +80,16 @@ export function deriveChargingStats(
   const lastSeen = Math.max(...[...charger, ...socs].map((r) => r.at).filter((t) => t <= end));
   const chargingSeconds =
     inside.length > 0
-      ? chargingSecondsBetween(charger.filter((r) => r.at <= end), start, end, lastSeen)
+      ? chargingSecondsBetween(
+          charger.filter((r) => r.at <= end),
+          start,
+          end,
+          lastSeen,
+        )
       : null;
 
-  const startSoc = (socs.find((s) => s.at >= start) ?? socs.filter((s) => s.at < start).at(-1))?.soc ?? null;
+  const startSoc =
+    (socs.find((s) => s.at >= start) ?? socs.filter((s) => s.at < start).at(-1))?.soc ?? null;
   const endSoc = socs.filter((s) => s.at <= end).at(-1)?.soc ?? null;
   return { chargingSeconds, startSoc, endSoc };
 }
@@ -103,17 +111,18 @@ function readingsFrom(states: readonly VehicleState[]): {
   const charger = new Map<number, ChargerObservation>();
   const socs = new Map<number, SocObservation>();
   for (const state of states) {
-    const chargerState = stateString(state, "chargerState");
+    const chargerState = stateString(state, 'chargerState');
     if (chargerState !== null) {
-      const at = stampedAt(state, "chargerState", Number.POSITIVE_INFINITY);
+      const at = stampedAt(state, 'chargerState', Number.POSITIVE_INFINITY);
       if (Number.isFinite(at)) charger.set(at, { at, charging: isChargingState(chargerState) });
     }
-    const soc = stateNumber(state, "batteryLevel");
+    const soc = stateNumber(state, 'batteryLevel');
     if (soc !== null) {
-      const at = stampedAt(state, "batteryLevel", Number.POSITIVE_INFINITY);
+      const at = stampedAt(state, 'batteryLevel', Number.POSITIVE_INFINITY);
       if (Number.isFinite(at)) socs.set(at, { at, soc });
     }
   }
-  const byTime = <T extends { at: number }>(m: Map<number, T>) => [...m.values()].sort((a, b) => a.at - b.at);
+  const byTime = <T extends { at: number }>(m: Map<number, T>) =>
+    [...m.values()].sort((a, b) => a.at - b.at);
   return { charger: byTime(charger), socs: byTime(socs) };
 }

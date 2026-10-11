@@ -1,40 +1,42 @@
-import type { VehicleState } from "@server/api-types.js";
-import { closureStatuses } from "./closures.js";
-import { nv, sv, titleCase } from "./state.js";
+import type { VehicleState } from '@server/api-types.js';
+import { closureStatuses } from './closures.js';
+import { nv, sv, titleCase } from './state.js';
 
 /** Explicit null is an absent warning, not a measured fluid level. */
 export function brakeFluidLabel(state: VehicleState | undefined): string {
-  if (!state || !("brakeFluidLow" in state)) return "Unknown";
-  if (state.brakeFluidLow === null) return "Normal";
-  const value = sv(state, "brakeFluidLow");
-  if (value === "false") return "OK";
-  if (value === "true") return "Low";
-  return value == null ? "Unknown" : titleCase(value);
+  if (!state || !('brakeFluidLow' in state)) return 'Unknown';
+  if (state.brakeFluidLow === null) return 'Normal';
+  const value = sv(state, 'brakeFluidLow');
+  if (value === 'false') return 'OK';
+  if (value === 'true') return 'Low';
+  return value == null ? 'Unknown' : titleCase(value);
 }
 
 /** Rivian's literal "undefined" is observed when cabin preconditioning is off. */
 export function preconditioningLabel(state: VehicleState | undefined): string {
-  const value = sv(state, "cabinPreconditioningStatus");
-  if (value === "undefined") return "Off";
-  return value == null ? "Unknown" : titleCase(value);
+  const value = sv(state, 'cabinPreconditioningStatus');
+  if (value === 'undefined') return 'Off';
+  return value == null ? 'Unknown' : titleCase(value);
 }
 
-export type ActivityKind = "driving" | "charging" | "plugged" | "parked" | "asleep";
+export type ActivityKind = 'driving' | 'charging' | 'plugged' | 'parked' | 'asleep';
 
 /** What the vehicle is doing right now, for the dashboard's headline chip. */
-export function vehicleActivity(state: VehicleState | undefined): { kind: ActivityKind; label: string } | null {
+export function vehicleActivity(
+  state: VehicleState | undefined,
+): { kind: ActivityKind; label: string } | null {
   if (!state) return null;
-  const gear = sv(state, "gearStatus");
-  const power = sv(state, "powerState");
-  const speed = nv(state, "gnssSpeed") ?? 0; // m/s
-  const charger = sv(state, "chargerStatus");
-  if (gear === "drive" || gear === "reverse" || (power === "go" && speed > 1)) {
-    return { kind: "driving", label: "Driving" };
+  const gear = sv(state, 'gearStatus');
+  const power = sv(state, 'powerState');
+  const speed = nv(state, 'gnssSpeed') ?? 0; // m/s
+  const charger = sv(state, 'chargerStatus');
+  if (gear === 'drive' || gear === 'reverse' || (power === 'go' && speed > 1)) {
+    return { kind: 'driving', label: 'Driving' };
   }
-  if (charger === "chrgr_sts_connected_charging") return { kind: "charging", label: "Charging" };
-  if (charger === "chrgr_sts_connected_no_chrg") return { kind: "plugged", label: "Plugged in" };
-  if (power === "sleep") return { kind: "asleep", label: "Asleep" };
-  return { kind: "parked", label: "Parked" };
+  if (charger === 'chrgr_sts_connected_charging') return { kind: 'charging', label: 'Charging' };
+  if (charger === 'chrgr_sts_connected_no_chrg') return { kind: 'plugged', label: 'Plugged in' };
+  if (power === 'sleep') return { kind: 'asleep', label: 'Asleep' };
+  return { kind: 'parked', label: 'Parked' };
 }
 
 /**
@@ -47,6 +49,10 @@ export function securitySummary(state: VehicleState | undefined, model: string |
   const locked = locks.length === 0 ? null : locks.every(Boolean);
   const open = [...closures, ...windows].filter((c) => !c.closed).map((c) => c.label);
   const openLabel =
-    open.length === 0 ? "All closed" : open.length === 1 ? `${open[0]} open` : `${open.length} open`;
+    open.length === 0
+      ? 'All closed'
+      : open.length === 1
+        ? `${open[0]} open`
+        : `${open.length} open`;
   return { locked, open, openLabel };
 }

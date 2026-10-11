@@ -1,24 +1,24 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { buildApp } from "./app.js";
-import { loadConfig } from "./config.js";
-import type { AppContext, RivianFactory } from "./context.js";
-import { TokenCrypto, hashPassword } from "./crypto.js";
-import { createDb, runMigrations } from "./db/client.js";
-import { appSettings } from "./db/schema.js";
-import { passwordProblem } from "./password-policy.js";
-import { RivianClient, type RivianApi } from "./rivian/client.js";
-import { RivianGovernor } from "./rivian/governor.js";
-import { MockRivian, mockGeocode } from "./rivian/mock.js";
-import { RivianSubscriptionManager } from "./rivian/subscription.js";
-import { getPasswordHash } from "./routes/auth.js";
-import { DrivePlaces, nominatimGeocoder } from "./services/drive-places.js";
-import { LiveBus } from "./services/live-bus.js";
-import { NotificationService } from "./services/notifications.js";
-import { TokenStore } from "./services/token-store.js";
-import { VehicleMonitor } from "./services/vehicle-monitor.js";
-import { loadVersion } from "./version.js";
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildApp } from './app.js';
+import { loadConfig } from './config.js';
+import type { AppContext, RivianFactory } from './context.js';
+import { TokenCrypto, hashPassword } from './crypto.js';
+import { createDb, runMigrations } from './db/client.js';
+import { appSettings } from './db/schema.js';
+import { passwordProblem } from './password-policy.js';
+import { RivianClient, type RivianApi } from './rivian/client.js';
+import { RivianGovernor } from './rivian/governor.js';
+import { MockRivian, mockGeocode } from './rivian/mock.js';
+import { RivianSubscriptionManager } from './rivian/subscription.js';
+import { getPasswordHash } from './routes/auth.js';
+import { DrivePlaces, nominatimGeocoder } from './services/drive-places.js';
+import { LiveBus } from './services/live-bus.js';
+import { NotificationService } from './services/notifications.js';
+import { TokenStore } from './services/token-store.js';
+import { VehicleMonitor } from './services/vehicle-monitor.js';
+import { loadVersion } from './version.js';
 
 const START_RETRY_BASE_MS = 30_000;
 const START_RETRY_MAX_MS = 15 * 60_000;
@@ -26,17 +26,14 @@ const START_RETRY_MAX_MS = 15 * 60_000;
 const here = dirname(fileURLToPath(import.meta.url));
 
 function resolveWebDist(): string | undefined {
-  const candidates = [
-    join(here, "..", "web-dist"),
-    join(here, "..", "..", "web", "dist"),
-  ];
+  const candidates = [join(here, '..', 'web-dist'), join(here, '..', '..', 'web', 'dist')];
   return candidates.find((candidate) => existsSync(candidate));
 }
 
 async function main(): Promise<void> {
   const config = loadConfig();
 
-  const migrationsFolder = join(here, "..", "drizzle");
+  const migrationsFolder = join(here, '..', 'drizzle');
   await runMigrations(config.DATABASE_URL, migrationsFolder);
 
   const { db } = createDb(config.DATABASE_URL);
@@ -45,9 +42,7 @@ async function main(): Promise<void> {
   const bus = new LiveBus();
 
   const governor = new RivianGovernor();
-  const rivianFactory: RivianFactory = config.MOCK_RIVIAN
-    ? mockFactory()
-    : realFactory(governor);
+  const rivianFactory: RivianFactory = config.MOCK_RIVIAN ? mockFactory() : realFactory(governor);
 
   const monitor = new VehicleMonitor(
     db,
@@ -55,18 +50,16 @@ async function main(): Promise<void> {
     bus,
     (tokens) => rivianFactory.createConnection(tokens),
     (msg) => console.log(`[monitor] ${msg}`),
-    config.REVERSE_GEOCODING
-      ? new DrivePlaces(
-          db,
-          // Mock drives are in made-up places; don't look them up.
-          config.MOCK_RIVIAN
-            ? mockGeocode
-            : nominatimGeocoder(
-                `RivianMate/${loadVersion().version ?? "dev"} (self-hosted; https://github.com/blike/rivianmate)`,
-              ),
-          (msg) => console.log(`[places] ${msg}`),
-        )
-      : undefined,
+    new DrivePlaces(
+      db,
+      // Mock drives are in made-up places; don't look them up.
+      config.MOCK_RIVIAN
+        ? mockGeocode
+        : nominatimGeocoder(
+            `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`,
+          ),
+      (msg) => console.log(`[places] ${msg}`),
+    ),
   );
 
   const notifications = new NotificationService(
@@ -101,7 +94,7 @@ async function main(): Promise<void> {
     await db
       .insert(appSettings)
       .values({
-        key: "app_password_hash",
+        key: 'app_password_hash',
         value: hashPassword(config.APP_PASSWORD),
       })
       .onConflictDoNothing();
@@ -109,10 +102,10 @@ async function main(): Promise<void> {
 
   const app = await buildApp(ctx);
 
-  if (config.MOCK_RIVIAN) console.log("MOCK_RIVIAN enabled (OTP is 000000)");
+  if (config.MOCK_RIVIAN) console.log('MOCK_RIVIAN enabled (OTP is 000000)');
 
   // Listen first: the API and healthcheck must not wait on Rivian.
-  await app.listen({ port: config.PORT, host: "0.0.0.0" });
+  await app.listen({ port: config.PORT, host: '0.0.0.0' });
 
   // A network blip at boot (e.g. container networking not up yet) must not
   // leave tracking off until the next restart: retry with backoff.
@@ -121,13 +114,13 @@ async function main(): Promise<void> {
     void monitor
       .startIfConfigured()
       .then((result) => {
-        if (result === "started") {
-          console.log("Rivian monitor started from stored credentials");
-        } else if (result === "needs_login") {
-          console.log("Rivian session expired; sign in again from the web UI");
+        if (result === 'started') {
+          console.log('Rivian monitor started from stored credentials');
+        } else if (result === 'needs_login') {
+          console.log('Rivian session expired; sign in again from the web UI');
         } else {
           console.log(
-            "No usable Rivian account stored (not connected yet, or APP_SECRET changed); connect from the web UI",
+            'No usable Rivian account stored (not connected yet, or APP_SECRET changed); connect from the web UI',
           );
         }
       })
@@ -149,8 +142,8 @@ async function main(): Promise<void> {
     await app.close();
     process.exit(0);
   };
-  process.on("SIGTERM", () => void shutdown());
-  process.on("SIGINT", () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+  process.on('SIGINT', () => void shutdown());
 }
 
 function realFactory(governor: RivianGovernor): RivianFactory {

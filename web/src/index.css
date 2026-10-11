@@ -1,5 +1,5 @@
-@import "tailwindcss";
-@import "maplibre-gl/dist/maplibre-gl.css";
+@import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
 
 :root {
   /* Single committed dark look */
@@ -23,8 +23,8 @@
 }
 
 @layer base {
-  input[type="checkbox"],
-  input[type="radio"] {
+  input[type='checkbox'],
+  input[type='radio'] {
     accent-color: var(--accent);
   }
 }
@@ -69,7 +69,12 @@ body,
 body {
   background: var(--surface-0);
   color: var(--text-primary);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
     sans-serif;
 }
 
@@ -249,7 +254,7 @@ body {
 }
 
 .battery-bar__fill--charging::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);

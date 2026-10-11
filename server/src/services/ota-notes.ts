@@ -1,11 +1,15 @@
-import { and, eq } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { otaReleaseNotes } from "../db/schema.js";
-import type { RivianApi } from "../rivian/client.js";
-import { type OtaUpdateDetails, type VehicleState, isGraphqlValidationError } from "../rivian/types.js";
-import { stateString } from "./state-utils.js";
+import { and, eq } from 'drizzle-orm';
+import type { Db } from '../db/client.js';
+import { otaReleaseNotes } from '../db/schema.js';
+import type { RivianApi } from '../rivian/client.js';
+import {
+  type OtaUpdateDetails,
+  type VehicleState,
+  isGraphqlValidationError,
+} from '../rivian/types.js';
+import { stateString } from './state-utils.js';
 
-const NO_VERSION = new Set(["", "0.0.0"]);
+const NO_VERSION = new Set(['', '0.0.0']);
 /** Release notes run to tens of kilobytes; anything far larger isn't one. */
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -14,7 +18,7 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
 export function safeUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
-    return new URL(url).protocol === "https:" ? url : null;
+    return new URL(url).protocol === 'https:' ? url : null;
   } catch {
     return null;
   }
@@ -22,8 +26,8 @@ export function safeUrl(url: string | null | undefined): string | null {
 
 /** The installed and pending versions the vehicle reports. */
 export function reportedVersions(state: VehicleState): string[] {
-  const versions = ["otaCurrentVersion", "otaAvailableVersion"]
-    .map((key) => stateString(state, key)?.trim() ?? "")
+  const versions = ['otaCurrentVersion', 'otaAvailableVersion']
+    .map((key) => stateString(state, key)?.trim() ?? '')
     .filter((v) => !NO_VERSION.has(v));
   return [...new Set(versions)];
 }
@@ -45,13 +49,17 @@ export function notesToDownload(
 }
 
 /** Downloads a release-notes PDF; null if it isn't one. */
-export async function downloadPdf(url: string, fetchImpl: typeof fetch = fetch): Promise<Buffer | null> {
+export async function downloadPdf(
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Buffer | null> {
   const res = await fetchImpl(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`release notes download failed: HTTP ${res.status}`);
-  const length = Number(res.headers.get("content-length"));
+  const length = Number(res.headers.get('content-length'));
   if (length > MAX_PDF_BYTES) return null;
   const body = Buffer.from(await res.arrayBuffer());
-  if (body.length > MAX_PDF_BYTES || body.subarray(0, 5).toString("latin1") !== "%PDF-") return null;
+  if (body.length > MAX_PDF_BYTES || body.subarray(0, 5).toString('latin1') !== '%PDF-')
+    return null;
   return body;
 }
 
@@ -82,8 +90,14 @@ export class OtaNotesStore {
   /** Saves notes for the vehicle's installed and pending versions if missing. */
   async capture(vehicleId: string, state: VehicleState): Promise<void> {
     const versions = reportedVersions(state);
-    const key = versions.join("|");
-    if (!this.api || this.unsupported || versions.length === 0 || this.checked.get(vehicleId) === key) return;
+    const key = versions.join('|');
+    if (
+      !this.api ||
+      this.unsupported ||
+      versions.length === 0 ||
+      this.checked.get(vehicleId) === key
+    )
+      return;
     this.checked.set(vehicleId, key);
     // One fetch at a time per vehicle; a newer state waits for the last.
     const task = (this.inFlight.get(vehicleId) ?? Promise.resolve())
@@ -123,12 +137,15 @@ export class OtaNotesStore {
           this.log(`OTA release notes for ${version} weren't a PDF; skipping`);
           continue;
         }
-        await this.db.insert(otaReleaseNotes).values({ vehicleId, version, pdf }).onConflictDoNothing();
+        await this.db
+          .insert(otaReleaseNotes)
+          .values({ vehicleId, version, pdf })
+          .onConflictDoNothing();
       }
     } catch (err) {
       if (isGraphqlValidationError(err)) {
         this.unsupported = true;
-        this.log("OTA release notes query not supported; disabling");
+        this.log('OTA release notes query not supported; disabling');
         return;
       }
       // Try again on the next state change or request.

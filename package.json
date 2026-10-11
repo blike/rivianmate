@@ -2,7 +2,7 @@
   "name": "rivianmate",
   "private": true,
   "version": "0.5.0",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "packageManager": "pnpm@10.30.3",
   "engines": {
     "node": ">=22"
@@ -14,12 +14,15 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.10",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0"
   }

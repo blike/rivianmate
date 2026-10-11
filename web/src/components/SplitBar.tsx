@@ -1,4 +1,4 @@
-import { fmt } from "../lib/state.js";
+import { fmt } from '../lib/state.js';
 
 export interface SplitSegment {
   key: string;
@@ -10,14 +10,16 @@ export interface SplitSegment {
 /** One full-width bar split into energy shares. */
 export function SplitBar(props: { segments: SplitSegment[]; emptyLabel?: string }) {
   const segments = props.segments.filter((s) => s.kwh > 0);
-  // Shares of the bar, summing to 100: flex-grow values summing below 1
+  // Shares of the bar, summing to 100: grow values summing below 1
   // would leave part of the bar empty.
   const total = segments.reduce((sum, s) => sum + s.kwh, 0);
   return (
     <div
       className="parked-bar"
       role="img"
-      aria-label={segments.map((s) => `${s.label} ${fmt(s.kwh, 1)} kWh`).join(", ") || props.emptyLabel}
+      aria-label={
+        segments.map((s) => `${s.label} ${fmt(s.kwh, 1)} kWh`).join(', ') || props.emptyLabel
+      }
     >
       {segments.map((s) => (
         <div
@@ -32,14 +34,18 @@ export function SplitBar(props: { segments: SplitSegment[]; emptyLabel?: string 
 }
 
 /** Colour key for a split bar, with each share's kWh when given. */
-export function SplitLegend(props: { items: { key: string; label: string; color: string; kwh?: number }[] }) {
+export function SplitLegend(props: {
+  items: { key: string; label: string; color: string; kwh?: number }[];
+}) {
   return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-muted)]">
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--text-muted)">
       {props.items.map((item) => (
         <li key={item.key} className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full" style={{ background: item.color }} />
           {item.label}
-          {item.kwh != null && <span className="tabular-nums text-[var(--text-secondary)]">{fmt(item.kwh, 1)} kWh</span>}
+          {item.kwh != null && (
+            <span className="tabular-nums text-(--text-secondary)">{fmt(item.kwh, 1)} kWh</span>
+          )}
         </li>
       ))}
     </ul>

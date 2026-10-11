@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest something RivianMate could do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RivianMate is read-only: it never sends commands to the vehicle, so requests for remote controls won't be added.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The problem or question you have, rather than a specific solution.
+      placeholder: I want to see how much colder weather cuts my range over the winter.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How might it work?
+      description: Optional. Where it could appear and what it would show.
+  - type: textarea
+    id: data
+    attributes:
+      label: Does the data exist?
+      description: Optional. If you know where the Rivian app or API exposes it, say so.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for this idea.
+          required: true

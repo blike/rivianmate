@@ -2,14 +2,14 @@
  * REST API response shapes. The web app imports these types (types only —
  * erased at compile time) so both sides stay in sync.
  */
-import type { RivianTrafficSnapshot } from "./rivian/governor.js";
+import type { RivianTrafficSnapshot } from './rivian/governor.js';
 import type {
   ChargingSchedule,
   DepartureSchedule,
   LiveSessionData,
   VehicleState,
-} from "./rivian/types.js";
-import type { MonitorDiagnostics } from "./services/vehicle-monitor.js";
+} from './rivian/types.js';
+import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
 export type { ChargingSchedule, DepartureSchedule, LiveSessionData, VehicleState };
 
@@ -26,7 +26,7 @@ export interface StatusResponse {
   needsSetup: boolean;
   authed: boolean;
   rivianConnected: boolean;
-  rivianAuthState: "ok" | "unauthenticated" | null;
+  rivianAuthState: 'ok' | 'unauthenticated' | null;
   rivianEmail: string | null;
   mockMode: boolean;
 }
@@ -47,18 +47,11 @@ export interface VehicleDto {
   modelYear: number | null;
 }
 
-export type { HomeChargingSettings } from "./services/home-charging.js";
-
-/** Map basemap overrides from the server environment; null = app defaults. */
-export interface MapConfigResponse {
-  styleUrl: string | null;
-  tilesUrl: string | null;
-  glyphsUrl: string | null;
-}
+export type { HomeChargingSettings } from './services/home-charging.js';
 
 export interface UnitPreferences {
-  distance: "mi" | "km";
-  temperature: "F" | "C";
+  distance: 'mi' | 'km';
+  temperature: 'F' | 'C';
 }
 
 export interface RivianDiagnosticsResponse {
@@ -80,12 +73,12 @@ export interface HistoryPoint {
 
 /** Plugged in, split into time spent charging and time just connected. */
 export interface ChargeSpanDto {
-  kind: "charging" | "plugged";
+  kind: 'charging' | 'plugged';
   from: string;
   to: string;
 }
 
-export type HistoryMetric = "battery" | "range" | "mileage";
+export type HistoryMetric = 'battery' | 'range' | 'mileage';
 
 export interface LocationPointDto {
   ts: string;
@@ -219,7 +212,7 @@ export interface ChargingSessionDto {
   /** Energy × home rate, when this home session has no cost of its own. */
   estimatedCost: string | null;
   /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
-  source: "live" | "rivian" | "live+rivian";
+  source: 'live' | 'rivian' | 'live+rivian';
   vendor: string | null;
   city: string | null;
   isPublic: boolean | null;
@@ -253,7 +246,12 @@ export interface VehicleInsightsDto {
   cellTemps: { avgC: number; maxC: number; minC: number; at: string } | null;
   /** Whether the latest battery report carried temperatures (vehicle awake). */
   cellTempsCurrent: boolean;
-  coldWeather: { usableSoc: number | null; coldSoc: number; rangeImpactKm: number; at: string } | null;
+  coldWeather: {
+    usableSoc: number | null;
+    coldSoc: number;
+    rangeImpactKm: number;
+    at: string;
+  } | null;
   /** Energy used while parked, over Rivian's windows (e.g. last 24 h). */
   parkedEnergy: {
     windows: {
@@ -303,7 +301,7 @@ export interface NotificationEvents {
   lowBattery: { enabled: boolean; percent: number };
 }
 
-export type NotificationChannelKind = "apprise" | "discord";
+export type NotificationChannelKind = 'apprise' | 'discord';
 
 /** A saved destination; the URL itself isn't sent back, since it holds a secret. */
 export interface NotificationDestinationDto {

@@ -2,72 +2,94 @@
  * Integration tests against a real Postgres. Skipped unless
  * TEST_DATABASE_URL points at a disposable database (tables are truncated).
  */
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDb, runMigrations } from "../db/client.js";
-import { chargingCurvePoints, chargingSessions, vehicles } from "../db/schema.js";
-import type { RivianApi } from "../rivian/client.js";
-import type { LiveSessionData, VehicleState } from "../rivian/types.js";
-import { RVM_CHARGE_BREAKDOWN, RVM_CHARGING_GRAPH, RVM_SOC_SLIDER, RVM_TIME_ESTIMATION } from "../rivian/parallax.js";
-import { b64, chargingGraph, float, graphBar, int, message, string } from "../testing/protobuf.js";
-import { ChargingMonitor } from "./charging-monitor.js";
-import { LiveBus } from "./live-bus.js";
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { eq } from 'drizzle-orm';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createDb, runMigrations } from '../db/client.js';
+import { chargingCurvePoints, chargingSessions, vehicles } from '../db/schema.js';
+import type { RivianApi } from '../rivian/client.js';
+import type { LiveSessionData, VehicleState } from '../rivian/types.js';
+import {
+  RVM_CHARGE_BREAKDOWN,
+  RVM_CHARGING_GRAPH,
+  RVM_SOC_SLIDER,
+  RVM_TIME_ESTIMATION,
+} from '../rivian/parallax.js';
+import { b64, chargingGraph, float, graphBar, int, message, string } from '../testing/protobuf.js';
+import { ChargingMonitor } from './charging-monitor.js';
+import { LiveBus } from './live-bus.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
+describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
   let handle: ReturnType<typeof createDb>;
-  const NOW = Date.parse("2026-10-01T12:00:00Z");
+  const NOW = Date.parse('2026-10-01T12:00:00Z');
   const api = { getRegisteredWallboxes: async () => [] } as unknown as RivianApi;
   let clock = NOW;
 
   const monitor = (bus = new LiveBus()) => {
-    const m = new ChargingMonitor(handle.db, api, bus, () => {}, () => clock);
-    m.setVehicles(["v1"]);
+    const m = new ChargingMonitor(
+      handle.db,
+      api,
+      bus,
+      () => {},
+      () => clock,
+    );
+    m.setVehicles(['v1']);
     return m;
   };
   /** Vehicle state as the monitor sees it, stamped by Rivian at `at`. */
-  const vehicle = (status: string, chargerState: string, soc: number, at: string): VehicleState => ({
+  const vehicle = (
+    status: string,
+    chargerState: string,
+    soc: number,
+    at: string,
+  ): VehicleState => ({
     chargerStatus: { value: status, timeStamp: at },
     chargerState: { value: chargerState, timeStamp: at },
     batteryLevel: { value: soc, timeStamp: at },
   });
   /** Feed a state at time `at` and wait for it to be stored. */
-  async function note(m: ChargingMonitor, at: string, status: string, chargerState: string, soc: number) {
+  async function note(
+    m: ChargingMonitor,
+    at: string,
+    status: string,
+    chargerState: string,
+    soc: number,
+  ) {
     clock = Date.parse(at);
-    m.noteState("v1", vehicle(status, chargerState, soc, at));
-    await m.ingest("v1", null); // queued after the state: drains it
+    m.noteState('v1', vehicle(status, chargerState, soc, at));
+    await m.ingest('v1', null); // queued after the state: drains it
   }
-  const PLUGGED = "chrgr_sts_connected_no_chrg";
-  const CHARGING = "chrgr_sts_connected_charging";
-  const UNPLUGGED = "chrgr_sts_not_connected";
+  const PLUGGED = 'chrgr_sts_connected_no_chrg';
+  const CHARGING = 'chrgr_sts_connected_charging';
+  const UNPLUGGED = 'chrgr_sts_not_connected';
   const live = (startTime: string, power = 10, soc = 50): LiveSessionData =>
     ({
       startTime,
       power: { value: power, updatedAt: new Date(NOW).toISOString() },
       soc: { value: soc, updatedAt: new Date(NOW).toISOString() },
-      vehicleChargerState: { value: "charging_active", updatedAt: new Date(NOW).toISOString() },
+      vehicleChargerState: { value: 'charging_active', updatedAt: new Date(NOW).toISOString() },
     }) as LiveSessionData;
 
   async function leftover(startedAt: string, samples: [string, number][]) {
     const [row] = await handle.db
       .insert(chargingSessions)
-      .values({ vehicleId: "v1", startedAt: new Date(startedAt) })
+      .values({ vehicleId: 'v1', startedAt: new Date(startedAt) })
       .returning();
     if (samples.length) {
-      await handle.db.insert(chargingCurvePoints).values(
-        samples.map(([ts, kw]) => ({ sessionId: row!.id, ts: new Date(ts), powerKw: kw })),
-      );
+      await handle.db
+        .insert(chargingCurvePoints)
+        .values(samples.map(([ts, kw]) => ({ sessionId: row!.id, ts: new Date(ts), powerKw: kw })));
     }
     return row!.id;
   }
   const sessions = () => handle.db.select().from(chargingSessions).orderBy(chargingSessions.id);
 
   beforeAll(async () => {
-    await runMigrations(url!, join(here, "..", "..", "drizzle"));
+    await runMigrations(url!, join(here, '..', '..', 'drizzle'));
     handle = createDb(url!);
   });
   afterAll(async () => {
@@ -75,39 +97,39 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
   });
   beforeEach(async () => {
     await handle.sql`TRUNCATE charging_curve_points, charging_sessions, vehicles RESTART IDENTITY CASCADE`;
-    await handle.db.insert(vehicles).values({ id: "v1", vin: "VIN1" });
+    await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
     clock = NOW;
   });
 
-  it("keeps one session per plug-in, with charging time and SOC across pauses", async () => {
+  it('keeps one session per plug-in, with charging time and SOC across pauses', async () => {
     const m = monitor();
     await m.start();
-    await note(m, "2026-10-01T00:30:00Z", PLUGGED, "charging_scheduled", 40);
-    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
-    await note(m, "2026-10-01T11:00:00Z", PLUGGED, "charging_complete", 70);
-    await note(m, "2026-10-01T12:00:00Z", CHARGING, "charging_active", 70); // top-up
-    await note(m, "2026-10-01T12:15:00Z", UNPLUGGED, "charging_ready", 71);
+    await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T11:00:00Z', PLUGGED, 'charging_complete', 70);
+    await note(m, '2026-10-01T12:00:00Z', CHARGING, 'charging_active', 70); // top-up
+    await note(m, '2026-10-01T12:15:00Z', UNPLUGGED, 'charging_ready', 71);
     m.stop();
 
     const rows = await sessions();
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.startedAt.toISOString()).toBe("2026-10-01T00:30:00.000Z");
-    expect(rows[0]!.endedAt?.toISOString()).toBe("2026-10-01T12:15:00.000Z");
+    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:30:00.000Z');
+    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T12:15:00.000Z');
     expect(rows[0]!.chargingSeconds).toBe(4 * 3600 + 15 * 60);
     expect(rows[0]!.chargingSince).toBeNull();
     expect([rows[0]!.startSoc, rows[0]!.endSoc]).toEqual([40, 71]);
   });
 
-  it("continues a plug-in across a restart, keeping its charging time", async () => {
+  it('continues a plug-in across a restart, keeping its charging time', async () => {
     const before = monitor();
     await before.start();
-    await note(before, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
+    await note(before, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
     before.stop();
 
     const after = monitor();
     await after.start();
-    await note(after, "2026-10-01T09:00:00Z", CHARGING, "charging_active", 55);
-    await note(after, "2026-10-01T10:00:00Z", UNPLUGGED, "charging_ready", 62);
+    await note(after, '2026-10-01T09:00:00Z', CHARGING, 'charging_active', 55);
+    await note(after, '2026-10-01T10:00:00Z', UNPLUGGED, 'charging_ready', 62);
     after.stop();
 
     const rows = await sessions();
@@ -119,8 +141,8 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
   it("stores the Parallax charging graph as the session's power curve", async () => {
     const m = monitor();
     await m.start();
-    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
-    const t0 = Date.parse("2026-10-01T07:00:00Z");
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    const t0 = Date.parse('2026-10-01T07:00:00Z');
     const graph = (lastKw: number) => ({
       rvm: RVM_CHARGING_GRAPH,
       timestamp: null,
@@ -130,9 +152,13 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
         graphBar(30, 50, t0 - 2 * 86_400_000, t0 - 2 * 86_400_000 + 60_000), // days old: dropped
       ),
     });
-    await m.ingestParallax("v1", graph(9));
-    await m.ingestParallax("v1", graph(10.5)); // the growing bar is re-sent
-    await m.ingestParallax("v1", { rvm: "charging.session.status", timestamp: null, payload: "CAEQAQ==" });
+    await m.ingestParallax('v1', graph(9));
+    await m.ingestParallax('v1', graph(10.5)); // the growing bar is re-sent
+    await m.ingestParallax('v1', {
+      rvm: 'charging.session.status',
+      timestamp: null,
+      payload: 'CAEQAQ==',
+    });
     m.stop();
 
     const [session] = await sessions();
@@ -141,7 +167,10 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
       .from(chargingCurvePoints)
       .where(eq(chargingCurvePoints.sessionId, session!.id))
       .orderBy(chargingCurvePoints.ts);
-    expect(points.map((p) => [p.powerKw, p.soc])).toEqual([[11, 40], [10.5, 41]]);
+    expect(points.map((p) => [p.powerKw, p.soc])).toEqual([
+      [11, 40],
+      [10.5, 41],
+    ]);
     expect(session!.maxPowerKw).toBe(11);
     expect(session!.avgPowerKw).toBeCloseTo(10.75);
   });
@@ -150,21 +179,21 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     const [done] = await handle.db
       .insert(chargingSessions)
       .values({
-        vehicleId: "v1",
-        startedAt: new Date("2026-10-01T00:34:54Z"),
-        endedAt: new Date("2026-10-01T12:31:09Z"),
+        vehicleId: 'v1',
+        startedAt: new Date('2026-10-01T00:34:54Z'),
+        endedAt: new Date('2026-10-01T12:31:09Z'),
       })
       .returning();
     const at = (iso: string) => Date.parse(iso);
     const m = monitor();
     await m.start();
-    await m.ingestParallax("v1", {
+    await m.ingestParallax('v1', {
       rvm: RVM_CHARGING_GRAPH,
       timestamp: null,
       payload: chargingGraph(
-        graphBar(40, 0, at("2026-10-01T00:35:00Z"), at("2026-10-01T01:07:00Z")),
-        graphBar(43, 7.4, at("2026-10-01T07:09:00Z"), at("2026-10-01T07:41:00Z")),
-        graphBar(70, 0, at("2026-10-01T11:57:00Z"), at("2026-10-01T12:29:00Z")),
+        graphBar(40, 0, at('2026-10-01T00:35:00Z'), at('2026-10-01T01:07:00Z')),
+        graphBar(43, 7.4, at('2026-10-01T07:09:00Z'), at('2026-10-01T07:41:00Z')),
+        graphBar(70, 0, at('2026-10-01T11:57:00Z'), at('2026-10-01T12:29:00Z')),
       ),
     });
     m.stop();
@@ -180,23 +209,35 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
   });
 
   /** A charge_session_breakdown message. */
-  const breakdown = (totalKwh: number, packKwh: number, thermalKwh: number, minutes: number, km: number) => ({
+  const breakdown = (
+    totalKwh: number,
+    packKwh: number,
+    thermalKwh: number,
+    minutes: number,
+    km: number,
+  ) => ({
     rvm: RVM_CHARGE_BREAKDOWN,
     timestamp: null,
-    payload: b64([...float(1, totalKwh), ...float(2, packKwh), ...float(5, thermalKwh), ...int(6, minutes), ...int(8, km)]),
+    payload: b64([
+      ...float(1, totalKwh),
+      ...float(2, packKwh),
+      ...float(5, thermalKwh),
+      ...int(6, minutes),
+      ...int(8, km),
+    ]),
   });
 
   it("splits a finished session's energy with the breakdown matching its charging time", async () => {
     await handle.db.insert(chargingSessions).values({
-      vehicleId: "v1",
-      startedAt: new Date("2026-10-01T00:34:54Z"),
-      endedAt: new Date("2026-10-01T12:31:09Z"),
+      vehicleId: 'v1',
+      startedAt: new Date('2026-10-01T00:34:54Z'),
+      endedAt: new Date('2026-10-01T12:31:09Z'),
       chargingSeconds: 18_779, // 5h13m
       energyKwh: 35.7, // from Rivian's history
     });
     const m = monitor();
     await m.start();
-    await m.ingestParallax("v1", breakdown(35.8, 34.4, 1.4, 313, 162));
+    await m.ingestParallax('v1', breakdown(35.8, 34.4, 1.4, 313, 162));
     m.stop();
 
     const [row] = await sessions();
@@ -208,13 +249,13 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
   it("keeps the previous session's breakdown off a new plug-in, then tracks its own", async () => {
     const m = monitor();
     await m.start();
-    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
-    await m.ingestParallax("v1", breakdown(35.8, 34.4, 1.4, 313, 162)); // sent on subscribe
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await m.ingestParallax('v1', breakdown(35.8, 34.4, 1.4, 313, 162)); // sent on subscribe
     let [row] = await sessions();
     expect(row!.energyKwh).toBeNull();
 
-    clock = Date.parse("2026-10-01T08:00:00Z");
-    await m.ingestParallax("v1", breakdown(7.2, 7, 0.2, 59, 33));
+    clock = Date.parse('2026-10-01T08:00:00Z');
+    await m.ingestParallax('v1', breakdown(7.2, 7, 0.2, 59, 33));
     m.stop();
     [row] = await sessions();
     expect([row!.energyKwh, row!.packKwh, row!.thermalKwh]).toEqual([
@@ -233,33 +274,36 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
         ...float(1, minutes * 0.2),
         ...float(2, minutes * 0.2),
         ...int(6, minutes),
-        ...message(11, [...string(1, "USD"), ...int(2, dollars), ...int(3, cents * 10_000_000)]),
+        ...message(11, [...string(1, 'USD'), ...int(2, dollars), ...int(3, cents * 10_000_000)]),
       ]),
     });
     const m = monitor();
     await m.start();
-    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 40);
-    clock = Date.parse("2026-10-01T07:02:00Z");
-    await m.ingestParallax("v1", costing(2, 1, 6));
-    clock = Date.parse("2026-10-01T07:30:00Z");
-    await m.ingestParallax("v1", costing(30, 15, 40));
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    clock = Date.parse('2026-10-01T07:02:00Z');
+    await m.ingestParallax('v1', costing(2, 1, 6));
+    clock = Date.parse('2026-10-01T07:30:00Z');
+    await m.ingestParallax('v1', costing(30, 15, 40));
     let [row] = await sessions();
     // The latest total, not the first one seen ($1.06).
-    expect([row!.cost, row!.currency]).toEqual(["15.40", "USD"]);
+    expect([row!.cost, row!.currency]).toEqual(['15.40', 'USD']);
 
-    await handle.db.update(chargingSessions).set({ cost: "12.00", costEdited: true });
-    clock = Date.parse("2026-10-01T07:45:00Z");
-    await m.ingestParallax("v1", costing(45, 23, 10));
+    await handle.db.update(chargingSessions).set({ cost: '12.00', costEdited: true });
+    clock = Date.parse('2026-10-01T07:45:00Z');
+    await m.ingestParallax('v1', costing(45, 23, 10));
     m.stop();
     [row] = await sessions();
-    expect(row!.cost).toBe("12.00");
+    expect(row!.cost).toBe('12.00');
   });
 
   it("adds push-feed power and energy to the plug-in's session", async () => {
     const m = monitor();
     await m.start();
-    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 50);
-    await m.ingest("v1", { ...live("2026-10-01T11:00:00Z", 11), totalChargedEnergy: { value: 5 } } as LiveSessionData);
+    await note(m, '2026-10-01T11:00:00Z', CHARGING, 'charging_active', 50);
+    await m.ingest('v1', {
+      ...live('2026-10-01T11:00:00Z', 11),
+      totalChargedEnergy: { value: 5 },
+    } as LiveSessionData);
     m.stop();
 
     const rows = await sessions();
@@ -268,31 +312,34 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     expect(rows[0]!.energyKwh).toBe(5);
   });
 
-  it("builds the live session from state and Parallax while the push feed is silent", async () => {
+  it('builds the live session from state and Parallax while the push feed is silent', async () => {
     const bus = new LiveBus();
     const m = monitor(bus);
     await m.start();
-    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 60);
-    m.noteState("v1", {
-      ...vehicle(CHARGING, "charging_active", 61, "2026-10-01T07:05:00Z"),
-      timeToEndOfCharge: { value: 30, timeStamp: "2026-10-01T07:05:00Z" },
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 60);
+    m.noteState('v1', {
+      ...vehicle(CHARGING, 'charging_active', 61, '2026-10-01T07:05:00Z'),
+      timeToEndOfCharge: { value: 30, timeStamp: '2026-10-01T07:05:00Z' },
     });
-    const t0 = Date.parse("2026-10-01T07:00:00Z");
-    await m.ingestParallax("v1", {
+    const t0 = Date.parse('2026-10-01T07:00:00Z');
+    await m.ingestParallax('v1', {
       rvm: RVM_CHARGING_GRAPH,
       timestamp: null,
-      payload: chargingGraph(graphBar(60, 7.2, t0, t0 + 60_000), graphBar(61, 7.4, t0 + 60_000, t0 + 120_000)),
+      payload: chargingGraph(
+        graphBar(60, 7.2, t0, t0 + 60_000),
+        graphBar(61, 7.4, t0 + 60_000, t0 + 120_000),
+      ),
     });
-    await m.ingest("v1", null); // drains the queue
+    await m.ingest('v1', null); // drains the queue
 
-    const live = bus.latestChargingSession("v1");
-    expect(live?.vehicleChargerState?.value).toBe("charging_active");
+    const live = bus.latestChargingSession('v1');
+    expect(live?.vehicleChargerState?.value).toBe('charging_active');
     expect(live?.power?.value).toBeCloseTo(7.4);
     expect(live?.soc?.value).toBe(61);
     expect(live?.timeRemaining?.value).toBe(30 * 60);
 
-    await note(m, "2026-10-01T08:00:00Z", UNPLUGGED, "charging_ready", 70);
-    expect(bus.latestChargingSession("v1")).toBeNull();
+    await note(m, '2026-10-01T08:00:00Z', UNPLUGGED, 'charging_ready', 70);
+    expect(bus.latestChargingSession('v1')).toBeNull();
     m.stop();
   });
 
@@ -300,108 +347,140 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     const bus = new LiveBus();
     const m = monitor(bus);
     await m.start();
-    await note(m, "2026-10-01T07:00:00Z", CHARGING, "charging_active", 60);
-    clock = Date.parse("2026-10-01T07:30:00Z");
-    await m.ingestParallax("v1", {
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 60);
+    clock = Date.parse('2026-10-01T07:30:00Z');
+    await m.ingestParallax('v1', {
       rvm: RVM_CHARGE_BREAKDOWN,
       timestamp: null,
       payload: b64([...float(1, 3.6), ...int(6, 30), ...float(9, 5.2), ...int(10, 19)]),
     });
-    const t0 = Date.parse("2026-10-01T07:00:00Z");
-    await m.ingestParallax("v1", {
+    const t0 = Date.parse('2026-10-01T07:00:00Z');
+    await m.ingestParallax('v1', {
       rvm: RVM_CHARGING_GRAPH,
       timestamp: null,
       payload: chargingGraph(graphBar(60, 7.2, t0, t0 + 16 * 60_000)),
     });
-    await m.ingest("v1", null); // drains the queue
+    await m.ingest('v1', null); // drains the queue
 
-    expect(bus.latestChargingSession("v1")?.power?.value).toBeCloseTo(5.2);
+    expect(bus.latestChargingSession('v1')?.power?.value).toBeCloseTo(5.2);
     m.stop();
   });
 
-  it("takes time left and the limit from Parallax over vehicle state", async () => {
+  it('takes time left and the limit from Parallax over vehicle state', async () => {
     const bus = new LiveBus();
     const m = monitor(bus);
     await m.start();
-    m.noteState("v1", {
-      ...vehicle(CHARGING, "charging_active", 90.3, "2026-10-01T07:00:00Z"),
-      timeToEndOfCharge: { value: 45, timeStamp: "2026-10-01T07:00:00Z" },
+    m.noteState('v1', {
+      ...vehicle(CHARGING, 'charging_active', 90.3, '2026-10-01T07:00:00Z'),
+      timeToEndOfCharge: { value: 45, timeStamp: '2026-10-01T07:00:00Z' },
     });
-    await m.ingestParallax("v1", { rvm: RVM_TIME_ESTIMATION, timestamp: null, payload: b64(int(2, 42)) });
-    await m.ingestParallax("v1", { rvm: RVM_SOC_SLIDER, timestamp: null, payload: b64(int(1, 95)) });
-    await m.ingest("v1", null); // drains the queue
-    let live = bus.latestChargingSession("v1");
+    await m.ingestParallax('v1', {
+      rvm: RVM_TIME_ESTIMATION,
+      timestamp: null,
+      payload: b64(int(2, 42)),
+    });
+    await m.ingestParallax('v1', {
+      rvm: RVM_SOC_SLIDER,
+      timestamp: null,
+      payload: b64(int(1, 95)),
+    });
+    await m.ingest('v1', null); // drains the queue
+    let live = bus.latestChargingSession('v1');
     expect(live?.timeRemaining?.value).toBe(42 * 60);
     expect(live?.socLimit?.value).toBe(95);
 
-    await m.ingestParallax("v1", { rvm: RVM_TIME_ESTIMATION, timestamp: null, payload: "" });
-    await m.ingest("v1", null);
-    live = bus.latestChargingSession("v1");
+    await m.ingestParallax('v1', { rvm: RVM_TIME_ESTIMATION, timestamp: null, payload: '' });
+    await m.ingest('v1', null);
+    live = bus.latestChargingSession('v1');
     expect(live?.timeRemaining).toBeNull();
     m.stop();
   });
 
-  it("prefers an active push over the state-built session", async () => {
+  it('prefers an active push over the state-built session', async () => {
     const bus = new LiveBus();
     const m = monitor(bus);
     await m.start();
-    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 50);
-    await m.ingest("v1", live("2026-10-01T11:00:00Z", 11));
-    m.noteState("v1", vehicle(CHARGING, "charging_active", 51, "2026-10-01T11:05:00Z"));
-    await m.ingestParallax("v1", { rvm: "charging.session.status", timestamp: null, payload: "CAEQAQ==" });
-    expect(bus.latestChargingSession("v1")?.power?.value).toBe(11);
+    await note(m, '2026-10-01T11:00:00Z', CHARGING, 'charging_active', 50);
+    await m.ingest('v1', live('2026-10-01T11:00:00Z', 11));
+    m.noteState('v1', vehicle(CHARGING, 'charging_active', 51, '2026-10-01T11:05:00Z'));
+    await m.ingestParallax('v1', {
+      rvm: 'charging.session.status',
+      timestamp: null,
+      payload: 'CAEQAQ==',
+    });
+    expect(bus.latestChargingSession('v1')?.power?.value).toBe(11);
     m.stop();
   });
 
-  it("keeps the live power through messages that carry none and a quiet push feed (DC)", async () => {
+  it('keeps the live power through messages that carry none and a quiet push feed (DC)', async () => {
     const bus = new LiveBus();
     const m = monitor(bus);
     await m.start();
-    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 50);
-    clock = Date.parse("2026-10-01T11:10:00Z");
-    await m.ingest("v1", {
-      ...live("2026-10-01T11:00:00Z", 124.7, 63),
-      power: { value: 124.7, updatedAt: "2026-10-01T11:10:00Z" },
+    await note(m, '2026-10-01T11:00:00Z', CHARGING, 'charging_active', 50);
+    clock = Date.parse('2026-10-01T11:10:00Z');
+    await m.ingest('v1', {
+      ...live('2026-10-01T11:00:00Z', 124.7, 63),
+      power: { value: 124.7, updatedAt: '2026-10-01T11:10:00Z' },
     } as LiveSessionData);
-    expect(bus.latestChargingSession("v1")?.power?.value).toBe(124.7);
+    expect(bus.latestChargingSession('v1')?.power?.value).toBe(124.7);
 
     // A breakdown and a graph bar without power readings: unknown, not 0.
-    clock = Date.parse("2026-10-01T11:10:05Z");
-    await m.ingestParallax("v1", { rvm: RVM_CHARGE_BREAKDOWN, timestamp: null, payload: b64([...float(1, 3.6), ...int(6, 10)]) });
-    await m.ingestParallax("v1", {
+    clock = Date.parse('2026-10-01T11:10:05Z');
+    await m.ingestParallax('v1', {
+      rvm: RVM_CHARGE_BREAKDOWN,
+      timestamp: null,
+      payload: b64([...float(1, 3.6), ...int(6, 10)]),
+    });
+    await m.ingestParallax('v1', {
       rvm: RVM_CHARGING_GRAPH,
       timestamp: null,
       payload: chargingGraph([...int(1, 57), ...int(3, clock), ...int(6, 3)]),
     });
-    await m.ingest("v1", { ...live("2026-10-01T11:00:00Z", 124.7, 63), power: { value: 124.7, updatedAt: "2026-10-01T11:10:00Z" } } as LiveSessionData);
-    expect(bus.latestChargingSession("v1")?.power?.value).toBe(124.7);
+    await m.ingest('v1', {
+      ...live('2026-10-01T11:00:00Z', 124.7, 63),
+      power: { value: 124.7, updatedAt: '2026-10-01T11:10:00Z' },
+    } as LiveSessionData);
+    expect(bus.latestChargingSession('v1')?.power?.value).toBe(124.7);
 
     // The push briefly reports no session while the vehicle still charges.
-    await m.ingestParallax("v1", { rvm: RVM_CHARGE_BREAKDOWN, timestamp: null, payload: b64([...float(1, 3.7), ...int(6, 10), ...float(9, 118)]) });
-    await m.ingest("v1", null);
-    expect(bus.latestChargingSession("v1")?.power?.value).toBe(118);
+    await m.ingestParallax('v1', {
+      rvm: RVM_CHARGE_BREAKDOWN,
+      timestamp: null,
+      payload: b64([...float(1, 3.7), ...int(6, 10), ...float(9, 118)]),
+    });
+    await m.ingest('v1', null);
+    expect(bus.latestChargingSession('v1')?.power?.value).toBe(118);
     m.stop();
 
     // Each source keeps its own series; the push's reading carries no SoC.
-    const points = await handle.db.select().from(chargingCurvePoints).orderBy(chargingCurvePoints.ts);
-    expect(points.filter((pt) => pt.source === "push_live").map((pt) => [pt.powerKw, pt.soc])).toEqual([[124.7, null]]);
-    expect(points.filter((pt) => pt.source === "graph").map((pt) => [pt.powerKw, pt.soc])).toEqual([[null, 57]]);
+    const points = await handle.db
+      .select()
+      .from(chargingCurvePoints)
+      .orderBy(chargingCurvePoints.ts);
+    expect(
+      points.filter((pt) => pt.source === 'push_live').map((pt) => [pt.powerKw, pt.soc]),
+    ).toEqual([[124.7, null]]);
+    expect(points.filter((pt) => pt.source === 'graph').map((pt) => [pt.powerKw, pt.soc])).toEqual([
+      [null, 57],
+    ]);
   });
 
   it("keeps the graph's forecast apart from its readings, and drops it when the charge ends", async () => {
     const m = monitor();
     await m.start();
-    await note(m, "2026-10-01T11:00:00Z", CHARGING, "charging_active", 54);
-    const t = Date.parse("2026-10-01T11:00:00Z");
+    await note(m, '2026-10-01T11:00:00Z', CHARGING, 'charging_active', 54);
+    const t = Date.parse('2026-10-01T11:00:00Z');
     const min = 60_000;
     const graph = (sentAt: number, ...bars: number[][]) =>
-      m.ingestParallax("v1", { rvm: RVM_CHARGING_GRAPH, timestamp: sentAt, payload: chargingGraph(...bars) });
+      m.ingestParallax('v1', {
+        rvm: RVM_CHARGING_GRAPH,
+        timestamp: sentAt,
+        payload: chargingGraph(...bars),
+      });
     const sources = async () =>
-      (await handle.db.select().from(chargingCurvePoints).orderBy(chargingCurvePoints.ts)).map((r) => [
-        r.source,
-        (r.ts.getTime() - t) / min,
-        r.soc,
-      ]);
+      (await handle.db.select().from(chargingCurvePoints).orderBy(chargingCurvePoints.ts)).map(
+        (r) => [r.source, (r.ts.getTime() - t) / min, r.soc],
+      );
 
     // Sent 6 minutes in: two bars so far, then the vehicle's projection.
     clock = t + 6 * min;
@@ -412,12 +491,12 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
       [...int(1, 63), ...int(3, t + 10 * min), ...int(4, t + 14 * min), ...int(6, 3)],
       [...int(1, 70), ...int(3, t + 14 * min), ...int(4, t + 17 * min), ...int(6, 3)],
     );
-    await m.ingest("v1", null); // drains the queue
+    await m.ingest('v1', null); // drains the queue
     expect(await sources()).toEqual([
-      ["graph", 0, 54],
-      ["graph", 3, 57],
-      ["forecast", 10, 63],
-      ["forecast", 14, 70],
+      ['graph', 0, 54],
+      ['graph', 3, 57],
+      ['forecast', 10, 63],
+      ['forecast', 14, 70],
     ]);
 
     // The next graph replaces the forecast.
@@ -429,24 +508,24 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
       graphBar(60, 99, t + 6 * min, t + 9 * min),
       [...int(1, 66), ...int(3, t + 12 * min), ...int(6, 3)],
     );
-    await m.ingest("v1", null);
-    expect((await sources()).filter(([s]) => s === "forecast")).toEqual([["forecast", 12, 66]]);
+    await m.ingest('v1', null);
+    expect((await sources()).filter(([s]) => s === 'forecast')).toEqual([['forecast', 12, 66]]);
 
-    await note(m, "2026-10-01T11:20:00Z", UNPLUGGED, "charging_complete", 72);
-    expect((await sources()).filter(([s]) => s === "forecast")).toEqual([]);
-    expect((await sources()).filter(([s]) => s === "graph")).toHaveLength(3);
+    await note(m, '2026-10-01T11:20:00Z', UNPLUGGED, 'charging_complete', 72);
+    expect((await sources()).filter(([s]) => s === 'forecast')).toEqual([]);
+    expect((await sources()).filter(([s]) => s === 'graph')).toHaveLength(3);
     m.stop();
   });
 
-  it("resumes a session left open by a restart when the same charge continues", async () => {
-    const id = await leftover("2026-10-01T11:00:00Z", [
-      ["2026-10-01T11:10:00Z", 11],
-      ["2026-10-01T11:50:00Z", 7],
+  it('resumes a session left open by a restart when the same charge continues', async () => {
+    const id = await leftover('2026-10-01T11:00:00Z', [
+      ['2026-10-01T11:10:00Z', 11],
+      ['2026-10-01T11:50:00Z', 7],
     ]);
     const m = monitor();
     await m.start();
-    m.setPluggedIn("v1", true);
-    await m.ingest("v1", live("2026-10-01T11:02:00Z", 9));
+    m.setPluggedIn('v1', true);
+    await m.ingest('v1', live('2026-10-01T11:02:00Z', 9));
     m.stop();
 
     const rows = await sessions();
@@ -457,35 +536,38 @@ describe.skipIf(!url)("ChargingMonitor with Postgres", () => {
     expect(rows[0]!.avgPowerKw).toBeCloseTo(9); // (11 + 7 + 9) / 3
   });
 
-  it("closes the leftover at its last sample and starts anew after unplug and replug", async () => {
-    const id = await leftover("2026-10-01T08:00:00Z", [["2026-10-01T09:30:00Z", 11]]);
+  it('closes the leftover at its last sample and starts anew after unplug and replug', async () => {
+    const id = await leftover('2026-10-01T08:00:00Z', [['2026-10-01T09:30:00Z', 11]]);
     const m = monitor();
     await m.start();
-    m.setPluggedIn("v1", false);
-    m.setPluggedIn("v1", true);
-    await m.ingest("v1", null);
+    m.setPluggedIn('v1', false);
+    m.setPluggedIn('v1', true);
+    await m.ingest('v1', null);
     m.stop();
 
     const rows = await sessions();
     expect(rows).toHaveLength(2);
-    expect(rows.find((r) => r.id === id)!.endedAt?.toISOString()).toBe("2026-10-01T09:30:00.000Z");
+    expect(rows.find((r) => r.id === id)!.endedAt?.toISOString()).toBe('2026-10-01T09:30:00.000Z');
     expect(rows.find((r) => r.id !== id)!.endedAt).toBeNull();
   });
 
-  it("closes the leftover when the vehicle is reported unplugged", async () => {
-    const id = await leftover("2026-10-01T08:00:00Z", [["2026-10-01T09:00:00Z", 11]]);
+  it('closes the leftover when the vehicle is reported unplugged', async () => {
+    const id = await leftover('2026-10-01T08:00:00Z', [['2026-10-01T09:00:00Z', 11]]);
     const m = monitor();
     await m.start();
-    m.setPluggedIn("v1", false);
-    await m.ingest("v1", null); // let queued work drain
+    m.setPluggedIn('v1', false);
+    await m.ingest('v1', null); // let queued work drain
     m.stop();
 
-    const [row] = await handle.db.select().from(chargingSessions).where(eq(chargingSessions.id, id));
-    expect(row!.endedAt?.toISOString()).toBe("2026-10-01T09:00:00.000Z");
+    const [row] = await handle.db
+      .select()
+      .from(chargingSessions)
+      .where(eq(chargingSessions.id, id));
+    expect(row!.endedAt?.toISOString()).toBe('2026-10-01T09:00:00.000Z');
   });
 
-  it("keeps the leftover open while the plug state is unknown", async () => {
-    await leftover("2026-10-01T11:00:00Z", [["2026-10-01T11:50:00Z", 11]]);
+  it('keeps the leftover open while the plug state is unknown', async () => {
+    await leftover('2026-10-01T11:00:00Z', [['2026-10-01T11:50:00Z', 11]]);
     const m = monitor();
     await m.start();
     m.stop();

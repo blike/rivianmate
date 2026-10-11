@@ -11,6 +11,7 @@ Briefly describe what this PR changes and why.
 ## Testing
 
 <!-- Tick what was done; delete lines that don't apply so the task count can complete. -->
+
 - [ ] Unit tests added/updated
 - [ ] Integration tests passed
 - [ ] Manually tested
@@ -19,6 +20,7 @@ Briefly describe what this PR changes and why.
 ## Deployment
 
 <!-- Keep the lines that apply and delete the rest. -->
+
 - No special deployment requirements
 - Database migration required
 - Environment variable changes required

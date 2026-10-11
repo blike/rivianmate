@@ -1,4 +1,4 @@
-import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, type CSSProperties, type ReactNode } from 'react';
 
 /**
  * While true, Row/StatCard/etc. render a placeholder in place of their value,
@@ -16,7 +16,7 @@ export function useLoading(): boolean {
 
 /** Inline placeholder sized in `em`, so it fits the text it stands in for. */
 export function Skeleton(props: { className?: string; style?: CSSProperties }) {
-  return <span aria-hidden className={`skeleton ${props.className ?? ""}`} style={props.style} />;
+  return <span aria-hidden className={`skeleton ${props.className ?? ''}`} style={props.style} />;
 }
 
 /** Full-width placeholder block, e.g. for a chart or map. */
@@ -24,7 +24,7 @@ export function SkeletonBlock(props: { height: number | string; className?: stri
   return (
     <div
       aria-hidden
-      className={`skeleton skeleton-block ${props.className ?? ""}`}
+      className={`skeleton skeleton-block ${props.className ?? ''}`}
       style={{ height: props.height }}
     />
   );
@@ -35,7 +35,7 @@ export function SkeletonRows(props: { rows: number }) {
   return (
     <div aria-busy>
       {Array.from({ length: props.rows }, (_, i) => (
-        <div key={i} className="border-t border-[var(--border)] py-2 first:border-t-0">
+        <div key={i} className="border-t border-(--border) py-2 first:border-t-0">
           <SkeletonBlock height="1.25rem" />
         </div>
       ))}
@@ -59,7 +59,7 @@ export function ContentFrame(props: {
   if (props.empty) {
     return (
       <div
-        className="flex items-center justify-center px-4 text-center text-sm text-[var(--text-muted)]"
+        className="flex items-center justify-center px-4 text-center text-sm text-(--text-muted)"
         style={{ height: props.height }}
       >
         {props.emptyText}

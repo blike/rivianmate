@@ -1,23 +1,23 @@
-import { useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-import { useLiveState, useStatus, useUnitPreferences, useVehicles } from "./api/hooks.js";
-import { AppHeader } from "./components/AppHeader.js";
-import { Charging } from "./pages/Charging.js";
-import { Dashboard } from "./pages/Dashboard.js";
-import { Drives } from "./pages/Drives.js";
-import { Health } from "./pages/Health.js";
-import { History } from "./pages/History.js";
-import { Login } from "./pages/Login.js";
-import { RivianConnect } from "./pages/RivianConnect.js";
-import { Settings } from "./pages/Settings.js";
-import { Setup } from "./pages/Setup.js";
+import { useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { useLiveState, useStatus, useUnitPreferences, useVehicles } from './api/hooks.js';
+import { AppHeader } from './components/AppHeader.js';
+import { Charging } from './pages/Charging.js';
+import { Dashboard } from './pages/Dashboard.js';
+import { Drives } from './pages/Drives.js';
+import { Health } from './pages/Health.js';
+import { History } from './pages/History.js';
+import { Login } from './pages/Login.js';
+import { RivianConnect } from './pages/RivianConnect.js';
+import { Settings } from './pages/Settings.js';
+import { Setup } from './pages/Setup.js';
 
 export default function App() {
   const { data: status, isLoading, refetch } = useStatus();
 
   if (isLoading || !status) {
     return (
-      <div className="delayed-fade-in flex h-full items-center justify-center text-[var(--text-muted)]">
+      <div className="delayed-fade-in flex h-full items-center justify-center text-(--text-muted)">
         Loading…
       </div>
     );
@@ -29,7 +29,7 @@ export default function App() {
     return (
       <RivianConnect
         mockMode={status.mockMode}
-        reauth={status.rivianAuthState === "unauthenticated"}
+        reauth={status.rivianAuthState === 'unauthenticated'}
         email={status.rivianEmail}
         onDone={() => refetch()}
       />
@@ -52,8 +52,8 @@ function Shell() {
       <AppHeader vehicles={vehicles} vehicleId={vehicleId} onSelectVehicle={setSelectedId} />
       <main className="flex-1 pb-10">
         {vehiclesPending || unitsPending ? null : !vehicleId ? (
-          <p className="text-[var(--text-muted)]">
-            {vehicles ? "No vehicles found." : "Couldn't load vehicles."}
+          <p className="text-(--text-muted)">
+            {vehicles ? 'No vehicles found.' : "Couldn't load vehicles."}
           </p>
         ) : (
           <Routes>

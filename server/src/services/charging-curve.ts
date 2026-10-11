@@ -1,6 +1,6 @@
 /** Picking the one series a session's charging curve is drawn from. */
 
-export type CurveSource = "graph" | "push_chart" | "push_live" | "forecast" | "legacy";
+export type CurveSource = 'graph' | 'push_chart' | 'push_live' | 'forecast' | 'legacy';
 
 export interface CurvePoint {
   source: CurveSource;
@@ -15,7 +15,7 @@ export interface CurvePoint {
  * readings are snapshots. Rows from before sources were kept apart come
  * last. The forecast is never a recorded series.
  */
-const SOURCE_ORDER: readonly CurveSource[] = ["graph", "push_chart", "push_live", "legacy"];
+const SOURCE_ORDER: readonly CurveSource[] = ['graph', 'push_chart', 'push_live', 'legacy'];
 
 /** SoC can't climb more than this past the last powered point without power. */
 const UNPOWERED_RISE_TOLERANCE = 1;
@@ -41,7 +41,8 @@ export function curveForDisplay(points: readonly CurvePoint[]): CurvePoint[] {
     points.filter((p) => p.source === source).sort((a, b) => a.ts.getTime() - b.ts.getTime());
   for (const source of SOURCE_ORDER) {
     const series = bySource(source);
-    if (series.filter((p) => p.powerKw != null).length >= MIN_POWER_POINTS) return plausible(series);
+    if (series.filter((p) => p.powerKw != null).length >= MIN_POWER_POINTS)
+      return plausible(series);
   }
   // No series has power: the first with anything (e.g. SoC only).
   for (const source of SOURCE_ORDER) {
@@ -74,7 +75,11 @@ function withoutUnpoweredRise(series: readonly CurvePoint[]): CurvePoint[] {
   for (let i = 0; i <= lastPowered; i++) socThen = Math.max(socThen, series[i]!.soc ?? -Infinity);
   if (!Number.isFinite(socThen)) return [...series];
   return series.filter(
-    (p, i) => i <= lastPowered || (p.powerKw ?? 0) > 0 || p.soc == null || p.soc <= socThen + UNPOWERED_RISE_TOLERANCE,
+    (p, i) =>
+      i <= lastPowered ||
+      (p.powerKw ?? 0) > 0 ||
+      p.soc == null ||
+      p.soc <= socThen + UNPOWERED_RISE_TOLERANCE,
   );
 }
 
@@ -107,6 +112,6 @@ export function forecastForDisplay(
   if (!sessionOpen) return [];
   const after = recorded.at(-1)?.ts.getTime() ?? -Infinity;
   return points
-    .filter((p) => p.source === "forecast" && p.soc != null && p.ts.getTime() > after)
+    .filter((p) => p.source === 'forecast' && p.soc != null && p.ts.getTime() > after)
     .sort((a, b) => a.ts.getTime() - b.ts.getTime());
 }

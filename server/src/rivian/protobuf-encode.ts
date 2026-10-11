@@ -32,6 +32,7 @@ export const message = (field: number, body: number[]) => [
   ...body,
 ];
 
-export const string = (field: number, text: string) => message(field, [...new TextEncoder().encode(text)]);
+export const string = (field: number, text: string) =>
+  message(field, [...new TextEncoder().encode(text)]);
 
-export const b64 = (bytes: number[]) => Buffer.from(bytes).toString("base64");
+export const b64 = (bytes: number[]) => Buffer.from(bytes).toString('base64');

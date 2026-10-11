@@ -1,4 +1,4 @@
-import { haversineKm } from "./state-utils.js";
+import { haversineKm } from './state-utils.js';
 
 export interface HomeChargingSettings {
   /** Price per kWh for charging at home; null = not set. */
@@ -11,7 +11,7 @@ export interface HomeChargingSettings {
 
 export const DEFAULT_HOME_CHARGING: HomeChargingSettings = {
   ratePerKwh: null,
-  currency: "USD",
+  currency: 'USD',
   homeLat: null,
   homeLon: null,
 };
@@ -56,12 +56,9 @@ export function nearbySpot<T extends Spot>(
  * happened near a registered wallbox or the configured home location.
  * Anything Rivian marks as public never counts.
  */
-export function isHomeSession(
-  session: SessionHomeFacts,
-  homeSpots: readonly Spot[],
-): boolean {
+export function isHomeSession(session: SessionHomeFacts, homeSpots: readonly Spot[]): boolean {
   if (session.isPublic === true) return false;
-  if (session.isHomeCharger === true || session.chargerType === "wallbox") return true;
+  if (session.isHomeCharger === true || session.chargerType === 'wallbox') return true;
   return nearbySpot(session.lat, session.lon, homeSpots) !== null;
 }
 

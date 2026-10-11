@@ -1,24 +1,24 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
-import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from "@server/api-types.js";
-import { DEFAULT_UNITS, unitFormatter } from "../lib/units.js";
-import { api, type HomeChargingSettings, type UnitPreferences } from "./client.js";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import type {
+  LiveSessionData,
+  NotificationSettingsUpdate,
+  VehicleState,
+} from '@server/api-types.js';
+import { DEFAULT_UNITS, unitFormatter } from '../lib/units.js';
+import { api, type HomeChargingSettings, type UnitPreferences } from './client.js';
 
 export function useStatus() {
-  return useQuery({ queryKey: ["status"], queryFn: api.status, staleTime: 5000 });
+  return useQuery({ queryKey: ['status'], queryFn: api.status, staleTime: 5000 });
 }
 
 export function useVehicles(enabled = true) {
-  return useQuery({ queryKey: ["vehicles"], queryFn: api.vehicles, enabled });
+  return useQuery({ queryKey: ['vehicles'], queryFn: api.vehicles, enabled });
 }
 
 export function useVehicleState(vehicleId: string | undefined) {
   return useQuery({
-    queryKey: ["vehicleState", vehicleId],
+    queryKey: ['vehicleState', vehicleId],
     queryFn: () => api.vehicleState(vehicleId!),
     enabled: !!vehicleId,
     staleTime: Infinity,
@@ -35,15 +35,13 @@ export function useLiveState(vehicleId: string | undefined) {
   useEffect(() => {
     if (!vehicleId) return;
     const source = new EventSource(`/api/vehicles/${vehicleId}/live`);
-    source.addEventListener("state", (event) => {
+    source.addEventListener('state', (event) => {
       const state = JSON.parse((event as MessageEvent).data) as VehicleState;
-      queryClient.setQueryData(["vehicleState", vehicleId], state);
+      queryClient.setQueryData(['vehicleState', vehicleId], state);
     });
-    source.addEventListener("charging", (event) => {
-      const session = JSON.parse(
-        (event as MessageEvent).data,
-      ) as LiveSessionData | null;
-      queryClient.setQueryData(["liveCharging", vehicleId], session);
+    source.addEventListener('charging', (event) => {
+      const session = JSON.parse((event as MessageEvent).data) as LiveSessionData | null;
+      queryClient.setQueryData(['liveCharging', vehicleId], session);
     });
     return () => source.close();
   }, [vehicleId, queryClient]);
@@ -51,7 +49,7 @@ export function useLiveState(vehicleId: string | undefined) {
 
 export function useLiveCharging(vehicleId: string | undefined) {
   return useQuery<LiveSessionData | null>({
-    queryKey: ["liveCharging", vehicleId],
+    queryKey: ['liveCharging', vehicleId],
     queryFn: () => null,
     enabled: false,
     staleTime: Infinity,
@@ -59,7 +57,7 @@ export function useLiveCharging(vehicleId: string | undefined) {
 }
 
 export function useUnitPreferences() {
-  return useQuery({ queryKey: ["units"], queryFn: api.units, staleTime: Infinity });
+  return useQuery({ queryKey: ['units'], queryFn: api.units, staleTime: Infinity });
 }
 
 /** App-wide unit preferences plus ready-made formatters. */
@@ -77,14 +75,14 @@ export function useSetUnits() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (units: UnitPreferences) => api.setUnits(units),
-    onMutate: (units) => queryClient.setQueryData(["units"], units),
-    onSuccess: (units) => queryClient.setQueryData(["units"], units),
-    onError: () => queryClient.invalidateQueries({ queryKey: ["units"] }),
+    onMutate: (units) => queryClient.setQueryData(['units'], units),
+    onSuccess: (units) => queryClient.setQueryData(['units'], units),
+    onError: () => queryClient.invalidateQueries({ queryKey: ['units'] }),
   });
 }
 
 export function useHomeCharging() {
-  return useQuery({ queryKey: ["homeCharging"], queryFn: api.homeCharging, staleTime: Infinity });
+  return useQuery({ queryKey: ['homeCharging'], queryFn: api.homeCharging, staleTime: Infinity });
 }
 
 export function useSetHomeCharging() {
@@ -92,22 +90,22 @@ export function useSetHomeCharging() {
   return useMutation({
     mutationFn: (settings: HomeChargingSettings) => api.setHomeCharging(settings),
     onSuccess: (settings) => {
-      queryClient.setQueryData(["homeCharging"], settings);
+      queryClient.setQueryData(['homeCharging'], settings);
       // Estimated costs on sessions depend on these settings.
-      void queryClient.invalidateQueries({ queryKey: ["chargingSessions"] });
+      void queryClient.invalidateQueries({ queryKey: ['chargingSessions'] });
     },
   });
 }
 
 export function useNotificationSettings() {
-  return useQuery({ queryKey: ["notificationSettings"], queryFn: api.notificationSettings });
+  return useQuery({ queryKey: ['notificationSettings'], queryFn: api.notificationSettings });
 }
 
 export function useSetNotificationSettings() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (settings: NotificationSettingsUpdate) => api.setNotificationSettings(settings),
-    onSuccess: (settings) => queryClient.setQueryData(["notificationSettings"], settings),
+    onSuccess: (settings) => queryClient.setQueryData(['notificationSettings'], settings),
   });
 }
 
@@ -115,18 +113,13 @@ export function useTestNotifications() {
   return useMutation({ mutationFn: api.testNotifications });
 }
 
-/** Basemap overrides from the server; fetched once per session. */
-export function useMapConfig() {
-  return useQuery({ queryKey: ["mapConfig"], queryFn: api.mapConfig, staleTime: Infinity });
-}
-
 export function useVersion() {
-  return useQuery({ queryKey: ["version"], queryFn: api.version, staleTime: Infinity });
+  return useQuery({ queryKey: ['version'], queryFn: api.version, staleTime: Infinity });
 }
 
 export function useRivianDiagnostics(live = true) {
   return useQuery({
-    queryKey: ["rivianDiagnostics"],
+    queryKey: ['rivianDiagnostics'],
     queryFn: api.rivianDiagnostics,
     refetchInterval: live ? 10_000 : false,
   });
@@ -136,6 +129,6 @@ export function useRivianDisconnect() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: api.rivianDisconnect,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["status"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['status'] }),
   });
 }

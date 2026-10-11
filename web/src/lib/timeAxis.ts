@@ -42,5 +42,6 @@ export function timeTicks(
   return { ticks, format };
 }
 
-const dateLabel = (ts: number) => new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
-const timeLabel = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "numeric" });
+const dateLabel = (ts: number) =>
+  new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+const timeLabel = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: 'numeric' });

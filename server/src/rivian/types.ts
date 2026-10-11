@@ -37,8 +37,7 @@ export interface RivianAppSession {
 }
 
 export type LoginResult =
-  | { kind: "tokens"; tokens: RivianTokens }
-  | { kind: "otp"; otpToken: string };
+  { kind: 'tokens'; tokens: RivianTokens } | { kind: 'otp'; otpToken: string };
 
 export interface UserVehicle {
   id: string;
@@ -83,7 +82,11 @@ export interface DepartureSchedule {
   id: string;
   name: string | null;
   enabled: boolean | null;
-  occurrence: { type: string | null; weekDays: string[] | null; timeOfDayMinutes: number | null } | null;
+  occurrence: {
+    type: string | null;
+    weekDays: string[] | null;
+    timeOfDayMinutes: number | null;
+  } | null;
   comfortSettings: {
     seatFrontLeftHeat: string | number | null;
     seatFrontRightHeat: string | number | null;
@@ -174,14 +177,14 @@ export interface Wallbox {
 }
 
 export type RivianErrorCode =
-  | "UNAUTHENTICATED"
-  | "RATE_LIMIT"
-  | "SESSION_MANAGER_ERROR"
-  | "DATA_ERROR"
-  | "BAD_REQUEST_ERROR"
-  | "BAD_CURRENT_PASSWORD"
-  | "BAD_USER_INPUT"
-  | "INTERNAL_SERVER_ERROR"
+  | 'UNAUTHENTICATED'
+  | 'RATE_LIMIT'
+  | 'SESSION_MANAGER_ERROR'
+  | 'DATA_ERROR'
+  | 'BAD_REQUEST_ERROR'
+  | 'BAD_CURRENT_PASSWORD'
+  | 'BAD_USER_INPUT'
+  | 'INTERNAL_SERVER_ERROR'
   | (string & {});
 
 export class RivianApiError extends Error {
@@ -226,26 +229,26 @@ export function mapGraphqlError(
   const first = errors[0];
   const code = first?.extensions?.code;
   const reason = first?.extensions?.reason;
-  const message = first?.message ?? "Rivian API error";
+  const message = first?.message ?? 'Rivian API error';
 
   if (
-    (code === "BAD_USER_INPUT" && reason === "INVALID_OTP") ||
-    (code === "UNAUTHENTICATED" && reason === "OTP_TOKEN_EXPIRED")
+    (code === 'BAD_USER_INPUT' && reason === 'INVALID_OTP') ||
+    (code === 'UNAUTHENTICATED' && reason === 'OTP_TOKEN_EXPIRED')
   ) {
     return new RivianInvalidOtpError(message, code, reason, status, response);
   }
   switch (code) {
-    case "UNAUTHENTICATED":
+    case 'UNAUTHENTICATED':
       return new RivianUnauthenticatedError(message, code, reason, status, response);
-    case "BAD_CURRENT_PASSWORD":
+    case 'BAD_CURRENT_PASSWORD':
       return new RivianInvalidCredentialsError(message, code, reason, status, response);
-    case "RATE_LIMIT":
+    case 'RATE_LIMIT':
       return new RivianRateLimitError(message, code, reason, status, response);
-    case "SESSION_MANAGER_ERROR":
+    case 'SESSION_MANAGER_ERROR':
       return new RivianSessionManagerError(message, code, reason, status, response);
-    case "DATA_ERROR":
+    case 'DATA_ERROR':
       return new RivianDataError(message, code, reason, status, response);
-    case "BAD_REQUEST_ERROR":
+    case 'BAD_REQUEST_ERROR':
       return new RivianBadRequestError(message, code, reason, status, response);
     default:
       return new RivianApiError(message, code, reason, status, response);
@@ -255,10 +258,7 @@ export function mapGraphqlError(
 /** True when Rivian rejected the GraphQL document itself (schema mismatch). */
 export function isGraphqlValidationError(err: unknown): boolean {
   if (!(err instanceof RivianApiError)) return false;
-  return (
-    err.code === "GRAPHQL_VALIDATION_FAILED" ||
-    /validation/i.test(err.message)
-  );
+  return err.code === 'GRAPHQL_VALIDATION_FAILED' || /validation/i.test(err.message);
 }
 
 /**
@@ -267,9 +267,7 @@ export function isGraphqlValidationError(err: unknown): boolean {
  */
 export function describeRivianError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  const response = (err as RivianApiError).response as
-    | { errors?: unknown[] }
-    | undefined;
+  const response = (err as RivianApiError).response as { errors?: unknown[] } | undefined;
   if (!response?.errors?.length) return err.message;
   return JSON.stringify(response.errors).slice(0, 1000);
 }

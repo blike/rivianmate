@@ -1,13 +1,19 @@
-import { chargingCurveWindow } from "../lib/chargingCurve.js";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
-import { api, type ChargingSessionDto, type WallboxDto } from "../api/client.js";
-import { useLiveCharging, useUnits, useVehicleState } from "../api/hooks.js";
-import { ContentFrame, LoadingScope, Skeleton, SkeletonRows, useLoading } from "../components/loading.js";
-import { Panel, Row } from "../components/panels.js";
-import { SchedulesPanel } from "../components/SchedulesPanel.js";
-import { SplitBar, SplitLegend } from "../components/SplitBar.js";
-import { TrendChart } from "../components/TrendChart.js";
+import { chargingCurveWindow } from '../lib/chargingCurve.js';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState, type ReactNode } from 'react';
+import { api, type ChargingSessionDto, type WallboxDto } from '../api/client.js';
+import { useLiveCharging, useUnits, useVehicleState } from '../api/hooks.js';
+import {
+  ContentFrame,
+  LoadingScope,
+  Skeleton,
+  SkeletonRows,
+  useLoading,
+} from '../components/loading.js';
+import { Panel, Row } from '../components/panels.js';
+import { SchedulesPanel } from '../components/SchedulesPanel.js';
+import { SplitBar, SplitLegend } from '../components/SplitBar.js';
+import { TrendChart } from '../components/TrendChart.js';
 import {
   chargerLabel,
   chargingSecondsNow,
@@ -15,16 +21,22 @@ import {
   sessionCost,
   sessionTotals,
   socRange,
-} from "../lib/charging.js";
-import { groupByDay, minuteTicks } from "../lib/drives.js";
-import { RecordPicker } from "../components/RecordPicker.js";
-import { smoothByTime, smoothingWindowMinutes } from "../lib/smoothing.js";
-import { fmt, fmtDuration, fmtSeconds, nv, sv, titleCase } from "../lib/state.js";
+} from '../lib/charging.js';
+import { groupByDay, minuteTicks } from '../lib/drives.js';
+import { RecordPicker } from '../components/RecordPicker.js';
+import { smoothByTime, smoothingWindowMinutes } from '../lib/smoothing.js';
+import { fmt, fmtDuration, fmtSeconds, nv, sv, titleCase } from '../lib/state.js';
 
-const clock = (iso: string | number) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const clock = (iso: string | number) =>
+  new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 const longDay = (iso: string) =>
-  new Date(iso).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  new Date(iso).toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
 export function Charging(props: { vehicleId: string }) {
   const queryClient = useQueryClient();
@@ -32,27 +44,30 @@ export function Charging(props: { vehicleId: string }) {
   const { data: state } = useVehicleState(props.vehicleId);
 
   const { data: sessions, isPending: sessionsPending } = useQuery({
-    queryKey: ["chargingSessions", props.vehicleId],
+    queryKey: ['chargingSessions', props.vehicleId],
     queryFn: () => api.chargingSessions(props.vehicleId),
     refetchInterval: 60_000,
   });
 
   const { data: wallboxes } = useQuery({
-    queryKey: ["wallboxes"],
+    queryKey: ['wallboxes'],
     queryFn: api.wallboxes,
     refetchInterval: 60_000,
   });
 
   const costMutation = useMutation({
-    mutationFn: ({ id, cost }: { id: number; cost: string | null }) => api.updateSessionCost(id, cost),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["chargingSessions", props.vehicleId] }),
+    mutationFn: ({ id, cost }: { id: number; cost: string | null }) =>
+      api.updateSessionCost(id, cost),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['chargingSessions', props.vehicleId] }),
   });
   const saveCost = (id: number) => (cost: string | null) => costMutation.mutate({ id, cost });
 
-  const isLive = live?.vehicleChargerState?.value === "charging_active";
+  const isLive = live?.vehicleChargerState?.value === 'charging_active';
   // The live session arrives over SSE just after the page loads; if the
   // vehicle state already says it's charging, hold its place meanwhile.
-  const liveExpected = live === undefined && sv(state, "chargerStatus") === "chrgr_sts_connected_charging";
+  const liveExpected =
+    live === undefined && sv(state, 'chargerStatus') === 'chrgr_sts_connected_charging';
 
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const session = sessions?.find((s) => s.id === selectedSessionId) ?? sessions?.[0];
@@ -62,7 +77,7 @@ export function Charging(props: { vehicleId: string }) {
     isPending: curvePending,
     isPlaceholderData: showingPreviousCurve,
   } = useQuery({
-    queryKey: ["chargingCurve", session?.id],
+    queryKey: ['chargingCurve', session?.id],
     queryFn: () => api.chargingCurve(session!.id),
     enabled: session != null,
     refetchInterval: session && !session.endedAt ? 30_000 : false,
@@ -75,7 +90,9 @@ export function Charging(props: { vehicleId: string }) {
       <div className="space-y-4">
         {(isLive || liveExpected) && <LiveCard live={live} loading={!isLive} state={state} />}
         <Panel title="Charging sessions">
-          <p className="py-6 text-center text-sm text-[var(--text-muted)]">No charging sessions recorded yet.</p>
+          <p className="py-6 text-center text-sm text-(--text-muted)">
+            No charging sessions recorded yet.
+          </p>
         </Panel>
         <ScheduleRow vehicleId={props.vehicleId} wallboxes={wallboxes} />
       </div>
@@ -87,17 +104,27 @@ export function Charging(props: { vehicleId: string }) {
       {(isLive || liveExpected) && <LiveCard live={live} loading={!isLive} state={state} />}
 
       {sessions && sessions.length > 1 && (
-        <SessionPicker sessions={sessions} selectedId={session?.id ?? null} onSelect={setSelectedSessionId} />
+        <SessionPicker
+          sessions={sessions}
+          selectedId={session?.id ?? null}
+          onSelect={setSelectedSessionId}
+        />
       )}
-      <div className={`transition-opacity ${showingPreviousCurve ? "opacity-50" : ""}`}>
+      <div className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}>
         <LoadingScope loading={sessionsPending}>
           <SessionCard session={session} onSaveCost={session ? saveCost(session.id) : undefined} />
         </LoadingScope>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Panel title="Charging curve" className={`transition-opacity ${showingPreviousCurve ? "opacity-50" : ""}`}>
-          <CurveChart curve={curve} loading={sessionsPending || (session != null && curvePending)} />
+        <Panel
+          title="Charging curve"
+          className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}
+        >
+          <CurveChart
+            curve={curve}
+            loading={sessionsPending || (session != null && curvePending)}
+          />
           {session?.packKwh != null && session.thermalKwh != null && (
             <EnergySplit packKwh={session.packKwh} thermalKwh={session.thermalKwh} />
           )}
@@ -105,13 +132,17 @@ export function Charging(props: { vehicleId: string }) {
 
         <Panel title="All sessions" className="hidden flex-col lg:flex">
           <div className="relative min-h-0 flex-1">
-            <div className="-mx-4 max-h-[28rem] overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
+            <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {sessionsPending ? (
                 <div className="px-4">
                   <SkeletonRows rows={8} />
                 </div>
               ) : (
-                <SessionList sessions={sessions!} selectedId={session?.id ?? null} onSelect={setSelectedSessionId} />
+                <SessionList
+                  sessions={sessions!}
+                  selectedId={session?.id ?? null}
+                  onSelect={setSelectedSessionId}
+                />
               )}
             </div>
           </div>
@@ -127,7 +158,9 @@ export function Charging(props: { vehicleId: string }) {
 function ScheduleRow(props: { vehicleId: string; wallboxes: WallboxDto[] | undefined }) {
   const wallboxes = props.wallboxes ?? [];
   return (
-    <div className={`grid grid-cols-1 items-start gap-4 ${wallboxes.length ? "lg:grid-cols-2" : ""}`}>
+    <div
+      className={`grid grid-cols-1 items-start gap-4 ${wallboxes.length ? 'lg:grid-cols-2' : ''}`}
+    >
       <SchedulesPanel vehicleId={props.vehicleId} />
       {wallboxes.length > 0 && (
         <div className="grid grid-cols-1 gap-4">
@@ -140,31 +173,43 @@ function ScheduleRow(props: { vehicleId: string; wallboxes: WallboxDto[] | undef
   );
 }
 
-type Live = ReturnType<typeof useLiveCharging>["data"];
+type Live = ReturnType<typeof useLiveCharging>['data'];
 
 /** A charge in progress: how full, how fast, and when it's done. */
-function LiveCard(props: { live: Live; loading: boolean; state: ReturnType<typeof useVehicleState>["data"] }) {
+function LiveCard(props: {
+  live: Live;
+  loading: boolean;
+  state: ReturnType<typeof useVehicleState>['data'];
+}) {
   const u = useUnits();
   const live = props.live;
-  const soc = num(live?.soc?.value) ?? nv(props.state, "batteryLevel");
-  const limit = num(live?.socLimit?.value) ?? nv(props.state, "batteryLimit");
+  const soc = num(live?.soc?.value) ?? nv(props.state, 'batteryLevel');
+  const limit = num(live?.socLimit?.value) ?? nv(props.state, 'batteryLimit');
   const secondsLeft = num(live?.timeRemaining?.value);
   // Counted from when the vehicle reported the time left.
-  const reportedAt = Date.parse(live?.timeRemaining?.updatedAt ?? "");
+  const reportedAt = Date.parse(live?.timeRemaining?.updatedAt ?? '');
   const finish =
-    secondsLeft != null && secondsLeft > 0 && Number.isFinite(reportedAt) ? clock(reportedAt + secondsLeft * 1000) : null;
+    secondsLeft != null && secondsLeft > 0 && Number.isFinite(reportedAt)
+      ? clock(reportedAt + secondsLeft * 1000)
+      : null;
   const rate = num(live?.kilometersChargedPerHour?.value);
 
   const tiles: { label: string; value: ReactNode; sub?: ReactNode }[] = [
-    { label: "Power", value: `${fmt(num(live?.power?.value), 1)} kW`, sub: rate != null ? u.formatChargeRate(rate) : undefined },
     {
-      label: "Energy added",
-      value: `${fmt(num(live?.totalChargedEnergy?.value), 1)} kWh`,
-      sub: live?.rangeAddedThisSession ? `${u.formatDistance(num(live.rangeAddedThisSession.value))} of range` : undefined,
+      label: 'Power',
+      value: `${fmt(num(live?.power?.value), 1)} kW`,
+      sub: rate != null ? u.formatChargeRate(rate) : undefined,
     },
     {
-      label: "Time remaining",
-      value: secondsLeft != null ? fmtSeconds(secondsLeft) : "—",
+      label: 'Energy added',
+      value: `${fmt(num(live?.totalChargedEnergy?.value), 1)} kWh`,
+      sub: live?.rangeAddedThisSession
+        ? `${u.formatDistance(num(live.rangeAddedThisSession.value))} of range`
+        : undefined,
+    },
+    {
+      label: 'Time remaining',
+      value: secondsLeft != null ? fmtSeconds(secondsLeft) : '—',
       sub: finish ? `Done around ${finish}` : undefined,
     },
   ];
@@ -173,15 +218,17 @@ function LiveCard(props: { live: Live; loading: boolean; state: ReturnType<typeo
     <LoadingScope loading={props.loading}>
       <section className="card overflow-hidden border-[color-mix(in_srgb,var(--status-good)_45%,var(--border))]">
         <div className="p-5">
-          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--status-good)]">
-            <span className="chip-dot--pulse h-1.5 w-1.5 rounded-full bg-[var(--status-good)] text-[var(--status-good)]" />
+          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-(--status-good)">
+            <span className="chip-dot--pulse h-1.5 w-1.5 rounded-full bg-(--status-good) text-(--status-good)" />
             Charging now
           </div>
           <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
             <div className="text-3xl font-semibold tabular-nums tracking-tight">
               {props.loading ? <Skeleton className="w-[3em]" /> : `${fmt(soc, 0)}%`}
               {limit != null && !props.loading && (
-                <span className="ml-2 text-base font-normal text-[var(--text-muted)]">of {fmt(limit, 0)}% limit</span>
+                <span className="ml-2 text-base font-normal text-(--text-muted)">
+                  of {fmt(limit, 0)}% limit
+                </span>
               )}
             </div>
           </div>
@@ -198,14 +245,17 @@ function SocTrack(props: { soc: number | null; limit: number | null }) {
   const loading = useLoading();
   const soc = Math.max(0, Math.min(100, props.soc ?? 0));
   return (
-    <div className="relative mt-3 h-2 rounded-full bg-[var(--surface-2)]">
+    <div className="relative mt-3 h-2 rounded-full bg-(--surface-2)">
       {!loading && (
-        <div className="h-full rounded-full bg-[var(--status-good)] transition-[width] duration-700" style={{ width: `${soc}%` }} />
+        <div
+          className="h-full rounded-full bg-(--status-good) transition-[width] duration-700"
+          style={{ width: `${soc}%` }}
+        />
       )}
       {props.limit != null && (
         <span
           aria-hidden
-          className="absolute -top-1 bottom-[-4px] w-0.5 rounded-full bg-[var(--text-secondary)]"
+          className="absolute -top-1 bottom-1 w-0.5 rounded-full bg-(--text-secondary)"
           style={{ left: `calc(${Math.min(100, props.limit)}% - 1px)` }}
         />
       )}
@@ -214,7 +264,10 @@ function SocTrack(props: { soc: number | null; limit: number | null }) {
 }
 
 /** The chosen session: where and when up front, then its figures. */
-function SessionCard(props: { session: ChargingSessionDto | undefined; onSaveCost?: (cost: string | null) => void }) {
+function SessionCard(props: {
+  session: ChargingSessionDto | undefined;
+  onSaveCost?: (cost: string | null) => void;
+}) {
   const u = useUnits();
   const loading = useLoading();
   const s = props.session;
@@ -224,52 +277,58 @@ function SessionCard(props: { session: ChargingSessionDto | undefined; onSaveCos
 
   const tiles: { label: string; value: ReactNode; sub?: ReactNode }[] = [
     {
-      label: "Energy added",
-      value: energy != null ? `${fmt(energy, 1)} kWh` : "—",
+      label: 'Energy added',
+      value: energy != null ? `${fmt(energy, 1)} kWh` : '—',
       sub: s?.rangeAddedKm != null ? `${u.formatDistance(s.rangeAddedKm)} of range` : undefined,
     },
     {
-      label: "Battery",
-      value: s ? socRange(s.startSoc, s.endSoc) : "—",
-      sub: s?.startSoc != null && s.endSoc != null ? `+${fmt(s.endSoc - s.startSoc, 0)}%` : undefined,
+      label: 'Battery',
+      value: s ? socRange(s.startSoc, s.endSoc) : '—',
+      sub:
+        s?.startSoc != null && s.endSoc != null ? `+${fmt(s.endSoc - s.startSoc, 0)}%` : undefined,
     },
     {
-      label: "Time charging",
-      value: chargingSeconds != null ? fmtSeconds(chargingSeconds) : "—",
+      label: 'Time charging',
+      value: chargingSeconds != null ? fmtSeconds(chargingSeconds) : '—',
       sub: s ? `Plugged in ${fmtDuration(s.startedAt, s.endedAt)}` : undefined,
     },
     {
-      label: "Power",
-      value: s?.maxPowerKw != null ? `${fmt(s.maxPowerKw, 1)} kW peak` : "—",
+      label: 'Power',
+      value: s?.maxPowerKw != null ? `${fmt(s.maxPowerKw, 1)} kW peak` : '—',
       sub: s?.avgPowerKw != null ? `${fmt(s.avgPowerKw, 1)} kW average` : undefined,
     },
     {
-      label: "Cost",
-      value: s && props.onSaveCost ? <CostEditor key={s.id} session={s} onSave={props.onSaveCost} /> : "—",
+      label: 'Cost',
+      value:
+        s && props.onSaveCost ? (
+          <CostEditor key={s.id} session={s} onSave={props.onSaveCost} />
+        ) : (
+          '—'
+        ),
       sub:
         cost && energy
-          ? `${formatMoney(String(cost.amount / energy), s?.currency ?? null)} per kWh${cost.estimated ? " (home rate)" : ""}`
-          : "Click to add",
+          ? `${formatMoney(String(cost.amount / energy), s?.currency ?? null)} per kWh${cost.estimated ? ' (home rate)' : ''}`
+          : 'Click to add',
     },
   ];
 
   return (
     <section className="card overflow-hidden">
       <div className="p-5">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-(--text-muted)">
           {loading || !s ? (
             <Skeleton className="w-[14em]" />
           ) : (
             <>
               {!s.endedAt && (
                 <span
-                  className={`font-medium uppercase tracking-wide ${s.chargingSince ? "text-[var(--status-good)]" : "text-[var(--text-secondary)]"}`}
+                  className={`font-medium uppercase tracking-wide ${s.chargingSince ? 'text-(--status-good)' : 'text-(--text-secondary)'}`}
                 >
-                  {s.chargingSince ? "Charging" : "Plugged in"}
+                  {s.chargingSince ? 'Charging' : 'Plugged in'}
                 </span>
               )}
               <TimeRange session={s} />
-              {s.source === "rivian" && <SourceBadge />}
+              {s.source === 'rivian' && <SourceBadge />}
             </>
           )}
         </div>
@@ -282,7 +341,9 @@ function SessionCard(props: { session: ChargingSessionDto | undefined; onSaveCos
                 {s.isHome && <HomeIcon />}
                 {chargerLabel(s)}
               </span>
-              {s.city && !s.isHome && <span className="text-base font-normal text-[var(--text-secondary)]">{s.city}</span>}
+              {s.city && !s.isHome && (
+                <span className="text-base font-normal text-(--text-secondary)">{s.city}</span>
+              )}
             </>
           )}
         </h2>
@@ -306,23 +367,36 @@ function TimeRange(props: { session: ChargingSessionDto }) {
   const charging = !s.endedAt && s.chargingSince != null;
   const to = charging ? null : (s.chargingEndedAt ?? s.endedAt);
   return (
-    <span title={s.chargingStartedAt ? `Plugged in ${clock(s.startedAt)}${s.endedAt ? ` – ${clock(s.endedAt)}` : ""}` : undefined}>
+    <span
+      title={
+        s.chargingStartedAt
+          ? `Plugged in ${clock(s.startedAt)}${s.endedAt ? ` – ${clock(s.endedAt)}` : ''}`
+          : undefined
+      }
+    >
       {longDay(from)} · {clock(from)}
-      {to ? ` – ${clock(to)}` : charging ? " – now" : ""}
+      {to ? ` – ${clock(to)}` : charging ? ' – now' : ''}
     </span>
   );
 }
 
-function TileRow(props: { tiles: { label: string; value: ReactNode; sub?: ReactNode }[]; columns: string }) {
+function TileRow(props: {
+  tiles: { label: string; value: ReactNode; sub?: ReactNode }[];
+  columns: string;
+}) {
   const loading = useLoading();
   return (
-    <ul className={`grid grid-cols-2 gap-px border-t border-[var(--border)] bg-[var(--border)] ${props.columns}`}>
+    <ul
+      className={`grid grid-cols-2 gap-px border-t border-(--border) bg-(--border) ${props.columns}`}
+    >
       {props.tiles.map((t) => (
-        <li key={t.label} className="bg-[var(--surface-1)] px-4 py-3 last:max-sm:col-span-2">
-          <div className="text-xs text-[var(--text-muted)]">{t.label}</div>
-          <div className="mt-1 text-base font-semibold tabular-nums">{loading ? <Skeleton className="w-[5em]" /> : t.value}</div>
-          <div className="truncate text-xs text-[var(--text-secondary)]">
-            {loading ? <Skeleton className="w-[7em]" /> : (t.sub ?? " ")}
+        <li key={t.label} className="bg-(--surface-1) px-4 py-3 last:max-sm:col-span-2">
+          <div className="text-xs text-(--text-muted)">{t.label}</div>
+          <div className="mt-1 text-base font-semibold tabular-nums">
+            {loading ? <Skeleton className="w-[5em]" /> : t.value}
+          </div>
+          <div className="truncate text-xs text-(--text-secondary)">
+            {loading ? <Skeleton className="w-[7em]" /> : (t.sub ?? ' ')}
           </div>
         </li>
       ))}
@@ -331,7 +405,10 @@ function TileRow(props: { tiles: { label: string; value: ReactNode; sub?: ReactN
 }
 
 /** Power and battery level through the session, with the vehicle's forecast while it charges. */
-function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | undefined; loading: boolean }) {
+function CurveChart(props: {
+  curve: Parameters<typeof chargingCurveWindow>[0] | undefined;
+  loading: boolean;
+}) {
   // Start elapsed time at the first recorded power reading, not plug-in.
   const curveWindow = useMemo(() => chargingCurveWindow(props.curve ?? []), [props.curve]);
   const data = useMemo(() => {
@@ -342,8 +419,16 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
     const window = smoothingWindowMinutes((minutes.at(-1) ?? 0) - (minutes[0] ?? 0));
     const recordedMinutes = minutes.slice(0, recordedCount);
     const recorded = points.slice(0, recordedCount);
-    const soc = smoothByTime(recordedMinutes, recorded.map((p) => p.soc), window);
-    const forecast = smoothByTime(minutes.slice(recordedCount), points.slice(recordedCount).map((p) => p.soc), window);
+    const soc = smoothByTime(
+      recordedMinutes,
+      recorded.map((p) => p.soc),
+      window,
+    );
+    const forecast = smoothByTime(
+      minutes.slice(recordedCount),
+      points.slice(recordedCount).map((p) => p.soc),
+      window,
+    );
     const hasForecast = forecast.length > 0;
     return points.map((_, i) => {
       const isRecorded = i < recordedCount;
@@ -351,7 +436,11 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
         minutes: minutes[i]!,
         power: isRecorded ? recorded[i]!.powerKw : null,
         soc: isRecorded ? soc[i]! : null,
-        forecast: isRecorded ? (hasForecast && i === recordedCount - 1 ? soc[i]! : null) : forecast[i - recordedCount]!,
+        forecast: isRecorded
+          ? hasForecast && i === recordedCount - 1
+            ? soc[i]!
+            : null
+          : forecast[i - recordedCount]!,
       };
     });
   }, [curveWindow]);
@@ -368,12 +457,22 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
     return (
       <>
         <div className="font-medium">{clock(curveWindow.originMs + m * 60_000)}</div>
-        <div className="text-[var(--text-muted)]">{elapsed} in</div>
+        <div className="text-(--text-muted)">{elapsed} in</div>
       </>
     );
   };
   const forecastSeries = hasForecast
-    ? [{ key: "forecast", label: "Forecast", color: "var(--accent)", mark: "line" as const, dashed: true, unit: "%", digits: 0 }]
+    ? [
+        {
+          key: 'forecast',
+          label: 'Forecast',
+          color: 'var(--accent)',
+          mark: 'line' as const,
+          dashed: true,
+          unit: '%',
+          digits: 0,
+        },
+      ]
     : [];
 
   return (
@@ -392,13 +491,29 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
             xTicks={ticks}
             xFormatter={formatTime}
             tooltipLabel={tooltipTime}
-            leftDomain={[0, "auto"]}
+            leftDomain={[0, 'auto']}
             leftUnit="kW"
             rightUnit="%"
             rightDomain={[0, 100]}
             series={[
-              { key: "power", label: "Power", interpolation: "linear", connectNulls: false, color: "var(--series-1)", unit: "kW", digits: 1 },
-              { key: "soc", label: "Battery", color: "var(--accent)", mark: "line", right: true, unit: "%", digits: 0 },
+              {
+                key: 'power',
+                label: 'Power',
+                interpolation: 'linear',
+                connectNulls: false,
+                color: 'var(--series-1)',
+                unit: 'kW',
+                digits: 1,
+              },
+              {
+                key: 'soc',
+                label: 'Battery',
+                color: 'var(--accent)',
+                mark: 'line',
+                right: true,
+                unit: '%',
+                digits: 0,
+              },
               ...forecastSeries.map((f) => ({ ...f, right: true })),
             ]}
           />
@@ -412,19 +527,36 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
             tooltipLabel={tooltipTime}
             leftDomain={[0, 100]}
             leftUnit="%"
-            series={[{ key: "soc", label: "Battery", color: "var(--accent)", mark: "line", unit: "%", digits: 0, dots: true }, ...forecastSeries]}
+            series={[
+              {
+                key: 'soc',
+                label: 'Battery',
+                color: 'var(--accent)',
+                mark: 'line',
+                unit: '%',
+                digits: 0,
+                dots: true,
+              },
+              ...forecastSeries,
+            ]}
           />
         )}
       </ContentFrame>
       {!props.loading && !hasPower && data.length > 1 && (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">Rivian didn’t provide power for this session, so this is battery level only.</p>
+        <p className="mt-2 text-xs text-(--text-muted)">
+          Rivian didn’t provide power for this session, so this is battery level only.
+        </p>
       )}
     </>
   );
 }
 
 /** On narrow screens, a picker up top stands in for the list. */
-function SessionPicker(props: { sessions: ChargingSessionDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
+function SessionPicker(props: {
+  sessions: ChargingSessionDto[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
   const groups = useMemo(
     () =>
       groupByDay(props.sessions, new Date(), chargeStart).map((day) => ({
@@ -457,7 +589,7 @@ function SessionPicker(props: { sessions: ChargingSessionDto[]; selectedId: numb
 function dayTotals(sessions: ChargingSessionDto[]): string {
   const totals = sessionTotals(sessions);
   const currency = sessions.find((s) => s.currency)?.currency ?? null;
-  return `${fmt(totals.energyKwh, 1)} kWh${totals.cost != null ? ` · ${totals.estimated ? "≈ " : ""}${formatMoney(String(totals.cost), currency)}` : ""}`;
+  return `${fmt(totals.energyKwh, 1)} kWh${totals.cost != null ? ` · ${totals.estimated ? '≈ ' : ''}${formatMoney(String(totals.cost), currency)}` : ''}`;
 }
 
 /** "62→85% · 2h 10m · ≈ $3.20" */
@@ -467,14 +599,18 @@ function sessionFacts(s: ChargingSessionDto): string {
   return [
     s.startSoc != null && s.endSoc != null && socRange(s.startSoc, s.endSoc),
     charging != null ? fmtSeconds(charging) : fmtDuration(s.startedAt, s.endedAt),
-    cost && `${cost.estimated ? "≈ " : ""}${formatMoney(String(cost.amount), s.currency)}`,
+    cost && `${cost.estimated ? '≈ ' : ''}${formatMoney(String(cost.amount), s.currency)}`,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(' · ');
 }
 
 /** Sessions by day, newest first, each day with its energy and cost. */
-function SessionList(props: { sessions: ChargingSessionDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
+function SessionList(props: {
+  sessions: ChargingSessionDto[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
   // Listed by when each started charging, which can be hours after plug-in.
   const days = useMemo(() => groupByDay(props.sessions, new Date(), chargeStart), [props.sessions]);
   return (
@@ -482,13 +618,20 @@ function SessionList(props: { sessions: ChargingSessionDto[]; selectedId: number
       {days.map((day) => {
         return (
           <section key={day.key}>
-            <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-1)] px-4 py-2 text-xs">
-              <span className="font-medium uppercase tracking-wide text-[var(--text-muted)]">{day.label}</span>
-              <span className="tabular-nums text-[var(--text-muted)]">{dayTotals(day.items)}</span>
+            <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-(--border) bg-(--surface-1) px-4 py-2 text-xs">
+              <span className="font-medium uppercase tracking-wide text-(--text-muted)">
+                {day.label}
+              </span>
+              <span className="tabular-nums text-(--text-muted)">{dayTotals(day.items)}</span>
             </h4>
             <ul>
               {day.items.map((s) => (
-                <SessionItem key={s.id} session={s} selected={props.selectedId === s.id} onSelect={() => props.onSelect(s.id)} />
+                <SessionItem
+                  key={s.id}
+                  session={s}
+                  selected={props.selectedId === s.id}
+                  onSelect={() => props.onSelect(s.id)}
+                />
               ))}
             </ul>
           </section>
@@ -498,40 +641,48 @@ function SessionList(props: { sessions: ChargingSessionDto[]; selectedId: number
   );
 }
 
-function SessionItem(props: { session: ChargingSessionDto; selected: boolean; onSelect: () => void }) {
+function SessionItem(props: {
+  session: ChargingSessionDto;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const s = props.session;
 
   return (
     <li>
       <button
         onClick={props.onSelect}
-        aria-current={props.selected ? "true" : undefined}
-        className={`relative grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-4 py-2.5 text-left transition-colors hover:bg-[var(--surface-2)] ${
-          props.selected ? "bg-[var(--surface-2)]" : ""
+        aria-current={props.selected ? 'true' : undefined}
+        className={`relative grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-4 py-2.5 text-left transition-colors hover:bg-(--surface-2) ${
+          props.selected ? 'bg-(--surface-2)' : ''
         }`}
       >
-        {props.selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-[var(--accent)]" />}
+        {props.selected && (
+          <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-(--accent)" />
+        )}
         <span
-          className="text-xs tabular-nums text-[var(--text-muted)]"
+          className="text-xs tabular-nums text-(--text-muted)"
           title={s.chargingStartedAt ? `Plugged in ${clock(s.startedAt)}` : undefined}
         >
           {clock(chargeStart(s))}
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm">
-            <span className={s.isHome ? "font-medium" : ""}>{chargerLabel(s)}</span>
-            {s.city && !s.isHome && <span className="text-[var(--text-muted)]"> · {s.city}</span>}
+            <span className={s.isHome ? 'font-medium' : ''}>{chargerLabel(s)}</span>
+            {s.city && !s.isHome && <span className="text-(--text-muted)"> · {s.city}</span>}
           </span>
-          <span className="mt-0.5 block truncate text-xs tabular-nums text-[var(--text-muted)]">
+          <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
             {!s.endedAt && (
-              <span className={`mr-1.5 ${s.chargingSince ? "text-[var(--status-good)]" : ""}`}>
-                {s.chargingSince ? "Charging" : "Plugged in"} ·
+              <span className={`mr-1.5 ${s.chargingSince ? 'text-(--status-good)' : ''}`}>
+                {s.chargingSince ? 'Charging' : 'Plugged in'} ·
               </span>
             )}
             {sessionFacts(s)}
           </span>
         </span>
-        <span className="text-sm font-medium tabular-nums">{s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : "—"}</span>
+        <span className="text-sm font-medium tabular-nums">
+          {s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : '—'}
+        </span>
       </button>
     </li>
   );
@@ -545,16 +696,22 @@ function WallboxPanel(props: { wallbox: WallboxDto }) {
         <Row label="Status" value={titleCase(wb.latest?.chargingStatus ?? null)} />
         <Row
           label="Power"
-          value={wb.latest?.power != null ? `${fmt(wb.latest.power, 1)} kW / ${fmt(wb.maxPower, 1)} kW` : "—"}
+          value={
+            wb.latest?.power != null
+              ? `${fmt(wb.latest.power, 1)} kW / ${fmt(wb.maxPower, 1)} kW`
+              : '—'
+          }
         />
         <Row
           label="Output"
           value={
-            wb.latest?.currentAmps != null ? `${fmt(wb.latest.currentAmps, 0)} A @ ${fmt(wb.latest.currentVoltage, 0)} V` : "—"
+            wb.latest?.currentAmps != null
+              ? `${fmt(wb.latest.currentAmps, 0)} A @ ${fmt(wb.latest.currentVoltage, 0)} V`
+              : '—'
           }
         />
-        <Row label="Model" value={wb.model ?? "—"} />
-        <Row label="Firmware" value={wb.softwareVersion ?? "—"} />
+        <Row label="Model" value={wb.model ?? '—'} />
+        <Row label="Firmware" value={wb.softwareVersion ?? '—'} />
       </dl>
     </Panel>
   );
@@ -564,14 +721,14 @@ function WallboxPanel(props: { wallbox: WallboxDto }) {
 function CostEditor(props: { session: ChargingSessionDto; onSave: (cost: string | null) => void }) {
   const s = props.session;
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(s.cost ?? "");
+  const [value, setValue] = useState(s.cost ?? '');
 
   if (!editing) {
     return (
       <button
-        className="tabular-nums underline decoration-[var(--text-muted)] decoration-dotted underline-offset-4 hover:decoration-[var(--text-primary)]"
+        className="tabular-nums underline decoration-(--text-muted) decoration-dotted underline-offset-4 hover:decoration-(--text-primary)"
         onClick={() => {
-          setValue(s.cost ?? "");
+          setValue(s.cost ?? '');
           setEditing(true);
         }}
         title="Edit cost"
@@ -579,11 +736,14 @@ function CostEditor(props: { session: ChargingSessionDto; onSave: (cost: string 
         {s.cost != null ? (
           formatMoney(s.cost, s.currency)
         ) : s.estimatedCost != null ? (
-          <span className="text-[var(--text-secondary)]" title="Estimated from your home electricity rate">
+          <span
+            className="text-(--text-secondary)"
+            title="Estimated from your home electricity rate"
+          >
             ≈ {formatMoney(s.estimatedCost, s.currency)}
           </span>
         ) : (
-          <span className="text-[var(--text-muted)]">Add</span>
+          <span className="text-(--text-muted)">Add</span>
         )}
       </button>
     );
@@ -598,14 +758,14 @@ function CostEditor(props: { session: ChargingSessionDto; onSave: (cost: string 
       onBlur={() => {
         setEditing(false);
         const trimmed = value.trim();
-        if (trimmed === "") props.onSave(null);
+        if (trimmed === '') props.onSave(null);
         else if (!Number.isNaN(Number(trimmed))) props.onSave(trimmed);
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") setEditing(false);
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') setEditing(false);
       }}
-      className="w-24 rounded border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0.5 text-base font-semibold"
+      className="w-24 rounded border border-(--border) bg-(--surface-2) px-1.5 py-0.5 text-base font-semibold"
     />
   );
 }
@@ -613,7 +773,7 @@ function CostEditor(props: { session: ChargingSessionDto; onSave: (cost: string 
 function SourceBadge() {
   return (
     <span
-      className="rounded-full border border-[var(--border)] px-1.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]"
+      className="rounded-full border border-(--border) px-1.5 text-[10px] uppercase tracking-wide text-(--text-muted)"
       title="Imported from Rivian's charging history"
     >
       Rivian
@@ -623,7 +783,12 @@ function SourceBadge() {
 
 function HomeIcon() {
   return (
-    <svg viewBox="0 0 16 16" className="mr-1.5 inline h-[0.85em] w-[0.85em] -translate-y-px text-[var(--accent)]" fill="currentColor" aria-hidden>
+    <svg
+      viewBox="0 0 16 16"
+      className="mr-1.5 inline h-[0.85em] w-[0.85em] -translate-y-px text-(--accent)"
+      fill="currentColor"
+      aria-hidden
+    >
       <path d="M8 1.5 1 7.2l.9 1.1L3 7.4V14h4v-4h2v4h4V7.4l1.1.9.9-1.1L8 1.5Z" />
     </svg>
   );
@@ -638,13 +803,13 @@ function num(value: string | number | null | undefined): number | null {
 /** Where a session's energy went: into the pack, or heating or cooling it. */
 function EnergySplit(props: { packKwh: number; thermalKwh: number }) {
   const segments = [
-    { key: "pack", label: "Stored", kwh: props.packKwh, color: "var(--series-1)" },
-    { key: "thermal", label: "Heating & cooling", kwh: props.thermalKwh, color: "var(--series-2)" },
+    { key: 'pack', label: 'Stored', kwh: props.packKwh, color: 'var(--series-1)' },
+    { key: 'thermal', label: 'Heating & cooling', kwh: props.thermalKwh, color: 'var(--series-2)' },
   ];
   return (
-    <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-4">
+    <div className="mt-4 space-y-2 border-t border-(--border) pt-4">
       <div className="flex items-baseline justify-between gap-4 text-sm">
-        <span className="text-[var(--text-secondary)]">Where the energy went</span>
+        <span className="text-(--text-secondary)">Where the energy went</span>
         <span className="tabular-nums">{fmt(props.packKwh + props.thermalKwh, 1)} kWh</span>
       </div>
       <SplitBar segments={segments} />

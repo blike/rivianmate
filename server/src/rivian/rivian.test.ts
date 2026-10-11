@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   CORE_VEHICLE_STATE_PROPERTIES,
   buildVehicleStateQuery,
   buildVehicleStateSubscription,
   SUBSCRIPTION_PROPERTIES,
   VEHICLE_STATE_PROPERTIES,
-} from "./graphql.js";
+} from './graphql.js';
 import {
   RivianInvalidOtpError,
   RivianRateLimitError,
@@ -13,143 +13,128 @@ import {
   describeRivianError,
   isGraphqlValidationError,
   mapGraphqlError,
-} from "./types.js";
-import { mergeVehicleState } from "../services/state-utils.js";
-import type { VehicleState } from "./types.js";
+} from './types.js';
+import { mergeVehicleState } from '../services/state-utils.js';
+import type { VehicleState } from './types.js';
 
-describe("graphql builders", () => {
-  it("uses special templates for connection/location fields", () => {
+describe('graphql builders', () => {
+  it('uses special templates for connection/location fields', () => {
     const query = buildVehicleStateQuery(VEHICLE_STATE_PROPERTIES);
-    expect(query).toContain("cloudConnection { lastSync isOnline }");
-    expect(query).toContain("gnssLocation { latitude longitude timeStamp }");
-    expect(query).toContain("batteryLevel { timeStamp value }");
-    expect(query).toContain("$vehicleID: String!");
+    expect(query).toContain('cloudConnection { lastSync isOnline }');
+    expect(query).toContain('gnssLocation { latitude longitude timeStamp }');
+    expect(query).toContain('batteryLevel { timeStamp value }');
+    expect(query).toContain('$vehicleID: String!');
   });
 
-  it("keeps live tire pressures out of the polling query", () => {
+  it('keeps live tire pressures out of the polling query', () => {
     expect(buildVehicleStateQuery(VEHICLE_STATE_PROPERTIES)).not.toContain(
-      "tirePressureFrontLeft ",
+      'tirePressureFrontLeft ',
     );
-    expect(
-      buildVehicleStateSubscription(SUBSCRIPTION_PROPERTIES),
-    ).toContain("tirePressureFrontLeft { timeStamp value }");
+    expect(buildVehicleStateSubscription(SUBSCRIPTION_PROPERTIES)).toContain(
+      'tirePressureFrontLeft { timeStamp value }',
+    );
   });
-
 });
 
-describe("field lists", () => {
-  it("does not request fields Rivian is known to reject", () => {
+describe('field lists', () => {
+  it('does not request fields Rivian is known to reject', () => {
     for (const field of [
-      "cabinClimateExteriorTemperature",
-      "cabinClimateRunning",
-      "vehiclePowerOutput",
-      "regenerativeBrakingPower",
-      "gnssError",
+      'cabinClimateExteriorTemperature',
+      'cabinClimateRunning',
+      'vehiclePowerOutput',
+      'regenerativeBrakingPower',
+      'gnssError',
     ]) {
       expect(SUBSCRIPTION_PROPERTIES).not.toContain(field);
     }
-    expect(buildVehicleStateQuery(VEHICLE_STATE_PROPERTIES)).not.toContain(
-      "isAuthorized",
-    );
+    expect(buildVehicleStateQuery(VEHICLE_STATE_PROPERTIES)).not.toContain('isAuthorized');
   });
 
-  it("keeps the core fallback a subset of the full list", () => {
+  it('keeps the core fallback a subset of the full list', () => {
     for (const field of CORE_VEHICLE_STATE_PROPERTIES) {
       expect(VEHICLE_STATE_PROPERTIES).toContain(field);
     }
   });
 });
 
-describe("error helpers", () => {
-  it("recognizes GraphQL validation failures", () => {
+describe('error helpers', () => {
+  it('recognizes GraphQL validation failures', () => {
     expect(
-      isGraphqlValidationError(
-        mapGraphqlError([{ message: "Error in GraphQL validation" }]),
-      ),
+      isGraphqlValidationError(mapGraphqlError([{ message: 'Error in GraphQL validation' }])),
     ).toBe(true);
     expect(
       isGraphqlValidationError(
-        mapGraphqlError([{ extensions: { code: "GRAPHQL_VALIDATION_FAILED" } }]),
+        mapGraphqlError([{ extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }]),
       ),
     ).toBe(true);
     expect(
-      isGraphqlValidationError(
-        mapGraphqlError([{ extensions: { code: "UNAUTHENTICATED" } }]),
-      ),
+      isGraphqlValidationError(mapGraphqlError([{ extensions: { code: 'UNAUTHENTICATED' } }])),
     ).toBe(false);
   });
 
-  it("describes every error entry", () => {
+  it('describes every error entry', () => {
     const errors = [
-      { message: "Error in GraphQL validation" },
+      { message: 'Error in GraphQL validation' },
       { message: 'Cannot query field "x" on type "VehicleState".' },
     ];
-    const text = describeRivianError(
-      mapGraphqlError(errors, 400, { errors }),
+    const text = describeRivianError(mapGraphqlError(errors, 400, { errors }));
+    expect(text).toContain('Cannot query field');
+  });
+});
+
+describe('error mapping', () => {
+  it('maps UNAUTHENTICATED', () => {
+    expect(mapGraphqlError([{ extensions: { code: 'UNAUTHENTICATED' } }])).toBeInstanceOf(
+      RivianUnauthenticatedError,
     );
-    expect(text).toContain("Cannot query field");
-  });
-});
-
-describe("error mapping", () => {
-  it("maps UNAUTHENTICATED", () => {
-    expect(
-      mapGraphqlError([{ extensions: { code: "UNAUTHENTICATED" } }]),
-    ).toBeInstanceOf(RivianUnauthenticatedError);
   });
 
-  it("maps invalid OTP variants", () => {
+  it('maps invalid OTP variants', () => {
     expect(
-      mapGraphqlError([
-        { extensions: { code: "BAD_USER_INPUT", reason: "INVALID_OTP" } },
-      ]),
+      mapGraphqlError([{ extensions: { code: 'BAD_USER_INPUT', reason: 'INVALID_OTP' } }]),
     ).toBeInstanceOf(RivianInvalidOtpError);
     expect(
-      mapGraphqlError([
-        { extensions: { code: "UNAUTHENTICATED", reason: "OTP_TOKEN_EXPIRED" } },
-      ]),
+      mapGraphqlError([{ extensions: { code: 'UNAUTHENTICATED', reason: 'OTP_TOKEN_EXPIRED' } }]),
     ).toBeInstanceOf(RivianInvalidOtpError);
   });
 
-  it("maps RATE_LIMIT", () => {
-    expect(
-      mapGraphqlError([{ extensions: { code: "RATE_LIMIT" } }]),
-    ).toBeInstanceOf(RivianRateLimitError);
+  it('maps RATE_LIMIT', () => {
+    expect(mapGraphqlError([{ extensions: { code: 'RATE_LIMIT' } }])).toBeInstanceOf(
+      RivianRateLimitError,
+    );
   });
 });
 
-describe("mergeVehicleState", () => {
-  it("merges deltas and reports changed keys", () => {
+describe('mergeVehicleState', () => {
+  it('merges deltas and reports changed keys', () => {
     const cached: VehicleState = {
-      batteryLevel: { timeStamp: "t0", value: 50 },
+      batteryLevel: { timeStamp: 't0', value: 50 },
     };
     const changed = mergeVehicleState(cached, {
-      batteryLevel: { timeStamp: "t1", value: 51 },
-      powerState: { timeStamp: "t1", value: "go" },
+      batteryLevel: { timeStamp: 't1', value: 51 },
+      powerState: { timeStamp: 't1', value: 'go' },
     });
-    expect(changed.sort()).toEqual(["batteryLevel", "powerState"]);
+    expect(changed.sort()).toEqual(['batteryLevel', 'powerState']);
     expect((cached.batteryLevel as { value: unknown }).value).toBe(51);
   });
 
-  it("drops invalid sensor values, keeping the previous one", () => {
+  it('drops invalid sensor values, keeping the previous one', () => {
     const cached: VehicleState = {
-      chargerStatus: { timeStamp: "t0", value: "chrgr_sts_not_connected" },
+      chargerStatus: { timeStamp: 't0', value: 'chrgr_sts_not_connected' },
     };
     const changed = mergeVehicleState(cached, {
-      chargerStatus: { timeStamp: "t1", value: "signal_not_available" },
+      chargerStatus: { timeStamp: 't1', value: 'signal_not_available' },
     });
     expect(changed).toEqual([]);
-    expect((cached.chargerStatus as { value: unknown }).value).toBe(
-      "chrgr_sts_not_connected",
-    );
+    expect((cached.chargerStatus as { value: unknown }).value).toBe('chrgr_sts_not_connected');
   });
 
-  it("does not report unchanged values", () => {
+  it('does not report unchanged values', () => {
     const cached: VehicleState = {
-      powerState: { timeStamp: "t0", value: "sleep" },
+      powerState: { timeStamp: 't0', value: 'sleep' },
     };
     const changed = mergeVehicleState(cached, {
-      powerState: { timeStamp: "t0", value: "sleep" },
+      powerState: { timeStamp: 't0', value: 'sleep' },
     });
     expect(changed).toEqual([]);
   });

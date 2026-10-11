@@ -1,7 +1,7 @@
-import type { UnitPreferences } from "@server/api-types.js";
-import { fmt } from "./state.js";
+import type { UnitPreferences } from '@server/api-types.js';
+import { fmt } from './state.js';
 
-export const DEFAULT_UNITS: UnitPreferences = { distance: "mi", temperature: "F" };
+export const DEFAULT_UNITS: UnitPreferences = { distance: 'mi', temperature: 'F' };
 
 const KM_TO_MI = 0.621371;
 
@@ -10,8 +10,8 @@ const KM_TO_MI = 0.621371;
  * kilometres, km/h and °C.
  */
 export function unitFormatter(units: UnitPreferences) {
-  const miles = units.distance === "mi";
-  const fahrenheit = units.temperature === "F";
+  const miles = units.distance === 'mi';
+  const fahrenheit = units.temperature === 'F';
 
   const distance = (km: number | null | undefined): number | null =>
     km == null ? null : miles ? km * KM_TO_MI : km;
@@ -21,14 +21,14 @@ export function unitFormatter(units: UnitPreferences) {
   const elevation = (m: number | null | undefined): number | null =>
     m == null ? null : miles ? m * 3.28084 : m;
 
-  const distanceUnit = miles ? "mi" : "km";
-  const elevationUnit = miles ? "ft" : "m";
-  const pressureUnit = miles ? "psi" : "bar";
+  const distanceUnit = miles ? 'mi' : 'km';
+  const elevationUnit = miles ? 'ft' : 'm';
+  const pressureUnit = miles ? 'psi' : 'bar';
   /** Tire pressure: Rivian reports bar. */
   const pressure = (bar: number | null | undefined): number | null =>
     bar == null ? null : miles ? bar * 14.5038 : bar;
-  const speedUnit = miles ? "mph" : "km/h";
-  const temperatureUnit = fahrenheit ? "°F" : "°C";
+  const speedUnit = miles ? 'mph' : 'km/h';
+  const temperatureUnit = fahrenheit ? '°F' : '°C';
 
   return {
     units,
@@ -43,31 +43,35 @@ export function unitFormatter(units: UnitPreferences) {
     pressure,
     /** e.g. "212 mi" — `km` in kilometres. */
     formatDistance: (km: number | null | undefined, digits = 0) =>
-      km == null ? "—" : `${fmt(distance(km), digits)} ${distanceUnit}`,
+      km == null ? '—' : `${fmt(distance(km), digits)} ${distanceUnit}`,
     /** `kmh` in km/h (same conversion factor as distance). */
     formatSpeed: (kmh: number | null | undefined, digits = 0) =>
-      kmh == null ? "—" : `${fmt(distance(kmh), digits)} ${speedUnit}`,
+      kmh == null ? '—' : `${fmt(distance(kmh), digits)} ${speedUnit}`,
     /** Range added per hour of charging, e.g. "+19 mi/h"; `kmh` in km/h. */
     formatChargeRate: (kmh: number | null | undefined) =>
-      kmh == null ? "—" : `+${fmt(distance(kmh), 0)} ${distanceUnit}/h`,
+      kmh == null ? '—' : `+${fmt(distance(kmh), 0)} ${distanceUnit}/h`,
     formatPressure: (bar: number | null | undefined) =>
-      bar == null ? "—" : `${fmt(pressure(bar), miles ? 0 : 2)} ${pressureUnit}`,
+      bar == null ? '—' : `${fmt(pressure(bar), miles ? 0 : 2)} ${pressureUnit}`,
     /** `m` in metres; feet when distances are in miles. */
     formatElevation: (m: number | null | undefined) =>
-      m == null ? "—" : `${fmt(elevation(m), 0)} ${elevationUnit}`,
+      m == null ? '—' : `${fmt(elevation(m), 0)} ${elevationUnit}`,
     /**
      * Driving efficiency: mi/kWh for miles (higher is better), kWh/100 km
      * for kilometres (lower is better), as each region usually quotes it.
      */
-    formatEfficiency: (distanceKm: number | null | undefined, energyKwh: number | null | undefined) => {
-      if (distanceKm == null || energyKwh == null || !(energyKwh > 0) || !(distanceKm > 0)) return "—";
+    formatEfficiency: (
+      distanceKm: number | null | undefined,
+      energyKwh: number | null | undefined,
+    ) => {
+      if (distanceKm == null || energyKwh == null || !(energyKwh > 0) || !(distanceKm > 0))
+        return '—';
       return miles
         ? `${fmt((distanceKm * KM_TO_MI) / energyKwh, 2)} mi/kWh`
         : `${fmt((energyKwh / distanceKm) * 100, 1)} kWh/100 km`;
     },
     /** `c` in °C. */
     formatTemperature: (c: number | null | undefined, digits = 0) =>
-      c == null ? "—" : `${fmt(temperature(c), digits)} ${temperatureUnit}`,
+      c == null ? '—' : `${fmt(temperature(c), digits)} ${temperatureUnit}`,
   };
 }
 

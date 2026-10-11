@@ -1,25 +1,25 @@
-import type { LiveSessionData, LiveSessionValueRecord } from "../rivian/types.js";
-import { isChargingState } from "./charging-time.js";
+import type { LiveSessionData, LiveSessionValueRecord } from '../rivian/types.js';
+import { isChargingState } from './charging-time.js';
 
 /**
  * Where a live charging reading came from. The push feed is Rivian's own
  * session summary, so it breaks ties; Parallax is the vehicle's own
  * telemetry; legacy vehicle state is the slowest to update.
  */
-export type LiveSource = "push" | "parallax" | "state";
+export type LiveSource = 'push' | 'parallax' | 'state';
 
 const PRIORITY: Record<LiveSource, number> = { push: 3, parallax: 2, state: 1 };
 
 export type LiveField =
-  | "chargerState"
-  | "powerKw"
-  | "soc"
-  | "secondsLeft"
-  | "energyKwh"
-  | "rangeAddedKm"
-  | "rangeKmPerHour"
-  | "socLimit"
-  | "capacityKwh";
+  | 'chargerState'
+  | 'powerKw'
+  | 'soc'
+  | 'secondsLeft'
+  | 'energyKwh'
+  | 'rangeAddedKm'
+  | 'rangeKmPerHour'
+  | 'socLimit'
+  | 'capacityKwh';
 
 type FieldValue = number | string | null;
 
@@ -32,15 +32,20 @@ export const STALE_MS = 20 * 60_000;
 
 /** Fields that describe the moment; the rest stay true until they change. */
 const PERISHABLE = new Set<LiveField>([
-  "powerKw",
-  "secondsLeft",
-  "energyKwh",
-  "rangeAddedKm",
-  "rangeKmPerHour",
+  'powerKw',
+  'secondsLeft',
+  'energyKwh',
+  'rangeAddedKm',
+  'rangeKmPerHour',
 ]);
 
 /** Push-feed states that mean a session is under way. */
-const PUSH_ACTIVE_STATES = new Set(["charging_active", "charging_connecting", "charging_ready", "charging"]);
+const PUSH_ACTIVE_STATES = new Set([
+  'charging_active',
+  'charging_connecting',
+  'charging_ready',
+  'charging',
+]);
 
 interface Observation {
   value: FieldValue;
@@ -57,7 +62,13 @@ export interface Resolved<T extends FieldValue = FieldValue> {
 /** What only the push feed knows about a session. */
 export type PushDetails = Pick<
   LiveSessionData,
-  "chargerId" | "currentCurrency" | "currentPrice" | "isFreeSession" | "isRivianCharger" | "locationId" | "timeElapsed"
+  | 'chargerId'
+  | 'currentCurrency'
+  | 'currentPrice'
+  | 'isFreeSession'
+  | 'isRivianCharger'
+  | 'locationId'
+  | 'timeElapsed'
 >;
 
 /**
@@ -75,7 +86,13 @@ export class LiveChargeState {
   private push: PushDetails | null = null;
 
   /** Records a reading; false if the source already reported something newer. */
-  observe(field: LiveField, source: LiveSource, value: FieldValue, at: number, now: number): boolean {
+  observe(
+    field: LiveField,
+    source: LiveSource,
+    value: FieldValue,
+    at: number,
+    now: number,
+  ): boolean {
     const key = `${field}|${source}`;
     const stamped = Number.isFinite(at) ? Math.min(at, now) : now;
     const previous = this.observations.get(key);
@@ -95,7 +112,8 @@ export class LiveChargeState {
    */
   forgetSessionReadings(before: number): void {
     for (const [key, o] of [...this.observations]) {
-      if (PERISHABLE.has(key.split("|")[0] as LiveField) && o.at < before) this.observations.delete(key);
+      if (PERISHABLE.has(key.split('|')[0] as LiveField) && o.at < before)
+        this.observations.delete(key);
     }
   }
 
@@ -111,7 +129,7 @@ export class LiveChargeState {
    */
   clearPush(): void {
     this.push = null;
-    this.observations.delete("chargerState|push");
+    this.observations.delete('chargerState|push');
   }
 
   /** The newest fresh observation of a field across sources. */
@@ -134,9 +152,9 @@ export class LiveChargeState {
 
   /** Whether the latest charger state, from any source, says it's charging. */
   isCharging(now: number): boolean {
-    const state = this.resolve<string | null>("chargerState", now);
-    if (!state || typeof state.value !== "string") return false;
-    return state.source === "push"
+    const state = this.resolve<string | null>('chargerState', now);
+    if (!state || typeof state.value !== 'string') return false;
+    return state.source === 'push'
       ? PUSH_ACTIVE_STATES.has(state.value.toLowerCase())
       : isChargingState(state.value);
   }
@@ -150,10 +168,10 @@ export class LiveChargeState {
     const rec = (field: LiveField, scale = 1): LiveSessionValueRecord | null => {
       const r = this.resolve(field, now);
       if (r == null || r.value == null) return null;
-      const value = typeof r.value === "number" ? r.value * scale : r.value;
+      const value = typeof r.value === 'number' ? r.value * scale : r.value;
       return { value, updatedAt: new Date(r.at).toISOString() };
     };
-    const secondsLeft = rec("secondsLeft");
+    const secondsLeft = rec('secondsLeft');
     return {
       chargerId: this.push?.chargerId ?? null,
       currentCurrency: this.push?.currentCurrency ?? null,
@@ -163,16 +181,16 @@ export class LiveChargeState {
       locationId: this.push?.locationId ?? null,
       startTime: new Date(startedAt).toISOString(),
       timeElapsed: this.push?.timeElapsed ?? null,
-      power: rec("powerKw"),
-      soc: rec("soc"),
+      power: rec('powerKw'),
+      soc: rec('soc'),
       // 0 means no estimate (e.g. a schedule is about to stop the charge).
       timeRemaining: secondsLeft && secondsLeft.value !== 0 ? secondsLeft : null,
-      totalChargedEnergy: rec("energyKwh"),
-      rangeAddedThisSession: rec("rangeAddedKm"),
-      kilometersChargedPerHour: rec("rangeKmPerHour"),
-      socLimit: rec("socLimit"),
-      batteryCapacityKwh: rec("capacityKwh"),
-      vehicleChargerState: rec("chargerState"),
+      totalChargedEnergy: rec('energyKwh'),
+      rangeAddedThisSession: rec('rangeAddedKm'),
+      kilometersChargedPerHour: rec('rangeKmPerHour'),
+      socLimit: rec('socLimit'),
+      batteryCapacityKwh: rec('capacityKwh'),
+      vehicleChargerState: rec('chargerState'),
       chart: [],
     };
   }

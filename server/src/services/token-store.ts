@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
-import type { TokenCrypto } from "../crypto.js";
-import type { Db } from "../db/client.js";
-import { rivianAccount } from "../db/schema.js";
-import type { RivianTokens } from "../rivian/types.js";
+import { eq } from 'drizzle-orm';
+import type { TokenCrypto } from '../crypto.js';
+import type { Db } from '../db/client.js';
+import { rivianAccount } from '../db/schema.js';
+import type { RivianTokens } from '../rivian/types.js';
 
-export type RivianAuthState = "ok" | "unauthenticated";
+export type RivianAuthState = 'ok' | 'unauthenticated';
 
 export interface StoredAccount {
   email: string;
@@ -46,7 +46,7 @@ export class TokenStore {
       accessTokenEnc: this.crypto.encrypt(tokens.accessToken),
       refreshTokenEnc: this.crypto.encrypt(tokens.refreshToken),
       userSessionTokenEnc: this.crypto.encrypt(tokens.userSessionToken),
-      authState: "ok" as const,
+      authState: 'ok' as const,
       updatedAt: new Date(),
       lastAuthOkAt: new Date(),
     };

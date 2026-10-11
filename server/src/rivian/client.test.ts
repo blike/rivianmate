@@ -1,21 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { RivianClient } from "./client.js";
-import { RivianGovernor } from "./governor.js";
-import {
-  RivianCooldownError,
-  RivianRateLimitError,
-  RivianUnauthenticatedError,
-} from "./types.js";
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { RivianClient } from './client.js';
+import { RivianGovernor } from './governor.js';
+import { RivianCooldownError, RivianRateLimitError, RivianUnauthenticatedError } from './types.js';
 
 type Handler = (op: string, headers: Record<string, string>) => Response;
 
 function stubFetch(handler: Handler) {
   const calls: { op: string; headers: Record<string, string> }[] = [];
   vi.stubGlobal(
-    "fetch",
+    'fetch',
     vi.fn(async (_url: string, init: RequestInit) => {
-      const op = (JSON.parse(init.body as string) as { operationName: string })
-        .operationName;
+      const op = (JSON.parse(init.body as string) as { operationName: string }).operationName;
       const headers = init.headers as Record<string, string>;
       calls.push({ op, headers });
       return handler(op, headers);
@@ -27,7 +22,7 @@ function stubFetch(handler: Handler) {
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", ...headers },
+    headers: { 'content-type': 'application/json', ...headers },
   });
 
 let csrfCounter = 0;
@@ -41,53 +36,55 @@ const csrf = () =>
     },
   });
 
-const tokens = { accessToken: "access", refreshToken: "refresh", userSessionToken: "usess" };
+const tokens = { accessToken: 'access', refreshToken: 'refresh', userSessionToken: 'usess' };
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("RivianClient", () => {
-  it("restores session authentication without sending the stored access token as Bearer", async () => {
+describe('RivianClient', () => {
+  it('restores session authentication without sending the stored access token as Bearer', async () => {
     const calls = stubFetch((op) =>
-      op === "CreateCSRFToken" ? csrf() : json({ data: { currentUser: { id: "u", vehicles: [] } } }),
+      op === 'CreateCSRFToken'
+        ? csrf()
+        : json({ data: { currentUser: { id: 'u', vehicles: [] } } }),
     );
     const client = new RivianClient({ tokens, governor: new RivianGovernor({ minSpacingMs: 0 }) });
     await client.getUserInfo();
-    const headers = calls.find((c) => c.op === "getUserInfo")!.headers;
-    expect(headers["U-Sess"]).toBe("usess");
-    expect(headers["A-Sess"]).toMatch(/^asess-/);
-    expect(headers["Csrf-Token"]).toMatch(/^csrf-/);
-    expect(headers).not.toHaveProperty("Authorization");
+    const headers = calls.find((c) => c.op === 'getUserInfo')!.headers;
+    expect(headers['U-Sess']).toBe('usess');
+    expect(headers['A-Sess']).toMatch(/^asess-/);
+    expect(headers['Csrf-Token']).toMatch(/^csrf-/);
+    expect(headers).not.toHaveProperty('Authorization');
   });
 
-  it("rotates the session once on UNAUTHENTICATED and retries", async () => {
+  it('rotates the session once on UNAUTHENTICATED and retries', async () => {
     let userInfoCalls = 0;
     const calls = stubFetch((op) => {
-      if (op === "CreateCSRFToken") return csrf();
+      if (op === 'CreateCSRFToken') return csrf();
       userInfoCalls += 1;
       return userInfoCalls === 1
-        ? json({ errors: [{ message: "expired", extensions: { code: "UNAUTHENTICATED" } }] })
-        : json({ data: { currentUser: { id: "u", vehicles: [] } } });
+        ? json({ errors: [{ message: 'expired', extensions: { code: 'UNAUTHENTICATED' } }] })
+        : json({ data: { currentUser: { id: 'u', vehicles: [] } } });
     });
     const client = new RivianClient({ tokens, governor: new RivianGovernor({ minSpacingMs: 0 }) });
-    await expect(client.getUserInfo()).resolves.toEqual({ id: "u", vehicles: [] });
-    expect(calls.filter((c) => c.op === "CreateCSRFToken")).toHaveLength(2);
+    await expect(client.getUserInfo()).resolves.toEqual({ id: 'u', vehicles: [] });
+    expect(calls.filter((c) => c.op === 'CreateCSRFToken')).toHaveLength(2);
   });
 
-  it("gives up after one rotation if still unauthenticated", async () => {
+  it('gives up after one rotation if still unauthenticated', async () => {
     stubFetch((op) =>
-      op === "CreateCSRFToken"
+      op === 'CreateCSRFToken'
         ? csrf()
-        : json({ errors: [{ message: "no", extensions: { code: "UNAUTHENTICATED" } }] }),
+        : json({ errors: [{ message: 'no', extensions: { code: 'UNAUTHENTICATED' } }] }),
     );
     const client = new RivianClient({ tokens, governor: new RivianGovernor({ minSpacingMs: 0 }) });
     await expect(client.getUserInfo()).rejects.toBeInstanceOf(RivianUnauthenticatedError);
   });
 
-  it("treats HTTP 429 as a rate limit and starts a cooldown", async () => {
+  it('treats HTTP 429 as a rate limit and starts a cooldown', async () => {
     stubFetch((op) =>
-      op === "CreateCSRFToken" ? csrf() : json({}, 429, { "retry-after": "1800" }),
+      op === 'CreateCSRFToken' ? csrf() : json({}, 429, { 'retry-after': '1800' }),
     );
     const governor = new RivianGovernor({ minSpacingMs: 0 });
     const client = new RivianClient({ tokens, governor });
@@ -98,10 +95,8 @@ describe("RivianClient", () => {
     expect(governor.snapshot().last24h.rateLimited).toBe(1);
   });
 
-  it("does not contact Rivian or extend the cooldown while paused", async () => {
-    const calls = stubFetch((op) =>
-      op === "CreateCSRFToken" ? csrf() : json({}, 429),
-    );
+  it('does not contact Rivian or extend the cooldown while paused', async () => {
+    const calls = stubFetch((op) => (op === 'CreateCSRFToken' ? csrf() : json({}, 429)));
     const governor = new RivianGovernor({ minSpacingMs: 0 });
     const client = new RivianClient({ tokens, governor });
     await client.getUserInfo().catch(() => {});
@@ -113,7 +108,7 @@ describe("RivianClient", () => {
     expect(governor.snapshot().last24h.rateLimited).toBe(1);
   });
 
-  it("shares one rotation between concurrent callers", async () => {
+  it('shares one rotation between concurrent callers', async () => {
     const calls = stubFetch(() => csrf());
     const client = new RivianClient({ tokens, governor: new RivianGovernor({ minSpacingMs: 0 }) });
     await Promise.all([client.refreshSession(), client.refreshSession()]);

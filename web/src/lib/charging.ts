@@ -1,12 +1,12 @@
-import type { ChargingSessionDto } from "@server/api-types.js";
-import { fmt, titleCase } from "./state.js";
+import type { ChargingSessionDto } from '@server/api-types.js';
+import { fmt, titleCase } from './state.js';
 
 /**
  * Seconds spent charging so far, counting a stretch still running; null
  * when RivianMate didn't watch the session.
  */
 export function chargingSecondsNow(
-  s: Pick<ChargingSessionDto, "chargingSeconds" | "chargingSince">,
+  s: Pick<ChargingSessionDto, 'chargingSeconds' | 'chargingSince'>,
   now = Date.now(),
 ): number | null {
   if (s.chargingSeconds == null && s.chargingSince == null) return null;
@@ -16,22 +16,22 @@ export function chargingSecondsNow(
 
 /** "40→70%", with "?" for an unknown end, or "—" when both are unknown. */
 export function socRange(start: number | null, end: number | null): string {
-  if (start == null && end == null) return "—";
-  const part = (v: number | null) => (v == null ? "?" : fmt(v, 0));
+  if (start == null && end == null) return '—';
+  const part = (v: number | null) => (v == null ? '?' : fmt(v, 0));
   return `${part(start)}→${part(end)}%`;
 }
 
 export function formatMoney(amount: string, currency: string | null): string {
-  const prefix = currency === "USD" || !currency ? "$" : `${currency} `;
+  const prefix = currency === 'USD' || !currency ? '$' : `${currency} `;
   return `${prefix}${fmt(Number(amount), 2)}`;
 }
 
 export function chargerLabel(
-  s: Pick<ChargingSessionDto, "chargerType" | "isHome" | "vendor" | "chargerId">,
+  s: Pick<ChargingSessionDto, 'chargerType' | 'isHome' | 'vendor' | 'chargerId'>,
 ): string {
   // One name for Rivian's own chargers, however the session recorded it.
-  if (s.chargerType === "rivian_charger" || /^rivian\b/i.test(s.vendor ?? "")) return "Rivian";
-  if (s.isHome) return "Home";
+  if (s.chargerType === 'rivian_charger' || /^rivian\b/i.test(s.vendor ?? '')) return 'Rivian';
+  if (s.isHome) return 'Home';
   if (s.vendor) return titleCase(s.vendor.toLowerCase());
   return s.chargerId ?? titleCase(s.chargerType);
 }
@@ -48,29 +48,32 @@ export function chargeOutlook(i: {
   powerKw: number | null;
   capacityKwh: number | null;
   minutesLeft: number | null;
-}): { kind: "limit" | "session"; minutes: number | null; endSoc: number | null } {
+}): { kind: 'limit' | 'session'; minutes: number | null; endSoc: number | null } {
   const { soc, limit, powerKw, capacityKwh, minutesLeft } = i;
   // Percent per minute, ignoring charging losses (a slight overestimate).
-  const rate = powerKw && capacityKwh ? (powerKw / capacityKwh) * 100 / 60 : null;
+  const rate = powerKw && capacityKwh ? ((powerKw / capacityKwh) * 100) / 60 : null;
   if (minutesLeft != null && rate != null && soc != null && limit != null) {
     const endSoc = Math.min(limit, soc + rate * minutesLeft);
-    if (endSoc < limit - 1) return { kind: "session", minutes: minutesLeft, endSoc };
+    if (endSoc < limit - 1) return { kind: 'session', minutes: minutesLeft, endSoc };
   }
-  const toLimit = rate != null && soc != null && limit != null && soc < limit ? (limit - soc) / rate : null;
-  return { kind: "limit", minutes: minutesLeft ?? toLimit, endSoc: limit };
+  const toLimit =
+    rate != null && soc != null && limit != null && soc < limit ? (limit - soc) / rate : null;
+  return { kind: 'limit', minutes: minutesLeft ?? toLimit, endSoc: limit };
 }
 
 /** A session's cost: the recorded one, else the home-rate estimate. */
 export function sessionCost(
-  s: Pick<ChargingSessionDto, "cost" | "estimatedCost">,
+  s: Pick<ChargingSessionDto, 'cost' | 'estimatedCost'>,
 ): { amount: number; estimated: boolean } | null {
   const raw = s.cost ?? s.estimatedCost;
-  const amount = raw == null || raw === "" ? NaN : Number(raw);
+  const amount = raw == null || raw === '' ? NaN : Number(raw);
   return Number.isFinite(amount) ? { amount, estimated: s.cost == null } : null;
 }
 
 /** Energy and cost across sessions; cost is null when none has one. */
-export function sessionTotals(sessions: readonly Pick<ChargingSessionDto, "energyKwh" | "cost" | "estimatedCost">[]) {
+export function sessionTotals(
+  sessions: readonly Pick<ChargingSessionDto, 'energyKwh' | 'cost' | 'estimatedCost'>[],
+) {
   let energyKwh = 0;
   let cost: number | null = null;
   let estimated = false;
