@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chargeOutlook,
   chargerLabel,
+  lastChargedTo,
   chargingSecondsNow,
   sessionCost,
   sessionTotals,
@@ -111,5 +112,20 @@ describe('chargerLabel', () => {
   it('names home and other networks', () => {
     expect(chargerLabel({ ...base, isHome: true })).toBe('Home');
     expect(chargerLabel({ ...base, vendor: 'ELECTRIFY AMERICA' })).toBe('Electrify America');
+  });
+});
+
+describe('lastChargedTo', () => {
+  it('is the level the newest finished charge reached', () => {
+    expect(
+      lastChargedTo([
+        { endedAt: null, endSoc: 60 },
+        { endedAt: '2026-10-10T08:00:00Z', endSoc: null },
+        { endedAt: '2026-10-09T08:00:00Z', endSoc: 85 },
+        { endedAt: '2026-10-08T08:00:00Z', endSoc: 90 },
+      ]),
+    ).toBe(85);
+    expect(lastChargedTo([])).toBeNull();
+    expect(lastChargedTo(undefined)).toBeNull();
   });
 });

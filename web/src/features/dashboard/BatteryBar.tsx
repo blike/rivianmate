@@ -1,10 +1,14 @@
 import { useLoading } from '../../components/LoadingState';
 import { fmt } from '../../lib/state';
 
-/** State of charge with the charge limit marked; shimmers while charging. */
+/**
+ * State of charge with the charge limit marked (or another level, named by
+ * `limitLabel`); shimmers while charging.
+ */
 export function BatteryBar(props: {
   level: number | null;
   limit: number | null;
+  limitLabel?: string;
   charging: boolean;
 }) {
   const loading = useLoading();
@@ -38,7 +42,7 @@ export function BatteryBar(props: {
               transform: `translateX(${props.limit < 15 ? '0' : props.limit > 85 ? '-100%' : '-50%'})`,
             }}
           >
-            Limit {fmt(props.limit, 0)}%
+            {props.limitLabel ?? 'Limit'} {fmt(props.limit, 0)}%
           </span>
         )}
       </div>

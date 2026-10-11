@@ -1,10 +1,10 @@
 import type { VehicleDto, VehicleState } from '@server/api-types';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
-import { useLiveCharging, useUnits } from '../../api/hooks';
+import { useChargingSessions, useLiveCharging, useUnits } from '../../api/hooks';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
-import { chargeOutlook } from '../../lib/charging';
+import { chargeOutlook, lastChargedTo } from '../../lib/charging';
 import { locationIsBehind } from '../../lib/freshness';
 import { softwareUpdate } from '../../lib/ota';
 import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
@@ -69,11 +69,14 @@ export function Hero(props: {
   });
 
   const ota = softwareUpdate(state);
+  // Without a reported limit (TeslaMate doesn't log it), the level the last
+  // charge reached is the best guide to where it's usually charged to.
+  const { data: sessions } = useChargingSessions(props.vehicleId);
+  const lastCharge = limit == null ? lastChargedTo(sessions) : null;
+  const target = limit ?? lastCharge ?? 100;
   // Scales today's estimate, so it follows the vehicle's own recent efficiency.
-  const rangeAtLimit =
-    rangeKm != null && battery != null && battery > 0 && limit != null
-      ? (rangeKm * limit) / battery
-      : null;
+  const rangeAtTarget =
+    rangeKm != null && battery != null && battery > 0 ? (rangeKm * target) / battery : null;
 
   const name = vehicle?.name ?? vehicle?.model ?? 'Vehicle';
   const subtitle = [vehicle?.modelYear, vehicle?.model].filter(Boolean).join(' ');
@@ -176,7 +179,12 @@ export function Hero(props: {
               </div>
             </div>
 
-            <BatteryBar level={battery} limit={limit} charging={charging} />
+            <BatteryBar
+              level={battery}
+              limit={limit ?? lastCharge}
+              limitLabel={limit == null ? 'Last charge' : undefined}
+              charging={charging}
+            />
           </div>
 
           <dl className="mt-auto grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-(--border) bg-(--border) sm:grid-cols-3">
@@ -209,8 +217,8 @@ export function Hero(props: {
             ) : (
               <>
                 <HeroFact
-                  label={limit != null ? `Range at ${fmt(limit, 0)}%` : 'Range at limit'}
-                  value={u.formatDistance(rangeAtLimit)}
+                  label={`Range at ${fmt(target, 0)}%`}
+                  value={u.formatDistance(rangeAtTarget)}
                 />
                 <HeroFact label="Software" value={sv(state, 'otaCurrentVersion') ?? '—'} />
               </>
