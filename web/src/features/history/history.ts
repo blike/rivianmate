@@ -33,6 +33,19 @@ export interface PeriodSummary {
   currency: string | null;
 }
 
+/**
+ * The window a range covers, ending now. Ranges of days start at local
+ * midnight, so "7 days" is today and the six before it rather than 168
+ * hours reaching partway into an eighth day; 24 hours stays rolling.
+ */
+export function rangeWindow(hours: number, now: Date): { from: Date; to: Date } {
+  if (hours <= 24) return { from: new Date(now.getTime() - hours * 3600_000), to: now };
+  const from = new Date(now);
+  from.setHours(0, 0, 0, 0);
+  from.setDate(from.getDate() - (Math.round(hours / 24) - 1));
+  return { from, to: now };
+}
+
 const inWindow = (iso: string, from: number, to: number) => {
   const t = Date.parse(iso);
   return t >= from && t <= to;

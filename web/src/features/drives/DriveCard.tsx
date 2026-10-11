@@ -37,7 +37,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
       label: 'Battery',
       value:
         d?.startBattery != null && d.endBattery != null
-          ? `${fmt(d.startBattery, 0)}% → ${fmt(d.endBattery, 0)}%`
+          ? `${fmt(d.startBattery, 1)}% → ${fmt(d.endBattery, 1)}%`
           : '—',
       sub:
         used != null

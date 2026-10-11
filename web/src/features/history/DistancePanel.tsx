@@ -3,7 +3,7 @@ import { useUnits } from '../../api/hooks';
 import { ContentFrame, useLoading } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
-import { dateTime } from '../../lib/format';
+import { dateTime, shortDate } from '../../lib/format';
 import { distanceByPeriod } from './history';
 
 export function DistancePanel(props: {
@@ -20,12 +20,16 @@ export function DistancePanel(props: {
     [props.drives, props.from, props.to, unit],
   );
   const data = useMemo(() => buckets.map((b, i) => ({ i, km: u.distance(b.km) })), [buckets, u]);
+  // A week fits a short weekday under every bar. Longer ranges label every
+  // sixth hour or about five evenly spaced days, since a label under each
+  // bar would overlap on phones.
+  const weekdays = unit === 'day' && buckets.length <= 7;
+  const interval = weekdays ? 0 : unit === 'hour' ? 5 : Math.ceil(buckets.length / 5) - 1;
   const label = (i: number) => {
     const ts = buckets[i]?.ts;
     if (ts == null) return '';
-    return unit === 'hour'
-      ? new Date(ts).toLocaleTimeString([], { hour: 'numeric' })
-      : new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    if (unit === 'hour') return new Date(ts).toLocaleTimeString([], { hour: 'numeric' });
+    return weekdays ? new Date(ts).toLocaleDateString([], { weekday: 'short' }) : shortDate(ts);
   };
   const busiest = buckets.reduce<(typeof buckets)[number] | null>(
     (best, b) => (b.km > (best?.km ?? 0) ? b : best),
@@ -64,6 +68,7 @@ export function DistancePanel(props: {
           height={160}
           leftDomain={[0, 'auto']}
           xFormatter={label}
+          xInterval={interval}
           tooltipLabel={(i) => {
             const ts = buckets[i]?.ts;
             if (ts == null) return '';

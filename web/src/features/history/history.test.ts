@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityBands, distanceByPeriod, periodSummary, positionAt } from './history';
+import { activityBands, distanceByPeriod, periodSummary, positionAt, rangeWindow } from './history';
 
 const H = 3600_000;
 const at = (h: number) => new Date(Date.UTC(2026, 9, 1) + h * H).toISOString();
@@ -102,5 +102,20 @@ describe('positionAt', () => {
   it('is unknown before the first fix', () => {
     expect(positionAt(points, 5)).toBeNull();
     expect(positionAt([], 5)).toBeNull();
+  });
+});
+
+describe('rangeWindow', () => {
+  const now = new Date(2026, 9, 11, 14, 30);
+
+  it('starts a range of days at local midnight, counting today', () => {
+    const { from, to } = rangeWindow(24 * 7, now);
+    expect(from).toEqual(new Date(2026, 9, 5));
+    expect(to).toBe(now);
+    expect(distanceByPeriod([], from.getTime(), to.getTime(), 'day')).toHaveLength(7);
+  });
+
+  it('keeps 24 hours rolling', () => {
+    expect(rangeWindow(24, now).from).toEqual(new Date(2026, 9, 10, 14, 30));
   });
 });
