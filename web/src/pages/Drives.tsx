@@ -6,6 +6,7 @@ import { useUnits } from "../api/hooks.js";
 import { ContentFrame, LoadingScope, Skeleton, SkeletonBlock, SkeletonRows, useLoading } from "../components/loading.js";
 import { Panel } from "../components/panels.js";
 import { RecordPicker } from "../components/RecordPicker.js";
+import type { UnitFormatter } from "../lib/units.js";
 import { TrendChart } from "../components/TrendChart.js";
 import { VehicleMap } from "../components/VehicleMap.js";
 import { averageSpeedKmh, driveProfile, drivesByDay, minuteTicks, profilePosition, rangeUsedKm } from "../lib/drives.js";
@@ -147,7 +148,7 @@ export function Drives(props: { vehicleId: string }) {
           </div>
         </Panel>
 
-        <Panel title="All drives" className="flex flex-col">
+        <Panel title="All drives" className="hidden flex-col lg:flex">
           <div className="relative min-h-0 flex-1">
             <div className="-mx-4 max-h-[28rem] overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {drivesPending ? (
@@ -219,20 +220,20 @@ function DriveCard(props: { drive: DriveDetailDto | undefined }) {
             <Skeleton className="w-[14em]" />
           ) : (
             <>
+              <span>
+                {longDay(d.startedAt)} · {clock(d.startedAt)}
+                {d.endedAt && ` – ${clock(d.endedAt)}`}
+              </span>
               {live && (
                 <span className="flex items-center gap-1.5 font-medium uppercase tracking-wide text-[var(--status-good)]">
                   <span className="chip-dot--pulse h-1.5 w-1.5 rounded-full bg-[var(--status-good)] text-[var(--status-good)]" />
                   In progress
                 </span>
               )}
-              <span>
-                {longDay(d.startedAt)} · {clock(d.startedAt)}
-                {d.endedAt && ` – ${clock(d.endedAt)}`}
-              </span>
             </>
           )}
         </div>
-        <h2 className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 text-xl font-semibold tracking-tight">
+        <h2 className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 text-base lg:text-xl font-semibold tracking-tight">
           {loading || !d ? (
             <Skeleton className="w-[16em]" />
           ) : (
@@ -272,7 +273,7 @@ function Place(props: { place: DrivePlaceDto | null }) {
   );
 }
 
-/** On narrow screens, where the list sits below the route, a picker up top. */
+/** On narrow screens, a picker up top stands in for the list. */
 function DrivePicker(props: { drives: DriveDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
   const u = useUnits();
   const groups = useMemo(
@@ -280,9 +281,14 @@ function DrivePicker(props: { drives: DriveDto[]; selectedId: number | null; onS
       drivesByDay(props.drives).map((day) => ({
         key: day.key,
         label: day.label,
+        summary: `${day.drives.length} drive${day.drives.length === 1 ? "" : "s"} · ${u.formatDistance(day.distanceKm)}`,
         items: day.drives.map((d) => ({
           id: d.id,
-          label: `${clock(d.startedAt)} · ${d.start ? shortPlace(d.start.label) : "—"} → ${destination(d)} · ${u.formatDistance(d.distanceKm, 1)}`,
+          time: clock(d.startedAt),
+          title: `${d.start ? shortPlace(d.start.label) : "—"} → ${destination(d)}`,
+          detail: driveFacts(d, u),
+          value: u.formatDistance(d.distanceKm, 1),
+          live: !d.endedAt,
         })),
       })),
     [props.drives, u],
@@ -296,6 +302,18 @@ function DrivePicker(props: { drives: DriveDto[]; selectedId: number | null; onS
       className="sticky top-2 z-20 lg:hidden"
     />
   );
+}
+
+/** "38m · −6.3% · 1.84 mi/kWh" */
+function driveFacts(d: DriveDto, u: UnitFormatter): string {
+  const used = batteryUsed(d);
+  return [
+    fmtDuration(d.startedAt, d.endedAt),
+    used != null && batteryChange(used),
+    d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** Where a drive ended, or where it's headed while under way. */
@@ -332,13 +350,7 @@ function DriveList(props: { drives: DriveDto[]; selectedId: number | null; onSel
 function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => void }) {
   const u = useUnits();
   const d = props.drive;
-  const used = batteryUsed(d);
   const to = destination(d);
-  const facts = [
-    fmtDuration(d.startedAt, d.endedAt),
-    used != null && batteryChange(used),
-    d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
-  ].filter(Boolean);
 
   return (
     <li>
@@ -359,7 +371,7 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
           </span>
           <span className="mt-0.5 block truncate text-xs tabular-nums text-[var(--text-muted)]">
             {!d.endedAt && <span className="mr-1.5 text-[var(--status-good)]">In progress ·</span>}
-            {facts.join(" · ")}
+            {driveFacts(d, u)}
           </span>
         </span>
         <span className="text-sm font-medium tabular-nums">{u.formatDistance(d.distanceKm, 1)}</span>

@@ -103,7 +103,7 @@ export function Charging(props: { vehicleId: string }) {
           )}
         </Panel>
 
-        <Panel title="All sessions" className="flex flex-col">
+        <Panel title="All sessions" className="hidden flex-col lg:flex">
           <div className="relative min-h-0 flex-1">
             <div className="-mx-4 max-h-[28rem] overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {sessionsPending ? (
@@ -273,7 +273,7 @@ function SessionCard(props: { session: ChargingSessionDto | undefined; onSaveCos
             </>
           )}
         </div>
-        <h2 className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 text-xl font-semibold tracking-tight">
+        <h2 className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 text-base lg:text-xl font-semibold tracking-tight">
           {loading || !s ? (
             <Skeleton className="w-[12em]" />
           ) : (
@@ -423,16 +423,21 @@ function CurveChart(props: { curve: Parameters<typeof chargingCurveWindow>[0] | 
   );
 }
 
-/** On narrow screens, where the list sits below the curve, a picker up top. */
+/** On narrow screens, a picker up top stands in for the list. */
 function SessionPicker(props: { sessions: ChargingSessionDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
   const groups = useMemo(
     () =>
       groupByDay(props.sessions, new Date(), chargeStart).map((day) => ({
         key: day.key,
         label: day.label,
+        summary: dayTotals(day.items),
         items: day.items.map((s) => ({
           id: s.id,
-          label: [clock(chargeStart(s)), chargerLabel(s), s.energyKwh != null && `${fmt(s.energyKwh, 1)} kWh`].filter(Boolean).join(" · "),
+          time: clock(chargeStart(s)),
+          title: s.city && !s.isHome ? `${chargerLabel(s)} · ${s.city}` : chargerLabel(s),
+          detail: sessionFacts(s),
+          value: s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : undefined,
+          live: !s.endedAt,
         })),
       })),
     [props.sessions],
@@ -448,6 +453,26 @@ function SessionPicker(props: { sessions: ChargingSessionDto[]; selectedId: numb
   );
 }
 
+/** "12.4 kWh · ≈ $1.61" */
+function dayTotals(sessions: ChargingSessionDto[]): string {
+  const totals = sessionTotals(sessions);
+  const currency = sessions.find((s) => s.currency)?.currency ?? null;
+  return `${fmt(totals.energyKwh, 1)} kWh${totals.cost != null ? ` · ${totals.estimated ? "≈ " : ""}${formatMoney(String(totals.cost), currency)}` : ""}`;
+}
+
+/** "62→85% · 2h 10m · ≈ $3.20" */
+function sessionFacts(s: ChargingSessionDto): string {
+  const cost = sessionCost(s);
+  const charging = chargingSecondsNow(s);
+  return [
+    s.startSoc != null && s.endSoc != null && socRange(s.startSoc, s.endSoc),
+    charging != null ? fmtSeconds(charging) : fmtDuration(s.startedAt, s.endedAt),
+    cost && `${cost.estimated ? "≈ " : ""}${formatMoney(String(cost.amount), s.currency)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** Sessions by day, newest first, each day with its energy and cost. */
 function SessionList(props: { sessions: ChargingSessionDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
   // Listed by when each started charging, which can be hours after plug-in.
@@ -455,16 +480,11 @@ function SessionList(props: { sessions: ChargingSessionDto[]; selectedId: number
   return (
     <div>
       {days.map((day) => {
-        const totals = sessionTotals(day.items);
-        const currency = day.items.find((s) => s.currency)?.currency ?? null;
         return (
           <section key={day.key}>
             <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-1)] px-4 py-2 text-xs">
               <span className="font-medium uppercase tracking-wide text-[var(--text-muted)]">{day.label}</span>
-              <span className="tabular-nums text-[var(--text-muted)]">
-                {fmt(totals.energyKwh, 1)} kWh
-                {totals.cost != null && ` · ${totals.estimated ? "≈ " : ""}${formatMoney(String(totals.cost), currency)}`}
-              </span>
+              <span className="tabular-nums text-[var(--text-muted)]">{dayTotals(day.items)}</span>
             </h4>
             <ul>
               {day.items.map((s) => (
@@ -480,13 +500,6 @@ function SessionList(props: { sessions: ChargingSessionDto[]; selectedId: number
 
 function SessionItem(props: { session: ChargingSessionDto; selected: boolean; onSelect: () => void }) {
   const s = props.session;
-  const cost = sessionCost(s);
-  const charging = chargingSecondsNow(s);
-  const facts = [
-    s.startSoc != null && s.endSoc != null && socRange(s.startSoc, s.endSoc),
-    charging != null ? fmtSeconds(charging) : fmtDuration(s.startedAt, s.endedAt),
-    cost && `${cost.estimated ? "≈ " : ""}${formatMoney(String(cost.amount), s.currency)}`,
-  ].filter(Boolean);
 
   return (
     <li>
@@ -515,7 +528,7 @@ function SessionItem(props: { session: ChargingSessionDto; selected: boolean; on
                 {s.chargingSince ? "Charging" : "Plugged in"} ·
               </span>
             )}
-            {facts.join(" · ")}
+            {sessionFacts(s)}
           </span>
         </span>
         <span className="text-sm font-medium tabular-nums">{s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : "—"}</span>

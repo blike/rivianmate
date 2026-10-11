@@ -442,3 +442,44 @@ body {
     transition: none;
   }
 }
+
+/* ---- Phone menu ---- */
+.rm-fade-in {
+  animation: rm-fade-in 180ms ease-out both;
+}
+
+.rm-sheet-in {
+  animation: rm-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.rm-item-in {
+  animation: rm-item-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes rm-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rm-sheet-in {
+  from {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+}
+
+@keyframes rm-item-in {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-fade-in,
+  .rm-sheet-in,
+  .rm-item-in {
+    animation: none;
+  }
+}
