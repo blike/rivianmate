@@ -6,6 +6,7 @@ import type {
   ConnectResponse,
   DriveDetailDto,
   DriveDto,
+  FeedLatestData,
   HistoryMetric,
   HistoryPoint,
   LocationPointDto,
@@ -28,6 +29,7 @@ import type {
 } from '@server/api-types';
 
 export type {
+  FeedLatestData,
   HomeChargingSettings,
   BatteryHealthDto,
   ChargingCurvePointDto,
@@ -126,6 +128,8 @@ export const api = {
       body: JSON.stringify(units),
     }),
   rivianDiagnostics: () => request<RivianDiagnosticsResponse>('/api/rivian/diagnostics'),
+  feedLatest: (feedId: string) =>
+    request<FeedLatestData>(`/api/rivian/feeds/${encodeURIComponent(feedId)}/latest`),
   rivianDisconnect: () => request<{ ok: boolean }>('/api/rivian/disconnect', { method: 'POST' }),
 
   vehicles: () => request<VehicleDto[]>('/api/vehicles'),

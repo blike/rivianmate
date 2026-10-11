@@ -1,4 +1,4 @@
-import type { StreamDiagnostics } from '../rivian/subscription.js';
+import type { FeedLatestData, StreamDiagnostics } from '../rivian/subscription.js';
 import type { Db } from '../db/client.js';
 import { vehicles as vehiclesTable } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
@@ -181,6 +181,11 @@ export class VehicleMonitor {
       ),
       parallaxDroppedFields: this.connection?.stream.droppedFields ?? [],
     };
+  }
+
+  /** What a feed last received since startup; null for an unknown feed. */
+  feedLatestData(feedId: string): FeedLatestData | null {
+    return this.connection?.stream.latestData?.(feedId) ?? null;
   }
 
   /** Start monitoring if usable stored credentials exist. */

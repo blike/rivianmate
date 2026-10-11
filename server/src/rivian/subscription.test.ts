@@ -92,11 +92,15 @@ describe('RivianSubscriptionManager', () => {
   });
 
   function createManager(
-    overrides: { initialBackoffMs?: number; heartbeatIntervalMs?: number } = {},
+    overrides: {
+      initialBackoffMs?: number;
+      heartbeatIntervalMs?: number;
+      governor?: RivianGovernor;
+    } = {},
   ) {
     return new RivianSubscriptionManager({
       url: server.url,
-      governor: new RivianGovernor({ minSpacingMs: 0 }),
+      governor: overrides.governor ?? new RivianGovernor({ minSpacingMs: 0 }),
       getCredentials: () => ({
         userSessionToken: 'usess',
         appSession: { appSessionToken: 'asess', csrfToken: 'csrf' },
@@ -292,6 +296,61 @@ describe('RivianSubscriptionManager', () => {
       () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1,
     );
     expect(server.subscribes(server.conns[1]!)[0]!.id).toBe('vehicleState:VIN1');
+  });
+
+  it("counts lost connections as drops, but not Rivian's scheduled renewals", async () => {
+    const governor = new RivianGovernor({ minSpacingMs: 0 });
+    manager = createManager({ governor });
+    manager.subscribe('VIN1', () => {});
+    manager.start();
+    const subscribed = (i: number) => () =>
+      server.conns[i] !== undefined && server.subscribes(server.conns[i]).length === 1;
+    await server.until(subscribed(0));
+    server.conns[0]!.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'Connection TTL expired');
+    await server.until(subscribed(1));
+    expect(governor.snapshot().last24h.wsDrops).toBe(0);
+    server.conns[1]!.socket.terminate(); // closes without a frame (1006)
+    await server.until(subscribed(2));
+    expect(governor.snapshot().last24h.wsDrops).toBe(1);
+  });
+
+  it("keeps each feed's latest data, naming the Parallax fields it reads", async () => {
+    manager = createManager();
+    manager.subscribe('VIN1', () => {});
+    manager.subscribeParallax(
+      'VIN1',
+      ['charging.session.soc_slider', 'charging.session.notification'],
+      () => {},
+    );
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
+    const send = (id: string, data: unknown) =>
+      server.conns[0]!.socket.send(JSON.stringify({ type: 'next', id, payload: { data } }));
+    const stamped = (value: unknown) => ({ value, timeStamp: '2026-10-11T17:00:00Z' });
+    send('vehicleState:VIN1', { vehicleState: { batteryLevel: stamped(62) } });
+    send('vehicleState:VIN1', { vehicleState: { gearStatus: stamped('drive') } });
+    const parallax = (rvm: string, payload: string) =>
+      send('parallax:VIN1', { parallaxMessages: { rvm, payload } });
+    parallax('charging.session.soc_slider', Buffer.from([0x08, 80]).toString('base64'));
+    parallax('charging.session.notification', Buffer.from([0x08, 5]).toString('base64'));
+    await server.until(() => manager.latestData('parallax:VIN1:charging')?.messages.length === 2);
+
+    // Vehicle state arrives as changes; every field's latest value is kept.
+    expect(manager.latestData('vehicleState:VIN1')!.messages[0]!.data).toEqual({
+      batteryLevel: stamped(62),
+      gearStatus: stamped('drive'),
+    });
+    const charging = manager.latestData('parallax:VIN1:charging')!.messages;
+    expect(charging.map(({ topic, fields }) => ({ topic, fields }))).toEqual([
+      {
+        topic: 'charging.session.soc_slider',
+        fields: [{ path: '1', name: 'Charge limit (%)', value: 80 }],
+      },
+      { topic: 'charging.session.notification', fields: [{ path: '1', name: null, value: 5 }] },
+    ]);
+    expect(manager.latestData('nothing')).toBeNull();
   });
 
   it('reports auth failures and keeps retrying with backoff', async () => {

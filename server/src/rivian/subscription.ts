@@ -15,7 +15,7 @@ import {
   SUBSCRIPTION_PROPERTIES,
   buildVehicleStateSubscription,
 } from './graphql.js';
-import type { ParallaxMessage } from './parallax.js';
+import { type ParallaxMessage, type RawField, describeParallax } from './parallax.js';
 import type {
   DepartureSchedule,
   LiveSessionData,
@@ -58,6 +58,8 @@ export interface VehicleStateStream {
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
   readonly droppedFields?: readonly string[];
   diagnostics?(): StreamDiagnostics;
+  /** What a feed last received, for diagnostics. */
+  latestData?(feedId: string): FeedLatestData | null;
   start(): void;
   stop(): void;
   /**
@@ -107,6 +109,19 @@ export interface FeedDiagnostics {
   lastMessageAt: string | null;
 }
 
+/** The last message a feed received: per topic for a Parallax feed. */
+export interface FeedLatestData {
+  feedId: string;
+  messages: {
+    topic: string | null;
+    receivedAt: string;
+    /** A legacy feed's data, as Rivian sent it (vehicle state merged across messages). */
+    data?: unknown;
+    /** A Parallax topic's raw fields, with RivianMate's names for those it reads. */
+    fields?: RawField[];
+  }[];
+}
+
 export interface StreamDiagnostics {
   state: 'connected' | 'connecting' | 'reconnecting' | 'stopped';
   lastMessageAt: string | null;
@@ -127,6 +142,23 @@ interface Subscription {
   onDepartures?: DepartureSchedulesCallback;
   rvms?: readonly string[];
   onParallax?: ParallaxCallback;
+  /** The last data received, for diagnostics: the whole payload, or per Parallax topic. */
+  latest?: { at: number; data: unknown };
+  latestByTopic?: Map<string, { at: number; message: ParallaxMessage }>;
+}
+
+/** The feeds a subscription shows as: one, or one per Parallax domain. */
+function feedsOf(sub: Subscription): { id: string; domain: string | null; topics: string[] }[] {
+  if (sub.kind !== 'parallax' && sub.kind !== 'parallaxDynamics') {
+    return [{ id: sub.id, domain: null, topics: [] }];
+  }
+  const domains = new Map<string, string[]>();
+  for (const topic of sub.rvms ?? []) {
+    const prefix = topic.split('.')[0]!;
+    const domain = prefix === 'energy_edge_compute' ? 'energy' : prefix;
+    domains.set(domain, [...(domains.get(domain) ?? []), topic]);
+  }
+  return [...domains].map(([domain, topics]) => ({ id: `${sub.id}:${domain}`, domain, topics }));
 }
 
 type DisconnectReason =
@@ -256,16 +288,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             ? 'reconnecting'
             : 'connecting',
       lastMessageAt: this.lastMessageAt == null ? null : new Date(this.lastMessageAt).toISOString(),
-      feeds: [...this.subscriptions.values()].flatMap((sub) => {
-        const domains = new Map<string | null, string[]>();
-        if (sub.kind === 'parallax' || sub.kind === 'parallaxDynamics') {
-          for (const topic of sub.rvms ?? []) {
-            const prefix = topic.split('.')[0]!;
-            const domain = prefix === 'energy_edge_compute' ? 'energy' : prefix;
-            domains.set(domain, [...(domains.get(domain) ?? []), topic]);
-          }
-        } else domains.set(null, []);
-        return [...domains].map(([domain, topics]): FeedDiagnostics => {
+      feeds: [...this.subscriptions.values()].flatMap((sub) =>
+        feedsOf(sub).map(({ id, domain, topics }): FeedDiagnostics => {
           const lastMessageAt =
             domain == null
               ? sub.lastMessageAt
@@ -278,7 +302,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
               ? sub.receivedOnConnection
               : topics.some((topic) => sub.topicsOnConnection?.has(topic));
           return {
-            id: domain == null ? sub.id : `${sub.id}:${domain}`,
+            id,
             vehicleId: sub.vehicleId,
             kind: sub.kind,
             domain,
@@ -296,14 +320,52 @@ export class RivianSubscriptionManager implements VehicleStateStream {
                   : 'waiting',
             lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
           };
-        });
-      }),
+        }),
+      ),
     };
   }
 
-  private noteFeedMessage(sub: Subscription): void {
+  /** What a feed last received since startup; null for an unknown feed. */
+  latestData(feedId: string): FeedLatestData | null {
+    for (const sub of this.subscriptions.values()) {
+      const feed = feedsOf(sub).find((f) => f.id === feedId);
+      if (!feed) continue;
+      if (feed.domain == null) {
+        return {
+          feedId,
+          messages: sub.latest
+            ? [
+                {
+                  topic: null,
+                  receivedAt: new Date(sub.latest.at).toISOString(),
+                  data: sub.latest.data,
+                },
+              ]
+            : [],
+        };
+      }
+      return {
+        feedId,
+        messages: feed.topics.flatMap((topic) => {
+          const latest = sub.latestByTopic?.get(topic);
+          if (!latest) return [];
+          return [
+            {
+              topic,
+              receivedAt: new Date(latest.at).toISOString(),
+              fields: describeParallax(latest.message),
+            },
+          ];
+        }),
+      };
+    }
+    return null;
+  }
+
+  private noteFeedMessage(sub: Subscription, data?: unknown): void {
     sub.lastMessageAt = Date.now();
     sub.receivedOnConnection = true;
+    if (data !== undefined) sub.latest = { at: sub.lastMessageAt, data };
   }
 
   start(): void {
@@ -481,7 +543,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
         if (sub.kind === 'vehicleState') {
           const state = data?.vehicleState as VehicleState | undefined;
           if (state) {
-            this.noteFeedMessage(sub);
+            // Each message carries only what changed; keep every field's latest.
+            this.noteFeedMessage(sub, { ...(sub.latest?.data as VehicleState), ...state });
             if (!this.gotVehicleData) {
               this.gotVehicleData = true;
               this.reconnectAttempt = 0;
@@ -489,14 +552,14 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             sub.onState?.(sub.vehicleId, state);
           }
         } else if (sub.kind === 'chargingSession' && data && 'chargingSession' in data) {
-          this.noteFeedMessage(sub);
+          this.noteFeedMessage(sub, data.chargingSession);
           sub.onCharging?.(sub.vehicleId, mapChargingSession(data.chargingSession));
         } else if (
           sub.kind === 'departureSchedules' &&
           data &&
           'vehicleDepartureSchedules' in data
         ) {
-          this.noteFeedMessage(sub);
+          this.noteFeedMessage(sub, data.vehicleDepartureSchedules);
           sub.onDepartures?.(sub.vehicleId, mapDepartureSchedules(data.vehicleDepartureSchedules));
         } else if (
           (sub.kind === 'parallax' || sub.kind === 'parallaxDynamics') &&
@@ -512,11 +575,13 @@ export class RivianSubscriptionManager implements VehicleStateStream {
               (sub.topicsOnConnection ??= new Set()).add(m.rvm);
             }
             const timestamp = Number(m.timestamp);
-            sub.onParallax?.(sub.vehicleId, {
+            const message: ParallaxMessage = {
               rvm: m.rvm,
               payload: typeof m.payload === 'string' ? m.payload : '',
               timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
-            });
+            };
+            (sub.latestByTopic ??= new Map()).set(m.rvm, { at: Date.now(), message });
+            sub.onParallax?.(sub.vehicleId, message);
           }
         }
         return undefined;
@@ -613,6 +678,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
 
   private handleDisconnect(ws: WebSocket, reason: DisconnectReason): void {
     if (this.ws !== ws) return;
+    const wasConnected = this.connected;
     this.ws = undefined;
     this.sentIds.clear();
     this.stopHeartbeat();
@@ -638,6 +704,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       }
       case 'error':
         this.log(reason.message);
+        // A failed attempt to connect isn't a lost connection.
+        if (wasConnected) this.options.governor.count('wsDrops');
         break;
     }
     if (!this.started) return; // onAuthFailure may have stopped us

@@ -29,6 +29,8 @@ export type RivianTrafficCounter =
   | 'sessionRefreshes'
   | 'wsConnects'
   | 'wsReconnects'
+  /** Connections lost unexpectedly; Rivian's scheduled renewals aren't counted. */
+  | 'wsDrops'
   | 'wsMessages'
   | 'wsAuthFailures';
 
@@ -135,6 +137,7 @@ export class RivianGovernor {
       sessionRefreshes: 0,
       wsConnects: 0,
       wsReconnects: 0,
+      wsDrops: 0,
       wsMessages: 0,
       wsAuthFailures: 0,
     };

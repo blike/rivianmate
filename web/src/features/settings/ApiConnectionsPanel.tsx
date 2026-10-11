@@ -1,10 +1,17 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { RivianDiagnosticsResponse, VehicleDto } from '../../api/client';
+import {
+  api,
+  type FeedLatestData,
+  type RivianDiagnosticsResponse,
+  type VehicleDto,
+} from '../../api/client';
 import { Dot } from '../../components/Dot';
 import { LoadingScope, Skeleton } from '../../components/LoadingState';
 import { Row } from '../../components/Panel';
 import { relativeTime } from '../../lib/freshness';
-import { HeroTiles, SettingsGroup, SettingsHero } from './SettingsControls';
+import { dateTime } from '../../lib/format';
+import { SettingsGroup, SettingsHero } from './SettingsControls';
 
 const feedNames = {
   vehicleState: 'Vehicle state',
@@ -15,7 +22,7 @@ const feedNames = {
 };
 const pollingLabels = {
   stopped: 'Stopped',
-  standby: 'Standby · stream connected',
+  standby: 'Off · live stream connected',
   waiting: 'Waiting for stream recovery',
   fallback: 'Fallback polling active',
 };
@@ -28,6 +35,105 @@ function receivedAt(value: string | null | undefined) {
 
 function ago(value: string | null | undefined, now: number) {
   return value ? relativeTime(new Date(value), now) : 'never';
+}
+
+/** The counters' window: the last day, or since the server started if that's sooner. */
+function countedSince(since: string, now: number) {
+  return now - Date.parse(since) < 24 * 3600_000 ? `since ${dateTime(since)}` : 'last 24 hours';
+}
+
+/**
+ * What a feed last received, fetched when opened. Parallax feeds list each
+ * topic's raw fields.
+ */
+function FeedLatest(props: { feedId: string; topics: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="mt-1.5 text-xs text-(--text-secondary)"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-(--text-muted) hover:text-(--text-secondary)">
+        Latest data
+        {props.topics.length > 0 &&
+          ` · ${props.topics.length} ${props.topics.length === 1 ? 'topic' : 'topics'}`}
+      </summary>
+      {open && <FeedLatestBody feedId={props.feedId} topics={props.topics} />}
+    </details>
+  );
+}
+
+function FeedLatestBody(props: { feedId: string; topics: string[] }) {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ['feedLatest', props.feedId],
+    queryFn: () => api.feedLatest(props.feedId),
+    refetchInterval: 10_000,
+  });
+  if (isPending) return <p className="mt-2 text-(--text-muted)">Loading…</p>;
+  if (isError)
+    return <p className="mt-2 text-(--status-critical)">Couldn’t load the latest data.</p>;
+  const byTopic = new Map(data.messages.map((m) => [m.topic, m]));
+  const topics = props.topics.length > 0 ? props.topics : [null];
+  return (
+    <ul className="mt-2 space-y-3">
+      {topics.map((topic) => {
+        const m = byTopic.get(topic);
+        return (
+          <li key={topic ?? 'feed'}>
+            {topic && <div className="break-all font-mono text-(--text-primary)">{topic}</div>}
+            {m ? (
+              <>
+                <div className="text-(--text-muted)">
+                  Received {new Date(m.receivedAt).toLocaleString()}
+                </div>
+                {m.fields ? (
+                  <RawFields fields={m.fields} />
+                ) : (
+                  <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-(--surface-2) p-2 font-mono text-[11px] leading-snug">
+                    {JSON.stringify(m.data, null, 2)}
+                  </pre>
+                )}
+              </>
+            ) : (
+              <div className="text-(--text-muted)">Nothing received since the server started.</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** A Parallax message's fields as Rivian sent them, with RivianMate's reading of each. */
+function RawFields(props: { fields: NonNullable<FeedLatestData['messages'][number]['fields']> }) {
+  if (props.fields.length === 0)
+    return <div className="mt-1 text-(--text-muted)">Empty message.</div>;
+  return (
+    <div className="mt-1 max-h-64 overflow-auto rounded-md bg-(--surface-2)">
+      <table className="w-full text-left text-[11px] leading-snug">
+        <thead className="sticky top-0 bg-(--surface-2) text-(--text-muted)">
+          <tr>
+            <th className="px-2 py-1 font-medium">Field</th>
+            <th className="px-2 py-1 font-medium">RivianMate reads it as</th>
+            <th className="px-2 py-1 text-right font-medium">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.fields.map((f, i) => (
+            <tr key={i} className="border-t border-(--border)">
+              <td className="whitespace-nowrap px-2 py-1 align-top font-mono">{f.path}</td>
+              <td className="px-2 py-1 align-top">
+                {f.name ?? <span className="text-(--text-muted)">—</span>}
+              </td>
+              <td className="break-all px-2 py-1 text-right align-top font-mono tabular-nums">
+                {f.value}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 /** The current time, ticking with the 10-second diagnostics refresh. */
@@ -75,7 +181,7 @@ export function ApiConnectionsPanel({
   const stream = diagnostics?.monitor.subscriptions;
   const cooldown = diagnostics?.traffic.cooldownUntil;
   const coolingDown = cooldown != null;
-  const last24h = diagnostics?.traffic.last24h;
+  const counted = diagnostics ? countedSince(diagnostics.traffic.since, now) : '';
   const feeds = stream?.feeds ?? [];
   const receiving = feeds.filter((f) => f.status === 'receiving').length;
   const lastData =
@@ -107,22 +213,7 @@ export function ApiConnectionsPanel({
             total: feeds.length,
             lastData,
           })}
-        >
-          {last24h && !mockMode && (
-            <HeroTiles
-              tiles={[
-                { label: 'Requests · 24h', value: last24h.httpRequests.toLocaleString() },
-                { label: 'Reconnects · 24h', value: last24h.wsReconnects.toLocaleString() },
-                {
-                  label: 'Rate limited · 24h',
-                  value: last24h.rateLimited.toLocaleString(),
-                  tone: last24h.rateLimited > 0 ? 'critical' : undefined,
-                },
-                { label: 'Session refreshes', value: last24h.sessionRefreshes.toLocaleString() },
-              ]}
-            />
-          )}
-        </SettingsHero>
+        />
       )}
 
       {loading ? (
@@ -185,18 +276,7 @@ export function ApiConnectionsPanel({
                     </div>
                     <FeedStatus status={feed.status} />
                   </div>
-                  {feed.topics.length > 0 && (
-                    <details className="mt-1.5 text-xs text-(--text-secondary)">
-                      <summary className="cursor-pointer text-(--text-muted) hover:text-(--text-secondary)">
-                        {feed.topics.length} subscribed topics
-                      </summary>
-                      <ul className="mt-2 space-y-1 break-all font-mono">
-                        {feed.topics.map((topic) => (
-                          <li key={topic}>{topic}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
+                  <FeedLatest feedId={feed.id} topics={feed.topics} />
                 </div>
               ))}
             </SettingsGroup>
@@ -206,12 +286,8 @@ export function ApiConnectionsPanel({
 
       <Disclosure title="Connection details">
         <LoadingScope loading={loading}>
-          <h4 className="mb-2 text-xs uppercase tracking-wide text-(--text-muted)">Legacy API</h4>
+          <h4 className="mb-2 text-xs uppercase tracking-wide text-(--text-muted)">Requests</h4>
           <dl className="space-y-2 text-sm">
-            <Row
-              label="Last successful request"
-              value={diagnostics ? receivedAt(diagnostics.traffic.lastSuccessfulRequestAt) : '—'}
-            />
             <Row
               label="Vehicle-state polling"
               value={
@@ -223,19 +299,19 @@ export function ApiConnectionsPanel({
               }
             />
             <Row
+              label="Last successful request"
+              value={diagnostics ? receivedAt(diagnostics.traffic.lastSuccessfulRequestAt) : '—'}
+            />
+            <Row
               label="Rate-limit cooldown"
               value={
                 !diagnostics ? '—' : coolingDown ? `Paused until ${receivedAt(cooldown)}` : 'None'
               }
             />
           </dl>
-          <p className="mt-2 text-xs text-(--text-muted)">
-            Vehicle state normally arrives by subscription. Fallback polls run every 5 minutes while
-            awake or 30 minutes while asleep, after stream recovery has been given time.
-          </p>
 
           <h4 className="mb-2 mt-5 text-xs uppercase tracking-wide text-(--text-muted)">
-            Subscriptions
+            Live stream
           </h4>
           <dl className="space-y-2 text-sm">
             <Row
@@ -255,28 +331,21 @@ export function ApiConnectionsPanel({
               }
             />
             <Row
-              label="Reconnect attempts (24h)"
-              value={diagnostics ? diagnostics.traffic.last24h.wsReconnects : '—'}
-            />
-            <Row
-              label="Stream connects (24h)"
-              value={diagnostics ? diagnostics.traffic.last24h.wsConnects : '—'}
-            />
-            <Row
               label="Last message received"
               value={diagnostics ? receivedAt(stream?.lastMessageAt) : '—'}
             />
+            <Row
+              label={`Dropped connections · ${counted}`}
+              value={diagnostics ? diagnostics.traffic.last24h.wsDrops : '—'}
+            />
           </dl>
-          <p className="mt-2 text-xs text-(--text-muted)">
-            Socket messages include keepalives. Feed activity above measures data delivery.
-          </p>
 
           {diagnostics &&
             (Object.keys(diagnostics.traffic.requestsByOperation24h).length > 0 ||
               diagnostics.monitor.parallaxDroppedFields.length > 0) && (
               <>
                 <h4 className="mb-2 mt-5 text-xs uppercase tracking-wide text-(--text-muted)">
-                  Requests · last 24 hours
+                  Requests by operation · {counted}
                 </h4>
                 <dl className="space-y-2 text-sm">
                   {Object.entries(diagnostics.traffic.requestsByOperation24h)
@@ -291,9 +360,6 @@ export function ApiConnectionsPanel({
                     />
                   )}
                 </dl>
-                <p className="mt-2 text-xs text-(--text-muted)">
-                  Counters reset when the server restarts.
-                </p>
               </>
             )}
         </LoadingScope>
