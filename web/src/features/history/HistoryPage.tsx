@@ -7,7 +7,7 @@ import { Panel } from '../../components/Panel';
 import { VehicleMap } from '../../components/VehicleMap';
 import { isPosition } from '../../lib/geo';
 import { DistancePanel } from './DistancePanel';
-import { activityBands, periodSummary, positionAt } from './history';
+import { activityBands, periodSummary, positionAt, rangeWindow } from './history';
 import { MetricChart } from './MetricChart';
 import { RANGES, METRICS } from './options';
 import { Segmented } from './Segmented';
@@ -19,10 +19,7 @@ export function HistoryPage(props: { vehicleId: string }) {
   const range = RANGES[rangeIdx] ?? RANGES[1]!;
   const metric = METRICS[metricIdx] ?? METRICS[0]!;
 
-  const { from, to } = useMemo(() => {
-    const to = new Date();
-    return { from: new Date(to.getTime() - range.hours * 3600_000), to };
-  }, [range.hours]);
+  const { from, to } = useMemo(() => rangeWindow(range.hours, new Date()), [range.hours]);
 
   const { data: drives, isPending: drivesPending } = useDrives(props.vehicleId);
   const { data: sessions, isPending: sessionsPending } = useChargingSessions(props.vehicleId);

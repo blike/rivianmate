@@ -43,6 +43,8 @@ export function TrendChart(props: {
   xType?: 'number' | 'category';
   /** Exact x-axis tick positions; chosen automatically when left out. */
   xTicks?: number[];
+  /** Label every (n + 1)th category, even where labels would sit close; thinned to fit when left out. */
+  xInterval?: number;
   leftDomain?: [number | 'auto', number | 'auto'];
   rightDomain?: [number | 'auto', number | 'auto'];
   leftUnit?: string;
@@ -92,6 +94,7 @@ export function TrendChart(props: {
             axisLine={false}
             tickFormatter={xFormatter}
             ticks={props.xTicks}
+            interval={props.xInterval ?? 'preserveEnd'}
             minTickGap={32}
           />
           <YAxis
