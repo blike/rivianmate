@@ -86,6 +86,52 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
     expect(drive!.driveMode).toBe('everyday');
   });
 
+  it('leaves out points recorded after it parked', async () => {
+    const d = detector();
+    clock = at('2026-10-01T15:00:00Z');
+    await d.onState('v1', state('drive', '2026-10-01T15:00:00Z'));
+    const [drive] = await rows();
+    const point = (ts: string) => ({
+      vehicleId: 'v1',
+      driveId: drive!.id,
+      ts: new Date(ts),
+      lat: 33.07,
+      lon: -117.26,
+    });
+    // Stamped onto the drive while it was still open, waiting out the grace.
+    await handle.db
+      .insert(locationPoints)
+      .values([point('2026-10-01T15:10:00Z'), point('2026-10-01T15:21:00Z')]);
+    clock = at('2026-10-01T15:20:00Z');
+    await d.onState('v1', state('park', '2026-10-01T15:20:00Z'));
+    await settle();
+
+    const points = await handle.db
+      .select({ ts: locationPoints.ts, driveId: locationPoints.driveId })
+      .from(locationPoints)
+      .orderBy(locationPoints.ts);
+    expect(points.map((p) => p.driveId)).toEqual([drive!.id, null]);
+  });
+
+  it('ends when it parked despite GPS speed noise while standing still', async () => {
+    const d = detector();
+    clock = at('2026-10-01T15:00:00Z');
+    await d.onState('v1', state('drive', '2026-10-01T15:00:00Z'));
+    clock = at('2026-10-01T15:20:00Z');
+    await d.onState('v1', state('park', '2026-10-01T15:20:00Z'));
+    // Still in park with the power on; GPS reads 2.5 m/s at the same spot.
+    clock = at('2026-10-01T15:21:00Z');
+    await d.onState('v1', {
+      ...state('park', '2026-10-01T15:20:00Z'),
+      powerState: { value: 'go', timeStamp: '2026-10-01T15:20:00Z' },
+      gnssSpeed: { value: 2.5, timeStamp: '2026-10-01T15:21:00Z' },
+    });
+    await settle();
+
+    const [drive] = await rows();
+    expect(drive!.endedAt?.toISOString()).toBe('2026-10-01T15:20:00.000Z');
+  });
+
   it('ends at once when the parked state arrives late (e.g. after the host slept)', async () => {
     const d = detector();
     clock = at('2026-10-01T14:49:00Z');
