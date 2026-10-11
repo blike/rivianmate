@@ -54,13 +54,17 @@ export function SessionCard(props: {
       value:
         s && props.onSaveCost ? (
           <CostEditor key={s.id} session={s} onSave={props.onSaveCost} />
+        ) : cost ? (
+          `${cost.estimated ? '≈ ' : ''}${formatMoney(String(cost.amount), s?.currency ?? null)}`
         ) : (
           '—'
         ),
       sub:
         cost && energy
           ? `${formatMoney(String(cost.amount / energy), s?.currency ?? null)} per kWh${cost.estimated ? ' (home rate)' : ''}`
-          : 'Click to add',
+          : props.onSaveCost
+            ? 'Click to add'
+            : undefined,
     },
   ];
 
@@ -81,6 +85,9 @@ export function SessionCard(props: {
               )}
               <TimeRange session={s} />
               {s.source === 'rivian' && <SourceBadge />}
+              {s.source === 'teslamate' && (
+                <SourceBadge label="TeslaMate" title="Read from TeslaMate" />
+              )}
             </>
           )}
         </div>
@@ -129,13 +136,13 @@ function TimeRange(props: { session: ChargingSessionDto }) {
   );
 }
 
-function SourceBadge() {
+function SourceBadge(props: { label?: string; title?: string }) {
   return (
     <span
       className="rounded-full border border-(--border) px-1.5 text-[10px] uppercase tracking-wide text-(--text-muted)"
-      title="Imported from Rivian's charging history"
+      title={props.title ?? "Imported from Rivian's charging history"}
     >
-      Rivian
+      {props.label ?? 'Rivian'}
     </span>
   );
 }

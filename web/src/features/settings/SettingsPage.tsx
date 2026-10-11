@@ -5,9 +5,18 @@ import { AboutSection } from './AboutSection';
 import { ApiConnectionsPanel } from './ApiConnectionsPanel';
 import { GeneralSection } from './GeneralSection';
 import { HomeChargingPanel } from './HomeChargingPanel';
-import { CarIcon, BoltIcon, BellIcon, PulseIcon, LockIcon, InfoIcon } from './NavIcons';
+import {
+  CarIcon,
+  BoltIcon,
+  BellIcon,
+  DatabaseIcon,
+  PulseIcon,
+  LockIcon,
+  InfoIcon,
+} from './NavIcons';
 import { NotificationsPanel } from './NotificationsPanel';
 import { SecuritySection } from './SecuritySection';
+import { TeslaMatePanel } from './TeslaMatePanel';
 
 const sections = [
   {
@@ -33,6 +42,12 @@ const sections = [
     label: 'API & Feeds',
     description: 'How data is arriving from Rivian.',
     icon: <PulseIcon />,
+  },
+  {
+    id: 'teslamate',
+    label: 'TeslaMate',
+    description: 'Show your Tesla from a TeslaMate database, read-only.',
+    icon: <DatabaseIcon />,
   },
   {
     id: 'security',
@@ -118,6 +133,7 @@ export function SettingsPage() {
             mockMode={status?.mockMode ?? false}
           />
         )}
+        {section.id === 'teslamate' && <TeslaMatePanel />}
         {section.id === 'security' && <SecuritySection />}
         {section.id === 'about' && <AboutSection />}
       </section>

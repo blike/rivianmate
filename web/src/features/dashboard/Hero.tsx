@@ -1,4 +1,5 @@
 import type { VehicleDto, VehicleState } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useLiveCharging, useUnits } from '../../api/hooks';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
@@ -54,6 +55,8 @@ export function Hero(props: {
   const locBehind = locationIsBehind(state);
   const trail = useActiveDriveTrail(props.vehicleId, loc);
   const security = securitySummary(state, vehicle?.model);
+  // TeslaMate doesn't log doors or windows, so "all closed" would be a guess.
+  const closuresKnown = !isTeslaMateVehicle(props.vehicleId);
   const chargePower = live(liveSession?.power);
   const chargeRate = live(liveSession?.kilometersChargedPerHour);
   const secondsLeft = live(liveSession?.timeRemaining);
@@ -121,11 +124,15 @@ export function Hero(props: {
                     {security.locked ? 'Locked' : 'Unlocked'}
                   </Chip>
                 )}
-                <Chip
-                  dot={security.open.length === 0 ? 'var(--status-good)' : 'var(--status-warning)'}
-                >
-                  <span title={security.open.join(', ') || undefined}>{security.openLabel}</span>
-                </Chip>
+                {closuresKnown && (
+                  <Chip
+                    dot={
+                      security.open.length === 0 ? 'var(--status-good)' : 'var(--status-warning)'
+                    }
+                  >
+                    <span title={security.open.join(', ') || undefined}>{security.openLabel}</span>
+                  </Chip>
+                )}
                 {ota && (
                   <Chip
                     dot="var(--accent)"

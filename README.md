@@ -109,6 +109,24 @@ RivianMate can send alerts to [Discord](https://discord.com) webhooks and to
 Telegram, Slack, email and [many more](https://github.com/caronc/apprise/wiki). Set them up in
 **Settings → Notifications**.
 
+### TeslaMate
+
+Also have a Tesla logged by [TeslaMate](https://github.com/teslamate-org/teslamate)? Add its
+database under **Settings → TeslaMate** and its cars join the vehicle menu, on the same dashboard,
+drives, charging, history and health pages, with drives and charging sessions updating live while
+they happen.
+
+RivianMate only reads from TeslaMate: it opens a read-only session, copies nothing into its own
+database, and never writes to TeslaMate's. Enter a Postgres URL such as
+`postgres://teslamate:password@192.168.1.10:5432/teslamate`. The database has to be reachable from
+the RivianMate container, for example by publishing TeslaMate's Postgres port or by putting both on
+the same Docker network. The URL is stored encrypted with `APP_SECRET`. Settings also shows how to
+create a user that can only read, if you'd rather not use TeslaMate's own.
+
+TeslaMate doesn't log some things Rivian reports, such as locks, doors, the charge limit and pending
+software updates, so those parts of the pages are left out for Tesla vehicles, and notifications
+only cover Rivian vehicles.
+
 ## Updating
 
 ```sh
@@ -135,7 +153,8 @@ Images are published to Docker Hub as
 - The web app is protected by an app password, hashed with scrypt.
 - All data stays in your Postgres database, which isn't published outside the Docker network. The
   only other outbound requests are map tiles from [OpenFreeMap](https://openfreemap.org) and address
-  lookups for drive start and end points from OpenStreetMap's [Nominatim](https://nominatim.org).
+  lookups for drive start and end points from OpenStreetMap's [Nominatim](https://nominatim.org),
+  plus read-only queries to your TeslaMate database if you add one.
 
 Found a vulnerability? Please report it privately as described in [SECURITY.md](SECURITY.md).
 

@@ -30,6 +30,8 @@ export interface StatusResponse {
   rivianAuthState: 'ok' | 'unauthenticated' | null;
   rivianEmail: string | null;
   mockMode: boolean;
+  /** A TeslaMate database is set up, so its vehicles can be shown without Rivian. */
+  teslamateConfigured: boolean;
 }
 
 export interface VersionResponse {
@@ -46,6 +48,8 @@ export interface VehicleDto {
   make: string | null;
   model: string | null;
   modelYear: number | null;
+  /** Where its data comes from: Rivian directly, or a TeslaMate database (read-only). */
+  source: 'rivian' | 'teslamate';
 }
 
 export type { HomeChargingSettings } from './services/home-charging.js';
@@ -212,8 +216,11 @@ export interface ChargingSessionDto {
   isHome: boolean;
   /** Energy × home rate, when this home session has no cost of its own. */
   estimatedCost: string | null;
-  /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
-  source: 'live' | 'rivian' | 'live+rivian';
+  /**
+   * live = recorded by RivianMate; rivian = imported from Rivian's history;
+   * teslamate = read from TeslaMate.
+   */
+  source: 'live' | 'rivian' | 'live+rivian' | 'teslamate';
   vendor: string | null;
   city: string | null;
   isPublic: boolean | null;
@@ -349,4 +356,21 @@ export interface NotificationTestResult {
   name: string | null;
   ok: boolean;
   error: string | null;
+}
+
+/** The TeslaMate database RivianMate reads from; the URL itself isn't sent back. */
+export interface TeslaMateSettingsDto {
+  configured: boolean;
+  /** The connection without its password, e.g. "postgres://teslamate@nas:5432/teslamate". */
+  preview: string | null;
+  /** Whether the last read from TeslaMate worked. */
+  connected: boolean;
+  error: string | null;
+  lastReadAt: string | null;
+  vehicles: VehicleDto[];
+}
+
+export interface TeslaMateSettingsUpdate {
+  /** A Postgres connection URL for TeslaMate's database. */
+  url: string;
 }

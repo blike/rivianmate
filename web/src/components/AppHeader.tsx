@@ -58,11 +58,23 @@ export function AppHeader(props: {
   }, [open]);
 
   const multipleVehicles = props.vehicles != null && props.vehicles.length > 1;
-  const vehicleOptions = props.vehicles?.map((v) => (
+  const option = (v: VehicleDto) => (
     <option key={v.id} value={v.id}>
       {v.name ?? v.model ?? v.vin}
     </option>
-  ));
+  );
+  const rivian = props.vehicles?.filter((v) => v.source !== 'teslamate') ?? [];
+  const tesla = props.vehicles?.filter((v) => v.source === 'teslamate') ?? [];
+  // Grouped by where the data comes from, when there's more than one source.
+  const vehicleOptions =
+    rivian.length > 0 && tesla.length > 0 ? (
+      <>
+        <optgroup label="Rivian">{rivian.map(option)}</optgroup>
+        <optgroup label="TeslaMate">{tesla.map(option)}</optgroup>
+      </>
+    ) : (
+      props.vehicles?.map(option)
+    );
 
   return (
     <header className="py-4">

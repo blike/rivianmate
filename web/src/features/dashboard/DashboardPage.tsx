@@ -1,4 +1,5 @@
-import type { VehicleDto } from '@server/api-types';
+import type { VehicleDto, VehicleInsightsDto, VehicleState } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
 import { Panel, Row } from '../../components/Panel';
@@ -13,6 +14,7 @@ import { Hero } from './Hero';
 import { NavigationCard } from './NavigationCard';
 import { RecentActivity } from './RecentActivity';
 import { SectionHeading } from './SectionHeading';
+import { TeslaClimatePanel } from './TeslaClimatePanel';
 import { TirePanel } from './TirePanel';
 
 export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }) {
@@ -29,50 +31,92 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
 
       <RecentActivity vehicleId={props.vehicleId} />
 
-      <section>
-        <SectionHeading>Vehicle details</SectionHeading>
-        <LoadingScope loading={insightsPending}>
-          <Panel title="Parked energy" className="mb-4">
-            <ParkedEnergyPanel insights={insights} />
-          </Panel>
-        </LoadingScope>
-        <LoadingScope loading={isPending}>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Panel title="Doors, closures & windows">
-              <ClosuresGrid state={state} model={props.vehicle?.model} />
-            </Panel>
-
-            <Panel title="Tires">
-              <TirePanel state={state} />
-            </Panel>
-
-            <Panel title="Climate">
-              <ClimatePanel state={state} />
-            </Panel>
-
-            <Panel title="Vehicle health">
-              <dl className="space-y-1 text-sm">
-                <Row label="12V battery" value={titleCase(sv(state, 'twelveVoltBatteryHealth'))} />
-                <Row label="Brake fluid" value={brakeFluidLabel(state)} />
-                <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
-                <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
-                <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
-                <Row label="Charge port" value={titleCase(sv(state, 'chargePortState'))} />
-              </dl>
-            </Panel>
-
-            <LoadingScope loading={insightsPending}>
-              <Panel title="Battery & energy">
-                <BatteryEnergyPanel insights={insights} cellType={sv(state, 'batteryCellType')} />
-              </Panel>
-
-              <Panel title="Connectivity">
-                <ConnectivityPanel insights={insights} />
-              </Panel>
-            </LoadingScope>
-          </div>
-        </LoadingScope>
-      </section>
+      {isTeslaMateVehicle(props.vehicleId) ? (
+        <TeslaDetails state={state} loading={isPending} />
+      ) : (
+        <RivianDetails
+          state={state}
+          insights={insights}
+          model={props.vehicle?.model}
+          loading={isPending}
+          insightsLoading={insightsPending}
+        />
+      )}
     </div>
+  );
+}
+
+function RivianDetails(props: {
+  state: VehicleState | undefined;
+  insights: VehicleInsightsDto | undefined;
+  model: string | null | undefined;
+  loading: boolean;
+  insightsLoading: boolean;
+}) {
+  const { state, insights } = props;
+  return (
+    <section>
+      <SectionHeading>Vehicle details</SectionHeading>
+      <LoadingScope loading={props.insightsLoading}>
+        <Panel title="Parked energy" className="mb-4">
+          <ParkedEnergyPanel insights={insights} />
+        </Panel>
+      </LoadingScope>
+      <LoadingScope loading={props.loading}>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Panel title="Doors, closures & windows">
+            <ClosuresGrid state={state} model={props.model} />
+          </Panel>
+
+          <Panel title="Tires">
+            <TirePanel state={state} />
+          </Panel>
+
+          <Panel title="Climate">
+            <ClimatePanel state={state} />
+          </Panel>
+
+          <Panel title="Vehicle health">
+            <dl className="space-y-1 text-sm">
+              <Row label="12V battery" value={titleCase(sv(state, 'twelveVoltBatteryHealth'))} />
+              <Row label="Brake fluid" value={brakeFluidLabel(state)} />
+              <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
+              <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
+              <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
+              <Row label="Charge port" value={titleCase(sv(state, 'chargePortState'))} />
+            </dl>
+          </Panel>
+
+          <LoadingScope loading={props.insightsLoading}>
+            <Panel title="Battery & energy">
+              <BatteryEnergyPanel insights={insights} cellType={sv(state, 'batteryCellType')} />
+            </Panel>
+
+            <Panel title="Connectivity">
+              <ConnectivityPanel insights={insights} />
+            </Panel>
+          </LoadingScope>
+        </div>
+      </LoadingScope>
+    </section>
+  );
+}
+
+/** What TeslaMate logs: tires and climate. It doesn't record locks or closures. */
+function TeslaDetails(props: { state: VehicleState | undefined; loading: boolean }) {
+  return (
+    <section>
+      <SectionHeading>Vehicle details</SectionHeading>
+      <LoadingScope loading={props.loading}>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Panel title="Tires">
+            <TirePanel state={props.state} />
+          </Panel>
+          <Panel title="Climate">
+            <TeslaClimatePanel state={props.state} />
+          </Panel>
+        </div>
+      </LoadingScope>
+    </section>
   );
 }

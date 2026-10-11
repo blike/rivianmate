@@ -29,7 +29,7 @@ export function DrivesPage(props: { vehicleId: string }) {
     data: detail,
     isPending: detailPending,
     isPlaceholderData: showingPreviousDrive,
-  } = useDrive(driveId);
+  } = useDrive(props.vehicleId, driveId);
   const loading = drivesPending || (driveId != null && detailPending);
 
   const trail = useMemo(

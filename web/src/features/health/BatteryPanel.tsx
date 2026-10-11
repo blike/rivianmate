@@ -13,6 +13,8 @@ export function BatteryPanel(props: {
   insights: VehicleInsightsDto | undefined;
   batteryPending: boolean;
   insightsPending: boolean;
+  /** Show energy used while parked (Rivian reports it). */
+  parkedEnergy: boolean;
 }) {
   const reported = props.battery?.reported;
   const latest = props.battery?.latest;
@@ -98,14 +100,16 @@ export function BatteryPanel(props: {
               </p>
             </div>
           </LoadingScope>
-          <div className="border-t border-(--border) pt-4">
-            <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
-              Used while parked
-            </h4>
-            <LoadingScope loading={props.insightsPending}>
-              <ParkedEnergyPanel insights={props.insights} />
-            </LoadingScope>
-          </div>
+          {props.parkedEnergy && (
+            <div className="border-t border-(--border) pt-4">
+              <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
+                Used while parked
+              </h4>
+              <LoadingScope loading={props.insightsPending}>
+                <ParkedEnergyPanel insights={props.insights} />
+              </LoadingScope>
+            </div>
+          )}
         </div>
       </div>
     </Panel>

@@ -18,6 +18,8 @@ import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { TokenStore } from './services/token-store.js';
 import { VehicleMonitor } from './services/vehicle-monitor.js';
+import { getTeslaMateUrl } from './routes/teslamate.js';
+import { TeslaMateSource } from './teslamate/source.js';
 import { loadVersion } from './version.js';
 
 const START_RETRY_BASE_MS = 30_000;
@@ -62,6 +64,8 @@ async function main(): Promise<void> {
     ),
   );
 
+  const teslamate = new TeslaMateSource(bus, (msg) => console.log(`[teslamate] ${msg}`));
+
   const notifications = new NotificationService(
     db,
     crypto,
@@ -83,6 +87,7 @@ async function main(): Promise<void> {
     monitor,
     notifications,
     rivianFactory,
+    teslamate,
     governor,
     pendingConnect: null,
   };
@@ -135,9 +140,14 @@ async function main(): Promise<void> {
   };
   startMonitor();
 
+  // Read-only and independent of Rivian; failed reads retry on their own.
+  const teslamateUrl = await getTeslaMateUrl(ctx);
+  if (teslamateUrl) void teslamate.configure(teslamateUrl);
+
   const shutdown = async () => {
     clearTimeout(startRetry);
     notifications.stop();
+    await teslamate.stop();
     await monitor.stop();
     await app.close();
     process.exit(0);

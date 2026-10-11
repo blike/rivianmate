@@ -1,3 +1,4 @@
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { useInsights, useVehicleState } from '../../api/hooks';
@@ -23,12 +24,16 @@ export function HealthPage(props: { vehicleId: string }) {
     queryFn: () => api.batteryHealth(props.vehicleId),
     refetchInterval: 60_000,
   });
+  // TeslaMate doesn't log the car's warnings or parked energy use.
+  const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   return (
     <div className="space-y-4">
-      <LoadingScope loading={statePending}>
-        <Overview state={state} />
-      </LoadingScope>
+      {!teslamate && (
+        <LoadingScope loading={statePending}>
+          <Overview state={state} />
+        </LoadingScope>
+      )}
 
       {(batteryError || insightsError) && (
         <p role="alert" className="text-sm text-(--status-critical)">
@@ -41,6 +46,7 @@ export function HealthPage(props: { vehicleId: string }) {
         insights={insights}
         batteryPending={batteryPending || statePending}
         insightsPending={insightsPending}
+        parkedEnergy={!teslamate}
       />
 
       <TiresPanel vehicleId={props.vehicleId} state={state} statePending={statePending} />

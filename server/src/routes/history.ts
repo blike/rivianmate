@@ -19,6 +19,7 @@ import { stateNumber } from '../services/state-utils.js';
 import { type Spot, nearbySpot } from '../services/home-charging.js';
 import { homeContext } from './charging.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
 const METRIC_COLUMNS: Record<string, string> = {
   battery: 'battery_level',
@@ -54,6 +55,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/history',
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) return ctx.teslamate.history(request.params.id, q);
       const column = METRIC_COLUMNS[q.metric]!;
       if (q.bucket === 'raw') {
         const raw = await ctx.db.execute<{ ts: string; value: number }>(sql`
@@ -101,6 +103,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/charge-spans',
     async (request): Promise<ChargeSpanDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.chargeSpans(request.params.id, q.from, q.to);
+      }
       const spans = await loadChargeSpans(ctx.db, request.params.id, q.from, q.to);
       return spans.map((s) => ({
         kind: s.kind,
@@ -114,6 +119,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/locations',
     async (request): Promise<LocationPointDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.locations(request.params.id, q.from, q.to);
+      }
       // Long ranges are thinned evenly to about MAX_LOCATIONS points, so the
       // whole range is covered rather than just its start.
       const rows = await ctx.db.execute<{
@@ -149,6 +157,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/drives',
     async (request): Promise<DriveDto[]> => {
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.drives(request.params.id, await homeContext(ctx));
+      }
       const rows = await ctx.db
         .select()
         .from(drives)
@@ -203,31 +214,55 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
   app.get<{ Params: { driveId: string } }>(
     '/api/drives/:driveId',
     async (request, reply): Promise<DriveDetailDto | void> => {
-      const driveId = Number(request.params.driveId);
-      const rows = await ctx.db.select().from(drives).where(eq(drives.id, driveId)).limit(1);
-      const drive = rows[0];
-      if (!drive) return reply.code(404).send({ error: 'Not found' });
-      const points = await ctx.db
-        .select()
-        .from(locationPoints)
-        .where(eq(locationPoints.driveId, driveId))
-        .orderBy(locationPoints.ts)
-        .limit(10_000);
-      const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
-      const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
-      const state = ctx.monitor.getState(drive.vehicleId);
-      if (!drive.endedAt) {
-        // Elevation is stored when a drive ends; until then, from points so far.
-        const elevation = await driveElevation(ctx.db, drive.id);
-        drive.elevationGainM = elevation?.gainM ?? null;
-        drive.elevationLossM = elevation?.lossM ?? null;
-      }
-      return {
-        ...toDriveDto(drive, fallback, speed, state, (await homeContext(ctx)).spots),
-        points: points.map(toLocationDto),
-      };
+      const detail = await rivianDriveDetail(ctx, Number(request.params.driveId));
+      if (!detail) return reply.code(404).send({ error: 'Not found' });
+      return detail;
     },
   );
+
+  app.get<{ Params: { id: string; driveId: string } }>(
+    '/api/vehicles/:id/drives/:driveId',
+    async (request, reply): Promise<DriveDetailDto | void> => {
+      const { id } = request.params;
+      const driveId = Number(request.params.driveId);
+      const detail = isTeslaMateVehicle(id)
+        ? await ctx.teslamate.drive(id, driveId, await homeContext(ctx))
+        : await rivianDriveDetail(ctx, driveId, id);
+      if (!detail) return reply.code(404).send({ error: 'Not found' });
+      return detail;
+    },
+  );
+}
+
+/** A recorded drive with its route; null if missing or another vehicle's. */
+async function rivianDriveDetail(
+  ctx: AppContext,
+  driveId: number,
+  vehicleId?: string,
+): Promise<DriveDetailDto | null> {
+  if (!Number.isSafeInteger(driveId)) return null;
+  const rows = await ctx.db.select().from(drives).where(eq(drives.id, driveId)).limit(1);
+  const drive = rows[0];
+  if (!drive || (vehicleId != null && drive.vehicleId !== vehicleId)) return null;
+  const points = await ctx.db
+    .select()
+    .from(locationPoints)
+    .where(eq(locationPoints.driveId, driveId))
+    .orderBy(locationPoints.ts)
+    .limit(10_000);
+  const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
+  const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
+  const state = ctx.monitor.getState(drive.vehicleId);
+  if (!drive.endedAt) {
+    // Elevation is stored when a drive ends; until then, from points so far.
+    const elevation = await driveElevation(ctx.db, drive.id);
+    drive.elevationGainM = elevation?.gainM ?? null;
+    drive.elevationLossM = elevation?.lossM ?? null;
+  }
+  return {
+    ...toDriveDto(drive, fallback, speed, state, (await homeContext(ctx)).spots),
+    points: points.map(toLocationDto),
+  };
 }
 
 /** Latest pack capacity seen for the vehicle (for drives without one). */

@@ -2,36 +2,47 @@ import type { FastifyInstance } from 'fastify';
 import type { SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
+import { EMPTY_INSIGHTS, NO_SCHEDULES } from '../teslamate/source.js';
 
 export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/vehicles', async (): Promise<VehicleDto[]> => {
     const fromMonitor = ctx.monitor.getVehicles();
-    if (fromMonitor.length > 0) return fromMonitor;
-    const rows = await ctx.db.select().from(vehicles);
-    return rows.map((r) => ({
-      id: r.id,
-      vin: r.vin,
-      name: r.name,
-      make: r.make,
-      model: r.model,
-      modelYear: r.modelYear,
-    }));
+    const rivian = fromMonitor.length > 0 ? fromMonitor : await ctx.db.select().from(vehicles);
+    return [
+      ...rivian.map((r) => ({
+        id: r.id,
+        vin: r.vin,
+        name: r.name,
+        make: r.make,
+        model: r.model,
+        modelYear: r.modelYear,
+        source: 'rivian' as const,
+      })),
+      ...ctx.teslamate.getVehicles(),
+    ];
   });
 
   app.get<{ Params: { id: string } }>('/api/vehicles/:id/state', async (request, reply) => {
-    const state = ctx.monitor.getState(request.params.id);
+    const state = vehicleState(ctx, request.params.id);
     if (!state) return reply.code(404).send({ error: 'No state yet' });
     return state;
   });
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/schedules',
-    async (request): Promise<SchedulesDto> => ctx.monitor.getSchedules(request.params.id),
+    async (request): Promise<SchedulesDto> =>
+      isTeslaMateVehicle(request.params.id)
+        ? NO_SCHEDULES
+        : ctx.monitor.getSchedules(request.params.id),
   );
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/insights',
-    async (request): Promise<VehicleInsightsDto> => ctx.monitor.getInsights(request.params.id),
+    async (request): Promise<VehicleInsightsDto> =>
+      isTeslaMateVehicle(request.params.id)
+        ? EMPTY_INSIGHTS
+        : ctx.monitor.getInsights(request.params.id),
   );
 
   /** SSE stream of merged full-state updates + live charging session. */
@@ -50,7 +61,7 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    const initial = ctx.monitor.getState(vehicleId);
+    const initial = vehicleState(ctx, vehicleId);
     if (initial) send('state', initial);
     // Always sent, so clients can tell "not charging" from "not loaded yet".
     send('charging', ctx.bus.latestChargingSession(vehicleId));
@@ -69,4 +80,11 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
       clearInterval(keepalive);
     });
   });
+}
+
+/** Latest merged state, from TeslaMate or the Rivian monitor. */
+export function vehicleState(ctx: AppContext, vehicleId: string) {
+  return isTeslaMateVehicle(vehicleId)
+    ? ctx.teslamate.getState(vehicleId)
+    : ctx.monitor.getState(vehicleId);
 }

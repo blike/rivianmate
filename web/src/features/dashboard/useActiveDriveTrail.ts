@@ -12,7 +12,7 @@ export function useActiveDriveTrail(
   // Shares the drive list and drive detail caches with the other pages.
   const { data: drives } = useDrives(vehicleId);
   const active = drives?.[0] && !drives[0].endedAt ? drives[0].id : null;
-  const { data: detail } = useDrive(active);
+  const { data: detail } = useDrive(vehicleId, active);
   if (active == null || detail?.id !== active) return undefined;
   const points = detail.points
     .filter((p) => isPosition(p.lat, p.lon))

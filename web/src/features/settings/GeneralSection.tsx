@@ -52,6 +52,7 @@ export function GeneralSection(props: {
                 description={[
                   v.modelYear,
                   v.model,
+                  v.source === 'teslamate' && 'From TeslaMate',
                   mode && (mode === 'parallax' ? 'Parallax data' : 'Classic data'),
                 ]
                   .filter(Boolean)

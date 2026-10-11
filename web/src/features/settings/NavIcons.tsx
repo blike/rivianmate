@@ -65,3 +65,12 @@ export function InfoIcon() {
     </NavIcon>
   );
 }
+
+export function DatabaseIcon() {
+  return (
+    <NavIcon>
+      <ellipse cx="8" cy="4" rx="5" ry="1.8" />
+      <path d="M3 4v8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V4M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8" />
+    </NavIcon>
+  );
+}

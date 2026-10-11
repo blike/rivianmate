@@ -1,4 +1,5 @@
 import type { OtaTimelineDto } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client';
@@ -38,6 +39,8 @@ export function SoftwarePanel(props: { vehicleId: string }) {
   const [now] = useState(() => Date.now());
   const update = softwareUpdate(state);
   const failed = lastInstallFailed(state);
+  // TeslaMate logs installs but not pending updates or release notes.
+  const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   // Oldest first, so the track reads left to right into the future.
   const versions = [...(ota?.versions ?? [])].reverse();
@@ -91,7 +94,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
               progress={trackFill(update)}
             >
               <Eyebrow color={update || failed ? 'var(--text-muted)' : 'var(--status-good)'}>
-                {update || failed ? (
+                {update || failed || teslamate ? (
                   'Installed'
                 ) : (
                   <>
@@ -107,7 +110,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
                   ? `${tracked ? 'Seen since' : 'Installed'} ${longDate(installed.firstSeen)} · ${days(now - Date.parse(installed.firstSeen))}`
                   : 'Waiting for the vehicle to report its version'}
               </div>
-              {current && <NotesLink vehicleId={props.vehicleId} version={current} />}
+              {current && !teslamate && <NotesLink vehicleId={props.vehicleId} version={current} />}
             </Stop>
             {update ? (
               <Stop
@@ -119,9 +122,13 @@ export function SoftwarePanel(props: { vehicleId: string }) {
               </Stop>
             ) : (
               <Stop kind="none" grow={1.2}>
-                <div className="text-sm text-(--text-muted)">No update waiting</div>
+                <div className="text-sm text-(--text-muted)">
+                  {teslamate ? 'Next update' : 'No update waiting'}
+                </div>
                 <div className="text-xs text-(--text-muted)">
-                  New versions appear here when offered.
+                  {teslamate
+                    ? 'TeslaMate records updates once installed.'
+                    : 'New versions appear here when offered.'}
                 </div>
               </Stop>
             )}
