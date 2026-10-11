@@ -27,6 +27,25 @@ describe('freshness', () => {
     expect(f.label).toBe('Asleep · last seen 3 h ago');
   });
 
+  it('shows asleep when the power state says so', () => {
+    const f = freshness({ powerState: { timeStamp: ago(5), value: 'sleep' } }, NOW);
+    expect(f.level).toBe('asleep');
+  });
+
+  it("ignores an offline cloud status that's older than the vehicle's readings", () => {
+    // Oct 11: cloudConnection last synced as offline at 08:58, then a drive at 10:40.
+    const f = freshness(
+      {
+        cloudConnection: { lastSync: ago(105), isOnline: false },
+        powerState: { timeStamp: ago(3), value: 'go' },
+        gearStatus: { timeStamp: ago(1), value: 'drive' },
+      },
+      NOW,
+    );
+    expect(f.level).toBe('live');
+    expect(f.label).toBe('Online · updated 1 min ago');
+  });
+
   it('flags data older than a day as stale even if marked online', () => {
     const f = freshness({ cloudConnection: { lastSync: ago(60 * 50), isOnline: true } }, NOW);
     expect(f.level).toBe('stale');

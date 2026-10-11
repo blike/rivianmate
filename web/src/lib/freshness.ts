@@ -1,4 +1,5 @@
 import type { VehicleState } from '@server/api-types';
+import { sv } from './state';
 
 export type FreshnessLevel = 'live' | 'recent' | 'asleep' | 'stale';
 
@@ -57,14 +58,26 @@ export function relativeTime(date: Date, now: number): string {
   return `${Math.round(h / 24)} days ago`;
 }
 
+/**
+ * Asleep by the power state. Rivian's `cloudConnection` updates rarely and
+ * keeps saying offline through drives, so it only counts when nothing has
+ * been heard since it last synced.
+ */
+function isAsleep(state: VehicleState | undefined): boolean {
+  if (sv(state, 'powerState') === 'sleep') return true;
+  const cloud = state?.cloudConnection;
+  if (cloud?.isOnline !== false) return false;
+  const readingAt = lastSeenAt({ ...state, cloudConnection: undefined });
+  return readingAt === null || readingAt.getTime() <= Date.parse(cloud.lastSync ?? '');
+}
+
 export function freshness(state: VehicleState | undefined, now = Date.now()): Freshness {
   const lastSeen = lastSeenAt(state);
   if (!lastSeen) return { level: 'stale', lastSeen: null, label: 'No data yet' };
   const age = now - lastSeen.getTime();
   const ago = relativeTime(lastSeen, now);
-  const online = state?.cloudConnection?.isOnline;
   if (age > STALE_MS) return { level: 'stale', lastSeen, label: `No updates · last seen ${ago}` };
-  if (online === false) return { level: 'asleep', lastSeen, label: `Asleep · last seen ${ago}` };
+  if (isAsleep(state)) return { level: 'asleep', lastSeen, label: `Asleep · last seen ${ago}` };
   if (age <= LIVE_MS) return { level: 'live', lastSeen, label: `Online · updated ${ago}` };
   return { level: 'recent', lastSeen, label: `Online · updated ${ago}` };
 }
