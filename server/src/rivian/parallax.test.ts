@@ -17,6 +17,7 @@ import {
   decodeTires,
   decodeTripInfo,
   decodeTripProgress,
+  describeParallax,
   readProtoFields,
   vehicleSupportsParallax,
 } from './parallax.js';
@@ -469,5 +470,49 @@ describe('decodeTires', () => {
 
   it('returns [] for an empty payload', () => {
     expect(decodeTires('')).toEqual([]);
+  });
+});
+
+describe('describeParallax', () => {
+  it('lists every field by path, with names for those the decoders read', () => {
+    const payload = b64([
+      ...message(3, [
+        ...double(1, 30800),
+        // Two stops: repeated fields get an index; the stop's address is non-ASCII text.
+        ...message(3, [...message(1, [...message(1, [...double(1, 34.4), ...double(2, -119.8)])])]),
+        ...message(3, [...message(1, [...string(4, 'Café, Goleta')])]),
+      ]),
+      ...int(9, -60),
+      ...float(10, 1.5),
+    ]);
+    expect(
+      describeParallax({
+        rvm: 'navigation.navigation_service.trip_info',
+        payload,
+        timestamp: null,
+      }),
+    ).toEqual([
+      { path: '3.1', name: 'Route distance (m)', value: 30800 },
+      { path: '3.3[0].1.1.1', name: 'Stop latitude', value: 34.4 },
+      { path: '3.3[0].1.1.2', name: 'Stop longitude', value: -119.8 },
+      { path: '3.3[1].1.4', name: 'Stop address', value: 'Café, Goleta' },
+      { path: '9', name: null, value: -60 },
+      { path: '10', name: null, value: 1.5 },
+    ]);
+  });
+
+  it('matches names through repeated windows, and is empty for an empty payload', () => {
+    const payload = b64([...message(2, [...float(1, 0.4), ...int(11, 1440)])]);
+    expect(
+      describeParallax({
+        rvm: 'energy_edge_compute.graphs.parked_energy_distributions',
+        payload,
+        timestamp: null,
+      }),
+    ).toEqual([
+      { path: '2.1', name: 'Window: total energy (kWh)', value: 0.4 },
+      { path: '2.11', name: 'Window: length (minutes)', value: 1440 },
+    ]);
+    expect(describeParallax({ rvm: 'x', payload: '', timestamp: null })).toEqual([]);
   });
 });

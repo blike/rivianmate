@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { ConnectResponse, RivianDiagnosticsResponse } from '../api-types.js';
+import type { ConnectResponse, FeedLatestData, RivianDiagnosticsResponse } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import {
   RivianInvalidCredentialsError,
@@ -59,6 +59,15 @@ export async function rivianRoutes(app: FastifyInstance, ctx: AppContext): Promi
     monitor: ctx.monitor.diagnostics(),
     traffic: ctx.governor.snapshot(),
   }));
+
+  app.get<{ Params: { id: string } }>(
+    '/api/rivian/feeds/:id/latest',
+    async (request, reply): Promise<FeedLatestData | undefined> => {
+      const latest = ctx.monitor.feedLatestData(request.params.id);
+      if (!latest) return reply.code(404).send({ error: 'No such feed' });
+      return latest;
+    },
+  );
 
   app.post('/api/rivian/disconnect', async () => {
     await ctx.monitor.stop();

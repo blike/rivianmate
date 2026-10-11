@@ -105,27 +105,6 @@ export function SettingsHero(props: {
   );
 }
 
-/** Figures along the bottom of a hero, split by hairlines. */
-export function HeroTiles(props: {
-  tiles: { label: string; value: ReactNode; tone?: 'critical' }[];
-}) {
-  return (
-    <dl className="grid grid-cols-2 gap-px border-t border-(--border) bg-(--border) sm:grid-cols-4">
-      {props.tiles.map((t) => (
-        <div key={t.label} className="bg-(--surface-1) px-5 py-3">
-          <dt className="text-xs text-(--text-muted)">{t.label}</dt>
-          <dd
-            className="mt-0.5 text-lg font-semibold tabular-nums"
-            style={t.tone === 'critical' ? { color: 'var(--status-critical)' } : undefined}
-          >
-            {t.value}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 export function SegmentedControl<T extends string>(props: {
   label: string;
   value: T;

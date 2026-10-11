@@ -60,6 +60,7 @@ const diagnostics: RivianDiagnosticsResponse = {
       sessionRefreshes: 0,
       wsConnects: 1,
       wsReconnects: 2,
+      wsDrops: 1,
       wsMessages: 3,
       wsAuthFailures: 0,
     },
@@ -79,19 +80,20 @@ describe('API connections', () => {
     );
     for (const text of [
       'Last successful request',
-      'Standby',
+      'Off · live stream connected',
       'connected',
-      'Reconnect attempts',
+      'Dropped connections',
       'receiving',
       'unsupported',
       'waiting',
       'Last data:',
       'aria-label="Legacy feeds"',
       'aria-label="Parallax feeds"',
-      'energy.high_voltage.battery_state',
+      'Latest data',
     ])
       expect(html).toContain(text);
     expect(html).not.toContain('Monitoring is stopped');
+    expect(html).not.toContain('Session refreshes');
   });
 
   it('does not present a failed diagnostics request as a stopped monitor', () => {

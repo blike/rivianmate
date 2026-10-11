@@ -9,9 +9,10 @@ import type {
   LiveSessionData,
   VehicleState,
 } from './rivian/types.js';
+import type { FeedLatestData } from './rivian/subscription.js';
 import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
-export type { ChargingSchedule, DepartureSchedule, LiveSessionData, VehicleState };
+export type { ChargingSchedule, DepartureSchedule, FeedLatestData, LiveSessionData, VehicleState };
 
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */

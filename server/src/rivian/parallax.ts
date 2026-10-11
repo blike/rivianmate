@@ -649,3 +649,175 @@ export function chargerStateFromStatus(status: ChargingStatus): string | null {
     ] ?? null
   );
 }
+
+/**
+ * What the decoders above read each field as, by path ("3.1" is field 1
+ * inside field 3; "*" matches any field). Shown next to the raw fields in
+ * the feed viewer; keep in step with the decoders.
+ */
+const FIELD_NAMES: Record<string, Record<string, string>> = {
+  [RVM_CHARGING_GRAPH]: {
+    '1.1': 'Bar: SOC (%)',
+    '1.2': 'Bar: power (kW)',
+    '1.3': 'Bar: start (ms since epoch)',
+    '1.4': 'Bar: end (ms since epoch)',
+    '1.6': 'Bar: charging state',
+  },
+  [RVM_CHARGE_BREAKDOWN]: {
+    '1': 'Total energy (kWh)',
+    '2': 'Energy into the pack (kWh)',
+    '5': 'Energy for heating/cooling (kWh)',
+    '6': 'Minutes charging',
+    '7': 'Minutes remaining',
+    '8': 'Range added (km)',
+    '9': 'Power (kW)',
+    '10': 'Range rate (km/h)',
+    '11.1': 'Cost: currency',
+    '11.2': 'Cost: whole units',
+    '11.3': 'Cost: nanos',
+  },
+  [RVM_BATTERY_STATE]: {
+    '1.1': 'SOC (%)',
+    '1.2': 'Pack capacity (kWh)',
+    '2.1': 'Cell temperature, average (°C)',
+    '2.2': 'Cell temperature, max (°C)',
+    '2.3': 'Cell temperature, min (°C)',
+  },
+  [RVM_BATTERY_CHARACTERISTICS]: {
+    '5': 'Capacity estimate (kWh)',
+    '6': 'Rated capacity (kWh)',
+  },
+  [RVM_COLD_WEATHER]: {
+    '1': 'Usable SOC (%)',
+    '2': 'SOC held back by cold (%)',
+    '3': 'Range lost to cold (km)',
+  },
+  [RVM_PARKED_ENERGY]: {
+    '*.1': 'Window: total energy (kWh)',
+    '*.2': 'Window: climate (kWh)',
+    '*.3': 'Window: outlets (kWh)',
+    '*.4': 'Window: system (kWh)',
+    '*.5': 'Window: Gear Guard (kWh)',
+    '*.6': 'Window: total range (km)',
+    '*.11': 'Window: length (minutes)',
+  },
+  [RVM_NETWORK]: {
+    '4.3': 'Wi-Fi SSID',
+    '4.8': 'Wi-Fi signal (dBm)',
+    '4.10': 'Wi-Fi frequency (MHz)',
+    '5.1': 'Cellular carrier',
+    '5.2': 'Cellular technology',
+  },
+  [RVM_TRIP_INFO]: {
+    '3.1': 'Route distance (m)',
+    '3.2': 'Route duration (s)',
+    '3.3.1.1.1': 'Stop latitude',
+    '3.3.1.1.2': 'Stop longitude',
+    '3.3.1.4': 'Stop address',
+    '3.3.1.5': 'Stop place ID',
+    '6': 'Arrival SOC (%)',
+    '7': 'Arrival range (m)',
+  },
+  [RVM_TRIP_PROGRESS]: {
+    '1.1': 'ETA (s since epoch)',
+    '4': 'Distance remaining (m)',
+    '5': 'Time remaining (s)',
+  },
+  [RVM_CHARGING_STATUS]: {
+    '1': 'Plug connection (enum)',
+    '2': 'Display status (enum)',
+    '3': 'EVSE type (enum)',
+  },
+  [RVM_TIME_ESTIMATION]: {
+    '1': 'Hold time (s)',
+    '2': 'Minutes remaining',
+  },
+  [RVM_SOC_SLIDER]: { '1': 'Charge limit (%)' },
+  [RVM_GNSS]: {
+    '1': 'Latitude',
+    '2': 'Longitude',
+    '3': 'Altitude (m)',
+    '5': 'Heading (°, −180 to 180)',
+    '6': 'Speed (m/s)',
+  },
+  [RVM_TIRES]: {
+    '2.1': 'Tire: position (1–4 = FL, FR, RL, RR)',
+    '2.2': 'Tire: status (1 = OK)',
+    '2.3': 'Tire: pressure (bar)',
+  },
+};
+
+export interface RawField {
+  /** "3.1" is field 1 inside field 3; repeated fields get an index, as in "2[1].3". */
+  path: string;
+  /** What RivianMate reads the field as; null when it doesn't use it. */
+  name: string | null;
+  value: number | string;
+}
+
+/**
+ * Every field of a message, flattened, with RivianMate's name for those it
+ * reads. Rivian sends no schema, so a field's type is a best guess from its
+ * wire type: varints as integers, 32-bit as float, 64-bit as double, and
+ * length-delimited as a nested message, text, or base64 bytes.
+ */
+export function describeParallax(message: ParallaxMessage): RawField[] {
+  if (!message.payload) return [];
+  const names = FIELD_NAMES[message.rvm] ?? {};
+  const nameOf = (segments: string[]) =>
+    Object.entries(names).find(([key]) => {
+      const parts = key.split('.');
+      return (
+        parts.length === segments.length && parts.every((p, i) => p === '*' || p === segments[i])
+      );
+    })?.[1] ?? null;
+  const namedBelow = (segments: string[]) =>
+    Object.keys(names).some((key) => {
+      const parts = key.split('.');
+      return (
+        parts.length > segments.length &&
+        segments.every((s, i) => parts[i] === '*' || parts[i] === s)
+      );
+    });
+
+  const rows: RawField[] = [];
+  const walk = (fields: ProtoField[], path: string, segments: string[], depth: number) => {
+    const counts = new Map<number, number>();
+    for (const f of fields) counts.set(f.field, (counts.get(f.field) ?? 0) + 1);
+    const seen = new Map<number, number>();
+    for (const f of fields) {
+      const index = seen.get(f.field) ?? 0;
+      seen.set(f.field, index + 1);
+      const here = `${path}${path ? '.' : ''}${f.field}${counts.get(f.field)! > 1 ? `[${index}]` : ''}`;
+      const at = [...segments, String(f.field)];
+      const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
+      if (f.wire === 0) {
+        rows.push({ path: here, name: nameOf(at), value: Number(BigInt.asIntN(64, f.value)) });
+      } else if (f.wire === 1) {
+        rows.push({ path: here, name: nameOf(at), value: view(f.value).getFloat64(0, true) });
+      } else if (f.wire === 5) {
+        rows.push({ path: here, name: nameOf(at), value: f32(view(f.value).getFloat32(0, true))! });
+      } else {
+        const text = Buffer.from(f.value).toString('utf8');
+        // Valid UTF-8 without control characters reads as text (addresses can be non-ASCII).
+        const printable = ![...text].some((c) => {
+          const code = c.codePointAt(0)!;
+          return code < 0x20 || code === 0x7f || code === 0xfffd;
+        });
+        const nested = depth < 8 && f.value.length > 0 ? readProtoFields(f.value) : null;
+        // A message whose bytes happen to be printable stays a message if names sit below it.
+        if (nested && (!printable || namedBelow(at))) walk(nested, here, at, depth + 1);
+        else
+          rows.push({
+            path: here,
+            name: nameOf(at),
+            value: printable ? text : `bytes ${Buffer.from(f.value).toString('base64')}`,
+          });
+      }
+    }
+  };
+  const fields = readProtoFields(Buffer.from(message.payload, 'base64'));
+  if (fields) walk(fields, '', [], 0);
+  else rows.push({ path: '', name: null, value: `undecodable ${message.payload}` });
+  return rows;
+}
