@@ -1,5 +1,5 @@
-import type { VehicleState } from "@server/api-types.js";
-import { isPosition } from "./geo.js";
+import type { VehicleState } from '@server/api-types.js';
+import { isPosition } from './geo.js';
 
 interface ValueRecord {
   timeStamp?: string;
@@ -28,7 +28,7 @@ export function location(
 }
 
 export function fmt(n: number | null | undefined, digits = 0): string {
-  if (n == null) return "—";
+  if (n == null) return '—';
   return n.toLocaleString(undefined, {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -48,8 +48,6 @@ export function fmtSeconds(seconds: number): string {
 }
 
 export function titleCase(value: string | null): string {
-  if (!value) return "—";
-  return value
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  if (!value) return '—';
+  return value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }

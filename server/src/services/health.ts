@@ -29,19 +29,19 @@ function parkedBetween(prev: DrainSnapshot, cur: DrainSnapshot): boolean {
   if (prev.mileageM == null || cur.mileageM == null) return false;
   if (Math.abs(cur.mileageM - prev.mileageM) > 1) return false;
   for (const s of [prev, cur]) {
-    if (s.chargerStatus?.startsWith("chrgr_sts_connected")) return false;
-    if (s.gear === "drive" || s.gear === "reverse") return false;
+    if (s.chargerStatus?.startsWith('chrgr_sts_connected')) return false;
+    if (s.gear === 'drive' || s.gear === 'reverse') return false;
   }
   return true;
 }
 
 function dayFormatter(timeZone: string): (d: Date) => string {
   // en-CA formats as YYYY-MM-DD.
-  const f = new Intl.DateTimeFormat("en-CA", {
+  const f = new Intl.DateTimeFormat('en-CA', {
     timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   });
   return (d) => f.format(d);
 }
@@ -57,7 +57,7 @@ function dayFormatter(timeZone: string): (d: Date) => string {
  */
 export function phantomDrain(
   snapshots: readonly DrainSnapshot[],
-  timeZone = "UTC",
+  timeZone = 'UTC',
 ): {
   days: DrainDay[];
   avgPctPerDay: number | null;

@@ -2,7 +2,7 @@
   "name": "@rivianmate/web",
   "private": true,
   "version": "0.5.0",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite",

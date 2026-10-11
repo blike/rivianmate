@@ -1,9 +1,9 @@
-import type { StreamDiagnostics } from "../rivian/subscription.js";
-import type { Db } from "../db/client.js";
-import { vehicles as vehiclesTable } from "../db/schema.js";
-import type { RivianApi } from "../rivian/client.js";
-import type { VehicleStateStream } from "../rivian/subscription.js";
-import { CORE_VEHICLE_STATE_PROPERTIES } from "../rivian/graphql.js";
+import type { StreamDiagnostics } from '../rivian/subscription.js';
+import type { Db } from '../db/client.js';
+import { vehicles as vehiclesTable } from '../db/schema.js';
+import type { RivianApi } from '../rivian/client.js';
+import type { VehicleStateStream } from '../rivian/subscription.js';
+import { CORE_VEHICLE_STATE_PROPERTIES } from '../rivian/graphql.js';
 import {
   PARALLAX_DYNAMICS_FIELDS,
   PARALLAX_DYNAMICS_RVMS,
@@ -15,8 +15,8 @@ import {
   decodeTires,
   decodeTripInfo,
   vehicleSupportsParallax,
-} from "../rivian/parallax.js";
-import type { SchedulesDto, VehicleInsightsDto } from "../api-types.js";
+} from '../rivian/parallax.js';
+import type { SchedulesDto, VehicleInsightsDto } from '../api-types.js';
 import {
   ChargingSchedule,
   DepartureSchedule,
@@ -25,17 +25,17 @@ import {
   VehicleState,
   describeRivianError,
   isGraphqlValidationError,
-} from "../rivian/types.js";
-import { ChargeHistoryImporter } from "./charge-history.js";
-import { ChargingMonitor } from "./charging-monitor.js";
-import { DriveDetector } from "./drive-detector.js";
-import type { DrivePlaces } from "./drive-places.js";
-import { OtaNotesStore } from "./ota-notes.js";
-import { ParallaxStore, messageTime } from "./parallax-store.js";
-import type { LiveBus } from "./live-bus.js";
-import { SnapshotWriter } from "./snapshot-writer.js";
-import { mergeVehicleState, stateLocation, stateString } from "./state-utils.js";
-import type { TokenStore } from "./token-store.js";
+} from '../rivian/types.js';
+import { ChargeHistoryImporter } from './charge-history.js';
+import { ChargingMonitor } from './charging-monitor.js';
+import { DriveDetector } from './drive-detector.js';
+import type { DrivePlaces } from './drive-places.js';
+import { OtaNotesStore } from './ota-notes.js';
+import { ParallaxStore, messageTime } from './parallax-store.js';
+import type { LiveBus } from './live-bus.js';
+import { SnapshotWriter } from './snapshot-writer.js';
+import { mergeVehicleState, stateLocation, stateString } from './state-utils.js';
+import type { TokenStore } from './token-store.js';
 
 const WS_DOWN_POLL_AFTER_MS = 5 * 60_000;
 /** Fallback polling only runs while the socket is down, and slowly. */
@@ -47,7 +47,7 @@ const FALLBACK_POLL_ASLEEP_MS = 30 * 60_000;
  * recoverable; giving up on the first one forces needless re-logins.
  */
 const AUTH_FAILURE_THRESHOLD = 3;
-const ASLEEP_POWER_STATES = new Set(["sleep", "standby"]);
+const ASLEEP_POWER_STATES = new Set(['sleep', 'standby']);
 /** Charging schedules rarely change; a few checks a day is plenty. */
 const SCHEDULE_REFRESH_MS = 6 * 3600_000;
 /**
@@ -56,7 +56,7 @@ const SCHEDULE_REFRESH_MS = 6 * 3600_000;
  */
 const DEPARTURES_SILENCE_MS = 30_000;
 /** State fields that shape a charging session (plug, charging, SOC). */
-const CHARGING_FIELDS = ["chargerStatus", "chargerState", "batteryLevel"];
+const CHARGING_FIELDS = ['chargerStatus', 'chargerState', 'batteryLevel'];
 
 interface VehicleSchedules {
   charging: ChargingSchedule[] | null;
@@ -69,12 +69,12 @@ export interface MonitorDiagnostics {
   running: boolean;
   streamConnected: boolean;
   fallbackPolling: boolean;
-  pollingStatus: "stopped" | "standby" | "waiting" | "fallback";
+  pollingStatus: 'stopped' | 'standby' | 'waiting' | 'fallback';
   subscriptions: StreamDiagnostics | null;
   consecutiveAuthFailures: number;
   /** Whether any monitored vehicle supports dynamics Parallax. */
-  parallaxMode: "classic" | "parallax";
-  parallaxModes: Record<string, "classic" | "parallax">;
+  parallaxMode: 'classic' | 'parallax';
+  parallaxModes: Record<string, 'classic' | 'parallax'>;
   /** Legacy fields Rivian has rejected from the subscription (e.g. gnssLocation). */
   parallaxDroppedFields: readonly string[];
 }
@@ -161,30 +161,40 @@ export class VehicleMonitor {
       running: this.running,
       streamConnected: this.streamConnected,
       fallbackPolling: this.fallbackPollTimer !== undefined,
-      pollingStatus: !this.running ? "stopped" : this.fallbackPollTimer !== undefined ? "fallback"
-        : this.streamConnected ? "standby" : "waiting",
+      pollingStatus: !this.running
+        ? 'stopped'
+        : this.fallbackPollTimer !== undefined
+          ? 'fallback'
+          : this.streamConnected
+            ? 'standby'
+            : 'waiting',
       subscriptions: this.connection?.stream.diagnostics?.() ?? null,
       consecutiveAuthFailures: this.authFailures,
-      parallaxMode: this.vehicles.some((v) => vehicleSupportsParallax(v.supportedFeatures)) ? "parallax" : "classic",
-      parallaxModes: Object.fromEntries(this.vehicles.map((v) => [
-        v.id, vehicleSupportsParallax(v.supportedFeatures) ? "parallax" : "classic",
-      ])),
+      parallaxMode: this.vehicles.some((v) => vehicleSupportsParallax(v.supportedFeatures))
+        ? 'parallax'
+        : 'classic',
+      parallaxModes: Object.fromEntries(
+        this.vehicles.map((v) => [
+          v.id,
+          vehicleSupportsParallax(v.supportedFeatures) ? 'parallax' : 'classic',
+        ]),
+      ),
       parallaxDroppedFields: this.connection?.stream.droppedFields ?? [],
     };
   }
 
   /** Start monitoring if usable stored credentials exist. */
-  async startIfConfigured(): Promise<"started" | "no_account" | "needs_login"> {
+  async startIfConfigured(): Promise<'started' | 'no_account' | 'needs_login'> {
     const account = await this.tokenStore.load();
-    if (!account) return "no_account";
-    if (account.authState !== "ok") return "needs_login";
+    if (!account) return 'no_account';
+    if (account.authState !== 'ok') return 'needs_login';
     try {
       await this.start(this.createConnection(account.tokens));
     } catch (err) {
-      if (err instanceof RivianUnauthenticatedError) return "needs_login";
+      if (err instanceof RivianUnauthenticatedError) return 'needs_login';
       throw err;
     }
-    return "started";
+    return 'started';
   }
 
   /** Start with a freshly authenticated connection (from the connect flow). */
@@ -202,7 +212,7 @@ export class VehicleMonitor {
       if (generation === this.generation) {
         await this.stop();
         if (err instanceof RivianUnauthenticatedError) {
-          await this.tokenStore.setAuthState("unauthenticated");
+          await this.tokenStore.setAuthState('unauthenticated');
         }
       }
       throw err;
@@ -215,7 +225,7 @@ export class VehicleMonitor {
     if (superseded()) return;
     const supportedFeaturesOf = (uv: (typeof info.vehicles)[number]): string[] =>
       uv.vehicle?.vehicleState?.supportedFeatures
-        ?.filter((f) => f.status === "AVAILABLE")
+        ?.filter((f) => f.status === 'AVAILABLE')
         .map((f) => f.name) ?? [];
 
     this.vehicles = info.vehicles.map((uv) => ({
@@ -266,12 +276,7 @@ export class VehicleMonitor {
       void this.otaNotes.capture(vehicle.id, this.states.get(vehicle.id) ?? {});
     }
 
-    const chargingMonitor = new ChargingMonitor(
-      this.db,
-      connection.api,
-      this.bus,
-      this.log,
-    );
+    const chargingMonitor = new ChargingMonitor(this.db, connection.api, this.bus, this.log);
     this.chargingMonitor = chargingMonitor;
     chargingMonitor.onAuthFailure = () => void this.handleAuthFailure();
     chargingMonitor.onAuthOk = () => this.handleAuthOk();
@@ -284,15 +289,12 @@ export class VehicleMonitor {
     chargeHistory.onAuthFailure = () => void this.handleAuthFailure();
     this.chargeHistory = chargeHistory;
     chargingMonitor.onSessionEnded = () => chargeHistory.scheduleAfterSession();
-    chargingMonitor.setVehicles(
-      this.vehicles.map((v) => v.id),
-    );
+    chargingMonitor.setVehicles(this.vehicles.map((v) => v.id));
 
     const stream = connection.stream;
     stream.onAuthFailure = () => void this.handleAuthFailure();
     stream.onAuthenticated = () => this.handleAuthOk();
-    stream.onConnectionChange = (connected) =>
-      this.handleStreamConnection(connected);
+    stream.onConnectionChange = (connected) => this.handleStreamConnection(connected);
     for (const vehicle of this.vehicles) {
       const parallaxActive = vehicleSupportsParallax(vehicle.supportedFeatures);
       // Rivian's vehicleState/chargingSession take the vehicle id from
@@ -310,42 +312,59 @@ export class VehicleMonitor {
         void this.parallaxStore.ingest(vehicle.id, message);
         if (message.rvm === RVM_TRIP_INFO) {
           const destination = decodeTripInfo(message.payload)?.destination ?? null;
-          void this.driveDetector.noteDestination(vehicle.id, destination).catch((err: Error) =>
-            this.log(`drive destination: ${err.message}`),
-          );
+          void this.driveDetector
+            .noteDestination(vehicle.id, destination)
+            .catch((err: Error) => this.log(`drive destination: ${err.message}`));
         }
       });
       if (parallaxActive) {
         // Its own subscription (own id, own rejection fate): a vehicle that
         // rejects dynamics.vehicle.gnss (e.g. an R1) can't take down the
         // battery/charging/trip Parallax subscription above.
-        stream.subscribeParallaxDynamics?.(vehicle.id, PARALLAX_DYNAMICS_RVMS, (_vehicleId, message) => {
-          const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
-          if (message.rvm === RVM_GNSS) {
-            const reading = decodeGnss(message.payload);
-            if (reading) {
-              const delta: VehicleState = {};
-              if (reading.latitude != null && reading.longitude != null) {
-                delta.gnssLocation = { latitude: reading.latitude, longitude: reading.longitude, timeStamp: ts };
+        stream.subscribeParallaxDynamics?.(
+          vehicle.id,
+          PARALLAX_DYNAMICS_RVMS,
+          (_vehicleId, message) => {
+            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
+            if (message.rvm === RVM_GNSS) {
+              const reading = decodeGnss(message.payload);
+              if (reading) {
+                const delta: VehicleState = {};
+                if (reading.latitude != null && reading.longitude != null) {
+                  delta.gnssLocation = {
+                    latitude: reading.latitude,
+                    longitude: reading.longitude,
+                    timeStamp: ts,
+                  };
+                }
+                if (reading.altitude != null)
+                  delta.gnssAltitude = { timeStamp: ts, value: reading.altitude };
+                if (reading.bearing != null)
+                  delta.gnssBearing = { timeStamp: ts, value: reading.bearing };
+                if (reading.speedMps != null)
+                  delta.gnssSpeed = { timeStamp: ts, value: reading.speedMps };
+                if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
               }
-              if (reading.altitude != null) delta.gnssAltitude = { timeStamp: ts, value: reading.altitude };
-              if (reading.bearing != null) delta.gnssBearing = { timeStamp: ts, value: reading.bearing };
-              if (reading.speedMps != null) delta.gnssSpeed = { timeStamp: ts, value: reading.speedMps };
+            } else if (message.rvm === RVM_TIRES) {
+              const delta: VehicleState = {};
+              for (const tire of decodeTires(message.payload)) {
+                if (tire.pressureBar != null) {
+                  delta[`tirePressure${tire.position}`] = {
+                    timeStamp: ts,
+                    value: tire.pressureBar,
+                  };
+                }
+                if (tire.status != null) {
+                  delta[`tirePressureStatus${tire.position}`] = {
+                    timeStamp: ts,
+                    value: tire.status,
+                  };
+                }
+              }
               if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
             }
-          } else if (message.rvm === RVM_TIRES) {
-            const delta: VehicleState = {};
-            for (const tire of decodeTires(message.payload)) {
-              if (tire.pressureBar != null) {
-                delta[`tirePressure${tire.position}`] = { timeStamp: ts, value: tire.pressureBar };
-              }
-              if (tire.status != null) {
-                delta[`tirePressureStatus${tire.position}`] = { timeStamp: ts, value: tire.status };
-              }
-            }
-            if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
-          }
-        });
+          },
+        );
       }
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
         const entry = this.scheduleEntry(vehicle.id);
@@ -404,7 +423,7 @@ export class VehicleMonitor {
     const loc = stateLocation(cached);
     if (loc) this.chargingMonitor?.noteLocation(vehicleId, loc.latitude, loc.longitude);
 
-    if (changed.includes("otaCurrentVersion") || changed.includes("otaAvailableVersion")) {
+    if (changed.includes('otaCurrentVersion') || changed.includes('otaAvailableVersion')) {
       void this.otaNotes.capture(vehicleId, cached);
     }
 
@@ -440,9 +459,10 @@ export class VehicleMonitor {
 
   getSchedules(vehicleId: string): SchedulesDto {
     const entry = this.schedules.get(vehicleId);
-    const unavailable = this.connection?.stream.isUnsupported?.("departureSchedules") ?? false;
+    const unavailable = this.connection?.stream.isUnsupported?.('departureSchedules') ?? false;
     const silentLongEnough =
-      this.streamConnectedAt !== null && Date.now() - this.streamConnectedAt >= DEPARTURES_SILENCE_MS;
+      this.streamConnectedAt !== null &&
+      Date.now() - this.streamConnectedAt >= DEPARTURES_SILENCE_MS;
     return {
       charging: entry?.charging ?? null,
       departures: entry?.departures ?? (!unavailable && silentLongEnough ? [] : null),
@@ -512,9 +532,9 @@ export class VehicleMonitor {
   }
 
   private async handleUnauthenticated(): Promise<void> {
-    this.log("Rivian session unauthenticated; stopping until re-login");
+    this.log('Rivian session unauthenticated; stopping until re-login');
     await this.stop();
-    await this.tokenStore.setAuthState("unauthenticated");
+    await this.tokenStore.setAuthState('unauthenticated');
   }
 
   private handleStreamConnection(connected: boolean): void {
@@ -526,7 +546,7 @@ export class VehicleMonitor {
     }
     if (!this.running || this.wsDownTimer) return;
     this.wsDownTimer = setTimeout(() => {
-      this.log("websocket down >5min; falling back to slow polling");
+      this.log('websocket down >5min; falling back to slow polling');
       this.scheduleFallbackPoll();
     }, WS_DOWN_POLL_AFTER_MS);
   }
@@ -535,13 +555,16 @@ export class VehicleMonitor {
   private scheduleFallbackPoll(): void {
     if (!this.running || this.streamConnected) return;
     const asleep = this.vehicles.every((v) => {
-      const power = stateString(this.states.get(v.id) ?? {}, "powerState");
+      const power = stateString(this.states.get(v.id) ?? {}, 'powerState');
       return power === null || ASLEEP_POWER_STATES.has(power);
     });
-    this.fallbackPollTimer = setTimeout(async () => {
-      await this.fallbackPoll();
-      this.scheduleFallbackPoll();
-    }, asleep ? FALLBACK_POLL_ASLEEP_MS : FALLBACK_POLL_AWAKE_MS);
+    this.fallbackPollTimer = setTimeout(
+      async () => {
+        await this.fallbackPoll();
+        this.scheduleFallbackPoll();
+      },
+      asleep ? FALLBACK_POLL_ASLEEP_MS : FALLBACK_POLL_AWAKE_MS,
+    );
   }
 
   private async fallbackPoll(): Promise<void> {
@@ -568,7 +591,7 @@ export class VehicleMonitor {
    */
   private async pollState(vehicleId: string): Promise<VehicleState> {
     const api = this.connection?.api;
-    if (!api) throw new Error("not connected");
+    if (!api) throw new Error('not connected');
     if (this.coreStateQuery) {
       return api.getVehicleState(vehicleId, CORE_VEHICLE_STATE_PROPERTIES);
     }
@@ -591,4 +614,3 @@ export class VehicleMonitor {
     this.fallbackPollTimer = undefined;
   }
 }
-

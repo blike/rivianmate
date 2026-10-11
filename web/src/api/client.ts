@@ -26,7 +26,7 @@ import type {
   NotificationSettingsUpdate,
   NotificationTestResult,
   MapConfigResponse,
-} from "@server/api-types.js";
+} from '@server/api-types.js';
 
 export type {
   HomeChargingSettings,
@@ -59,8 +59,8 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
-    headers: init?.body ? { "Content-Type": "application/json" } : undefined,
-    credentials: "same-origin",
+    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+    credentials: 'same-origin',
     ...init,
   });
   if (!response.ok) {
@@ -77,62 +77,60 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  status: () => request<StatusResponse>("/api/status"),
+  status: () => request<StatusResponse>('/api/status'),
   setup: (password: string) =>
-    request<{ ok: boolean }>("/api/setup", {
-      method: "POST",
+    request<{ ok: boolean }>('/api/setup', {
+      method: 'POST',
       body: JSON.stringify({ password }),
     }),
   login: (password: string) =>
-    request<{ ok: boolean }>("/api/auth/login", {
-      method: "POST",
+    request<{ ok: boolean }>('/api/auth/login', {
+      method: 'POST',
       body: JSON.stringify({ password }),
     }),
-  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword: string, newPassword: string) =>
-    request<{ ok: boolean }>("/api/auth/change-password", {
-      method: "POST",
+    request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
 
   rivianConnect: (email: string, password: string) =>
-    request<ConnectResponse>("/api/rivian/connect", {
-      method: "POST",
+    request<ConnectResponse>('/api/rivian/connect', {
+      method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
   rivianOtp: (code: string) =>
-    request<ConnectResponse>("/api/rivian/otp", {
-      method: "POST",
+    request<ConnectResponse>('/api/rivian/otp', {
+      method: 'POST',
       body: JSON.stringify({ code }),
     }),
-  version: () => request<VersionResponse>("/api/version"),
-  homeCharging: () => request<HomeChargingSettings>("/api/settings/home-charging"),
+  version: () => request<VersionResponse>('/api/version'),
+  homeCharging: () => request<HomeChargingSettings>('/api/settings/home-charging'),
   setHomeCharging: (settings: HomeChargingSettings) =>
-    request<HomeChargingSettings>("/api/settings/home-charging", {
-      method: "PUT",
+    request<HomeChargingSettings>('/api/settings/home-charging', {
+      method: 'PUT',
       body: JSON.stringify(settings),
     }),
-  notificationSettings: () => request<NotificationSettingsDto>("/api/settings/notifications"),
+  notificationSettings: () => request<NotificationSettingsDto>('/api/settings/notifications'),
   setNotificationSettings: (settings: NotificationSettingsUpdate) =>
-    request<NotificationSettingsDto>("/api/settings/notifications", {
-      method: "PUT",
+    request<NotificationSettingsDto>('/api/settings/notifications', {
+      method: 'PUT',
       body: JSON.stringify(settings),
     }),
   testNotifications: () =>
-    request<NotificationTestResult[]>("/api/settings/notifications/test", { method: "POST" }),
-  mapConfig: () => request<MapConfigResponse>("/api/map-config"),
-  units: () => request<UnitPreferences>("/api/settings/units"),
+    request<NotificationTestResult[]>('/api/settings/notifications/test', { method: 'POST' }),
+  mapConfig: () => request<MapConfigResponse>('/api/map-config'),
+  units: () => request<UnitPreferences>('/api/settings/units'),
   setUnits: (units: UnitPreferences) =>
-    request<UnitPreferences>("/api/settings/units", {
-      method: "PUT",
+    request<UnitPreferences>('/api/settings/units', {
+      method: 'PUT',
       body: JSON.stringify(units),
     }),
-  rivianDiagnostics: () =>
-    request<RivianDiagnosticsResponse>("/api/rivian/diagnostics"),
-  rivianDisconnect: () =>
-    request<{ ok: boolean }>("/api/rivian/disconnect", { method: "POST" }),
+  rivianDiagnostics: () => request<RivianDiagnosticsResponse>('/api/rivian/diagnostics'),
+  rivianDisconnect: () => request<{ ok: boolean }>('/api/rivian/disconnect', { method: 'POST' }),
 
-  vehicles: () => request<VehicleDto[]>("/api/vehicles"),
+  vehicles: () => request<VehicleDto[]>('/api/vehicles'),
   vehicleState: (id: string) => request<VehicleState>(`/api/vehicles/${id}/state`),
   history: (id: string, metric: HistoryMetric, from: Date, to: Date, bucket: string) =>
     request<HistoryPoint[]>(
@@ -152,17 +150,18 @@ export const api = {
     request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions`),
   updateSessionCost: (sessionId: number, cost: string | null) =>
     request<ChargingSessionDto>(`/api/charging-sessions/${sessionId}`, {
-      method: "PATCH",
+      method: 'PATCH',
       body: JSON.stringify({ cost }),
     }),
-  wallboxes: () => request<WallboxDto[]>("/api/wallboxes"),
+  wallboxes: () => request<WallboxDto[]>('/api/wallboxes'),
   phantomDrain: (vehicleId: string, days: number) =>
     request<PhantomDrainDto>(
       `/api/vehicles/${vehicleId}/health/phantom-drain?days=${days}&tz=${encodeURIComponent(
         Intl.DateTimeFormat().resolvedOptions().timeZone,
       )}`,
     ),
-  insights: (vehicleId: string) => request<VehicleInsightsDto>(`/api/vehicles/${vehicleId}/insights`),
+  insights: (vehicleId: string) =>
+    request<VehicleInsightsDto>(`/api/vehicles/${vehicleId}/insights`),
   schedules: (vehicleId: string) => request<SchedulesDto>(`/api/vehicles/${vehicleId}/schedules`),
   otaTimeline: (vehicleId: string) => request<OtaTimelineDto>(`/api/vehicles/${vehicleId}/ota`),
   tirePressures: (vehicleId: string, days: number) =>

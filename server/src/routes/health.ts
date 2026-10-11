@@ -1,20 +1,25 @@
-import { reportedCapacity, type CapacityReading } from "../services/reported-capacity.js";
-import { RVM_BATTERY_CHARACTERISTICS, RVM_BATTERY_STATE, decodeBatteryCharacteristics, decodeBatteryState } from "../rivian/parallax.js";
-import { stateNumber } from "../services/state-utils.js";
-import { and, asc, eq, gte } from "drizzle-orm";
-import { sql } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import { reportedCapacity, type CapacityReading } from '../services/reported-capacity.js';
+import {
+  RVM_BATTERY_CHARACTERISTICS,
+  RVM_BATTERY_STATE,
+  decodeBatteryCharacteristics,
+  decodeBatteryState,
+} from '../rivian/parallax.js';
+import { stateNumber } from '../services/state-utils.js';
+import { and, asc, eq, gte } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type {
   BatteryHealthDto,
   OtaTimelineDto,
   PhantomDrainDto,
   TirePressurePointDto,
-} from "../api-types.js";
-import type { AppContext } from "../context.js";
-import { parallaxLatest, vehicleStateSnapshots } from "../db/schema.js";
-import { stateString } from "../services/state-utils.js";
-import { phantomDrain } from "../services/health.js";
+} from '../api-types.js';
+import type { AppContext } from '../context.js';
+import { parallaxLatest, vehicleStateSnapshots } from '../db/schema.js';
+import { stateString } from '../services/state-utils.js';
+import { phantomDrain } from '../services/health.js';
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -22,12 +27,12 @@ const drainQuery = daysQuery.extend({ tz: z.string().max(64).optional() });
 
 /** An IANA time zone the runtime knows, or UTC. */
 function validTimeZone(tz: string | undefined): string {
-  if (!tz) return "UTC";
+  if (!tz) return 'UTC';
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
     return tz;
   } catch {
-    return "UTC";
+    return 'UTC';
   }
 }
 
@@ -38,15 +43,15 @@ function numericField(field: string) {
 }
 
 const TIRES = {
-  frontLeft: "tirePressureFrontLeft",
-  frontRight: "tirePressureFrontRight",
-  rearLeft: "tirePressureRearLeft",
-  rearRight: "tirePressureRearRight",
+  frontLeft: 'tirePressureFrontLeft',
+  frontRight: 'tirePressureFrontRight',
+  rearLeft: 'tirePressureRearLeft',
+  rearRight: 'tirePressureRearRight',
 } as const;
 
 export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/health/phantom-drain",
+    '/api/vehicles/:id/health/phantom-drain',
     async (request): Promise<PhantomDrainDto> => {
       const { days, tz } = drainQuery.parse(request.query);
       const since = new Date(Date.now() - days * 86_400_000);
@@ -71,7 +76,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   );
 
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/ota",
+    '/api/vehicles/:id/ota',
     async (request): Promise<OtaTimelineDto> => {
       const vehicleId = request.params.id;
       const history = await ctx.db.execute<{ version: string; first_seen: string }>(sql`
@@ -87,10 +92,10 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
       `);
       const withNotes = await ctx.monitor.releaseNotesVersions(vehicleId);
       const state = ctx.monitor.getState(vehicleId) ?? {};
-      const current = stateString(state, "otaCurrentVersion");
-      const availableRaw = stateString(state, "otaAvailableVersion");
+      const current = stateString(state, 'otaCurrentVersion');
+      const availableRaw = stateString(state, 'otaAvailableVersion');
       const available =
-        availableRaw && availableRaw !== "0.0.0" && availableRaw !== current ? availableRaw : null;
+        availableRaw && availableRaw !== '0.0.0' && availableRaw !== current ? availableRaw : null;
 
       return {
         current,
@@ -105,31 +110,33 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   );
 
   app.get<{ Params: { id: string; version: string } }>(
-    "/api/vehicles/:id/ota/notes/:version",
+    '/api/vehicles/:id/ota/notes/:version',
     async (request, reply) => {
       const { id, version } = request.params;
       const pdf = await ctx.monitor.getReleaseNotes(id, version);
       if (!pdf) {
         return reply
           .code(404)
-          .type("text/plain")
-          .send("Release notes for this version weren't saved before Rivian stopped offering them.");
+          .type('text/plain')
+          .send(
+            "Release notes for this version weren't saved before Rivian stopped offering them.",
+          );
       }
-      const filename = `rivian-${version.replace(/[^\w.-]/g, "")}-release-notes.pdf`;
+      const filename = `rivian-${version.replace(/[^\w.-]/g, '')}-release-notes.pdf`;
       return reply
-        .type("application/pdf")
-        .header("Content-Disposition", `inline; filename="${filename}"`)
-        .header("Cache-Control", "private, max-age=86400")
+        .type('application/pdf')
+        .header('Content-Disposition', `inline; filename="${filename}"`)
+        .header('Cache-Control', 'private, max-age=86400')
         .send(pdf);
     },
   );
 
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/health/tires",
+    '/api/vehicles/:id/health/tires',
     async (request): Promise<TirePressurePointDto[]> => {
       const { days } = daysQuery.parse(request.query);
       const since = new Date(Date.now() - days * 86_400_000);
-      const bucket = days <= 7 ? "1 hour" : days <= 30 ? "6 hours" : "1 day";
+      const bucket = days <= 7 ? '1 hour' : days <= 30 ? '6 hours' : '1 day';
       const rows = await ctx.db.execute<{
         bucket: string;
         front_left: number | null;
@@ -162,36 +169,59 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   );
 
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/health/battery",
+    '/api/vehicles/:id/health/battery',
     async (request): Promise<BatteryHealthDto> => {
-      const snapshots = await ctx.db.execute<{ at: string; reported_at: string | null; kwh: number }>(sql`
+      const snapshots = await ctx.db.execute<{
+        at: string;
+        reported_at: string | null;
+        kwh: number;
+      }>(sql`
         SELECT DISTINCT ON (date_trunc('day', ts AT TIME ZONE 'UTC'))
                ts AS at, data->'batteryCapacity'->>'timeStamp' AS reported_at,
-               ${numericField("batteryCapacity")} AS kwh
+               ${numericField('batteryCapacity')} AS kwh
         FROM vehicle_state_snapshots
         WHERE vehicle_id = ${request.params.id}
-          AND ${numericField("batteryCapacity")} > 0
-          AND ${numericField("batteryCapacity")} <= 500
+          AND ${numericField('batteryCapacity')} > 0
+          AND ${numericField('batteryCapacity')} <= 500
         ORDER BY date_trunc('day', ts AT TIME ZONE 'UTC'), ts DESC, id DESC
       `);
-      const readings: CapacityReading[] = snapshots.map(r => ({
-        at: r.reported_at && Number.isFinite(Date.parse(r.reported_at)) ? r.reported_at : new Date(r.at).toISOString(),
+      const readings: CapacityReading[] = snapshots.map((r) => ({
+        at:
+          r.reported_at && Number.isFinite(Date.parse(r.reported_at))
+            ? r.reported_at
+            : new Date(r.at).toISOString(),
         kwh: r.kwh,
       }));
       const state = ctx.monitor.getState(request.params.id);
-      const liveCapacity = stateNumber(state ?? {}, "batteryCapacity");
+      const liveCapacity = stateNumber(state ?? {}, 'batteryCapacity');
       const liveRecord = state?.batteryCapacity;
-      const liveAt = liveRecord && "timeStamp" in liveRecord ? liveRecord.timeStamp : null;
-      if (liveCapacity != null && typeof liveAt === "string") readings.push({ kwh: liveCapacity, at: liveAt });
-      const messages = await ctx.db.select().from(parallaxLatest).where(eq(parallaxLatest.vehicleId, request.params.id));
+      const liveAt = liveRecord && 'timeStamp' in liveRecord ? liveRecord.timeStamp : null;
+      if (liveCapacity != null && typeof liveAt === 'string')
+        readings.push({ kwh: liveCapacity, at: liveAt });
+      const messages = await ctx.db
+        .select()
+        .from(parallaxLatest)
+        .where(eq(parallaxLatest.vehicleId, request.params.id));
       let ratedCapacity: CapacityReading | null = null;
       for (const message of messages) {
-        const characteristics = message.rvm === RVM_BATTERY_CHARACTERISTICS ? decodeBatteryCharacteristics(message.payload) : null;
+        const characteristics =
+          message.rvm === RVM_BATTERY_CHARACTERISTICS
+            ? decodeBatteryCharacteristics(message.payload)
+            : null;
         const at = (message.messageAt ?? message.receivedAt).toISOString();
-        if (characteristics?.ratedCapacityKwh != null) ratedCapacity = { kwh: characteristics.ratedCapacityKwh, at };
-        const capacity = message.rvm === RVM_BATTERY_CHARACTERISTICS ? characteristics?.capacityKwh
-          : message.rvm === RVM_BATTERY_STATE ? decodeBatteryState(message.payload)?.capacityKwh : null;
-        if (capacity != null) readings.push({ kwh: capacity, at: (message.messageAt ?? message.receivedAt).toISOString() });
+        if (characteristics?.ratedCapacityKwh != null)
+          ratedCapacity = { kwh: characteristics.ratedCapacityKwh, at };
+        const capacity =
+          message.rvm === RVM_BATTERY_CHARACTERISTICS
+            ? characteristics?.capacityKwh
+            : message.rvm === RVM_BATTERY_STATE
+              ? decodeBatteryState(message.payload)?.capacityKwh
+              : null;
+        if (capacity != null)
+          readings.push({
+            kwh: capacity,
+            at: (message.messageAt ?? message.receivedAt).toISOString(),
+          });
       }
 
       return {

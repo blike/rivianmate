@@ -7,21 +7,21 @@
  */
 
 /** Live charging graph: the bars the Rivian app draws for a session. */
-export const RVM_CHARGING_GRAPH = "energy_edge_compute.graphs.charging_graph_global";
+export const RVM_CHARGING_GRAPH = 'energy_edge_compute.graphs.charging_graph_global';
 
 /** Topics a charging capture records (the app's charging subscribe list). */
 export const PARALLAX_CHARGING_RVMS: readonly string[] = [
   RVM_CHARGING_GRAPH,
-  "energy_edge_compute.graphs.charge_session_breakdown",
-  "energy_edge_compute.graphs.cold_weather_soc",
-  "energy.high_voltage.battery_state",
-  "energy.high_voltage.battery_characteristics",
-  "charging.session.status",
-  "charging.session.time_estimation",
-  "charging.session.trip_target",
-  "charging.session.soc_slider",
-  "charging.session.notification",
-  "charging.schedule.time_window",
+  'energy_edge_compute.graphs.charge_session_breakdown',
+  'energy_edge_compute.graphs.cold_weather_soc',
+  'energy.high_voltage.battery_state',
+  'energy.high_voltage.battery_characteristics',
+  'charging.session.status',
+  'charging.session.time_estimation',
+  'charging.session.trip_target',
+  'charging.session.soc_slider',
+  'charging.session.notification',
+  'charging.schedule.time_window',
 ];
 
 export interface ParallaxMessage {
@@ -105,7 +105,9 @@ const MAX_POWER_KW = 500;
 const validSoc = (n: number | null) => (n != null && n >= 0 && n <= 100 ? n : null);
 /** In range, with float32 noise rounded off (124.7 arrives as 124.69999…). */
 const validPower = (n: number | null) =>
-  n != null && Number.isFinite(n) && n >= 0 && n <= MAX_POWER_KW ? Math.round(n * 1000) / 1000 : null;
+  n != null && Number.isFinite(n) && n >= 0 && n <= MAX_POWER_KW
+    ? Math.round(n * 1000) / 1000
+    : null;
 
 /**
  * `k70/g` graph bar: 1 SOC (int32), 2 power (float, kW), 3 start (int64 ms),
@@ -144,7 +146,7 @@ export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | nu
  */
 export function decodeChargingGraph(payloadBase64: string): ChargingGraphBar[] {
   if (!payloadBase64) return [];
-  const fields = readProtoFields(Buffer.from(payloadBase64, "base64"));
+  const fields = readProtoFields(Buffer.from(payloadBase64, 'base64'));
   if (!fields) return [];
   return fields
     .filter((f): f is ProtoField & { wire: 2 } => f.field === 1 && f.wire === 2)
@@ -158,22 +160,22 @@ export function decodeChargingGraph(payloadBase64: string): ChargingGraphBar[] {
 // live payloads next to the legacy vehicle state; each decoder notes what's
 // confirmed. Unknown fields are ignored.
 
-export const RVM_CHARGE_BREAKDOWN = "energy_edge_compute.graphs.charge_session_breakdown";
-export const RVM_BATTERY_STATE = "energy.high_voltage.battery_state";
-export const RVM_COLD_WEATHER = "energy_edge_compute.graphs.cold_weather_soc";
-export const RVM_PARKED_ENERGY = "energy_edge_compute.graphs.parked_energy_distributions";
-export const RVM_NETWORK = "vehicle.network.state";
-export const RVM_TRIP_INFO = "navigation.navigation_service.trip_info";
-export const RVM_TRIP_PROGRESS = "navigation.navigation_service.trip_progress";
+export const RVM_CHARGE_BREAKDOWN = 'energy_edge_compute.graphs.charge_session_breakdown';
+export const RVM_BATTERY_STATE = 'energy.high_voltage.battery_state';
+export const RVM_COLD_WEATHER = 'energy_edge_compute.graphs.cold_weather_soc';
+export const RVM_PARKED_ENERGY = 'energy_edge_compute.graphs.parked_energy_distributions';
+export const RVM_NETWORK = 'vehicle.network.state';
+export const RVM_TRIP_INFO = 'navigation.navigation_service.trip_info';
+export const RVM_TRIP_PROGRESS = 'navigation.navigation_service.trip_progress';
 
 // Charging topics recorded while their formats are worked out.
-export const RVM_BATTERY_CHARACTERISTICS = "energy.high_voltage.battery_characteristics";
-export const RVM_CHARGING_STATUS = "charging.session.status";
-export const RVM_TIME_ESTIMATION = "charging.session.time_estimation";
-export const RVM_TRIP_TARGET = "charging.session.trip_target";
-export const RVM_SOC_SLIDER = "charging.session.soc_slider";
-export const RVM_CHARGING_NOTIFICATION = "charging.session.notification";
-export const RVM_CHARGING_TIME_WINDOW = "charging.schedule.time_window";
+export const RVM_BATTERY_CHARACTERISTICS = 'energy.high_voltage.battery_characteristics';
+export const RVM_CHARGING_STATUS = 'charging.session.status';
+export const RVM_TIME_ESTIMATION = 'charging.session.time_estimation';
+export const RVM_TRIP_TARGET = 'charging.session.trip_target';
+export const RVM_SOC_SLIDER = 'charging.session.soc_slider';
+export const RVM_CHARGING_NOTIFICATION = 'charging.session.notification';
+export const RVM_CHARGING_TIME_WINDOW = 'charging.schedule.time_window';
 
 /**
  * Topics whose every distinct payload is logged, not just the latest, so
@@ -207,7 +209,7 @@ export const PARALLAX_MONITOR_RVMS: readonly string[] = [
  * all — checked proactively so we never even attempt it for them, rather
  * than relying solely on Rivian rejecting it after the fact.
  */
-export const PARALLAX_FEATURE_FLAG = "VEHICLE_CONNECTIVITY_PARALLAX";
+export const PARALLAX_FEATURE_FLAG = 'VEHICLE_CONNECTIVITY_PARALLAX';
 
 export function vehicleSupportsParallax(
   supportedFeatures: readonly string[] | null | undefined,
@@ -216,10 +218,10 @@ export function vehicleSupportsParallax(
 }
 
 /** Live vehicle position topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
-export const RVM_GNSS = "dynamics.vehicle.gnss";
+export const RVM_GNSS = 'dynamics.vehicle.gnss';
 
 /** Live tire pressure topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
-export const RVM_TIRES = "dynamics.tires.state";
+export const RVM_TIRES = 'dynamics.tires.state';
 
 /** Topics for the isolated "dynamics" Parallax subscription (own id/fate — see subscription.ts). */
 export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
@@ -229,31 +231,31 @@ export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
  * these by timestamp so delayed readings cannot replace newer data.
  */
 export const PARALLAX_DYNAMICS_FIELDS: readonly string[] = [
-  "gnssLocation",
-  "gnssAltitude",
-  "gnssBearing",
-  "gnssSpeed",
-  "tirePressureFrontLeft",
-  "tirePressureFrontRight",
-  "tirePressureRearLeft",
-  "tirePressureRearRight",
-  "tirePressureStatusFrontLeft",
-  "tirePressureStatusFrontRight",
-  "tirePressureStatusRearLeft",
-  "tirePressureStatusRearRight",
+  'gnssLocation',
+  'gnssAltitude',
+  'gnssBearing',
+  'gnssSpeed',
+  'tirePressureFrontLeft',
+  'tirePressureFrontRight',
+  'tirePressureRearLeft',
+  'tirePressureRearRight',
+  'tirePressureStatusFrontLeft',
+  'tirePressureStatusFrontRight',
+  'tirePressureStatusRearLeft',
+  'tirePressureStatusRearRight',
 ];
 
 const TIRE_POSITION_SUFFIX: Record<number, string> = {
-  1: "FrontLeft",
-  2: "FrontRight",
-  3: "RearLeft",
-  4: "RearRight",
+  1: 'FrontLeft',
+  2: 'FrontRight',
+  3: 'RearLeft',
+  4: 'RearRight',
 };
 
 export interface TireReading {
   position: string;
   pressureBar: number | null;
-  status: "OK" | "Warning" | null;
+  status: 'OK' | 'Warning' | null;
 }
 
 export interface GnssReading {
@@ -297,7 +299,7 @@ function fieldsOf(bytes: Uint8Array | null | undefined) {
 }
 
 const decode = (payloadBase64: string) =>
-  payloadBase64 ? fieldsOf(Buffer.from(payloadBase64, "base64")) : null;
+  payloadBase64 ? fieldsOf(Buffer.from(payloadBase64, 'base64')) : null;
 
 /** Rounds float32 noise (34.4 arrives as 34.400001…). */
 const f32 = (n: number | null) => (n == null ? null : Math.round(n * 1000) / 1000);
@@ -377,7 +379,8 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
   return {
     soc: f32(charge?.double(1) ?? null),
     capacityKwh: f32(charge?.double(2) ?? null),
-    cellTemps: avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
+    cellTemps:
+      avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
   };
 }
 
@@ -386,7 +389,9 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
  * field 6 is rated capacity (both float, kWh; field 6 identified by the owner).
  * Decode independently: a missing rated value must not use the estimate.
  */
-export function decodeBatteryCharacteristics(payloadBase64: string): { capacityKwh: number | null; ratedCapacityKwh: number | null } | null {
+export function decodeBatteryCharacteristics(
+  payloadBase64: string,
+): { capacityKwh: number | null; ratedCapacityKwh: number | null } | null {
   const fields = decode(payloadBase64);
   const capacity = (field: number) => {
     const value = fields?.float(field);
@@ -425,7 +430,7 @@ export function decodeGnss(payloadBase64: string): GnssReading | null {
  */
 export function decodeTires(payloadBase64: string): TireReading[] {
   if (!payloadBase64) return [];
-  const fields = readProtoFields(Buffer.from(payloadBase64, "base64"));
+  const fields = readProtoFields(Buffer.from(payloadBase64, 'base64'));
   if (!fields) return [];
   const readings: TireReading[] = [];
   for (const f of fields) {
@@ -438,7 +443,7 @@ export function decodeTires(payloadBase64: string): TireReading[] {
     readings.push({
       position: suffix,
       pressureBar: inner?.double(3) ?? null,
-      status: status == null ? null : status === 1 ? "OK" : "Warning",
+      status: status == null ? null : status === 1 ? 'OK' : 'Warning',
     });
   }
   return readings;
@@ -620,7 +625,10 @@ export function decodeTimeEstimation(
 ): { holdTimeSeconds: number; minutesRemaining: number } | null {
   const m = decode(payloadBase64);
   if (!m) return null;
-  return { holdTimeSeconds: Math.max(0, m.int(1) ?? 0), minutesRemaining: Math.max(0, m.int(2) ?? 0) };
+  return {
+    holdTimeSeconds: Math.max(0, m.int(1) ?? 0),
+    minutesRemaining: Math.max(0, m.int(2) ?? 0),
+  };
 }
 
 /** `charging.session.soc_slider`: 1 charge limit (%), matching batteryLimit. */
@@ -635,5 +643,9 @@ export function decodeSocSlider(payloadBase64: string): { limit: number } | null
  * Parallax reports these about 30 s before vehicle state does.
  */
 export function chargerStateFromStatus(status: ChargingStatus): string | null {
-  return { 2: "charging_ready", 3: "charging_active", 4: "charging_complete", 5: "charging_scheduled" }[status.displayStatus] ?? null;
+  return (
+    { 2: 'charging_ready', 3: 'charging_active', 4: 'charging_complete', 5: 'charging_scheduled' }[
+      status.displayStatus
+    ] ?? null
+  );
 }

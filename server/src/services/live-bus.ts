@@ -1,5 +1,5 @@
-import { EventEmitter } from "node:events";
-import type { LiveSessionData, VehicleState } from "../rivian/types.js";
+import { EventEmitter } from 'node:events';
+import type { LiveSessionData, VehicleState } from '../rivian/types.js';
 
 export interface LiveEvents {
   state: (vehicleId: string, state: VehicleState) => void;
@@ -17,25 +17,25 @@ export class LiveBus {
   }
 
   emitState(vehicleId: string, state: VehicleState): void {
-    this.emitter.emit("state", vehicleId, state);
+    this.emitter.emit('state', vehicleId, state);
   }
 
   emitChargingSession(vehicleId: string, session: LiveSessionData | null): void {
     this.chargingSessions.set(vehicleId, session);
-    this.emitter.emit("chargingSession", vehicleId, session);
+    this.emitter.emit('chargingSession', vehicleId, session);
   }
 
   latestChargingSession(vehicleId: string): LiveSessionData | null {
     return this.chargingSessions.get(vehicleId) ?? null;
   }
 
-  onState(listener: LiveEvents["state"]): () => void {
-    this.emitter.on("state", listener);
-    return () => this.emitter.off("state", listener);
+  onState(listener: LiveEvents['state']): () => void {
+    this.emitter.on('state', listener);
+    return () => this.emitter.off('state', listener);
   }
 
-  onChargingSession(listener: LiveEvents["chargingSession"]): () => void {
-    this.emitter.on("chargingSession", listener);
-    return () => this.emitter.off("chargingSession", listener);
+  onChargingSession(listener: LiveEvents['chargingSession']): () => void {
+    this.emitter.on('chargingSession', listener);
+    return () => this.emitter.off('chargingSession', listener);
   }
 }

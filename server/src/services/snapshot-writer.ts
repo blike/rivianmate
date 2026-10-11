@@ -1,13 +1,8 @@
-import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { drives, locationPoints, vehicleStateSnapshots } from "../db/schema.js";
-import type { TimeStampedValue, VehicleState } from "../rivian/types.js";
-import {
-  haversineKm,
-  stateLocation,
-  stateNumber,
-  stateString,
-} from "./state-utils.js";
+import { and, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
+import type { Db } from '../db/client.js';
+import { drives, locationPoints, vehicleStateSnapshots } from '../db/schema.js';
+import type { TimeStampedValue, VehicleState } from '../rivian/types.js';
+import { haversineKm, stateLocation, stateNumber, stateString } from './state-utils.js';
 
 const ANCHOR_INTERVAL_MS = 15 * 60_000;
 const MIN_WRITE_GAP_MS = 30_000;
@@ -19,15 +14,15 @@ const LIVE_FIX_MS = 5 * 60_000;
 
 /** Enum-ish fields where any change is worth a snapshot row. */
 const SIGNIFICANT_ENUM_FIELDS = [
-  "powerState",
-  "gearStatus",
-  "chargerStatus",
-  "chargerState",
-  "chargePortState",
-  "driveMode",
-  "otaStatus",
-  "otaCurrentStatus",
-  "otaInstallReady",
+  'powerState',
+  'gearStatus',
+  'chargerStatus',
+  'chargerState',
+  'chargePortState',
+  'driveMode',
+  'otaStatus',
+  'otaCurrentStatus',
+  'otaInstallReady',
 ];
 
 interface PerVehicle {
@@ -54,7 +49,10 @@ interface PerVehicle {
 export class SnapshotWriter {
   private perVehicle = new Map<string, PerVehicle>();
 
-  constructor(private readonly db: Db, private readonly now = () => Date.now()) {}
+  constructor(
+    private readonly db: Db,
+    private readonly now = () => Date.now(),
+  ) {}
 
   setCurrentDrive(vehicleId: string, driveId: number | null): void {
     this.ensure(vehicleId).currentDriveId = driveId;
@@ -67,12 +65,10 @@ export class SnapshotWriter {
     await this.maybeWriteLocation(vehicleId, pv, state);
 
     const metrics = {
-      batteryLevel: stateNumber(state, "batteryLevel"),
-      rangeKm: stateNumber(state, "distanceToEmpty"),
-      mileageM: stateNumber(state, "vehicleMileage"),
-      enums: SIGNIFICANT_ENUM_FIELDS.map((f) => stateString(state, f) ?? "").join(
-        "|",
-      ),
+      batteryLevel: stateNumber(state, 'batteryLevel'),
+      rangeKm: stateNumber(state, 'distanceToEmpty'),
+      mileageM: stateNumber(state, 'vehicleMileage'),
+      enums: SIGNIFICANT_ENUM_FIELDS.map((f) => stateString(state, f) ?? '').join('|'),
     };
 
     const isAnchor = nowMs - pv.lastAnchorAt >= ANCHOR_INTERVAL_MS;
@@ -91,12 +87,12 @@ export class SnapshotWriter {
       ts: new Date(nowMs),
       isAnchor,
       batteryLevel: metrics.batteryLevel,
-      batteryLimit: stateNumber(state, "batteryLimit"),
+      batteryLimit: stateNumber(state, 'batteryLimit'),
       rangeKm: metrics.rangeKm,
       mileageM: metrics.mileageM,
-      powerState: stateString(state, "powerState"),
-      chargerStatus: stateString(state, "chargerStatus"),
-      cabinTemp: stateNumber(state, "cabinClimateInteriorTemperature"),
+      powerState: stateString(state, 'powerState'),
+      chargerStatus: stateString(state, 'chargerStatus'),
+      cabinTemp: stateNumber(state, 'cabinClimateInteriorTemperature'),
       data: state,
     });
 
@@ -115,7 +111,7 @@ export class SnapshotWriter {
     const at = Date.parse(loc.timeStamp);
     if (!Number.isFinite(at)) return;
     // Rivian reports gnssSpeed in m/s.
-    const speed = alongside(state, "gnssSpeed", at);
+    const speed = alongside(state, 'gnssSpeed', at);
     const last = pv.lastLocation;
     if (last) {
       if (last.ts === loc.timeStamp) return;
@@ -131,8 +127,8 @@ export class SnapshotWriter {
         lat: loc.latitude,
         lon: loc.longitude,
         speedKmh: speed == null ? null : speed * 3.6,
-        bearing: alongside(state, "gnssBearing", at),
-        altitude: alongside(state, "gnssAltitude", at),
+        bearing: alongside(state, 'gnssBearing', at),
+        altitude: alongside(state, 'gnssAltitude', at),
         driveId: await this.driveAt(vehicleId, pv, at),
       })
       // Already stored (e.g. Rivian's last fix again after a restart).
@@ -183,11 +179,7 @@ function alongside(state: VehicleState, key: string, at: number): number | null 
   return stateNumber(state, key);
 }
 
-function changedBy(
-  current: number | null,
-  previous: number | null,
-  threshold: number,
-): boolean {
+function changedBy(current: number | null, previous: number | null, threshold: number): boolean {
   if (current == null) return false;
   if (previous == null) return true;
   return Math.abs(current - previous) >= threshold;

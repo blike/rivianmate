@@ -10,7 +10,7 @@ services:
       DATABASE_URL: postgres://rivianmate:${POSTGRES_PASSWORD:-rivianmate}@postgres:5432/rivianmate
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET to at least 32 random characters}
     ports:
-      - "${APP_PORT:-4000}:4000"
+      - '${APP_PORT:-4000}:4000'
 
   postgres:
     image: postgres:18-alpine
@@ -20,7 +20,7 @@ services:
       POSTGRES_USER: rivianmate
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rivianmate}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rivianmate -d rivianmate"]
+      test: ['CMD-SHELL', 'pg_isready -U rivianmate -d rivianmate']
       interval: 5s
       timeout: 5s
       retries: 20

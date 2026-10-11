@@ -7,18 +7,24 @@ import type {
   NotificationSettingsUpdate,
   NotificationTestResult,
   TimedAlertSettings,
-} from "@server/api-types.js";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { channelUrlProblem } from "@server/services/notify-channels.js";
-import { ApiError, api } from "../api/client.js";
-import { useNotificationSettings, useSetNotificationSettings, useTestNotifications } from "../api/hooks.js";
-import { SkeletonRows } from "./loading.js";
-import { SettingsGroup, Switch } from "./settings.js";
+} from '@server/api-types.js';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { channelUrlProblem } from '@server/services/notify-channels.js';
+import { ApiError, api } from '../api/client.js';
+import {
+  useNotificationSettings,
+  useSetNotificationSettings,
+  useTestNotifications,
+} from '../api/hooks.js';
+import { SkeletonRows } from './loading.js';
+import { SettingsGroup, Switch } from './settings.js';
 
 type Toggle = { enabled: boolean };
-type ToggleKey = { [K in keyof NotificationEvents]: NotificationEvents[K] extends TimedAlertSettings ? never : K }[keyof NotificationEvents];
-type TimedKey = "doorOpen" | "windowOpen" | "unlocked";
+type ToggleKey = {
+  [K in keyof NotificationEvents]: NotificationEvents[K] extends TimedAlertSettings ? never : K;
+}[keyof NotificationEvents];
+type TimedKey = 'doorOpen' | 'windowOpen' | 'unlocked';
 
 /** Saves this long after the last edit, so typing doesn't send every keystroke. */
 const AUTOSAVE_MS = 500;
@@ -47,7 +53,7 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
   const [events, setEvents] = useState(settings.events);
   const [destinations, setDestinations] = useState(() => settings.destinations.map(fromSaved));
   // Saved only on Save (or Enter), not per keystroke; suggests this page's address.
-  const [appUrl, setAppUrl] = useState(settings.appUrl ?? "");
+  const [appUrl, setAppUrl] = useState(settings.appUrl ?? '');
   const [appUrlDraft, setAppUrlDraft] = useState(settings.appUrl ?? window.location.origin);
   const appUrlError = appUrlProblem(appUrlDraft);
   const appUrlChanged = appUrlDraft.trim() !== appUrl.trim();
@@ -67,7 +73,7 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
   const [justSaved, setJustSaved] = useState(false);
 
   const invalidUrl = destinations.some((d) => destinationProblem(d) !== null);
-  const invalidMinutes = (["doorOpen", "windowOpen", "unlocked"] as const).some(
+  const invalidMinutes = (['doorOpen', 'windowOpen', 'unlocked'] as const).some(
     (k) => !(events[k].minutes >= 1 && events[k].minutes <= 1440),
   );
   const invalidPercent = !(events.lowBattery.percent >= 1 && events.lowBattery.percent <= 90);
@@ -145,27 +151,26 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
   });
 
   const status = failed ? (
-    <span className="text-[var(--status-critical)]" role="alert">
+    <span className="text-(--status-critical)" role="alert">
       {save.error instanceof ApiError ? save.error.message : "Couldn't save"}
     </span>
   ) : invalidMinutes ? (
-    <span className="text-[var(--status-critical)]">Use 1 to 1440 minutes</span>
+    <span className="text-(--status-critical)">Use 1 to 1440 minutes</span>
   ) : invalidPercent ? (
-    <span className="text-[var(--status-critical)]">Use 1 to 90%</span>
-
+    <span className="text-(--status-critical)">Use 1 to 90%</span>
   ) : dirty && valid ? (
-    <span className="text-[var(--text-muted)]">Saving…</span>
+    <span className="text-(--text-muted)">Saving…</span>
   ) : justSaved ? (
-    <span className="text-[var(--text-muted)]">Saved</span>
+    <span className="text-(--text-muted)">Saved</span>
   ) : null;
 
   const destinationCount = destinations.filter((d) => d.id).length;
   const alertsOn = Object.values(events).filter((e) => e.enabled).length;
   const summary = !enabled
-    ? "Get alerts in Discord, Pushover, ntfy, Telegram and more."
+    ? 'Get alerts in Discord, Pushover, ntfy, Telegram and more.'
     : destinationCount === 0
-      ? "Add a destination to start receiving alerts."
-      : `${destinationCount} ${destinationCount === 1 ? "destination" : "destinations"} · ${alertsOn} of ${Object.keys(events).length} alerts on`;
+      ? 'Add a destination to start receiving alerts.'
+      : `${destinationCount} ${destinationCount === 1 ? 'destination' : 'destinations'} · ${alertsOn} of ${Object.keys(events).length} alerts on`;
 
   return (
     <>
@@ -174,7 +179,7 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
           <BellIcon on={enabled} />
           <div className="min-w-0">
             <h3 className="text-sm font-medium">Send notifications</h3>
-            <p className="text-xs text-[var(--text-muted)]">{summary}</p>
+            <p className="text-xs text-(--text-muted)">{summary}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
@@ -193,13 +198,17 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
             action={
               destinations.some((d) => d.id) && (
                 <span className="flex items-center gap-3">
-                  {test.isError && <span className="text-xs text-[var(--status-critical)]">Couldn't send the test.</span>}
+                  {test.isError && (
+                    <span className="text-xs text-(--status-critical)">
+                      Couldn't send the test.
+                    </span>
+                  )}
                   <button
-                    className="text-xs text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline disabled:opacity-50"
+                    className="text-xs text-(--text-secondary) underline-offset-4 hover:text-(--text-primary) hover:underline disabled:opacity-50"
                     disabled={destinationsPending || test.isPending}
                     onClick={() => test.mutate()}
                   >
-                    {test.isPending ? "Sending…" : "Send test notification"}
+                    {test.isPending ? 'Sending…' : 'Send test notification'}
                   </button>
                 </span>
               )
@@ -213,28 +222,45 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
           </SettingsGroup>
 
           <SettingsGroup title="Doors & locks">
-            <TimedEvent title="Door left open" {...timedProps("doorOpen")} />
-            <TimedEvent title="Window left open" {...timedProps("windowOpen")} />
-            <TimedEvent title="Vehicle unlocked" {...timedProps("unlocked")} />
-            {!settings.homeKnown && (["doorOpen", "windowOpen", "unlocked"] as const).some((k) => events[k].awayOnly) && (
-              <p className="px-4 py-3 text-xs text-[var(--status-warning)]">
-                No home location is set, so “not at home” alerts are always sent.{" "}
-                <Link to="?section=charging" className="underline">
-                  Set one in Charging
-                </Link>
-                .
-              </p>
-            )}
+            <TimedEvent title="Door left open" {...timedProps('doorOpen')} />
+            <TimedEvent title="Window left open" {...timedProps('windowOpen')} />
+            <TimedEvent title="Vehicle unlocked" {...timedProps('unlocked')} />
+            {!settings.homeKnown &&
+              (['doorOpen', 'windowOpen', 'unlocked'] as const).some((k) => events[k].awayOnly) && (
+                <p className="px-4 py-3 text-xs text-(--status-warning)">
+                  No home location is set, so “not at home” alerts are always sent.{' '}
+                  <Link to="?section=charging" className="underline">
+                    Set one in Charging
+                  </Link>
+                  .
+                </p>
+              )}
           </SettingsGroup>
 
           <SettingsGroup title="Software">
-            <ToggleEvent title="Update available" detail="When a new version is offered" {...toggleProps("updateAvailable")} />
-            <ToggleEvent title="Update installed" detail="When the vehicle finishes installing" {...toggleProps("updateInstalled")} />
-            <ToggleEvent title="Update failed" detail="When an install doesn't succeed" {...toggleProps("updateFailed")} />
+            <ToggleEvent
+              title="Update available"
+              detail="When a new version is offered"
+              {...toggleProps('updateAvailable')}
+            />
+            <ToggleEvent
+              title="Update installed"
+              detail="When the vehicle finishes installing"
+              {...toggleProps('updateInstalled')}
+            />
+            <ToggleEvent
+              title="Update failed"
+              detail="When an install doesn't succeed"
+              {...toggleProps('updateFailed')}
+            />
           </SettingsGroup>
 
           <SettingsGroup title="Battery, charging & tires">
-            <ToggleEvent title="Charging complete" detail="When the charge limit is reached" {...toggleProps("chargingComplete")} />
+            <ToggleEvent
+              title="Charging complete"
+              detail="When the charge limit is reached"
+              {...toggleProps('chargingComplete')}
+            />
             <EventRow
               title="Low battery"
               detail={
@@ -245,7 +271,9 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
                     value={events.lowBattery.percent}
                     min={1}
                     max={90}
-                    onChange={(percent) => setEvent("lowBattery", { ...events.lowBattery, percent })}
+                    onChange={(percent) =>
+                      setEvent('lowBattery', { ...events.lowBattery, percent })
+                    }
                   />
                   %
                 </span>
@@ -254,21 +282,25 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
                 <Switch
                   label="Low battery"
                   checked={events.lowBattery.enabled}
-                  onChange={(on) => setEvent("lowBattery", { ...events.lowBattery, enabled: on })}
+                  onChange={(on) => setEvent('lowBattery', { ...events.lowBattery, enabled: on })}
                 />
               }
             />
-            <ToggleEvent title="Tire pressure" detail="When the vehicle flags a tire pressure issue" {...toggleProps("tirePressure")} />
+            <ToggleEvent
+              title="Tire pressure"
+              detail="When the vehicle flags a tire pressure issue"
+              {...toggleProps('tirePressure')}
+            />
           </SettingsGroup>
 
           <SettingsGroup
             title="Links in alerts"
             note={
-              <span className={appUrlError ? "text-[var(--status-critical)]" : undefined}>
+              <span className={appUrlError ? 'text-(--status-critical)' : undefined}>
                 {appUrlError ??
                   (isLocalAddress(appUrlDraft)
-                    ? "Links to this address only work on this computer. Use one your phone can reach to open release notes from alerts."
-                    : "Alerts link here, for example to release notes. Leave blank for no links.")}
+                    ? 'Links to this address only work on this computer. Use one your phone can reach to open release notes from alerts.'
+                    : 'Alerts link here, for example to release notes. Leave blank for no links.')}
               </span>
             }
           >
@@ -291,14 +323,14 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
                 value={appUrlDraft}
                 onChange={(e) => setAppUrlDraft(e.target.value)}
                 aria-invalid={appUrlError != null}
-                className="min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
+                className="min-w-0 flex-1 rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm"
               />
               {appUrlChanged && (
                 <>
                   {appUrl && (
                     <button
                       type="button"
-                      className="px-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      className="px-2 text-sm text-(--text-secondary) hover:text-(--text-primary)"
                       onClick={() => setAppUrlDraft(appUrl)}
                     >
                       Cancel
@@ -317,13 +349,18 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
   );
 }
 
-function EventRow(props: { title: string; detail?: ReactNode; control: ReactNode; extra?: ReactNode }) {
+function EventRow(props: {
+  title: string;
+  detail?: ReactNode;
+  control: ReactNode;
+  extra?: ReactNode;
+}) {
   return (
     <div className="px-4 py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="text-sm font-medium">{props.title}</div>
-          {props.detail && <div className="mt-0.5 text-xs text-[var(--text-muted)]">{props.detail}</div>}
+          {props.detail && <div className="mt-0.5 text-xs text-(--text-muted)">{props.detail}</div>}
         </div>
         {props.control}
       </div>
@@ -332,7 +369,12 @@ function EventRow(props: { title: string; detail?: ReactNode; control: ReactNode
   );
 }
 
-function ToggleEvent(props: { title: string; detail: string; checked: boolean; onChange: (on: boolean) => void }) {
+function ToggleEvent(props: {
+  title: string;
+  detail: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+}) {
   return (
     <EventRow
       title={props.title}
@@ -367,9 +409,15 @@ function TimedEvent(props: {
           min
         </span>
       }
-      control={<Switch label={props.title} checked={value.enabled} onChange={(enabled) => props.onChange({ ...value, enabled })} />}
+      control={
+        <Switch
+          label={props.title}
+          checked={value.enabled}
+          onChange={(enabled) => props.onChange({ ...value, enabled })}
+        />
+      }
       extra={
-        <label className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-[var(--text-secondary)]">
+        <label className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-(--text-secondary)">
           <input
             type="checkbox"
             className="h-3.5 w-3.5"
@@ -389,15 +437,15 @@ function appUrlProblem(url: string): string | null {
   if (!url.trim()) return null;
   try {
     const u = new URL(url.trim());
-    return u.protocol === "http:" || u.protocol === "https:" ? null : "Use an http(s) address";
+    return u.protocol === 'http:' || u.protocol === 'https:' ? null : 'Use an http(s) address';
   } catch {
-    return "Enter a full address, like https://rivianmate.example.com";
+    return 'Enter a full address, like https://rivianmate.example.com';
   }
 }
 
 function isLocalAddress(url: string): boolean {
   try {
-    return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url.trim()).hostname);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url.trim()).hostname);
   } catch {
     return false;
   }
@@ -422,8 +470,8 @@ const fromSaved = (d: NotificationDestinationDto): DraftDestination => ({
   key: d.id,
   id: d.id,
   kind: d.kind,
-  name: d.name ?? "",
-  url: "",
+  name: d.name ?? '',
+  url: '',
   preview: d.preview,
   editing: false,
 });
@@ -437,7 +485,7 @@ const toUpdate = (d: DraftDestination): NotificationDestinationUpdate => ({
 
 function destinationProblem(d: DraftDestination): string | null {
   const url = d.url.trim();
-  if (!url) return d.id ? null : "Enter a URL";
+  if (!url) return d.id ? null : 'Enter a URL';
   return channelUrlProblem(d.kind, url);
 }
 
@@ -446,22 +494,27 @@ const CHANNELS: Record<
   { name: string; summary: string; placeholder: string; help: ReactNode; icon: ReactNode }
 > = {
   discord: {
-    name: "Discord",
-    summary: "Post alerts to a Discord channel with a webhook.",
-    placeholder: "https://discord.com/api/webhooks/…",
-    help: "In Discord: Server settings → Integrations → Webhooks → New webhook → Copy webhook URL.",
+    name: 'Discord',
+    summary: 'Post alerts to a Discord channel with a webhook.',
+    placeholder: 'https://discord.com/api/webhooks/…',
+    help: 'In Discord: Server settings → Integrations → Webhooks → New webhook → Copy webhook URL.',
     icon: <DiscordLogo />,
   },
   apprise: {
-    name: "Apprise",
-    summary: "Pushover, ntfy, Telegram, Slack, email and 100+ more through an Apprise API server.",
-    placeholder: "http://apprise:8000/notify/rivianmate",
+    name: 'Apprise',
+    summary: 'Pushover, ntfy, Telegram, Slack, email and 100+ more through an Apprise API server.',
+    placeholder: 'http://apprise:8000/notify/rivianmate',
     help: (
       <>
-        The notify URL of your{" "}
-        <a className="underline hover:text-[var(--text-primary)]" href="https://github.com/caronc/apprise-api" target="_blank" rel="noreferrer noopener">
+        The notify URL of your{' '}
+        <a
+          className="underline hover:text-(--text-primary)"
+          href="https://github.com/caronc/apprise-api"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
           Apprise API
-        </a>{" "}
+        </a>{' '}
         server, including its config key.
       </>
     ),
@@ -479,17 +532,21 @@ function Destinations(props: {
   const list = props.destinations;
   const update = (key: string, change: Partial<DraftDestination> | null) =>
     props.onChange(
-      change === null ? list.filter((d) => d.key !== key) : list.map((d) => (d.key === key ? { ...d, ...change } : d)),
+      change === null
+        ? list.filter((d) => d.key !== key)
+        : list.map((d) => (d.key === key ? { ...d, ...change } : d)),
     );
   const add = (kind: NotificationChannelKind) => {
-    props.onChange([...list, { key: newKey(), kind, name: "", url: "", editing: true }]);
+    props.onChange([...list, { key: newKey(), kind, name: '', url: '', editing: true }]);
     setPicking(false);
   };
 
   return (
     <>
       {list.length === 0 && !picking && (
-        <p className="px-4 py-5 text-center text-sm text-[var(--text-muted)]">No destinations yet. Add one to start receiving alerts.</p>
+        <p className="px-4 py-5 text-center text-sm text-(--text-muted)">
+          No destinations yet. Add one to start receiving alerts.
+        </p>
       )}
       {list.map((d) => (
         <DestinationCard
@@ -504,8 +561,11 @@ function Destinations(props: {
       {picking ? (
         <div className="p-3">
           <div className="flex items-center justify-between px-1 pb-2">
-            <span className="text-xs text-[var(--text-muted)]">Choose a destination</span>
-            <button className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={() => setPicking(false)}>
+            <span className="text-xs text-(--text-muted)">Choose a destination</span>
+            <button
+              className="text-xs text-(--text-secondary) hover:text-(--text-primary)"
+              onClick={() => setPicking(false)}
+            >
               Cancel
             </button>
           </div>
@@ -513,13 +573,15 @@ function Destinations(props: {
             {(Object.keys(CHANNELS) as NotificationChannelKind[]).map((kind) => (
               <button
                 key={kind}
-                className="flex items-start gap-3 rounded-md bg-[var(--surface-2)] p-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--surface-2)_70%,var(--border))]"
+                className="flex items-start gap-3 rounded-md bg-(--surface-2) p-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--surface-2)_70%,var(--border))]"
                 onClick={() => add(kind)}
               >
                 {CHANNELS[kind].icon}
                 <span>
                   <span className="block text-sm font-medium">{CHANNELS[kind].name}</span>
-                  <span className="mt-0.5 block text-xs text-[var(--text-muted)]">{CHANNELS[kind].summary}</span>
+                  <span className="mt-0.5 block text-xs text-(--text-muted)">
+                    {CHANNELS[kind].summary}
+                  </span>
                 </span>
               </button>
             ))}
@@ -528,10 +590,13 @@ function Destinations(props: {
       ) : (
         list.length < MAX_DESTINATIONS && (
           <button
-            className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[var(--text-secondary)] transition-colors last:rounded-b-xl hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+            className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-(--text-secondary) transition-colors last:rounded-b-xl hover:bg-(--surface-2) hover:text-(--text-primary)"
             onClick={() => setPicking(true)}
           >
-            <span aria-hidden className="grid h-8 w-8 place-items-center rounded-full border border-dashed border-[var(--border)] text-base leading-none">
+            <span
+              aria-hidden
+              className="grid h-8 w-8 place-items-center rounded-full border border-dashed border-(--border) text-base leading-none"
+            >
               +
             </span>
             Add destination
@@ -561,22 +626,28 @@ function DestinationCard(props: {
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">
             {title}
-            {d.name.trim() && <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">{channel.name}</span>}
+            {d.name.trim() && (
+              <span className="ml-2 text-xs font-normal text-(--text-muted)">{channel.name}</span>
+            )}
           </div>
-          {!d.editing && <div className="truncate font-mono text-xs text-[var(--text-secondary)]">{d.preview}</div>}
+          {!d.editing && (
+            <div className="truncate font-mono text-xs text-(--text-secondary)">{d.preview}</div>
+          )}
           {props.result && (
             <div
-              className={`text-xs ${props.result.ok ? "text-[var(--status-good)]" : "text-[var(--status-critical)]"}`}
+              className={`text-xs ${props.result.ok ? 'text-(--status-good)' : 'text-(--status-critical)'}`}
               title={props.result.error ?? undefined}
             >
-              {props.result.ok ? "Test sent" : `Test failed${props.result.error ? `: ${props.result.error}` : ""}`}
+              {props.result.ok
+                ? 'Test sent'
+                : `Test failed${props.result.error ? `: ${props.result.error}` : ''}`}
             </div>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-sm">
           {d.editing && d.id ? (
             <button
-              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              className="text-(--text-secondary) hover:text-(--text-primary)"
               disabled={problem != null}
               onClick={() => props.onChange({ editing: false })}
             >
@@ -584,12 +655,18 @@ function DestinationCard(props: {
             </button>
           ) : (
             !d.editing && (
-              <button className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]" onClick={() => props.onChange({ editing: true })}>
+              <button
+                className="text-(--text-secondary) hover:text-(--text-primary)"
+                onClick={() => props.onChange({ editing: true })}
+              >
                 Edit
               </button>
             )
           )}
-          <button className="text-[var(--text-secondary)] hover:text-[var(--status-critical)]" onClick={props.onRemove}>
+          <button
+            className="text-(--text-secondary) hover:text-(--status-critical)"
+            onClick={props.onRemove}
+          >
             Remove
           </button>
         </div>
@@ -597,7 +674,7 @@ function DestinationCard(props: {
       {d.editing && (
         <div className="mt-3 grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)]">
           <div>
-            <label htmlFor={ids.name} className="mb-1 block text-xs text-[var(--text-muted)]">
+            <label htmlFor={ids.name} className="mb-1 block text-xs text-(--text-muted)">
               Name <span className="opacity-70">(optional)</span>
             </label>
             <input
@@ -606,12 +683,12 @@ function DestinationCard(props: {
               placeholder={channel.name}
               value={d.name}
               onChange={(e) => props.onChange({ name: e.target.value })}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
+              className="w-full rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm"
             />
           </div>
           <div>
-            <label htmlFor={ids.url} className="mb-1 block text-xs text-[var(--text-muted)]">
-              {d.kind === "discord" ? "Webhook URL" : "Notify URL"}
+            <label htmlFor={ids.url} className="mb-1 block text-xs text-(--text-muted)">
+              {d.kind === 'discord' ? 'Webhook URL' : 'Notify URL'}
             </label>
             <input
               id={ids.url}
@@ -619,14 +696,16 @@ function DestinationCard(props: {
               autoFocus={!d.id}
               autoComplete="off"
               spellCheck={false}
-              placeholder={d.id ? "Leave blank to keep the current URL" : channel.placeholder}
+              placeholder={d.id ? 'Leave blank to keep the current URL' : channel.placeholder}
               value={d.url}
               onChange={(e) => props.onChange({ url: e.target.value })}
               aria-invalid={problem != null}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1.5 text-sm"
+              className="w-full rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm"
             />
           </div>
-          <p className={`text-xs sm:col-span-2 ${problem ? "text-[var(--status-critical)]" : "text-[var(--text-muted)]"}`}>
+          <p
+            className={`text-xs sm:col-span-2 ${problem ? 'text-(--status-critical)' : 'text-(--text-muted)'}`}
+          >
             {problem ?? channel.help}
           </p>
         </div>
@@ -638,15 +717,24 @@ function DestinationCard(props: {
 /** Discord's mark (Simple Icons, CC0) on Discord blurple. */
 function DiscordLogo() {
   return (
-    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#5865F2]" aria-hidden>
-      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="#fff">
+    <span
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#5865F2]"
+      aria-hidden
+    >
+      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="#fff">
         <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" />
       </svg>
     </span>
   );
 }
 
-function NumberInput(props: { label: string; value: number; min: number; max: number; onChange: (n: number) => void }) {
+function NumberInput(props: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
   return (
     <input
       type="number"
@@ -654,9 +742,11 @@ function NumberInput(props: { label: string; value: number; min: number; max: nu
       aria-label={props.label}
       min={props.min}
       max={props.max}
-      value={Number.isFinite(props.value) ? props.value : ""}
-      onChange={(e) => props.onChange(e.target.value === "" ? NaN : Math.round(Number(e.target.value)))}
-      className="w-14 rounded border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0.5 text-right text-xs tabular-nums text-[var(--text-primary)]"
+      value={Number.isFinite(props.value) ? props.value : ''}
+      onChange={(e) =>
+        props.onChange(e.target.value === '' ? NaN : Math.round(Number(e.target.value)))
+      }
+      className="w-14 rounded border border-(--border) bg-(--surface-2) px-1.5 py-0.5 text-right text-xs tabular-nums text-(--text-primary)"
     />
   );
 }
@@ -666,13 +756,23 @@ function BellIcon(props: { on: boolean }) {
     <span
       className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${
         props.on
-          ? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-[var(--accent)]"
-          : "bg-[var(--surface-2)] text-[var(--text-muted)]"
+          ? 'bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] text-(--accent)'
+          : 'bg-(--surface-2) text-(--text-muted)'
       }`}
       aria-hidden
     >
-      <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M4 6.5a4 4 0 1 1 8 0c0 3 1.5 4.5 1.5 4.5h-11S4 9.5 4 6.5ZM6.5 13.5a1.5 1.5 0 0 0 3 0" strokeLinecap="round" strokeLinejoin="round" />
+      <svg
+        viewBox="0 0 16 16"
+        className="h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <path
+          d="M4 6.5a4 4 0 1 1 8 0c0 3 1.5 4.5 1.5 4.5h-11S4 9.5 4 6.5ZM6.5 13.5a1.5 1.5 0 0 0 3 0"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     </span>
   );

@@ -1,46 +1,68 @@
-import type { DriveDetailDto, DriveDto, DrivePlaceDto } from "@server/api-types.js";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
-import { api } from "../api/client.js";
-import { useUnits } from "../api/hooks.js";
-import { ContentFrame, LoadingScope, Skeleton, SkeletonBlock, SkeletonRows, useLoading } from "../components/loading.js";
-import { Panel } from "../components/panels.js";
-import { RecordPicker } from "../components/RecordPicker.js";
-import type { UnitFormatter } from "../lib/units.js";
-import { TrendChart } from "../components/TrendChart.js";
-import { VehicleMap } from "../components/VehicleMap.js";
-import { averageSpeedKmh, driveProfile, drivesByDay, minuteTicks, profilePosition, rangeUsedKm } from "../lib/drives.js";
-import { isPosition } from "../lib/geo.js";
-import { fmt, fmtDuration, fmtSeconds, titleCase } from "../lib/state.js";
+import type { DriveDetailDto, DriveDto, DrivePlaceDto } from '@server/api-types.js';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useMemo, useState, type ReactNode } from 'react';
+import { api } from '../api/client.js';
+import { useUnits } from '../api/hooks.js';
+import {
+  ContentFrame,
+  LoadingScope,
+  Skeleton,
+  SkeletonBlock,
+  SkeletonRows,
+  useLoading,
+} from '../components/loading.js';
+import { Panel } from '../components/panels.js';
+import { RecordPicker } from '../components/RecordPicker.js';
+import type { UnitFormatter } from '../lib/units.js';
+import { TrendChart } from '../components/TrendChart.js';
+import { VehicleMap } from '../components/VehicleMap.js';
+import {
+  averageSpeedKmh,
+  driveProfile,
+  drivesByDay,
+  minuteTicks,
+  profilePosition,
+  rangeUsedKm,
+} from '../lib/drives.js';
+import { isPosition } from '../lib/geo.js';
+import { fmt, fmtDuration, fmtSeconds, titleCase } from '../lib/state.js';
 
 /** A drive in progress refreshes this often, so its figures keep up. */
 const LIVE_REFRESH_MS = 15_000;
 
-const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 const longDay = (iso: string) =>
-  new Date(iso).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  new Date(iso).toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
 /** Battery % used; null when unknown or too small to show. */
-const batteryUsed = (d: Pick<DriveDto, "startBattery" | "endBattery">) => {
-  const used = d.startBattery != null && d.endBattery != null ? d.startBattery - d.endBattery : null;
+const batteryUsed = (d: Pick<DriveDto, 'startBattery' | 'endBattery'>) => {
+  const used =
+    d.startBattery != null && d.endBattery != null ? d.startBattery - d.endBattery : null;
   return used != null && Math.abs(used) >= 0.05 ? used : null;
 };
 
 /** Battery change as a signed percent: "−6.3%", or "+1.2%" if it rose (e.g. regen downhill). */
-const batteryChange = (used: number) => `${used > 0 ? "−" : "+"}${fmt(Math.abs(used), 1)}%`;
+const batteryChange = (used: number) => `${used > 0 ? '−' : '+'}${fmt(Math.abs(used), 1)}%`;
 
 /** "2101 Ireland Grove Road, Bloomington" → "2101 Ireland Grove Road", for tight rows. */
-const shortPlace = (label: string) => label.split(",")[0]!.trim();
+const shortPlace = (label: string) => label.split(',')[0]!.trim();
 
 export function Drives(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const u = useUnits();
 
   const { data: drives, isPending: drivesPending } = useQuery({
-    queryKey: ["drives", props.vehicleId],
+    queryKey: ['drives', props.vehicleId],
     queryFn: () => api.drives(props.vehicleId),
-    refetchInterval: (query) => (query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000),
+    refetchInterval: (query) =>
+      query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
   });
   // The newest drive until one is picked.
   const driveId = selectedId ?? drives?.[0]?.id ?? null;
@@ -50,17 +72,21 @@ export function Drives(props: { vehicleId: string }) {
     isPending: detailPending,
     isPlaceholderData: showingPreviousDrive,
   } = useQuery({
-    queryKey: ["drive", driveId],
+    queryKey: ['drive', driveId],
     queryFn: () => api.drive(driveId!),
     enabled: driveId != null,
-    refetchInterval: (query) => (query.state.data && !query.state.data.endedAt ? LIVE_REFRESH_MS : false),
+    refetchInterval: (query) =>
+      query.state.data && !query.state.data.endedAt ? LIVE_REFRESH_MS : false,
     // Keep the previous drive on screen (dimmed) while the next one loads.
     placeholderData: keepPreviousData,
   });
   const loading = drivesPending || (driveId != null && detailPending);
 
   const trail = useMemo(
-    () => (detail?.points ?? []).filter((p) => isPosition(p.lat, p.lon)).map((p) => [p.lat, p.lon] as [number, number]),
+    () =>
+      (detail?.points ?? [])
+        .filter((p) => isPosition(p.lat, p.lon))
+        .map((p) => [p.lat, p.lon] as [number, number]),
     [detail],
   );
   const lastPoint = trail.at(-1);
@@ -85,7 +111,7 @@ export function Drives(props: { vehicleId: string }) {
   if (!drivesPending && !drives?.length) {
     return (
       <Panel title="Drives">
-        <p className="py-6 text-center text-sm text-[var(--text-muted)]">No drives recorded yet.</p>
+        <p className="py-6 text-center text-sm text-(--text-muted)">No drives recorded yet.</p>
       </Panel>
     );
   }
@@ -95,15 +121,18 @@ export function Drives(props: { vehicleId: string }) {
       {drives && drives.length > 1 && (
         <DrivePicker drives={drives} selectedId={driveId} onSelect={setSelectedId} />
       )}
-      <div className={`transition-opacity ${showingPreviousDrive ? "opacity-50" : ""}`}>
+      <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
         <LoadingScope loading={loading}>
           <DriveCard drive={detail} />
         </LoadingScope>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Panel title="Route" className={`flex flex-col transition-opacity ${showingPreviousDrive ? "opacity-50" : ""}`}>
-          <div className="relative h-[22rem] overflow-hidden rounded-lg lg:h-[26rem]">
+        <Panel
+          title="Route"
+          className={`flex flex-col transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}
+        >
+          <div className="relative h-88 overflow-hidden rounded-lg lg:h-104">
             {loading ? (
               <SkeletonBlock height="100%" />
             ) : detail && lastPoint ? (
@@ -119,7 +148,7 @@ export function Drives(props: { vehicleId: string }) {
                 />
               </div>
             ) : (
-              <p className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+              <p className="flex h-full items-center justify-center text-sm text-(--text-muted)">
                 No GPS from the vehicle during this drive (it may have had no signal).
               </p>
             )}
@@ -140,8 +169,22 @@ export function Drives(props: { vehicleId: string }) {
                 xFormatter={formatMinutes(profile.at(-1)?.minutes ?? 0)}
                 tooltipLabel={detail ? tooltipTime(detail.startedAt) : undefined}
                 series={[
-                  { key: "speed", label: "Speed", color: "var(--accent)", unit: u.speedUnit, digits: 0 },
-                  { key: "elevation", label: "Elevation", color: "var(--series-1)", mark: "line", right: true, unit: u.elevationUnit, digits: 0 },
+                  {
+                    key: 'speed',
+                    label: 'Speed',
+                    color: 'var(--accent)',
+                    unit: u.speedUnit,
+                    digits: 0,
+                  },
+                  {
+                    key: 'elevation',
+                    label: 'Elevation',
+                    color: 'var(--series-1)',
+                    mark: 'line',
+                    right: true,
+                    unit: u.elevationUnit,
+                    digits: 0,
+                  },
                 ]}
               />
             </ContentFrame>
@@ -150,7 +193,7 @@ export function Drives(props: { vehicleId: string }) {
 
         <Panel title="All drives" className="hidden flex-col lg:flex">
           <div className="relative min-h-0 flex-1">
-            <div className="-mx-4 max-h-[28rem] overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
+            <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {drivesPending ? (
                 <div className="px-4">
                   <SkeletonRows rows={8} />
@@ -175,39 +218,43 @@ function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   const used = d ? batteryUsed(d) : null;
   const rangeUsed = d ? rangeUsedKm(d.startRangeKm, d.endRangeKm) : null;
   const avgSpeed = d ? averageSpeedKmh(d.distanceKm, d.startedAt, d.endedAt) : null;
-  const to = d?.end?.label ?? (live && d?.destination?.name ? `Navigating to ${d.destination.name}` : null);
+  const to =
+    d?.end?.label ?? (live && d?.destination?.name ? `Navigating to ${d.destination.name}` : null);
 
   const tiles: { label: string; value: ReactNode; sub?: ReactNode }[] = [
-    { label: "Distance", value: u.formatDistance(d?.distanceKm, 1) },
+    { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
     {
-      label: "Duration",
-      value: d ? fmtDuration(d.startedAt, d.endedAt) : "—",
+      label: 'Duration',
+      value: d ? fmtDuration(d.startedAt, d.endedAt) : '—',
       sub: avgSpeed != null ? `${u.formatSpeed(avgSpeed)} average` : undefined,
     },
     {
-      label: "Efficiency",
+      label: 'Efficiency',
       value: u.formatEfficiency(d?.distanceKm, d?.energyKwh),
       sub: d?.energyKwh != null ? `${fmt(d.energyKwh, 1)} kWh used` : undefined,
     },
     {
-      label: "Battery",
-      value: d?.startBattery != null && d.endBattery != null ? `${fmt(d.startBattery, 0)}% → ${fmt(d.endBattery, 0)}%` : "—",
+      label: 'Battery',
+      value:
+        d?.startBattery != null && d.endBattery != null
+          ? `${fmt(d.startBattery, 0)}% → ${fmt(d.endBattery, 0)}%`
+          : '—',
       sub:
         used != null
-          ? `${batteryChange(used)}${rangeUsed != null ? ` · ${u.formatDistance(rangeUsed)} of range` : ""}`
+          ? `${batteryChange(used)}${rangeUsed != null ? ` · ${u.formatDistance(rangeUsed)} of range` : ''}`
           : undefined,
     },
     {
-      label: "Top speed",
+      label: 'Top speed',
       value: u.formatSpeed(d?.maxSpeedKmh),
       sub: d?.driveMode ? `${titleCase(d.driveMode)} mode` : undefined,
     },
     {
-      label: "Elevation",
+      label: 'Elevation',
       value:
         d?.elevationGainM != null || d?.elevationLossM != null
           ? `↑ ${u.formatElevation(d?.elevationGainM)}`
-          : "—",
+          : '—',
       sub: d?.elevationLossM != null ? `↓ ${u.formatElevation(d.elevationLossM)}` : undefined,
     },
   ];
@@ -215,7 +262,7 @@ function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   return (
     <section className="card overflow-hidden">
       <div className="p-5">
-        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+        <div className="flex items-center gap-2 text-xs text-(--text-muted)">
           {loading || !d ? (
             <Skeleton className="w-[14em]" />
           ) : (
@@ -225,8 +272,8 @@ function DriveCard(props: { drive: DriveDetailDto | undefined }) {
                 {d.endedAt && ` – ${clock(d.endedAt)}`}
               </span>
               {live && (
-                <span className="flex items-center gap-1.5 font-medium uppercase tracking-wide text-[var(--status-good)]">
-                  <span className="chip-dot--pulse h-1.5 w-1.5 rounded-full bg-[var(--status-good)] text-[var(--status-good)]" />
+                <span className="flex items-center gap-1.5 font-medium uppercase tracking-wide text-(--status-good)">
+                  <span className="chip-dot--pulse h-1.5 w-1.5 rounded-full bg-(--status-good) text-(--status-good)" />
                   In progress
                 </span>
               )}
@@ -239,21 +286,27 @@ function DriveCard(props: { drive: DriveDetailDto | undefined }) {
           ) : (
             <>
               <Place place={d.start} />
-              <span aria-label="to" className="text-[var(--text-muted)]">
+              <span aria-label="to" className="text-(--text-muted)">
                 →
               </span>
-              {d.end ? <Place place={d.end} /> : <span className="text-[var(--text-secondary)]">{to ?? (live ? "…" : "—")}</span>}
+              {d.end ? (
+                <Place place={d.end} />
+              ) : (
+                <span className="text-(--text-secondary)">{to ?? (live ? '…' : '—')}</span>
+              )}
             </>
           )}
         </h2>
       </div>
-      <ul className="grid grid-cols-2 gap-px border-t border-[var(--border)] bg-[var(--border)] sm:grid-cols-3 lg:grid-cols-6">
+      <ul className="grid grid-cols-2 gap-px border-t border-(--border) bg-(--border) sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map((t) => (
-          <li key={t.label} className="bg-[var(--surface-1)] px-4 py-3">
-            <div className="text-xs text-[var(--text-muted)]">{t.label}</div>
-            <div className="mt-1 text-base font-semibold tabular-nums">{loading ? <Skeleton className="w-[5em]" /> : t.value}</div>
-            <div className="truncate text-xs text-[var(--text-secondary)]">
-              {loading ? <Skeleton className="w-[7em]" /> : (t.sub ?? " ")}
+          <li key={t.label} className="bg-(--surface-1) px-4 py-3">
+            <div className="text-xs text-(--text-muted)">{t.label}</div>
+            <div className="mt-1 text-base font-semibold tabular-nums">
+              {loading ? <Skeleton className="w-[5em]" /> : t.value}
+            </div>
+            <div className="truncate text-xs text-(--text-secondary)">
+              {loading ? <Skeleton className="w-[7em]" /> : (t.sub ?? ' ')}
             </div>
           </li>
         ))}
@@ -264,7 +317,7 @@ function DriveCard(props: { drive: DriveDetailDto | undefined }) {
 
 /** "Home" or a short address, with the full address on hover. */
 function Place(props: { place: DrivePlaceDto | null }) {
-  if (!props.place) return <span className="text-[var(--text-muted)]">Unknown</span>;
+  if (!props.place) return <span className="text-(--text-muted)">Unknown</span>;
   return (
     <span className="min-w-0 truncate" title={props.place.address ?? props.place.label}>
       {props.place.isHome && <HomeIcon />}
@@ -274,18 +327,22 @@ function Place(props: { place: DrivePlaceDto | null }) {
 }
 
 /** On narrow screens, a picker up top stands in for the list. */
-function DrivePicker(props: { drives: DriveDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
+function DrivePicker(props: {
+  drives: DriveDto[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
   const u = useUnits();
   const groups = useMemo(
     () =>
       drivesByDay(props.drives).map((day) => ({
         key: day.key,
         label: day.label,
-        summary: `${day.drives.length} drive${day.drives.length === 1 ? "" : "s"} · ${u.formatDistance(day.distanceKm)}`,
+        summary: `${day.drives.length} drive${day.drives.length === 1 ? '' : 's'} · ${u.formatDistance(day.distanceKm)}`,
         items: day.drives.map((d) => ({
           id: d.id,
           time: clock(d.startedAt),
-          title: `${d.start ? shortPlace(d.start.label) : "—"} → ${destination(d)}`,
+          title: `${d.start ? shortPlace(d.start.label) : '—'} → ${destination(d)}`,
           detail: driveFacts(d, u),
           value: u.formatDistance(d.distanceKm, 1),
           live: !d.endedAt,
@@ -313,32 +370,44 @@ function driveFacts(d: DriveDto, u: UnitFormatter): string {
     d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(' · ');
 }
 
 /** Where a drive ended, or where it's headed while under way. */
 function destination(d: DriveDto): string {
-  if (d.endedAt) return d.end ? shortPlace(d.end.label) : "—";
-  return d.destination?.name ? `Navigating to ${d.destination.name}` : "…";
+  if (d.endedAt) return d.end ? shortPlace(d.end.label) : '—';
+  return d.destination?.name ? `Navigating to ${d.destination.name}` : '…';
 }
 
 /** Drives by day, newest first, each day with its total. */
-function DriveList(props: { drives: DriveDto[]; selectedId: number | null; onSelect: (id: number) => void }) {
+function DriveList(props: {
+  drives: DriveDto[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
   const u = useUnits();
   const days = useMemo(() => drivesByDay(props.drives), [props.drives]);
   return (
     <div>
       {days.map((day) => (
         <section key={day.key}>
-          <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-1)] px-4 py-2 text-xs">
-            <span className="font-medium uppercase tracking-wide text-[var(--text-muted)]">{day.label}</span>
-            <span className="tabular-nums text-[var(--text-muted)]">
-              {day.drives.length} drive{day.drives.length === 1 ? "" : "s"} · {u.formatDistance(day.distanceKm)}
+          <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-(--border) bg-(--surface-1) px-4 py-2 text-xs">
+            <span className="font-medium uppercase tracking-wide text-(--text-muted)">
+              {day.label}
+            </span>
+            <span className="tabular-nums text-(--text-muted)">
+              {day.drives.length} drive{day.drives.length === 1 ? '' : 's'} ·{' '}
+              {u.formatDistance(day.distanceKm)}
             </span>
           </h4>
           <ul>
             {day.drives.map((d) => (
-              <DriveItem key={d.id} drive={d} selected={props.selectedId === d.id} onSelect={() => props.onSelect(d.id)} />
+              <DriveItem
+                key={d.id}
+                drive={d}
+                selected={props.selectedId === d.id}
+                onSelect={() => props.onSelect(d.id)}
+              />
             ))}
           </ul>
         </section>
@@ -356,25 +425,34 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
     <li>
       <button
         onClick={props.onSelect}
-        aria-current={props.selected ? "true" : undefined}
-        className={`relative grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-4 py-2.5 text-left transition-colors hover:bg-[var(--surface-2)] ${
-          props.selected ? "bg-[var(--surface-2)]" : ""
+        aria-current={props.selected ? 'true' : undefined}
+        className={`relative grid w-full grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-4 py-2.5 text-left transition-colors hover:bg-(--surface-2) ${
+          props.selected ? 'bg-(--surface-2)' : ''
         }`}
       >
-        {props.selected && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-[var(--accent)]" />}
-        <span className="text-xs tabular-nums text-[var(--text-muted)]">{clock(d.startedAt)}</span>
+        {props.selected && (
+          <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-(--accent)" />
+        )}
+        <span className="text-xs tabular-nums text-(--text-muted)">{clock(d.startedAt)}</span>
         <span className="min-w-0">
-          <span className="block truncate text-sm" title={`${d.start?.address ?? d.start?.label ?? "—"} → ${d.end?.address ?? to}`}>
-            <span className={d.start?.isHome ? "font-medium" : ""}>{d.start ? shortPlace(d.start.label) : "—"}</span>
-            <span className="text-[var(--text-muted)]"> → </span>
-            <span className={d.end?.isHome ? "font-medium" : ""}>{to}</span>
+          <span
+            className="block truncate text-sm"
+            title={`${d.start?.address ?? d.start?.label ?? '—'} → ${d.end?.address ?? to}`}
+          >
+            <span className={d.start?.isHome ? 'font-medium' : ''}>
+              {d.start ? shortPlace(d.start.label) : '—'}
+            </span>
+            <span className="text-(--text-muted)"> → </span>
+            <span className={d.end?.isHome ? 'font-medium' : ''}>{to}</span>
           </span>
-          <span className="mt-0.5 block truncate text-xs tabular-nums text-[var(--text-muted)]">
-            {!d.endedAt && <span className="mr-1.5 text-[var(--status-good)]">In progress ·</span>}
+          <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
+            {!d.endedAt && <span className="mr-1.5 text-(--status-good)">In progress ·</span>}
             {driveFacts(d, u)}
           </span>
         </span>
-        <span className="text-sm font-medium tabular-nums">{u.formatDistance(d.distanceKm, 1)}</span>
+        <span className="text-sm font-medium tabular-nums">
+          {u.formatDistance(d.distanceKm, 1)}
+        </span>
       </button>
     </li>
   );
@@ -382,7 +460,12 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
 
 function HomeIcon() {
   return (
-    <svg viewBox="0 0 16 16" className="mr-1.5 inline h-[0.85em] w-[0.85em] -translate-y-px text-[var(--accent)]" fill="currentColor" aria-hidden>
+    <svg
+      viewBox="0 0 16 16"
+      className="mr-1.5 inline h-[0.85em] w-[0.85em] -translate-y-px text-(--accent)"
+      fill="currentColor"
+      aria-hidden
+    >
       <path d="M8 1.5 1 7.2l.9 1.1L3 7.4V14h4v-4h2v4h4V7.4l1.1.9.9-1.1L8 1.5Z" />
     </svg>
   );
@@ -397,7 +480,10 @@ function formatMinutes(totalMinutes: number) {
 function tooltipTime(startedAt: string) {
   const start = Date.parse(startedAt);
   return (m: number) => {
-    const at = new Date(start + m * 60_000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const at = new Date(start + m * 60_000).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
     return `${fmtSeconds(m * 60)} (${at})`;
   };
 }

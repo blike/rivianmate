@@ -1,10 +1,10 @@
-import type { VehicleState } from "@server/api-types.js";
-import { brakeFluidLabel } from "./vehicleStatus.js";
-import { lastInstallFailed, softwareUpdate } from "./ota.js";
-import { sv, titleCase } from "./state.js";
+import type { VehicleState } from '@server/api-types.js';
+import { brakeFluidLabel } from './vehicleStatus.js';
+import { lastInstallFailed, softwareUpdate } from './ota.js';
+import { sv, titleCase } from './state.js';
 
 /** good: nothing to do. info: worth knowing. attention: check it. */
-export type CheckLevel = "good" | "info" | "attention" | "unknown";
+export type CheckLevel = 'good' | 'info' | 'attention' | 'unknown';
 
 export interface HealthCheck {
   key: string;
@@ -14,78 +14,134 @@ export interface HealthCheck {
 }
 
 export const TIRES = [
-  { key: "fl", label: "Front left", status: "tirePressureStatusFrontLeft", pressure: "tirePressureFrontLeft" },
-  { key: "fr", label: "Front right", status: "tirePressureStatusFrontRight", pressure: "tirePressureFrontRight" },
-  { key: "rl", label: "Rear left", status: "tirePressureStatusRearLeft", pressure: "tirePressureRearLeft" },
-  { key: "rr", label: "Rear right", status: "tirePressureStatusRearRight", pressure: "tirePressureRearRight" },
+  {
+    key: 'fl',
+    label: 'Front left',
+    status: 'tirePressureStatusFrontLeft',
+    pressure: 'tirePressureFrontLeft',
+  },
+  {
+    key: 'fr',
+    label: 'Front right',
+    status: 'tirePressureStatusFrontRight',
+    pressure: 'tirePressureFrontRight',
+  },
+  {
+    key: 'rl',
+    label: 'Rear left',
+    status: 'tirePressureStatusRearLeft',
+    pressure: 'tirePressureRearLeft',
+  },
+  {
+    key: 'rr',
+    label: 'Rear right',
+    status: 'tirePressureStatusRearRight',
+    pressure: 'tirePressureRearRight',
+  },
 ] as const;
 
-export type TireKey = (typeof TIRES)[number]["key"];
+export type TireKey = (typeof TIRES)[number]['key'];
 
 /** A tire's level from the vehicle's own status (OK, LOW, …). */
 export function tireLevel(status: string | null): CheckLevel {
-  if (status == null || /^unknown$/i.test(status)) return "unknown";
-  return status.toUpperCase() === "OK" ? "good" : "attention";
+  if (status == null || /^unknown$/i.test(status)) return 'unknown';
+  return status.toUpperCase() === 'OK' ? 'good' : 'attention';
 }
 
-const unknown = (key: string, label: string): HealthCheck => ({ key, label, level: "unknown", value: "Unknown" });
+const unknown = (key: string, label: string): HealthCheck => ({
+  key,
+  label,
+  level: 'unknown',
+  value: 'Unknown',
+});
 
 function twelveVolt(state: VehicleState | undefined): HealthCheck {
-  const value = sv(state, "twelveVoltBatteryHealth");
-  if (value == null || /^unknown$/i.test(value)) return unknown("12v", "12V battery");
+  const value = sv(state, 'twelveVoltBatteryHealth');
+  if (value == null || /^unknown$/i.test(value)) return unknown('12v', '12V battery');
   // Observed: NORMAL_OPERATION.
   const ok = /^(normal|normal_operation|ok)$/i.test(value);
-  return { key: "12v", label: "12V battery", level: ok ? "good" : "attention", value: ok ? "Normal" : titleCase(value.toLowerCase()) };
+  return {
+    key: '12v',
+    label: '12V battery',
+    level: ok ? 'good' : 'attention',
+    value: ok ? 'Normal' : titleCase(value.toLowerCase()),
+  };
 }
 
 function brakeFluid(state: VehicleState | undefined): HealthCheck {
   const label = brakeFluidLabel(state);
-  if (label === "Unknown") return unknown("brake", "Brake fluid");
-  const ok = label === "OK" || label === "Normal";
-  return { key: "brake", label: "Brake fluid", level: ok ? "good" : "attention", value: ok ? "Normal" : label };
+  if (label === 'Unknown') return unknown('brake', 'Brake fluid');
+  const ok = label === 'OK' || label === 'Normal';
+  return {
+    key: 'brake',
+    label: 'Brake fluid',
+    level: ok ? 'good' : 'attention',
+    value: ok ? 'Normal' : label,
+  };
 }
 
 function washerFluid(state: VehicleState | undefined): HealthCheck {
-  const value = sv(state, "wiperFluidState");
-  if (value == null) return unknown("washer", "Washer fluid");
+  const value = sv(state, 'wiperFluidState');
+  if (value == null) return unknown('washer', 'Washer fluid');
   const ok = /^(normal|ok|full)$/i.test(value);
-  return { key: "washer", label: "Washer fluid", level: ok ? "good" : "attention", value: ok ? "Normal" : titleCase(value.toLowerCase()) };
+  return {
+    key: 'washer',
+    label: 'Washer fluid',
+    level: ok ? 'good' : 'attention',
+    value: ok ? 'Normal' : titleCase(value.toLowerCase()),
+  };
 }
 
 function tires(state: VehicleState | undefined): HealthCheck {
   const levels = TIRES.map((t) => ({ ...t, level: tireLevel(sv(state, t.status)) }));
-  const flagged = levels.filter((t) => t.level === "attention");
+  const flagged = levels.filter((t) => t.level === 'attention');
   if (flagged.length > 0) {
     return {
-      key: "tires",
-      label: "Tires",
-      level: "attention",
-      value: flagged.length === 1 ? `Check ${flagged[0]!.label.toLowerCase()}` : `Check ${flagged.length} tires`,
+      key: 'tires',
+      label: 'Tires',
+      level: 'attention',
+      value:
+        flagged.length === 1
+          ? `Check ${flagged[0]!.label.toLowerCase()}`
+          : `Check ${flagged.length} tires`,
     };
   }
-  if (levels.every((t) => t.level === "unknown")) return unknown("tires", "Tires");
-  return { key: "tires", label: "Tires", level: "good", value: "Normal" };
+  if (levels.every((t) => t.level === 'unknown')) return unknown('tires', 'Tires');
+  return { key: 'tires', label: 'Tires', level: 'good', value: 'Normal' };
 }
 
 function packThermal(state: VehicleState | undefined): HealthCheck {
-  const value = sv(state, "batteryHvThermalEvent");
-  if (value == null) return unknown("pack", "Battery pack");
+  const value = sv(state, 'batteryHvThermalEvent');
+  if (value == null) return unknown('pack', 'Battery pack');
   // Observed: off. Anything else is a thermal event the vehicle reported.
   const ok = /^(off|none|false|normal)$/i.test(value);
-  return { key: "pack", label: "Battery pack", level: ok ? "good" : "attention", value: ok ? "Normal" : "Thermal event" };
+  return {
+    key: 'pack',
+    label: 'Battery pack',
+    level: ok ? 'good' : 'attention',
+    value: ok ? 'Normal' : 'Thermal event',
+  };
 }
 
 function software(state: VehicleState | undefined): HealthCheck {
-  if (lastInstallFailed(state)) return { key: "software", label: "Software", level: "attention", value: "Install failed" };
+  if (lastInstallFailed(state))
+    return { key: 'software', label: 'Software', level: 'attention', value: 'Install failed' };
   const update = softwareUpdate(state);
-  if (update) return { key: "software", label: "Software", level: "info", value: update.label };
-  if (!sv(state, "otaCurrentVersion")) return unknown("software", "Software");
-  return { key: "software", label: "Software", level: "good", value: "Up to date" };
+  if (update) return { key: 'software', label: 'Software', level: 'info', value: update.label };
+  if (!sv(state, 'otaCurrentVersion')) return unknown('software', 'Software');
+  return { key: 'software', label: 'Software', level: 'good', value: 'Up to date' };
 }
 
 /** Everything the vehicle reports about its own condition, in display order. */
 export function healthChecks(state: VehicleState | undefined): HealthCheck[] {
-  return [packThermal(state), twelveVolt(state), tires(state), brakeFluid(state), washerFluid(state), software(state)];
+  return [
+    packThermal(state),
+    twelveVolt(state),
+    tires(state),
+    brakeFluid(state),
+    washerFluid(state),
+    software(state),
+  ];
 }
 
 export interface HealthSummary {
@@ -96,25 +152,32 @@ export interface HealthSummary {
 
 /** One line on how the vehicle is doing overall. */
 export function healthSummary(checks: readonly HealthCheck[]): HealthSummary {
-  const attention = checks.filter((c) => c.level === "attention");
+  const attention = checks.filter((c) => c.level === 'attention');
   if (attention.length > 0) {
     return {
-      level: "attention",
-      title: attention.length === 1 ? "One thing needs a look" : `${attention.length} things need a look`,
-      detail: attention.map((c) => `${c.label}: ${c.value.toLowerCase()}`).join(" · "),
+      level: 'attention',
+      title:
+        attention.length === 1
+          ? 'One thing needs a look'
+          : `${attention.length} things need a look`,
+      detail: attention.map((c) => `${c.label}: ${c.value.toLowerCase()}`).join(' · '),
     };
   }
-  if (checks.every((c) => c.level === "unknown")) {
-    return { level: "unknown", title: "Waiting for the vehicle", detail: "Health readings appear once the vehicle reports in." };
+  if (checks.every((c) => c.level === 'unknown')) {
+    return {
+      level: 'unknown',
+      title: 'Waiting for the vehicle',
+      detail: 'Health readings appear once the vehicle reports in.',
+    };
   }
-  const missing = checks.filter((c) => c.level === "unknown").length;
+  const missing = checks.filter((c) => c.level === 'unknown').length;
   return {
-    level: "good",
-    title: "Everything looks good",
+    level: 'good',
+    title: 'Everything looks good',
     detail:
       missing > 0
-        ? "No warnings in what the vehicle has reported so far."
-        : "No warnings from the battery, tires, fluids or software.",
+        ? 'No warnings in what the vehicle has reported so far.'
+        : 'No warnings from the battery, tires, fluids or software.',
   };
 }
 
@@ -144,7 +207,9 @@ const median = (xs: number[]) => {
  * median rather than as a fall on its own. Null when the window is too
  * short or sparse to say.
  */
-export function tireTrend(points: readonly ({ ts: number } & Partial<Record<TireKey, number | null>>)[]): TireTrend | null {
+export function tireTrend(
+  points: readonly ({ ts: number } & Partial<Record<TireKey, number | null>>)[],
+): TireTrend | null {
   if (points.length < MIN_POINTS) return null;
   if (points[points.length - 1]!.ts - points[0]!.ts < MIN_SPAN_MS) return null;
   const n = Math.max(1, Math.floor(points.length / 5));
@@ -183,7 +248,9 @@ export interface CapacityTrend {
 }
 
 /** Reported capacity now against the first reading on record. */
-export function capacityTrend(readings: readonly { at: string; kwh: number }[]): CapacityTrend | null {
+export function capacityTrend(
+  readings: readonly { at: string; kwh: number }[],
+): CapacityTrend | null {
   const first = readings[0];
   const last = readings[readings.length - 1];
   if (!first || !last) return null;
@@ -195,7 +262,10 @@ export function capacityTrend(readings: readonly { at: string; kwh: number }[]):
 }
 
 /** Reported usable capacity as a percentage of the pack's rated capacity. */
-export function capacityOfRated(capacityKwh: number | null | undefined, ratedKwh: number | null | undefined): number | null {
+export function capacityOfRated(
+  capacityKwh: number | null | undefined,
+  ratedKwh: number | null | undefined,
+): number | null {
   if (capacityKwh == null || ratedKwh == null || !(ratedKwh > 0) || !(capacityKwh > 0)) return null;
   return (capacityKwh / ratedKwh) * 100;
 }

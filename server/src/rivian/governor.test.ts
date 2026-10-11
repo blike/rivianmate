@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { RivianGovernor, parseRetryAfter } from "./governor.js";
-import { RivianCooldownError } from "./types.js";
+import { describe, expect, it } from 'vitest';
+import { RivianGovernor, parseRetryAfter } from './governor.js';
+import { RivianCooldownError } from './types.js';
 
 function fakeClock() {
   let t = 1_700_000_000_000;
@@ -15,28 +15,32 @@ function fakeClock() {
   };
 }
 
-describe("RivianGovernor", () => {
-  it("records only successful HTTP responses, independently of attempts and socket traffic", async () => {
+describe('RivianGovernor', () => {
+  it('records only successful HTTP responses, independently of attempts and socket traffic', async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 0, ...clock });
     expect(gov.snapshot().lastSuccessfulRequestAt).toBeNull();
-    await expect(gov.schedule("failed", async () => { throw new Error("failed"); })).rejects.toThrow("failed");
+    await expect(
+      gov.schedule('failed', async () => {
+        throw new Error('failed');
+      }),
+    ).rejects.toThrow('failed');
     expect(gov.snapshot().lastSuccessfulRequestAt).toBeNull();
     gov.noteSuccess();
     const successAt = new Date(clock.now()).toISOString();
     clock.advance(1000);
-    gov.count("wsMessages");
+    gov.count('wsMessages');
     gov.noteRateLimited();
     expect(gov.snapshot().lastSuccessfulRequestAt).toBe(successAt);
   });
 
-  it("spaces consecutive requests apart", async () => {
+  it('spaces consecutive requests apart', async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 2_000, ...clock });
     const starts: number[] = [];
     await Promise.all(
       [1, 2, 3].map(() =>
-        gov.schedule("op", async () => {
+        gov.schedule('op', async () => {
           starts.push(clock.now());
         }),
       ),
@@ -45,7 +49,7 @@ describe("RivianGovernor", () => {
     expect(starts[2]! - starts[1]!).toBeGreaterThanOrEqual(2_000);
   });
 
-  it("fails fast during a rate-limit cooldown and escalates it", async () => {
+  it('fails fast during a rate-limit cooldown and escalates it', async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 0, ...clock });
     expect(gov.noteRateLimited()).toBe(5 * 60_000);
@@ -53,14 +57,14 @@ describe("RivianGovernor", () => {
 
     let ran = false;
     await expect(
-      gov.schedule("op", async () => {
+      gov.schedule('op', async () => {
         ran = true;
       }),
     ).rejects.toBeInstanceOf(RivianCooldownError);
     expect(ran).toBe(false);
 
     clock.advance(5 * 60_000);
-    await expect(gov.schedule("op", async () => 1)).resolves.toBe(1);
+    await expect(gov.schedule('op', async () => 1)).resolves.toBe(1);
 
     expect(gov.noteRateLimited()).toBe(10 * 60_000);
     gov.noteSuccess();
@@ -68,7 +72,7 @@ describe("RivianGovernor", () => {
     expect(gov.noteRateLimited()).toBe(5 * 60_000);
   });
 
-  it("honors a longer Retry-After and caps escalation at an hour", () => {
+  it('honors a longer Retry-After and caps escalation at an hour', () => {
     const clock = fakeClock();
     const gov = new RivianGovernor(clock);
     expect(gov.noteRateLimited(20 * 60_000)).toBe(20 * 60_000);
@@ -76,13 +80,13 @@ describe("RivianGovernor", () => {
     expect(gov.noteRateLimited()).toBe(60 * 60_000);
   });
 
-  it("counts requests per operation over a rolling 24h window", async () => {
+  it('counts requests per operation over a rolling 24h window', async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 0, ...clock });
-    await gov.schedule("GetVehicleState", async () => {});
-    await gov.schedule("GetVehicleState", async () => {});
-    await gov.schedule("getUserInfo", async () => {});
-    gov.count("wsConnects");
+    await gov.schedule('GetVehicleState', async () => {});
+    await gov.schedule('GetVehicleState', async () => {});
+    await gov.schedule('getUserInfo', async () => {});
+    gov.count('wsConnects');
 
     let snap = gov.snapshot();
     expect(snap.last24h.httpRequests).toBe(3);
@@ -98,24 +102,24 @@ describe("RivianGovernor", () => {
     expect(snap.requestsByOperation24h).toEqual({});
   });
 
-  it("keeps the queue moving when a request fails", async () => {
+  it('keeps the queue moving when a request fails', async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 0, ...clock });
     await expect(
-      gov.schedule("op", async () => {
-        throw new Error("boom");
+      gov.schedule('op', async () => {
+        throw new Error('boom');
       }),
-    ).rejects.toThrow("boom");
-    await expect(gov.schedule("op", async () => 42)).resolves.toBe(42);
+    ).rejects.toThrow('boom');
+    await expect(gov.schedule('op', async () => 42)).resolves.toBe(42);
   });
 });
 
-describe("parseRetryAfter", () => {
-  it("parses seconds and HTTP dates", () => {
-    expect(parseRetryAfter("120")).toBe(120_000);
-    const now = Date.parse("2026-01-01T00:00:00Z");
-    expect(parseRetryAfter("Thu, 01 Jan 2026 00:01:00 GMT", now)).toBe(60_000);
+describe('parseRetryAfter', () => {
+  it('parses seconds and HTTP dates', () => {
+    expect(parseRetryAfter('120')).toBe(120_000);
+    const now = Date.parse('2026-01-01T00:00:00Z');
+    expect(parseRetryAfter('Thu, 01 Jan 2026 00:01:00 GMT', now)).toBe(60_000);
     expect(parseRetryAfter(null)).toBeUndefined();
-    expect(parseRetryAfter("soon")).toBeUndefined();
+    expect(parseRetryAfter('soon')).toBeUndefined();
   });
 });

@@ -1,15 +1,11 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { drives, locationPoints, vehicleStateSnapshots } from "../db/schema.js";
-import type { TripInfo } from "../rivian/parallax.js";
-import type { VehicleState } from "../rivian/types.js";
-import { stampedAt } from "./charging-time.js";
-import { elevationChange } from "./drive-metrics.js";
-import {
-  stateLocation,
-  stateNumber,
-  stateString,
-} from "./state-utils.js";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import type { Db } from '../db/client.js';
+import { drives, locationPoints, vehicleStateSnapshots } from '../db/schema.js';
+import type { TripInfo } from '../rivian/parallax.js';
+import type { VehicleState } from '../rivian/types.js';
+import { stampedAt } from './charging-time.js';
+import { elevationChange } from './drive-metrics.js';
+import { stateLocation, stateNumber, stateString } from './state-utils.js';
 
 const PARK_GRACE_MS = 3 * 60_000;
 /**
@@ -23,7 +19,7 @@ const FRESH_SPEED_MS = 2 * 60_000;
 /** GPS this far behind the gear reading is reported as lagging. */
 const GPS_LAG_MS = 5 * 60_000;
 
-type Destination = TripInfo["destination"];
+type Destination = TripInfo['destination'];
 
 /** Readings a drive ends with. */
 interface Readings {
@@ -86,10 +82,7 @@ export class DriveDetector {
 
   constructor(
     private readonly db: Db,
-    private readonly onDriveChange: (
-      vehicleId: string,
-      driveId: number | null,
-    ) => void = () => {},
+    private readonly onDriveChange: (vehicleId: string, driveId: number | null) => void = () => {},
     private readonly now: () => number = Date.now,
     private readonly parkGraceMs = PARK_GRACE_MS,
   ) {}
@@ -116,7 +109,10 @@ export class DriveDetector {
     const run = (this.queues.get(vehicleId) ?? Promise.resolve()).then(() =>
       this.process(vehicleId, snapshot),
     );
-    this.queues.set(vehicleId, run.catch(() => {}));
+    this.queues.set(
+      vehicleId,
+      run.catch(() => {}),
+    );
     return run;
   }
 
@@ -124,15 +120,15 @@ export class DriveDetector {
     const pv = this.ensure(vehicleId);
     pv.latest = state;
     const now = this.now();
-    const gear = stateString(state, "gearStatus");
-    const power = stateString(state, "powerState");
+    const gear = stateString(state, 'gearStatus');
+    const power = stateString(state, 'powerState');
     // Rivian keeps the last speed while it hears nothing new, so an old
     // reading says nothing about now.
-    const speedIsCurrent = now - stampedAt(state, "gnssSpeed", now) <= FRESH_SPEED_MS;
-    const speed = speedIsCurrent ? stateNumber(state, "gnssSpeed") ?? 0 : 0; // m/s
+    const speedIsCurrent = now - stampedAt(state, 'gnssSpeed', now) <= FRESH_SPEED_MS;
+    const speed = speedIsCurrent ? (stateNumber(state, 'gnssSpeed') ?? 0) : 0; // m/s
 
-    const byGear = gear === "drive" || gear === "reverse";
-    const isMoving = byGear || (power === "go" && speed > 1);
+    const byGear = gear === 'drive' || gear === 'reverse';
+    const isMoving = byGear || (power === 'go' && speed > 1);
 
     if (!pv.resumeChecked) {
       pv.resumeChecked = true;
@@ -140,15 +136,19 @@ export class DriveDetector {
     }
 
     if (isMoving) {
-      const movingAt = byGear ? stampedAt(state, "gearStatus", now) : now;
+      const movingAt = byGear ? stampedAt(state, 'gearStatus', now) : now;
       await this.onMoving(vehicleId, pv, state, movingAt);
       this.noteGpsLag(pv, state, movingAt);
       return;
     }
 
-    const isParked = gear === "park" || (power !== null && power !== "go");
+    const isParked = gear === 'park' || (power !== null && power !== 'go');
     if (pv.driveId !== null && isParked && pv.parkedAt === null) {
-      await this.onParked(vehicleId, pv, gear === "park" ? stampedAt(state, "gearStatus", now) : now);
+      await this.onParked(
+        vehicleId,
+        pv,
+        gear === 'park' ? stampedAt(state, 'gearStatus', now) : now,
+      );
     }
   }
 
@@ -163,12 +163,16 @@ export class DriveDetector {
         // From before it parked (delivered late): the park still stands.
         if (movingAt < pv.parkedAt) return;
         // Parked for longer than the grace, told late before the timer fired.
-        if (movingAt - pv.parkedAt >= this.parkGraceMs) await this.endDrive(vehicleId, pv, pv.driveId);
+        if (movingAt - pv.parkedAt >= this.parkGraceMs)
+          await this.endDrive(vehicleId, pv, pv.driveId);
       } else if (pv.adopted && pv.lastMovingAt !== null && movingAt > pv.lastMovingAt) {
         if (movingAt - pv.lastMovingAt > RESUME_WINDOW_MS) {
           // Moving again long after the drive's last reading: that drive
           // ended unseen, and this is a new one.
-          await this.endDrive(vehicleId, pv, pv.driveId, { at: pv.lastMovingAt, readings: pv.lastMovingReadings });
+          await this.endDrive(vehicleId, pv, pv.driveId, {
+            at: pv.lastMovingAt,
+            readings: pv.lastMovingReadings,
+          });
         } else {
           pv.adopted = false;
           this.log?.(`[drive] #${pv.driveId} is still going; resumed`);
@@ -183,7 +187,11 @@ export class DriveDetector {
         pv.parkTimer = null;
       }
       // The drive started before we first heard (its first readings came late).
-      if (pv.startedAt !== null && movingAt < pv.startedAt && movingAt > (pv.lastEndedAt ?? -Infinity)) {
+      if (
+        pv.startedAt !== null &&
+        movingAt < pv.startedAt &&
+        movingAt > (pv.lastEndedAt ?? -Infinity)
+      ) {
         await this.moveStart(pv, movingAt, state);
       }
       if (movingAt >= (pv.lastMovingAt ?? -Infinity)) {
@@ -283,7 +291,7 @@ export class DriveDetector {
     startedAt: number,
   ): Promise<void> {
     const loc = stateLocation(state);
-    pv.startMileageM = stateNumber(state, "vehicleMileage");
+    pv.startMileageM = stateNumber(state, 'vehicleMileage');
     const inserted = await this.db
       .insert(drives)
       .values({
@@ -292,10 +300,10 @@ export class DriveDetector {
         startLat: loc?.latitude,
         startLon: loc?.longitude,
         startMileageM: pv.startMileageM,
-        startBattery: stateNumber(state, "batteryLevel"),
-        startRangeKm: stateNumber(state, "distanceToEmpty"),
-        batteryCapacityKwh: stateNumber(state, "batteryCapacity"),
-        driveMode: stateString(state, "driveMode"),
+        startBattery: stateNumber(state, 'batteryLevel'),
+        startRangeKm: stateNumber(state, 'distanceToEmpty'),
+        batteryCapacityKwh: stateNumber(state, 'batteryCapacity'),
+        driveMode: stateString(state, 'driveMode'),
         ...(pv.destination ? destinationColumns(pv.destination) : {}),
       })
       .returning({ id: drives.id });
@@ -305,14 +313,14 @@ export class DriveDetector {
     pv.lastMovingReadings = readingsOf(state);
     pv.gpsLagging = false;
     this.onDriveChange(vehicleId, pv.driveId);
-    const late = this.now() - startedAt > RESUME_WINDOW_MS ? " (delivered late)" : "";
+    const late = this.now() - startedAt > RESUME_WINDOW_MS ? ' (delivered late)' : '';
     this.log?.(`[drive] started #${pv.driveId} at ${iso(startedAt)}${late}`);
   }
 
   /** Moves the drive's start earlier, to a moving reading that arrived after it started. */
   private async moveStart(pv: PerVehicle, at: number, state: VehicleState): Promise<void> {
     pv.startedAt = at;
-    const mileage = stateNumber(state, "vehicleMileage");
+    const mileage = stateNumber(state, 'vehicleMileage');
     if (mileage != null && (pv.startMileageM == null || mileage < pv.startMileageM)) {
       pv.startMileageM = mileage;
     }
@@ -373,7 +381,9 @@ export class DriveDetector {
         distanceKm,
       })
       .where(and(eq(drives.id, driveId), isNull(drives.endedAt)));
-    this.log?.(`[drive] ended #${driveId} at ${iso(endedAt)}${end ? " (last moving reading)" : ""}`);
+    this.log?.(
+      `[drive] ended #${driveId} at ${iso(endedAt)}${end ? ' (last moving reading)' : ''}`,
+    );
     this.onDriveEnded?.(driveId);
   }
 
@@ -429,7 +439,7 @@ export class DriveDetector {
     let readings: Readings | null = null;
     if (snapshot) {
       const state = snapshot.data as VehicleState;
-      at = Math.max(at, stampedAt(state, "gearStatus", snapshot.ts.getTime()));
+      at = Math.max(at, stampedAt(state, 'gearStatus', snapshot.ts.getTime()));
       readings = readingsOf(state);
     }
     if (point) {
@@ -442,7 +452,7 @@ export class DriveDetector {
   /** Logs when a drive's GPS falls behind its gear readings, and when it catches up. */
   private noteGpsLag(pv: PerVehicle, state: VehicleState, movingAt: number): void {
     if (pv.driveId === null) return;
-    const gpsAt = Date.parse(state.gnssLocation?.timeStamp ?? "");
+    const gpsAt = Date.parse(state.gnssLocation?.timeStamp ?? '');
     if (!Number.isFinite(gpsAt)) return;
     const lagging = movingAt - gpsAt > GPS_LAG_MS;
     if (lagging === pv.gpsLagging) return;
@@ -509,14 +519,20 @@ export class DriveDetector {
   }
 }
 
-const NO_READINGS: Readings = { mileageM: null, battery: null, rangeKm: null, lat: null, lon: null };
+const NO_READINGS: Readings = {
+  mileageM: null,
+  battery: null,
+  rangeKm: null,
+  lat: null,
+  lon: null,
+};
 
 function readingsOf(state: VehicleState): Readings {
   const loc = stateLocation(state);
   return {
-    mileageM: stateNumber(state, "vehicleMileage"),
-    battery: stateNumber(state, "batteryLevel"),
-    rangeKm: stateNumber(state, "distanceToEmpty"),
+    mileageM: stateNumber(state, 'vehicleMileage'),
+    battery: stateNumber(state, 'batteryLevel'),
+    rangeKm: stateNumber(state, 'distanceToEmpty'),
     lat: loc?.latitude ?? null,
     lon: loc?.longitude ?? null,
   };
@@ -550,16 +566,17 @@ export async function driveElevation(
     .from(locationPoints)
     .where(eq(locationPoints.driveId, driveId))
     .orderBy(locationPoints.ts);
-  return elevationChange(
-    rows.map((r) => r.altitude).filter((a): a is number => a != null),
-  );
+  return elevationChange(rows.map((r) => r.altitude).filter((a): a is number => a != null));
 }
 
 /** Fastest recorded speed per drive (km/h). */
 export async function maxSpeeds(db: Db, driveIds: number[]): Promise<Map<number, number>> {
   if (driveIds.length === 0) return new Map();
   const rows = await db
-    .select({ driveId: locationPoints.driveId, max: sql<number | null>`MAX(${locationPoints.speedKmh})` })
+    .select({
+      driveId: locationPoints.driveId,
+      max: sql<number | null>`MAX(${locationPoints.speedKmh})`,
+    })
     .from(locationPoints)
     .where(inArray(locationPoints.driveId, driveIds))
     .groupBy(locationPoints.driveId);

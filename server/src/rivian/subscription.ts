@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
-import type { IncomingMessage } from "node:http";
-import WebSocket from "ws";
-import { mapChargingSession } from "./charging-session.js";
-import { mapDepartureSchedules } from "./departures.js";
-import { RivianGovernor, parseRetryAfter } from "./governor.js";
+import { randomUUID } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
+import WebSocket from 'ws';
+import { mapChargingSession } from './charging-session.js';
+import { mapDepartureSchedules } from './departures.js';
+import { RivianGovernor, parseRetryAfter } from './governor.js';
 import {
   APOLLO_CLIENT_NAME,
   APOLLO_CLIENT_VERSION,
@@ -14,20 +14,17 @@ import {
   CORE_VEHICLE_STATE_PROPERTIES,
   SUBSCRIPTION_PROPERTIES,
   buildVehicleStateSubscription,
-} from "./graphql.js";
-import type { ParallaxMessage } from "./parallax.js";
+} from './graphql.js';
+import type { ParallaxMessage } from './parallax.js';
 import type {
   DepartureSchedule,
   LiveSessionData,
   RivianAppSession,
   VehicleState,
-} from "./types.js";
+} from './types.js';
 
 export type VehicleStateCallback = (vehicleId: string, state: VehicleState) => void;
-export type ChargingSessionCallback = (
-  vehicleId: string,
-  session: LiveSessionData | null,
-) => void;
+export type ChargingSessionCallback = (vehicleId: string, session: LiveSessionData | null) => void;
 
 export type DepartureSchedulesCallback = (
   vehicleId: string,
@@ -51,7 +48,11 @@ export interface VehicleStateStream {
    * dynamics.vehicle.gnss) — so a rejection here can't mark the main
    * Parallax subscription (battery/charging/trip) unsupported too.
    */
-  subscribeParallaxDynamics?(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void;
+  subscribeParallaxDynamics?(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+  ): void;
   /** True once Rivian has refused an optional subscription. */
   isUnsupported?(kind: OptionalSubKind): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
@@ -93,8 +94,8 @@ export interface SubscriptionManagerOptions {
   heartbeatIntervalMs?: number;
 }
 
-type OptionalSubKind = "chargingSession" | "departureSchedules" | "parallax" | "parallaxDynamics";
-type SubKind = "vehicleState" | OptionalSubKind;
+type OptionalSubKind = 'chargingSession' | 'departureSchedules' | 'parallax' | 'parallaxDynamics';
+type SubKind = 'vehicleState' | OptionalSubKind;
 
 export interface FeedDiagnostics {
   id: string;
@@ -102,12 +103,12 @@ export interface FeedDiagnostics {
   kind: SubKind;
   domain: string | null;
   topics: string[];
-  status: "receiving" | "waiting" | "unsupported" | "errored";
+  status: 'receiving' | 'waiting' | 'unsupported' | 'errored';
   lastMessageAt: string | null;
 }
 
 export interface StreamDiagnostics {
-  state: "connected" | "connecting" | "reconnecting" | "stopped";
+  state: 'connected' | 'connecting' | 'reconnecting' | 'stopped';
   lastMessageAt: string | null;
   feeds: FeedDiagnostics[];
 }
@@ -129,10 +130,10 @@ interface Subscription {
 }
 
 type DisconnectReason =
-  | { kind: "ttl" }
-  | { kind: "auth" }
-  | { kind: "rateLimited"; retryAfterMs?: number }
-  | { kind: "error"; message: string };
+  | { kind: 'ttl' }
+  | { kind: 'auth' }
+  | { kind: 'rateLimited'; retryAfterMs?: number }
+  | { kind: 'error'; message: string };
 
 /**
  * graphql-transport-ws client for Rivian's vehicle-state and charging-session
@@ -191,7 +192,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   subscribe(vehicleId: string, callback: VehicleStateCallback): void {
     this.addSubscription({
       id: `vehicleState:${vehicleId}`,
-      kind: "vehicleState",
+      kind: 'vehicleState',
       vehicleId,
       onState: callback,
     });
@@ -200,7 +201,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   subscribeCharging(vehicleId: string, callback: ChargingSessionCallback): void {
     this.addSubscription({
       id: `chargingSession:${vehicleId}`,
-      kind: "chargingSession",
+      kind: 'chargingSession',
       vehicleId,
       onCharging: callback,
     });
@@ -209,7 +210,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   subscribeDepartureSchedules(vehicleId: string, callback: DepartureSchedulesCallback): void {
     this.addSubscription({
       id: `departureSchedules:${vehicleId}`,
-      kind: "departureSchedules",
+      kind: 'departureSchedules',
       vehicleId,
       onDepartures: callback,
     });
@@ -218,17 +219,21 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   subscribeParallax(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void {
     this.addSubscription({
       id: `parallax:${vehicleId}`,
-      kind: "parallax",
+      kind: 'parallax',
       vehicleId,
       rvms,
       onParallax: callback,
     });
   }
 
-  subscribeParallaxDynamics(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void {
+  subscribeParallaxDynamics(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+  ): void {
     this.addSubscription({
       id: `parallax-dynamics:${vehicleId}`,
-      kind: "parallaxDynamics",
+      kind: 'parallaxDynamics',
       vehicleId,
       rvms,
       onParallax: callback,
@@ -243,36 +248,52 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   diagnostics(): StreamDiagnostics {
     const now = Date.now();
     return {
-      state: !this.started ? "stopped" : this.connected ? "connected"
-        : this.reconnectTimer ? "reconnecting" : "connecting",
+      state: !this.started
+        ? 'stopped'
+        : this.connected
+          ? 'connected'
+          : this.reconnectTimer
+            ? 'reconnecting'
+            : 'connecting',
       lastMessageAt: this.lastMessageAt == null ? null : new Date(this.lastMessageAt).toISOString(),
-      feeds: [...this.subscriptions.values()].flatMap(sub => {
+      feeds: [...this.subscriptions.values()].flatMap((sub) => {
         const domains = new Map<string | null, string[]>();
-        if (sub.kind === "parallax" || sub.kind === "parallaxDynamics") {
+        if (sub.kind === 'parallax' || sub.kind === 'parallaxDynamics') {
           for (const topic of sub.rvms ?? []) {
-            const prefix = topic.split(".")[0]!;
-            const domain = prefix === "energy_edge_compute" ? "energy" : prefix;
+            const prefix = topic.split('.')[0]!;
+            const domain = prefix === 'energy_edge_compute' ? 'energy' : prefix;
             domains.set(domain, [...(domains.get(domain) ?? []), topic]);
           }
         } else domains.set(null, []);
         return [...domains].map(([domain, topics]): FeedDiagnostics => {
-          const lastMessageAt = domain == null ? sub.lastMessageAt
-            : topics.reduce<number | undefined>((latest, topic) => {
-              const at = sub.topicMessages?.get(topic);
-              return at == null ? latest : Math.max(latest ?? at, at);
-            }, undefined);
-          const received = domain == null ? sub.receivedOnConnection
-            : topics.some(topic => sub.topicsOnConnection?.has(topic));
+          const lastMessageAt =
+            domain == null
+              ? sub.lastMessageAt
+              : topics.reduce<number | undefined>((latest, topic) => {
+                  const at = sub.topicMessages?.get(topic);
+                  return at == null ? latest : Math.max(latest ?? at, at);
+                }, undefined);
+          const received =
+            domain == null
+              ? sub.receivedOnConnection
+              : topics.some((topic) => sub.topicsOnConnection?.has(topic));
           return {
             id: domain == null ? sub.id : `${sub.id}:${domain}`,
             vehicleId: sub.vehicleId,
             kind: sub.kind,
             domain,
             topics,
-            status: this.unsupported.has(sub.kind) ? "unsupported"
-              : sub.errored && this.started ? "errored"
-              : this.connected && this.sentIds.has(sub.id) && received
-                && lastMessageAt != null && now - lastMessageAt < 5 * 60_000 ? "receiving" : "waiting",
+            status: this.unsupported.has(sub.kind)
+              ? 'unsupported'
+              : sub.errored && this.started
+                ? 'errored'
+                : this.connected &&
+                    this.sentIds.has(sub.id) &&
+                    received &&
+                    lastMessageAt != null &&
+                    now - lastMessageAt < 5 * 60_000
+                  ? 'receiving'
+                  : 'waiting',
             lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
           };
         });
@@ -298,8 +319,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     this.ws = undefined;
     if (ws) {
       ws.removeAllListeners();
-      ws.on("error", () => {});
-      if (ws.readyState === WebSocket.OPEN) ws.close(1000, "client stop");
+      ws.on('error', () => {});
+      if (ws.readyState === WebSocket.OPEN) ws.close(1000, 'client stop');
       else ws.terminate();
     }
     this.sentIds.clear();
@@ -337,18 +358,18 @@ export class RivianSubscriptionManager implements VehicleStateStream {
 
     const { userSessionToken, appSession } = this.options.getCredentials();
     if (!userSessionToken) {
-      this.log("no user session token; not connecting");
+      this.log('no user session token; not connecting');
       return;
     }
 
-    const headers: Record<string, string> = { "U-Sess": userSessionToken };
+    const headers: Record<string, string> = { 'U-Sess': userSessionToken };
     if (appSession) {
-      headers["A-Sess"] = appSession.appSessionToken;
-      headers["Csrf-Token"] = appSession.csrfToken;
+      headers['A-Sess'] = appSession.appSessionToken;
+      headers['Csrf-Token'] = appSession.csrfToken;
     }
 
-    this.options.governor.count(this.everConnected ? "wsReconnects" : "wsConnects");
-    const ws = new WebSocket(this.url, "graphql-transport-ws", {
+    this.options.governor.count(this.everConnected ? 'wsReconnects' : 'wsConnects');
+    const ws = new WebSocket(this.url, 'graphql-transport-ws', {
       headers,
       handshakeTimeout: 30_000,
     });
@@ -360,41 +381,41 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       this.handleDisconnect(ws, reason);
     };
 
-    ws.on("unexpected-response", (req, res: IncomingMessage) => {
+    ws.on('unexpected-response', (req, res: IncomingMessage) => {
       const status = res.statusCode ?? 0;
       req.destroy();
-      if (status === 401 || status === 403) finish({ kind: "auth" });
+      if (status === 401 || status === 403) finish({ kind: 'auth' });
       else if (status === 429) {
-        const header = res.headers["retry-after"];
+        const header = res.headers['retry-after'];
         finish({
-          kind: "rateLimited",
+          kind: 'rateLimited',
           retryAfterMs: parseRetryAfter(Array.isArray(header) ? header[0] : header),
         });
-      } else finish({ kind: "error", message: `handshake rejected (HTTP ${status})` });
+      } else finish({ kind: 'error', message: `handshake rejected (HTTP ${status})` });
     });
 
-    ws.on("open", () => {
+    ws.on('open', () => {
       ws.send(
         JSON.stringify({
-          type: "connection_init",
+          type: 'connection_init',
           payload: {
-            "client-name": APOLLO_CLIENT_NAME,
-            "client-version": APOLLO_CLIENT_VERSION,
-            "dc-cid": `m-ios-${randomUUID()}`,
-            "u-sess": userSessionToken,
+            'client-name': APOLLO_CLIENT_NAME,
+            'client-version': APOLLO_CLIENT_VERSION,
+            'dc-cid': `m-ios-${randomUUID()}`,
+            'u-sess': userSessionToken,
           },
         }),
       );
     });
 
-    ws.on("pong", () => {
+    ws.on('pong', () => {
       this.awaitingPong = false;
       this.pongSeen = true;
     });
 
-    ws.on("message", (raw) => {
+    ws.on('message', (raw) => {
       this.awaitingPong = false;
-      this.options.governor.count("wsMessages");
+      this.options.governor.count('wsMessages');
       let msg: { type: string; id?: string; payload?: unknown };
       try {
         msg = JSON.parse(raw.toString());
@@ -409,17 +430,17 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       }
     });
 
-    ws.on("close", (code, reasonBuf) => {
-      const reason = reasonBuf?.toString() ?? "";
-      if (code === CLOSE_CONNECTION_TTL_EXPIRED) finish({ kind: "ttl" });
+    ws.on('close', (code, reasonBuf) => {
+      const reason = reasonBuf?.toString() ?? '';
+      if (code === CLOSE_CONNECTION_TTL_EXPIRED) finish({ kind: 'ttl' });
       else if (AUTH_CLOSE_CODES.has(code) || /unauthenticated|forbidden/i.test(reason)) {
-        finish({ kind: "auth" });
-      } else if (code === CLOSE_TOO_MANY_REQUESTS) finish({ kind: "rateLimited" });
-      else finish({ kind: "error", message: `closed (${code}${reason ? ` ${reason}` : ""})` });
+        finish({ kind: 'auth' });
+      } else if (code === CLOSE_TOO_MANY_REQUESTS) finish({ kind: 'rateLimited' });
+      else finish({ kind: 'error', message: `closed (${code}${reason ? ` ${reason}` : ''})` });
     });
 
-    ws.on("error", (err) => {
-      finish({ kind: "error", message: err.message });
+    ws.on('error', (err) => {
+      finish({ kind: 'error', message: err.message });
       ws.terminate();
     });
   }
@@ -430,7 +451,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     msg: { type: string; id?: string; payload?: unknown },
   ): DisconnectReason | undefined {
     switch (msg.type) {
-      case "connection_ack":
+      case 'connection_ack':
         // Backoff is only reset once data actually flows: an accepted
         // handshake followed by an immediately-ended subscription must
         // still back off, or we'd reconnect every few seconds forever.
@@ -447,16 +468,17 @@ export class RivianSubscriptionManager implements VehicleStateStream {
         this.startHeartbeat(ws);
         for (const sub of this.subscriptions.values()) this.sendSubscribe(sub);
         return undefined;
-      case "ping":
-        ws.send(JSON.stringify({ type: "pong" }));
+      case 'ping':
+        ws.send(JSON.stringify({ type: 'pong' }));
         return undefined;
-      case "next": {
+      case 'next': {
         const sub = msg.id ? this.subscriptions.get(msg.id) : undefined;
         if (!sub) return undefined;
-        const payload = msg.payload as { data?: Record<string, unknown>; errors?: unknown[] } | undefined;
+        const payload = msg.payload as
+          { data?: Record<string, unknown>; errors?: unknown[] } | undefined;
         const data = payload?.data;
         sub.errored = Array.isArray(payload?.errors) && payload.errors.length > 0;
-        if (sub.kind === "vehicleState") {
+        if (sub.kind === 'vehicleState') {
           const state = data?.vehicleState as VehicleState | undefined;
           if (state) {
             this.noteFeedMessage(sub);
@@ -466,19 +488,23 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             }
             sub.onState?.(sub.vehicleId, state);
           }
-        } else if (sub.kind === "chargingSession" && data && "chargingSession" in data) {
+        } else if (sub.kind === 'chargingSession' && data && 'chargingSession' in data) {
           this.noteFeedMessage(sub);
           sub.onCharging?.(sub.vehicleId, mapChargingSession(data.chargingSession));
-        } else if (sub.kind === "departureSchedules" && data && "vehicleDepartureSchedules" in data) {
+        } else if (
+          sub.kind === 'departureSchedules' &&
+          data &&
+          'vehicleDepartureSchedules' in data
+        ) {
           this.noteFeedMessage(sub);
           sub.onDepartures?.(sub.vehicleId, mapDepartureSchedules(data.vehicleDepartureSchedules));
         } else if (
-          (sub.kind === "parallax" || sub.kind === "parallaxDynamics") &&
+          (sub.kind === 'parallax' || sub.kind === 'parallaxDynamics') &&
           data &&
-          "parallaxMessages" in data
+          'parallaxMessages' in data
         ) {
           const m = data.parallaxMessages as Partial<Record<keyof ParallaxMessage, unknown>> | null;
-          if (m && typeof m.rvm === "string") {
+          if (m && typeof m.rvm === 'string') {
             this.noteFeedMessage(sub);
             // Only subscribed topics contribute to domain health.
             if (sub.rvms?.includes(m.rvm)) {
@@ -488,15 +514,15 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             const timestamp = Number(m.timestamp);
             sub.onParallax?.(sub.vehicleId, {
               rvm: m.rvm,
-              payload: typeof m.payload === "string" ? m.payload : "",
+              payload: typeof m.payload === 'string' ? m.payload : '',
               timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
             });
           }
         }
         return undefined;
       }
-      case "error":
-      case "complete":
+      case 'error':
+      case 'complete':
         return this.handleSubscriptionEnd(msg);
       default:
         return undefined;
@@ -510,21 +536,21 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   }): DisconnectReason | undefined {
     const sub = msg.id ? this.subscriptions.get(msg.id) : undefined;
     if (msg.id) this.sentIds.delete(msg.id);
-    if (sub) sub.errored = msg.type === "error";
+    if (sub) sub.errored = msg.type === 'error';
     const errors = Array.isArray(msg.payload)
       ? (msg.payload as { message?: string; extensions?: { code?: string } }[])
       : [];
-    if (errors.some((e) => e?.extensions?.code === "UNAUTHENTICATED")) {
-      return { kind: "auth" };
+    if (errors.some((e) => e?.extensions?.code === 'UNAUTHENTICATED')) {
+      return { kind: 'auth' };
     }
-    if (errors.some((e) => e?.extensions?.code === "RATE_LIMIT")) {
-      return { kind: "rateLimited" };
+    if (errors.some((e) => e?.extensions?.code === 'RATE_LIMIT')) {
+      return { kind: 'rateLimited' };
     }
 
-    if (sub && sub.kind !== "vehicleState") {
+    if (sub && sub.kind !== 'vehicleState') {
       // Optional feature: if Rivian refuses it, keep the socket (charging
       // keeps its vehicle-state data; schedules show as unavailable).
-      if (msg.type === "error") {
+      if (msg.type === 'error') {
         this.unsupported.add(sub.kind);
         this.log(`${sub.kind} subscription rejected: ${summarize(errors)}`);
       }
@@ -534,16 +560,16 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     const rejected = rejectedFields(errors);
     for (const field of rejected) this.disabledFields.add(field);
     if (rejected.length) {
-      this.log(`vehicle state subscription rejected fields: ${rejected.join(", ")}`);
+      this.log(`vehicle state subscription rejected fields: ${rejected.join(', ')}`);
     } else if (!this.gotVehicleData && !this.coreFieldsOnly) {
       // Ended before any data and without naming a field: most likely a
       // schema mismatch somewhere in the selection. Fall back to core fields.
       this.coreFieldsOnly = true;
-      this.log("vehicle state subscription ended without data; retrying with core fields only");
+      this.log('vehicle state subscription ended without data; retrying with core fields only');
     }
     return {
-      kind: "error",
-      message: `vehicle state subscription ${msg.type}${errors.length ? `: ${summarize(errors)}` : ""}`,
+      kind: 'error',
+      message: `vehicle state subscription ${msg.type}${errors.length ? `: ${summarize(errors)}` : ''}`,
     };
   }
 
@@ -553,9 +579,9 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     if (this.unsupported.has(sub.kind)) return;
     this.sentIds.add(sub.id);
     const payload =
-      sub.kind === "vehicleState"
+      sub.kind === 'vehicleState'
         ? {
-            operationName: "VehicleState",
+            operationName: 'VehicleState',
             query: buildVehicleStateSubscription(
               (this.coreFieldsOnly
                 ? CORE_VEHICLE_STATE_PROPERTIES
@@ -564,25 +590,25 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             ),
             variables: { vehicleID: sub.vehicleId },
           }
-        : sub.kind === "chargingSession"
+        : sub.kind === 'chargingSession'
           ? {
-              operationName: "chargingSession",
+              operationName: 'chargingSession',
               query: CHARGING_SESSION_SUBSCRIPTION,
               variables: { vehicleID: sub.vehicleId },
             }
-          : sub.kind === "parallax" || sub.kind === "parallaxDynamics"
+          : sub.kind === 'parallax' || sub.kind === 'parallaxDynamics'
             ? {
-                operationName: "ParallaxMessages",
+                operationName: 'ParallaxMessages',
                 query: PARALLAX_MESSAGES_SUBSCRIPTION,
                 // Parallax takes `vehicleId`, unlike the legacy `vehicleID`.
                 variables: { vehicleId: sub.vehicleId, rvms: sub.rvms ?? [] },
               }
             : {
-                operationName: "vehicleDepartureSchedules",
+                operationName: 'vehicleDepartureSchedules',
                 query: DEPARTURE_SCHEDULES_SUBSCRIPTION,
                 variables: { vehicleID: sub.vehicleId },
               };
-    this.ws.send(JSON.stringify({ id: sub.id, type: "subscribe", payload }));
+    this.ws.send(JSON.stringify({ id: sub.id, type: 'subscribe', payload }));
   }
 
   private handleDisconnect(ws: WebSocket, reason: DisconnectReason): void {
@@ -594,23 +620,23 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     if (!this.started) return;
 
     switch (reason.kind) {
-      case "ttl":
+      case 'ttl':
         // Scheduled renewal by Rivian: not an error, don't escalate backoff.
-        this.log("connection TTL expired; renewing");
+        this.log('connection TTL expired; renewing');
         this.reconnectAttempt = 0;
         this.scheduleReconnect(this.ttlRenewDelayMs);
         return;
-      case "auth":
-        this.log("credentials rejected");
-        this.options.governor.count("wsAuthFailures");
+      case 'auth':
+        this.log('credentials rejected');
+        this.options.governor.count('wsAuthFailures');
         this.onAuthFailure?.();
         break;
-      case "rateLimited": {
+      case 'rateLimited': {
         const cooldown = this.options.governor.noteRateLimited(reason.retryAfterMs);
         this.log(`rate limited; pausing ${Math.round(cooldown / 1000)}s`);
         break;
       }
-      case "error":
+      case 'error':
         this.log(reason.message);
         break;
     }
@@ -619,10 +645,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   }
 
   private nextBackoffMs(): number {
-    const base = Math.min(
-      this.initialBackoffMs * 2 ** this.reconnectAttempt,
-      this.maxBackoffMs,
-    );
+    const base = Math.min(this.initialBackoffMs * 2 ** this.reconnectAttempt, this.maxBackoffMs);
     this.reconnectAttempt += 1;
     return base + Math.random() * base * 0.25;
   }
@@ -647,7 +670,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       // Without a prior pong we can't tell "dead" from "doesn't answer pings";
       // keep pinging (it still keeps NAT paths open) but don't drop the socket.
       if (this.awaitingPong && this.pongSeen) {
-        this.log("heartbeat missed; dropping socket");
+        this.log('heartbeat missed; dropping socket');
         ws.terminate();
         return;
       }
@@ -675,7 +698,10 @@ export class RivianSubscriptionManager implements VehicleStateStream {
 }
 
 function summarize(errors: { message?: string }[]): string {
-  const messages = errors.map((e) => e?.message).filter(Boolean).join("; ");
+  const messages = errors
+    .map((e) => e?.message)
+    .filter(Boolean)
+    .join('; ');
   return (messages || JSON.stringify(errors)).slice(0, 500);
 }
 

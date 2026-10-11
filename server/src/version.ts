@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { VersionResponse } from "./api-types.js";
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { VersionResponse } from './api-types.js';
 
 const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
 
@@ -13,11 +13,11 @@ const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
 export function loadVersion(env: NodeJS.ProcessEnv = process.env): VersionResponse {
   // src/version.ts in dev and dist/version.js in the image both sit one
   // level below the server's package.json.
-  const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+  const packagePath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
   let version: string | null = null;
   try {
-    const pkg = JSON.parse(readFileSync(packagePath, "utf8")) as { version?: unknown };
-    if (typeof pkg.version === "string") version = pkg.version;
+    const pkg = JSON.parse(readFileSync(packagePath, 'utf8')) as { version?: unknown };
+    if (typeof pkg.version === 'string') version = pkg.version;
   } catch {
     // Unknown version is better than failing to start.
   }

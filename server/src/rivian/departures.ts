@@ -1,4 +1,4 @@
-import type { DepartureSchedule } from "./types.js";
+import type { DepartureSchedule } from './types.js';
 
 /** A departure schedule as Rivian's gateway schema defines it. */
 interface RawDepartureSchedule {
@@ -23,7 +23,7 @@ interface RawDepartureSchedule {
 export function mapDepartureSchedules(raw: unknown): DepartureSchedule[] {
   if (!Array.isArray(raw)) return [];
   return (raw as (RawDepartureSchedule | null)[])
-    .filter((s): s is RawDepartureSchedule => s != null && typeof s.id === "string")
+    .filter((s): s is RawDepartureSchedule => s != null && typeof s.id === 'string')
     .map((s) => {
       const comfort = s.departureSettings?.comfortSettings;
       return {
@@ -32,7 +32,7 @@ export function mapDepartureSchedules(raw: unknown): DepartureSchedule[] {
         enabled: s.isEnabled ?? null,
         occurrence: s.occurrence
           ? {
-              type: s.occurrence.__typename ?? "RepeatsWeekly",
+              type: s.occurrence.__typename ?? 'RepeatsWeekly',
               weekDays: s.occurrence.days ?? null,
               timeOfDayMinutes: s.occurrence.startsAtMin ?? null,
             }

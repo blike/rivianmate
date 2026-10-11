@@ -1,6 +1,6 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { drives, geocodeCache } from "../db/schema.js";
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import type { Db } from '../db/client.js';
+import { drives, geocodeCache } from '../db/schema.js';
 
 export interface Place {
   /** Short label, e.g. "306 West Willow Street, Normal". */
@@ -12,18 +12,21 @@ export interface Place {
 /** Looks up a coordinate; null when nothing is there. Throws when the service fails. */
 export type ReverseGeocode = (lat: number, lon: number) => Promise<Place | null>;
 
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse";
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
 
 /**
  * OpenStreetMap's Nominatim. Its usage policy asks for an identifying
  * User-Agent, at most one request a second and cached results, which
  * DrivePlaces provides.
  */
-export function nominatimGeocoder(userAgent: string, fetchFn: typeof fetch = fetch): ReverseGeocode {
+export function nominatimGeocoder(
+  userAgent: string,
+  fetchFn: typeof fetch = fetch,
+): ReverseGeocode {
   return async (lat, lon) => {
     const url = `${NOMINATIM_URL}?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lon}`;
     const res = await fetchFn(url, {
-      headers: { "User-Agent": userAgent, Accept: "application/json" },
+      headers: { 'User-Agent': userAgent, Accept: 'application/json' },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
@@ -46,12 +49,12 @@ interface NominatimResult {
 export function formatNominatim(result: NominatimResult): Place | null {
   if (!result || result.error || !result.display_name) return null;
   const a = result.address ?? {};
-  const street = [a.house_number, a.road].filter(Boolean).join(" ") || a.neighbourhood || null;
+  const street = [a.house_number, a.road].filter(Boolean).join(' ') || a.neighbourhood || null;
   const locality = a.city ?? a.town ?? a.village ?? a.hamlet ?? a.suburb ?? a.county ?? null;
   const parts = [street ?? result.name, locality].filter((p): p is string => !!p);
   const place = parts.length
-    ? [...new Set(parts)].join(", ")
-    : result.display_name.split(", ").slice(0, 2).join(", ");
+    ? [...new Set(parts)].join(', ')
+    : result.display_name.split(', ').slice(0, 2).join(', ');
   return { place, address: result.display_name };
 }
 
@@ -122,7 +125,7 @@ export class DrivePlaces {
         } catch (err) {
           // Leave the drive pending; the next start retries it.
           this.log(`drive ${driveId} places: ${(err as Error).message}`);
-          if (this.queue.length) this.log("pausing place lookups until the next restart");
+          if (this.queue.length) this.log('pausing place lookups until the next restart');
           this.queue = [];
         }
       }

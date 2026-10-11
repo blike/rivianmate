@@ -1,18 +1,23 @@
-const ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const SHORT: Record<string, string> = {
-  monday: "Mon", tuesday: "Tue", wednesday: "Wed", thursday: "Thu",
-  friday: "Fri", saturday: "Sat", sunday: "Sun",
+  monday: 'Mon',
+  tuesday: 'Tue',
+  wednesday: 'Wed',
+  thursday: 'Thu',
+  friday: 'Fri',
+  saturday: 'Sat',
+  sunday: 'Sun',
 };
 
 /** Minutes after midnight → "11:00 PM" (in the viewer's locale). */
 export function formatTimeOfDay(minutes: number | null | undefined): string {
-  if (minutes == null || !Number.isFinite(minutes)) return "—";
+  if (minutes == null || !Number.isFinite(minutes)) return '—';
   const d = new Date(2000, 0, 1, Math.floor(minutes / 60) % 24, Math.round(minutes % 60));
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 export function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null || !Number.isFinite(minutes)) return "—";
+  if (minutes == null || !Number.isFinite(minutes)) return '—';
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   if (h === 0) return `${m} min`;
@@ -21,10 +26,10 @@ export function formatDuration(minutes: number | null | undefined): string {
 
 /** Rivian seat levels: "Heat2" → "Heat 2", "level_2" → "Level 2", "OFF" → "Off". */
 export function formatSeatLevel(level: string | number | null | undefined): string {
-  if (level == null || level === "") return "—";
+  if (level == null || level === '') return '—';
   const words = String(level)
-    .replace(/_/g, " ")
-    .replace(/([a-z])(\d)/gi, "$1 $2")
+    .replace(/_/g, ' ')
+    .replace(/([a-z])(\d)/gi, '$1 $2')
     .trim()
     .toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -41,14 +46,14 @@ export function formatWait(seconds: number): string {
 
 /** ["Monday", …] → "Weekdays", "Every day", or "Mon, Wed, Fri". */
 export function formatWeekDays(days: string[] | null | undefined): string {
-  if (!days?.length) return "—";
+  if (!days?.length) return '—';
   const norm = [...new Set(days.map((d) => d.trim().toLowerCase()))]
     .filter((d) => ORDER.includes(d))
     .sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
-  if (norm.length === 7) return "Every day";
-  if (norm.length === 5 && norm.every((d) => ORDER.slice(0, 5).includes(d))) return "Weekdays";
-  if (norm.length === 2 && norm.includes("saturday") && norm.includes("sunday")) return "Weekends";
-  return norm.length ? norm.map((d) => SHORT[d]).join(", ") : days.join(", ");
+  if (norm.length === 7) return 'Every day';
+  if (norm.length === 5 && norm.every((d) => ORDER.slice(0, 5).includes(d))) return 'Weekdays';
+  if (norm.length === 2 && norm.includes('saturday') && norm.includes('sunday')) return 'Weekends';
+  return norm.length ? norm.map((d) => SHORT[d]).join(', ') : days.join(', ');
 }
 
 const DAY = 24 * 60;
@@ -88,9 +93,7 @@ export function weekSpans(schedules: readonly ScheduleWindow[]): [number, number
 }
 
 export type ScheduleStatus =
-  | { open: true; endsAt: Date }
-  | { open: false; startsAt: Date; endsAt: Date }
-  | null;
+  { open: true; endsAt: Date } | { open: false; startsAt: Date; endsAt: Date } | null;
 
 /** Whether a charging window is open now and when it ends, or when the next one starts. */
 export function scheduleStatus(schedules: readonly ScheduleWindow[], now: Date): ScheduleStatus {
@@ -101,7 +104,11 @@ export function scheduleStatus(schedules: readonly ScheduleWindow[], now: Date):
     const days = dayIndexes(s.weekDays);
     // A week back covers windows still running; eight days ahead covers the next start.
     for (let offset = -7; offset <= 8; offset++) {
-      const date = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate() + offset);
+      const date = new Date(
+        midnight.getFullYear(),
+        midnight.getMonth(),
+        midnight.getDate() + offset,
+      );
       if (!days.includes((date.getDay() + 6) % 7)) continue;
       const start = new Date(date.getTime());
       start.setMinutes(s.startTime);
@@ -113,13 +120,18 @@ export function scheduleStatus(schedules: readonly ScheduleWindow[], now: Date):
   if (open.length > 0) {
     return { open: true, endsAt: new Date(Math.max(...open.map((w) => w.end.getTime()))) };
   }
-  const next = windows.filter((w) => w.start.getTime() > t).sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+  const next = windows
+    .filter((w) => w.start.getTime() > t)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
   return next ? { open: false, startsAt: next.start, endsAt: next.end } : null;
 }
 
 /** "12:00 AM – 6:00 AM". */
-export function formatTimeRange(startMinutes: number | null, durationMinutes: number | null): string {
-  if (startMinutes == null || durationMinutes == null) return "—";
+export function formatTimeRange(
+  startMinutes: number | null,
+  durationMinutes: number | null,
+): string {
+  if (startMinutes == null || durationMinutes == null) return '—';
   return `${formatTimeOfDay(startMinutes)} – ${formatTimeOfDay((startMinutes + durationMinutes) % DAY)}`;
 }
 
@@ -127,7 +139,7 @@ export function formatTimeRange(startMinutes: number | null, durationMinutes: nu
 export function dayLabel(date: Date, now: Date): string {
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const diff = Math.round((day(date) - day(now)) / (DAY * 60_000));
-  if (diff === 0) return "today";
-  if (diff === 1) return date.getHours() < 4 ? "tonight" : "tomorrow";
-  return date.toLocaleDateString([], { weekday: "long" });
+  if (diff === 0) return 'today';
+  if (diff === 1) return date.getHours() < 4 ? 'tonight' : 'tomorrow';
+  return date.toLocaleDateString([], { weekday: 'long' });
 }

@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { useId, type ReactNode } from 'react';
 import {
   Area,
   Bar,
@@ -10,15 +10,15 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from "recharts";
-import { fmt } from "../lib/state.js";
+} from 'recharts';
+import { fmt } from '../lib/state.js';
 
 export interface TrendSeries {
   key: string;
   label: string;
   color: string;
   /** "area" (default), "line" or "bar". */
-  mark?: "area" | "line" | "bar";
+  mark?: 'area' | 'line' | 'bar';
   /** Put the series on a second Y axis on the right. */
   right?: boolean;
   unit?: string;
@@ -27,7 +27,7 @@ export interface TrendSeries {
   dots?: boolean;
   /** Dashed, for estimates rather than readings (lines only). */
   dashed?: boolean;
-  interpolation?: "linear" | "monotone";
+  interpolation?: 'linear' | 'monotone';
   connectNulls?: boolean;
 }
 
@@ -40,20 +40,20 @@ export function TrendChart(props: {
   series: TrendSeries[];
   xFormatter?: (x: number) => string;
   tooltipLabel?: (x: number) => ReactNode;
-  xType?: "number" | "category";
+  xType?: 'number' | 'category';
   /** Exact x-axis tick positions; chosen automatically when left out. */
   xTicks?: number[];
-  leftDomain?: [number | "auto", number | "auto"];
-  rightDomain?: [number | "auto", number | "auto"];
+  leftDomain?: [number | 'auto', number | 'auto'];
+  rightDomain?: [number | 'auto', number | 'auto'];
   leftUnit?: string;
   rightUnit?: string;
   height?: number;
   /** Index into `data` of the point under the pointer; null when it leaves. */
   onHover?: (index: number | null) => void;
 }) {
-  const gradientId = useId().replace(/:/g, "");
+  const gradientId = useId().replace(/:/g, '');
   const hasRight = props.series.some((s) => s.right);
-  const tick = { fill: "var(--text-muted)", fontSize: 11 };
+  const tick = { fill: 'var(--text-muted)', fontSize: 11 };
   const xFormatter = props.xFormatter ?? ((x: number) => fmt(x, 0));
   // Axis ticks use the series' precision so narrow ranges don't repeat labels.
   const leftDigits = props.series.find((s) => !s.right)?.digits ?? 0;
@@ -85,8 +85,8 @@ export function TrendChart(props: {
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey={props.xKey}
-            type={props.xType ?? "number"}
-            domain={["dataMin", "dataMax"]}
+            type={props.xType ?? 'number'}
+            domain={['dataMin', 'dataMax']}
             tick={tick}
             tickLine={false}
             axisLine={false}
@@ -96,48 +96,57 @@ export function TrendChart(props: {
           />
           <YAxis
             yAxisId="left"
-            domain={props.leftDomain ?? ["auto", "auto"]}
+            domain={props.leftDomain ?? ['auto', 'auto']}
             tick={tick}
             tickLine={false}
             axisLine={false}
             width={props.leftUnit ? 64 : 44}
-            tickFormatter={(v: number) => `${fmt(v, props.leftUnit && Number.isInteger(v) ? 0 : leftDigits)}${props.leftUnit ? ` ${props.leftUnit}` : ""}`}
+            tickFormatter={(v: number) =>
+              `${fmt(v, props.leftUnit && Number.isInteger(v) ? 0 : leftDigits)}${props.leftUnit ? ` ${props.leftUnit}` : ''}`
+            }
           />
           {hasRight && (
             <YAxis
               yAxisId="right"
               orientation="right"
-              domain={props.rightDomain ?? ["auto", "auto"]}
+              domain={props.rightDomain ?? ['auto', 'auto']}
               tick={tick}
               tickLine={false}
               axisLine={false}
               width={props.rightUnit ? 52 : 40}
-              tickFormatter={(v: number) => `${fmt(v, rightDigits)}${props.rightUnit ? ` ${props.rightUnit}` : ""}`}
+              tickFormatter={(v: number) =>
+                `${fmt(v, rightDigits)}${props.rightUnit ? ` ${props.rightUnit}` : ''}`
+              }
             />
           )}
           <Tooltip
-            cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+            cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
               // One row per series, in declared order, skipping gaps.
               const rows = props.series.flatMap((s) => {
                 const value = payload.find((p) => p.dataKey === s.key)?.value;
-                return typeof value === "number" ? [{ s, value }] : [];
+                return typeof value === 'number' ? [{ s, value }] : [];
               });
               if (rows.length === 0) return null;
               return (
-                <div className="min-w-[10rem] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs shadow-lg">
-                  <div className="text-[var(--text-primary)]">
+                <div className="min-w-40 rounded-lg border border-(--border) bg-(--surface-2) px-3 py-2 text-xs shadow-lg">
+                  <div className="text-(--text-primary)">
                     {(props.tooltipLabel ?? xFormatter)(Number(label))}
                   </div>
-                  <div className="mt-2 space-y-1 border-t border-[var(--border)] pt-2">
+                  <div className="mt-2 space-y-1 border-t border-(--border) pt-2">
                     {rows.map(({ s, value }) => (
                       <div key={s.key} className="flex items-center gap-2">
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
-                        <span className="text-[var(--text-secondary)]">{s.label}</span>
-                        <span className="ml-auto pl-4 font-medium tabular-nums text-[var(--text-primary)]">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: s.color }}
+                        />
+                        <span className="text-(--text-secondary)">{s.label}</span>
+                        <span className="ml-auto pl-4 font-medium tabular-nums text-(--text-primary)">
                           {fmt(value, s.digits ?? 1)}
-                          {s.unit && <span className="ml-0.5 font-normal text-[var(--text-muted)]">{s.unit}</span>}
+                          {s.unit && (
+                            <span className="ml-0.5 font-normal text-(--text-muted)">{s.unit}</span>
+                          )}
                         </span>
                       </div>
                     ))}
@@ -147,25 +156,25 @@ export function TrendChart(props: {
             }}
           />
           {props.series.length > 1 && (
-            <Legend wrapperStyle={{ fontSize: 12, color: "var(--text-secondary)" }} />
+            <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
           )}
           {props.series.map((s) => {
             const common = {
               key: s.key,
               dataKey: s.key,
               name: s.label,
-              yAxisId: s.right ? "right" : "left",
+              yAxisId: s.right ? 'right' : 'left',
               isAnimationActive: false,
             };
-            if (s.mark === "bar") return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
-            if (s.mark === "line") {
+            if (s.mark === 'bar') return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
+            if (s.mark === 'line') {
               return (
                 <Line
                   {...common}
-                  type={s.interpolation ?? "monotone"}
+                  type={s.interpolation ?? 'monotone'}
                   stroke={s.color}
                   strokeWidth={2}
-                  strokeDasharray={s.dashed ? "5 4" : undefined}
+                  strokeDasharray={s.dashed ? '5 4' : undefined}
                   dot={s.dots ? { r: 3, fill: s.color, strokeWidth: 0 } : false}
                   connectNulls={s.connectNulls ?? true}
                 />
@@ -174,7 +183,7 @@ export function TrendChart(props: {
             return (
               <Area
                 {...common}
-                type={s.interpolation ?? "monotone"}
+                type={s.interpolation ?? 'monotone'}
                 stroke={s.color}
                 strokeWidth={2}
                 fill={`url(#${gradientId}-${s.key})`}

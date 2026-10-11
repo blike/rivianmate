@@ -1,5 +1,5 @@
-import type { LocationPointDto } from "@server/api-types.js";
-import { isPosition } from "./geo.js";
+import type { LocationPointDto } from '@server/api-types.js';
+import { isPosition } from './geo.js';
 
 /**
  * Speed (km/h) and altitude (m) by minutes into the drive, for charting.
@@ -74,7 +74,7 @@ export interface Day<T> {
 }
 
 const localKey = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** Items grouped by the local day they started (or `at` gives), keeping their order. */
 export function groupByDay<T extends { startedAt: string }>(
@@ -92,14 +92,14 @@ export function groupByDay<T extends { startedAt: string }>(
     if (day?.key !== key) {
       const label =
         key === today
-          ? "Today"
+          ? 'Today'
           : key === yesterday
-            ? "Yesterday"
+            ? 'Yesterday'
             : start.toLocaleDateString([], {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                ...(start.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                ...(start.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
               });
       day = { key, label, items: [] };
       days.push(day);
@@ -109,7 +109,7 @@ export function groupByDay<T extends { startedAt: string }>(
   return days;
 }
 
-export interface DriveDay<T> extends Omit<Day<T>, "items"> {
+export interface DriveDay<T> extends Omit<Day<T>, 'items'> {
   drives: T[];
   distanceKm: number;
 }

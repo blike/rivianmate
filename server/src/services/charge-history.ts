@@ -1,15 +1,15 @@
-import { and, asc, between, eq, gte, isNotNull, isNull, min } from "drizzle-orm";
-import type { Db } from "../db/client.js";
-import { chargingSessions, vehicleStateSnapshots } from "../db/schema.js";
-import type { RivianApi } from "../rivian/client.js";
-import { deriveChargingStats } from "./charging-time.js";
+import { and, asc, between, eq, gte, isNotNull, isNull, min } from 'drizzle-orm';
+import type { Db } from '../db/client.js';
+import { chargingSessions, vehicleStateSnapshots } from '../db/schema.js';
+import type { RivianApi } from '../rivian/client.js';
+import { deriveChargingStats } from './charging-time.js';
 import {
   type ChargeSessionSummary,
   RivianUnauthenticatedError,
   type VehicleState,
   describeRivianError,
   isGraphqlValidationError,
-} from "../rivian/types.js";
+} from '../rivian/types.js';
 
 export interface SessionCandidate {
   id: number;
@@ -24,9 +24,7 @@ export function summariesForVehicle(
   vehicleId: string,
   vehicleCount: number,
 ): ChargeSessionSummary[] {
-  return summaries.filter((s) =>
-    s.vehicleId ? s.vehicleId === vehicleId : vehicleCount === 1,
-  );
+  return summaries.filter((s) => (s.vehicleId ? s.vehicleId === vehicleId : vehicleCount === 1));
 }
 
 /**
@@ -64,10 +62,10 @@ export function matchSession(
 
 export function chargerTypeFor(
   summary: ChargeSessionSummary,
-): "rivian_charger" | "wallbox" | "other" {
-  if (/rivian/i.test(summary.vendor ?? "") && summary.isPublic) return "rivian_charger";
-  if (summary.isHomeCharger) return "wallbox";
-  return "other";
+): 'rivian_charger' | 'wallbox' | 'other' {
+  if (/rivian/i.test(summary.vendor ?? '') && summary.isPublic) return 'rivian_charger';
+  if (summary.isHomeCharger) return 'wallbox';
+  return 'other';
 }
 
 export function parseDate(value: string | null | undefined): Date | null {
@@ -265,7 +263,7 @@ export class ChargeHistoryImporter {
           .update(chargingSessions)
           .set({
             rivianTransactionId: row.rivianTransactionId ?? s.transactionId ?? null,
-            source: row.source === "rivian" ? "rivian" : "live+rivian",
+            source: row.source === 'rivian' ? 'rivian' : 'live+rivian',
             vendor: row.vendor ?? s.vendor ?? null,
             city: row.city ?? s.city ?? null,
             isPublic: row.isPublic ?? s.isPublic ?? null,
@@ -294,10 +292,10 @@ export class ChargeHistoryImporter {
           vehicleId,
           startedAt,
           endedAt: endedAt ?? startedAt,
-          source: "rivian",
+          source: 'rivian',
           rivianTransactionId: s.transactionId ?? null,
           chargerType: chargerTypeFor(s),
-          isRivianCharger: /rivian/i.test(s.vendor ?? "") && s.isPublic === true,
+          isRivianCharger: /rivian/i.test(s.vendor ?? '') && s.isPublic === true,
           vendor: s.vendor ?? null,
           city: s.city ?? null,
           isPublic: s.isPublic ?? null,

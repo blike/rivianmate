@@ -1,6 +1,6 @@
 /** When the vehicle was plugged in, and which of that time it spent charging. */
-import { sql } from "drizzle-orm";
-import type { Db } from "../db/client.js";
+import { sql } from 'drizzle-orm';
+import type { Db } from '../db/client.js';
 
 export interface ChargerStatusChange {
   ts: Date;
@@ -9,14 +9,14 @@ export interface ChargerStatusChange {
 }
 
 export interface ChargeSpan {
-  kind: "charging" | "plugged";
+  kind: 'charging' | 'plugged';
   from: Date;
   to: Date;
 }
 
-function kindOf(status: string): ChargeSpan["kind"] | null {
-  if (status === "chrgr_sts_connected_charging") return "charging";
-  if (status.startsWith("chrgr_sts_connected")) return "plugged";
+function kindOf(status: string): ChargeSpan['kind'] | null {
+  if (status === 'chrgr_sts_connected_charging') return 'charging';
+  if (status.startsWith('chrgr_sts_connected')) return 'plugged';
   return null;
 }
 
@@ -25,7 +25,11 @@ function kindOf(status: string): ChargeSpan["kind"] | null {
  * holds until the next change; the last one holds until `to`. A change
  * before `from` sets the state the window opens with.
  */
-export function chargeSpans(changes: readonly ChargerStatusChange[], from: Date, to: Date): ChargeSpan[] {
+export function chargeSpans(
+  changes: readonly ChargerStatusChange[],
+  from: Date,
+  to: Date,
+): ChargeSpan[] {
   const spans: ChargeSpan[] = [];
   for (let i = 0; i < changes.length; i++) {
     const kind = kindOf(changes[i]!.status);
@@ -45,7 +49,12 @@ export function chargeSpans(changes: readonly ChargerStatusChange[], from: Date,
  * Reads only the changes, plus the last one before the window (looking back
  * up to 30 days) so it opens in the right state.
  */
-export async function loadChargeSpans(db: Db, vehicleId: string, from: Date, to: Date): Promise<ChargeSpan[]> {
+export async function loadChargeSpans(
+  db: Db,
+  vehicleId: string,
+  from: Date,
+  to: Date,
+): Promise<ChargeSpan[]> {
   const rows = await db.execute<{ ts: string; status: string }>(sql`
     WITH changes AS (
       SELECT ts, charger_status AS status,
@@ -87,7 +96,7 @@ export function chargingWindow(
   let from: number | null = null;
   let to: number | null = null;
   for (const s of spans) {
-    if (s.kind !== "charging" || s.to.getTime() <= start || s.from.getTime() >= end) continue;
+    if (s.kind !== 'charging' || s.to.getTime() <= start || s.from.getTime() >= end) continue;
     from ??= Math.max(s.from.getTime(), start);
     to = Math.min(s.to.getTime(), end);
   }

@@ -83,7 +83,7 @@ export function periodSummary(
   return summary;
 }
 
-export type ActivityKind = "drive" | "charging" | "plugged";
+export type ActivityKind = 'drive' | 'charging' | 'plugged';
 
 export interface ActivityBand {
   kind: ActivityKind;
@@ -97,7 +97,7 @@ export interface ActivityBand {
  */
 export function activityBands(
   drives: readonly PeriodDrive[],
-  chargeSpans: readonly { kind: "charging" | "plugged"; from: string; to: string }[],
+  chargeSpans: readonly { kind: 'charging' | 'plugged'; from: string; to: string }[],
   from: number,
   to: number,
   now = to,
@@ -110,7 +110,7 @@ export function activityBands(
     bands.push({ kind, from: Math.max(start, from), to: Math.min(Math.max(end, start), to) });
   };
   for (const s of chargeSpans) add(s.kind, s.from, s.to);
-  for (const d of drives) add("drive", d.startedAt, d.endedAt);
+  for (const d of drives) add('drive', d.startedAt, d.endedAt);
   return bands.sort((a, b) => a.from - b.from);
 }
 
@@ -123,15 +123,17 @@ export function distanceByPeriod(
   drives: readonly PeriodDrive[],
   from: number,
   to: number,
-  unit: "day" | "hour",
+  unit: 'day' | 'hour',
 ): { ts: number; km: number }[] {
   const start = new Date(from);
-  if (unit === "day") start.setHours(0, 0, 0, 0);
+  if (unit === 'day') start.setHours(0, 0, 0, 0);
   else start.setMinutes(0, 0, 0);
-  const step = (d: Date) => (unit === "day" ? d.setDate(d.getDate() + 1) : d.setHours(d.getHours() + 1));
+  const step = (d: Date) =>
+    unit === 'day' ? d.setDate(d.getDate() + 1) : d.setHours(d.getHours() + 1);
 
   const buckets: { ts: number; km: number }[] = [];
-  for (const d = new Date(start); d.getTime() <= to; step(d)) buckets.push({ ts: d.getTime(), km: 0 });
+  for (const d = new Date(start); d.getTime() <= to; step(d))
+    buckets.push({ ts: d.getTime(), km: 0 });
 
   for (const drive of drives) {
     const t = Date.parse(drive.startedAt);
@@ -148,7 +150,10 @@ export function distanceByPeriod(
  * Where the vehicle was at `ts`: the last fix at or before it, since a
  * parked vehicle stays put between fixes. Points must be in time order.
  */
-export function positionAt(points: readonly { ts: number; lat: number; lon: number }[], ts: number): [number, number] | null {
+export function positionAt(
+  points: readonly { ts: number; lat: number; lon: number }[],
+  ts: number,
+): [number, number] | null {
   let lo = 0;
   let hi = points.length - 1;
   if (hi < 0 || points[0]!.ts > ts) return null;

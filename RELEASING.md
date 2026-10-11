@@ -22,11 +22,11 @@
    or don't match `package.json`, then copies the existing commit image's
    multi-platform manifest to new tags without rebuilding or rerunning tests:
 
-   | Release | Tags published |
-   |---|---|
-   | Newest stable, e.g. `v0.3.1` | `0.3.1`, `0.3`, `0`, `latest` |
-   | Patch to an older line, e.g. `v0.2.5` after `v0.3.0` | `0.2.5`, `0.2` |
-   | Pre-release, e.g. `v0.4.0-beta.1` | `0.4.0-beta.1` only |
+   | Release                                              | Tags published                |
+   | ---------------------------------------------------- | ----------------------------- |
+   | Newest stable, e.g. `v0.3.1`                         | `0.3.1`, `0.3`, `0`, `latest` |
+   | Patch to an older line, e.g. `v0.2.5` after `v0.3.0` | `0.2.5`, `0.2`                |
+   | Pre-release, e.g. `v0.4.0-beta.1`                    | `0.4.0-beta.1` only           |
 
    Floating tags (`latest`, `0`, `0.3`) only move to the newest release in
    their range. If main and the tag are pushed together, the workflow waits up
@@ -34,6 +34,7 @@
    longer, fix/retry that build and rerun the tag workflow once the image is
    available. Both workflows require `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`
    Actions secrets with permission to push `mitchvitale/rivianmate`.
+
 5. Publish a GitHub release from the existing tag, using the corresponding
    changelog entry and upgrade instructions as its notes. Mark a stable release
    as latest (or as a pre-release for `-beta`/`-rc` tags). GitHub provides

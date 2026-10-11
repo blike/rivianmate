@@ -1,45 +1,38 @@
-import { and, between, desc, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import type {
-  ChargingCurvePointDto,
-  ChargingSessionDto,
-  WallboxDto,
-} from "../api-types.js";
-import type { AppContext } from "../context.js";
+import { and, between, desc, eq } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
+import type { AppContext } from '../context.js';
 import {
   type HomeChargingSettings,
   type Spot,
   estimateHomeCost,
   homeSpots,
   isHomeSession,
-} from "../services/home-charging.js";
-import { getHomeChargingSettings } from "./settings.js";
+} from '../services/home-charging.js';
+import { getHomeChargingSettings } from './settings.js';
 import {
   chargingCurvePoints,
   chargingSessions,
   vehicleStateSnapshots,
   wallboxReadings,
   wallboxes,
-} from "../db/schema.js";
-import type { VehicleState } from "../rivian/types.js";
-import { curveForDisplay, forecastForDisplay } from "../services/charging-curve.js";
+} from '../db/schema.js';
+import type { VehicleState } from '../rivian/types.js';
+import { curveForDisplay, forecastForDisplay } from '../services/charging-curve.js';
 
 /** Tolerance for Rivian's clock running ahead of the server's. */
 const CLOCK_SLACK_MS = 60_000;
-import { socReadingsBetween } from "../services/charging-time.js";
-import { chargingWindow, loadChargeSpans } from "../services/charge-spans.js";
+import { socReadingsBetween } from '../services/charging-time.js';
+import { chargingWindow, loadChargeSpans } from '../services/charge-spans.js';
 
 const patchSchema = z.object({
   cost: z.union([z.string(), z.number()]).nullable(),
 });
 
-export async function chargingRoutes(
-  app: FastifyInstance,
-  ctx: AppContext,
-): Promise<void> {
+export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/charging-sessions",
+    '/api/vehicles/:id/charging-sessions',
     async (request): Promise<ChargingSessionDto[]> => {
       const rows = await ctx.db
         .select()
@@ -49,13 +42,17 @@ export async function chargingRoutes(
         .limit(200);
       const home = await homeContext(ctx);
       const oldest = rows.at(-1);
-      const spans = oldest ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date()) : [];
-      return rows.map((row) => toSessionDto(row, home, chargingWindow(spans, row.startedAt, row.endedAt)));
+      const spans = oldest
+        ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date())
+        : [];
+      return rows.map((row) =>
+        toSessionDto(row, home, chargingWindow(spans, row.startedAt, row.endedAt)),
+      );
     },
   );
 
   app.get<{ Params: { sessionId: string } }>(
-    "/api/charging-sessions/:sessionId/curve",
+    '/api/charging-sessions/:sessionId/curve',
     async (request): Promise<ChargingCurvePointDto[]> => {
       const sessionId = Number(request.params.sessionId);
       const rows = await ctx.db
@@ -66,9 +63,14 @@ export async function chargingRoutes(
         .limit(20_000);
       // Nothing recorded can be from the future; such rows were forecast.
       const latest = Date.now() + CLOCK_SLACK_MS;
-      const curve = curveForDisplay(rows.filter((r) => r.source === "forecast" || r.ts.getTime() <= latest));
+      const curve = curveForDisplay(
+        rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
+      );
       const [session] = await ctx.db
-        .select({ endedAt: chargingSessions.endedAt, chargingSince: chargingSessions.chargingSince })
+        .select({
+          endedAt: chargingSessions.endedAt,
+          chargingSince: chargingSessions.chargingSince,
+        })
         .from(chargingSessions)
         .where(eq(chargingSessions.id, sessionId));
       // Only while it's actually charging: stopped but still plugged in, or
@@ -78,7 +80,12 @@ export async function chargingRoutes(
       if (curve.length > 0) {
         return [
           ...curve.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
-          ...forecast.map((r) => ({ ts: r.ts.toISOString(), powerKw: null, soc: r.soc, projected: true })),
+          ...forecast.map((r) => ({
+            ts: r.ts.toISOString(),
+            powerKw: null,
+            soc: r.soc,
+            projected: true,
+          })),
         ];
       }
       return socCurveFromState(ctx, sessionId);
@@ -86,7 +93,7 @@ export async function chargingRoutes(
   );
 
   app.patch<{ Params: { sessionId: string } }>(
-    "/api/charging-sessions/:sessionId",
+    '/api/charging-sessions/:sessionId',
     async (request, reply) => {
       const body = patchSchema.parse(request.body);
       const updated = await ctx.db
@@ -94,12 +101,12 @@ export async function chargingRoutes(
         .set({ cost: body.cost == null ? null : String(body.cost), costEdited: body.cost != null })
         .where(eq(chargingSessions.id, Number(request.params.sessionId)))
         .returning();
-      if (!updated[0]) return reply.code(404).send({ error: "Not found" });
+      if (!updated[0]) return reply.code(404).send({ error: 'Not found' });
       return toSessionDto(updated[0], await homeContext(ctx));
     },
   );
 
-  app.get("/api/wallboxes", async (): Promise<WallboxDto[]> => {
+  app.get('/api/wallboxes', async (): Promise<WallboxDto[]> => {
     const boxes = await ctx.db.select().from(wallboxes);
     const result: WallboxDto[] = [];
     for (const box of boxes) {
@@ -154,7 +161,10 @@ const SNAPSHOT_MARGIN_MS = 2 * 3600_000;
  * Without a recorded power curve, battery level over the session from the
  * vehicle states RivianMate recorded (empty if it wasn't recording then).
  */
-async function socCurveFromState(ctx: AppContext, sessionId: number): Promise<ChargingCurvePointDto[]> {
+async function socCurveFromState(
+  ctx: AppContext,
+  sessionId: number,
+): Promise<ChargingCurvePointDto[]> {
   const [session] = await ctx.db
     .select({
       vehicleId: chargingSessions.vehicleId,
@@ -172,7 +182,11 @@ async function socCurveFromState(ctx: AppContext, sessionId: number): Promise<Ch
     .where(
       and(
         eq(vehicleStateSnapshots.vehicleId, session.vehicleId),
-        between(vehicleStateSnapshots.ts, new Date(start - SNAPSHOT_MARGIN_MS), new Date(end + SNAPSHOT_MARGIN_MS)),
+        between(
+          vehicleStateSnapshots.ts,
+          new Date(start - SNAPSHOT_MARGIN_MS),
+          new Date(end + SNAPSHOT_MARGIN_MS),
+        ),
       ),
     )
     .orderBy(vehicleStateSnapshots.ts)

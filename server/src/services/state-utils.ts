@@ -1,14 +1,6 @@
-import type {
-  GnssLocation,
-  TimeStampedValue,
-  VehicleState,
-} from "../rivian/types.js";
+import type { GnssLocation, TimeStampedValue, VehicleState } from '../rivian/types.js';
 
-const INVALID_SENSOR_STATES = new Set([
-  "fault",
-  "signal_not_available",
-  "undefined",
-]);
+const INVALID_SENSOR_STATES = new Set(['fault', 'signal_not_available', 'undefined']);
 
 /**
  * Merge a subscription delta into the cached full state, dropping invalid
@@ -24,10 +16,7 @@ export function mergeVehicleState(
   for (const [key, incoming] of Object.entries(delta)) {
     if (incoming == null) continue;
     const record = incoming as TimeStampedValue;
-    if (
-      typeof record.value === "string" &&
-      INVALID_SENSOR_STATES.has(record.value)
-    ) {
+    if (typeof record.value === 'string' && INVALID_SENSOR_STATES.has(record.value)) {
       continue;
     }
     const prev = cached[key];
@@ -36,7 +25,8 @@ export function mergeVehicleState(
     if (timestampOrderedFields.includes(key) && prev) {
       const previousAt = Date.parse((prev as TimeStampedValue).timeStamp);
       const incomingAt = Date.parse(record.timeStamp);
-      if (Number.isFinite(previousAt) && Number.isFinite(incomingAt) && incomingAt < previousAt) continue;
+      if (Number.isFinite(previousAt) && Number.isFinite(incomingAt) && incomingAt < previousAt)
+        continue;
     }
     cached[key] = incoming;
     if (JSON.stringify(prev) !== JSON.stringify(incoming)) changed.push(key);
@@ -44,12 +34,9 @@ export function mergeVehicleState(
   return changed;
 }
 
-export function stateValue(
-  state: VehicleState,
-  key: string,
-): string | number | null {
+export function stateValue(state: VehicleState, key: string): string | number | null {
   const record = state[key] as TimeStampedValue | undefined;
-  if (!record || !("value" in record)) return null;
+  if (!record || !('value' in record)) return null;
   return record.value;
 }
 
@@ -74,25 +61,18 @@ export function stateLocation(state: VehicleState): GnssLocation | null {
 
 /** A real position: finite, in range, and not 0,0. */
 export function isPosition(lat: unknown, lon: unknown): lat is number {
-  if (typeof lat !== "number" || typeof lon !== "number") return false;
+  if (typeof lat !== 'number' || typeof lon !== 'number') return false;
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
   return Math.abs(lat) > 1e-4 || Math.abs(lon) > 1e-4;
 }
 
-export function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }

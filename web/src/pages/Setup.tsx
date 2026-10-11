@@ -1,26 +1,26 @@
-import { useState } from "react";
-import { ApiError, api } from "../api/client.js";
-import { passwordProblem } from "@server/password-policy.js";
-import { AuthCard, TextField } from "../components/AuthCard.js";
-import { PasswordHint } from "../components/PasswordHint.js";
+import { useState } from 'react';
+import { ApiError, api } from '../api/client.js';
+import { passwordProblem } from '@server/password-policy.js';
+import { AuthCard, TextField } from '../components/AuthCard.js';
+import { PasswordHint } from '../components/PasswordHint.js';
 
 export function Setup(props: { onDone: () => void }) {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     const problem = passwordProblem(password);
     if (problem) return setError(problem);
-    if (password !== confirm) return setError("Passwords do not match");
+    if (password !== confirm) return setError('Passwords do not match');
     setBusy(true);
     setError(null);
     try {
       await api.setup(password);
       props.onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Setup failed");
+      setError(err instanceof ApiError ? err.message : 'Setup failed');
     } finally {
       setBusy(false);
     }

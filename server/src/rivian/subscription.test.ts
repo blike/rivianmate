@@ -1,14 +1,14 @@
-import type { IncomingHttpHeaders } from "node:http";
-import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import WebSocket, { WebSocketServer } from "ws";
-import { RivianGovernor } from "./governor.js";
+import type { IncomingHttpHeaders } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import WebSocket, { WebSocketServer } from 'ws';
+import { RivianGovernor } from './governor.js';
 import {
   CLOSE_CONNECTION_TTL_EXPIRED,
   RivianSubscriptionManager,
   rejectedFields,
-} from "./subscription.js";
-import type { LiveSessionData, VehicleState } from "./types.js";
+} from './subscription.js';
+import type { LiveSessionData, VehicleState } from './types.js';
 
 interface Received {
   type: string;
@@ -30,14 +30,14 @@ class FakeRivian {
 
   constructor(options: { autoPong?: boolean } = {}) {
     this.wss = new WebSocketServer({ port: 0, autoPong: options.autoPong ?? true });
-    this.wss.on("connection", (socket, req) => {
+    this.wss.on('connection', (socket, req) => {
       const conn: ServerConn = { socket, headers: req.headers, messages: [] };
       this.conns.push(conn);
-      socket.on("message", (raw) => {
+      socket.on('message', (raw) => {
         const msg = JSON.parse(raw.toString()) as Received;
         conn.messages.push(msg);
-        if (msg.type === "connection_init") {
-          socket.send(JSON.stringify({ type: "connection_ack" }));
+        if (msg.type === 'connection_init') {
+          socket.send(JSON.stringify({ type: 'connection_ack' }));
         }
         this.notify();
       });
@@ -53,7 +53,7 @@ class FakeRivian {
   async until(predicate: () => boolean, timeoutMs = 3_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (!predicate()) {
-      if (Date.now() > deadline) throw new Error("timed out waiting");
+      if (Date.now() > deadline) throw new Error('timed out waiting');
       await new Promise<void>((resolve) => {
         this.waiters.push(resolve);
         setTimeout(resolve, 25);
@@ -62,7 +62,7 @@ class FakeRivian {
   }
 
   subscribes(conn: ServerConn): Received[] {
-    return conn.messages.filter((m) => m.type === "subscribe");
+    return conn.messages.filter((m) => m.type === 'subscribe');
   }
 
   close(): Promise<void> {
@@ -77,7 +77,7 @@ class FakeRivian {
   }
 }
 
-describe("RivianSubscriptionManager", () => {
+describe('RivianSubscriptionManager', () => {
   let server: FakeRivian;
   let manager: RivianSubscriptionManager;
 
@@ -98,8 +98,8 @@ describe("RivianSubscriptionManager", () => {
       url: server.url,
       governor: new RivianGovernor({ minSpacingMs: 0 }),
       getCredentials: () => ({
-        userSessionToken: "usess",
-        appSession: { appSessionToken: "asess", csrfToken: "csrf" },
+        userSessionToken: 'usess',
+        appSession: { appSessionToken: 'asess', csrfToken: 'csrf' },
       }),
       initialBackoffMs: overrides.initialBackoffMs ?? 50,
       ttlRenewDelayMs: 10,
@@ -107,205 +107,279 @@ describe("RivianSubscriptionManager", () => {
     });
   }
 
-  it("distinguishes feed delivery, idle, errors, unsupported and reconnect waiting", async () => {
+  it('distinguishes feed delivery, idle, errors, unsupported and reconnect waiting', async () => {
     manager = createManager();
-    manager.subscribe("VIN1", () => {});
-    manager.subscribeCharging("VIN1", () => {});
-    manager.subscribeParallax("VIN1", ["battery"], () => {});
-    const feed = (kind: string) => manager.diagnostics().feeds.find(f => f.kind === kind)!;
-    expect(manager.diagnostics().state).toBe("stopped");
-    expect(feed("vehicleState").lastMessageAt).toBeNull();
+    manager.subscribe('VIN1', () => {});
+    manager.subscribeCharging('VIN1', () => {});
+    manager.subscribeParallax('VIN1', ['battery'], () => {});
+    const feed = (kind: string) => manager.diagnostics().feeds.find((f) => f.kind === kind)!;
+    expect(manager.diagnostics().state).toBe('stopped');
+    expect(feed('vehicleState').lastMessageAt).toBeNull();
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3,
+    );
     const conn = server.conns[0]!;
-    expect(manager.diagnostics().state).toBe("connected");
+    expect(manager.diagnostics().state).toBe('connected');
     expect(manager.diagnostics().lastMessageAt).not.toBeNull(); // ack, not feed data
-    expect(feed("vehicleState").status).toBe("waiting");
-    conn.socket.send(JSON.stringify({ type: "next", id: "chargingSession:VIN1", payload: { data: { chargingSession: null } } }));
-    conn.socket.send(JSON.stringify({ type: "next", id: "vehicleState:VIN1", payload: { data: { vehicleState: {} } } }));
-    await server.until(() => feed("vehicleState").status === "receiving" && feed("chargingSession").status === "receiving");
-    const lastData = feed("vehicleState").lastMessageAt;
-    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(lastData!) + 5 * 60_000);
-    expect(feed("vehicleState").status).toBe("waiting");
-    clock.mockRestore();
-    conn.socket.send(JSON.stringify({ type: "next", id: "vehicleState:VIN1", payload: { errors: [{ message: "temporary error" }] } }));
-    await server.until(() => feed("vehicleState").status === "errored");
-    expect(feed("vehicleState").lastMessageAt).toBe(lastData);
-    conn.socket.send(JSON.stringify({ type: "error", id: "parallax:VIN1", payload: [{ message: "unsupported" }] }));
-    await server.until(() => feed("parallax").status === "unsupported");
-    conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, "renew");
-    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 2);
-    expect(feed("vehicleState").status).toBe("waiting");
-    expect(feed("vehicleState").lastMessageAt).toBe(lastData);
-    expect(feed("parallax").status).toBe("unsupported");
-    server.conns[1]!.socket.send(JSON.stringify({ type: "next", id: "vehicleState:VIN1", payload: { data: { vehicleState: {} } } }));
-    await server.until(() => feed("vehicleState").status === "receiving");
-    manager.stop();
-    expect(manager.diagnostics().state).toBe("stopped");
-    expect(feed("vehicleState").status).toBe("waiting");
-  });
-
-  it("tracks Parallax domains independently, including empty cleared payloads", async () => {
-    manager = createManager();
-    manager.subscribeParallax("v1", ["charging.session.status", "energy.high_voltage.battery_state", "energy_edge_compute.graphs.parked_energy_distributions", "navigation.navigation_service.trip_info"], () => {});
-    manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
-    const feed = (domain: string) => manager.diagnostics().feeds.find(f => f.domain === domain)!;
-    expect(manager.diagnostics().feeds).toHaveLength(3);
-    expect(feed("energy").topics).toHaveLength(2);
-    const conn = server.conns[0]!;
-    const send = (rvm: string) => conn.socket.send(JSON.stringify({ type: "next", id: "parallax:v1", payload: { data: { parallaxMessages: { rvm, payload: "" } } } }));
-    send("charging.session.status");
-    await server.until(() => feed("charging").status === "receiving");
-    expect(feed("energy").status).toBe("waiting");
-    expect(feed("navigation").lastMessageAt).toBeNull();
-    send("navigation.navigation_service.trip_info");
-    await server.until(() => feed("navigation").status === "receiving");
-    expect(feed("energy").lastMessageAt).toBeNull();
-    conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, "renew");
-    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1);
-    expect(feed("charging").status).toBe("waiting");
-    expect(feed("navigation").status).toBe("waiting");
-  });
-
-  it("sends session headers and subscribes once per vehicle and kind", async () => {
-    manager = createManager();
-    const states: VehicleState[] = [];
-    const sessions: (LiveSessionData | null)[] = [];
-    manager.subscribe("VIN1", (_vin, s) => states.push(s));
-    manager.subscribeCharging("VIN1", (_vin, s) => sessions.push(s));
-    manager.start();
-
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2);
-    const conn = server.conns[0]!;
-    expect(conn.headers["u-sess"]).toBe("usess");
-    expect(conn.headers["a-sess"]).toBe("asess");
-    expect(conn.headers["csrf-token"]).toBe("csrf");
-    expect(conn.headers["sec-websocket-protocol"]).toBe("graphql-transport-ws");
-    expect(server.subscribes(conn).map((m) => m.id).sort()).toEqual([
-      "chargingSession:VIN1",
-      "vehicleState:VIN1",
-    ]);
-
-    // Re-registering a callback must not produce a duplicate subscribe.
-    manager.subscribe("VIN1", (_vin, s) => states.push(s));
+    expect(feed('vehicleState').status).toBe('waiting');
     conn.socket.send(
       JSON.stringify({
-        id: "vehicleState:VIN1",
-        type: "next",
-        payload: { data: { vehicleState: { batteryLevel: { timeStamp: "t", value: 80 } } } },
+        type: 'next',
+        id: 'chargingSession:VIN1',
+        payload: { data: { chargingSession: null } },
       }),
     );
     conn.socket.send(
       JSON.stringify({
-        id: "chargingSession:VIN1",
-        type: "next",
+        type: 'next',
+        id: 'vehicleState:VIN1',
+        payload: { data: { vehicleState: {} } },
+      }),
+    );
+    await server.until(
+      () =>
+        feed('vehicleState').status === 'receiving' &&
+        feed('chargingSession').status === 'receiving',
+    );
+    const lastData = feed('vehicleState').lastMessageAt;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(lastData!) + 5 * 60_000);
+    expect(feed('vehicleState').status).toBe('waiting');
+    clock.mockRestore();
+    conn.socket.send(
+      JSON.stringify({
+        type: 'next',
+        id: 'vehicleState:VIN1',
+        payload: { errors: [{ message: 'temporary error' }] },
+      }),
+    );
+    await server.until(() => feed('vehicleState').status === 'errored');
+    expect(feed('vehicleState').lastMessageAt).toBe(lastData);
+    conn.socket.send(
+      JSON.stringify({ type: 'error', id: 'parallax:VIN1', payload: [{ message: 'unsupported' }] }),
+    );
+    await server.until(() => feed('parallax').status === 'unsupported');
+    conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'renew');
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 2,
+    );
+    expect(feed('vehicleState').status).toBe('waiting');
+    expect(feed('vehicleState').lastMessageAt).toBe(lastData);
+    expect(feed('parallax').status).toBe('unsupported');
+    server.conns[1]!.socket.send(
+      JSON.stringify({
+        type: 'next',
+        id: 'vehicleState:VIN1',
+        payload: { data: { vehicleState: {} } },
+      }),
+    );
+    await server.until(() => feed('vehicleState').status === 'receiving');
+    manager.stop();
+    expect(manager.diagnostics().state).toBe('stopped');
+    expect(feed('vehicleState').status).toBe('waiting');
+  });
+
+  it('tracks Parallax domains independently, including empty cleared payloads', async () => {
+    manager = createManager();
+    manager.subscribeParallax(
+      'v1',
+      [
+        'charging.session.status',
+        'energy.high_voltage.battery_state',
+        'energy_edge_compute.graphs.parked_energy_distributions',
+        'navigation.navigation_service.trip_info',
+      ],
+      () => {},
+    );
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
+    const feed = (domain: string) => manager.diagnostics().feeds.find((f) => f.domain === domain)!;
+    expect(manager.diagnostics().feeds).toHaveLength(3);
+    expect(feed('energy').topics).toHaveLength(2);
+    const conn = server.conns[0]!;
+    const send = (rvm: string) =>
+      conn.socket.send(
+        JSON.stringify({
+          type: 'next',
+          id: 'parallax:v1',
+          payload: { data: { parallaxMessages: { rvm, payload: '' } } },
+        }),
+      );
+    send('charging.session.status');
+    await server.until(() => feed('charging').status === 'receiving');
+    expect(feed('energy').status).toBe('waiting');
+    expect(feed('navigation').lastMessageAt).toBeNull();
+    send('navigation.navigation_service.trip_info');
+    await server.until(() => feed('navigation').status === 'receiving');
+    expect(feed('energy').lastMessageAt).toBeNull();
+    conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'renew');
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1,
+    );
+    expect(feed('charging').status).toBe('waiting');
+    expect(feed('navigation').status).toBe('waiting');
+  });
+
+  it('sends session headers and subscribes once per vehicle and kind', async () => {
+    manager = createManager();
+    const states: VehicleState[] = [];
+    const sessions: (LiveSessionData | null)[] = [];
+    manager.subscribe('VIN1', (_vin, s) => states.push(s));
+    manager.subscribeCharging('VIN1', (_vin, s) => sessions.push(s));
+    manager.start();
+
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
+    const conn = server.conns[0]!;
+    expect(conn.headers['u-sess']).toBe('usess');
+    expect(conn.headers['a-sess']).toBe('asess');
+    expect(conn.headers['csrf-token']).toBe('csrf');
+    expect(conn.headers['sec-websocket-protocol']).toBe('graphql-transport-ws');
+    expect(
+      server
+        .subscribes(conn)
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['chargingSession:VIN1', 'vehicleState:VIN1']);
+
+    // Re-registering a callback must not produce a duplicate subscribe.
+    manager.subscribe('VIN1', (_vin, s) => states.push(s));
+    conn.socket.send(
+      JSON.stringify({
+        id: 'vehicleState:VIN1',
+        type: 'next',
+        payload: { data: { vehicleState: { batteryLevel: { timeStamp: 't', value: 80 } } } },
+      }),
+    );
+    conn.socket.send(
+      JSON.stringify({
+        id: 'chargingSession:VIN1',
+        type: 'next',
         payload: { data: { chargingSession: { liveData: { powerKW: 11 }, chartData: [] } } },
       }),
     );
     await server.until(() => states.length === 1 && sessions.length === 1);
     expect(server.subscribes(conn)).toHaveLength(2);
-    expect(states[0]!.batteryLevel).toEqual({ timeStamp: "t", value: 80 });
+    expect(states[0]!.batteryLevel).toEqual({ timeStamp: 't', value: 80 });
     expect(sessions[0]!.power?.value).toBe(11);
   });
 
-  it("answers protocol pings with pongs", async () => {
+  it('answers protocol pings with pongs', async () => {
     manager = createManager();
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
     const conn = server.conns[0]!;
-    conn.socket.send(JSON.stringify({ type: "ping" }));
-    await server.until(() => conn.messages.some((m) => m.type === "pong"));
+    conn.socket.send(JSON.stringify({ type: 'ping' }));
+    await server.until(() => conn.messages.some((m) => m.type === 'pong'));
   });
 
   it("renews quickly after Rivian's connection TTL close", async () => {
     // A large backoff proves the TTL path doesn't use it.
     manager = createManager({ initialBackoffMs: 60_000 });
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
-    server.conns[0]!.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, "Connection TTL expired");
-    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1);
-    expect(server.subscribes(server.conns[1]!)[0]!.id).toBe("vehicleState:VIN1");
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
+    server.conns[0]!.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'Connection TTL expired');
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1,
+    );
+    expect(server.subscribes(server.conns[1]!)[0]!.id).toBe('vehicleState:VIN1');
   });
 
-  it("reports auth failures and keeps retrying with backoff", async () => {
+  it('reports auth failures and keeps retrying with backoff', async () => {
     manager = createManager();
     let failures = 0;
     manager.onAuthFailure = () => {
       failures += 1;
     };
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
     server.conns[0]!.socket.send(
       JSON.stringify({
-        id: "vehicleState:VIN1",
-        type: "error",
-        payload: [{ message: "nope", extensions: { code: "UNAUTHENTICATED" } }],
+        id: 'vehicleState:VIN1',
+        type: 'error',
+        payload: [{ message: 'nope', extensions: { code: 'UNAUTHENTICATED' } }],
       }),
     );
     await server.until(() => failures === 1 && server.conns.length === 2);
   });
 
-  it("drops a field Rivian rejects and resubscribes without it", async () => {
+  it('drops a field Rivian rejects and resubscribes without it', async () => {
     manager = createManager();
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
-    expect(server.subscribes(server.conns[0]!)[0]!.payload?.query).toContain("seatRearLeftHeat");
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
+    expect(server.subscribes(server.conns[0]!)[0]!.payload?.query).toContain('seatRearLeftHeat');
     server.conns[0]!.socket.send(
       JSON.stringify({
-        id: "vehicleState:VIN1",
-        type: "error",
+        id: 'vehicleState:VIN1',
+        type: 'error',
         payload: [{ message: 'Cannot query field "seatRearLeftHeat" on type "VehicleState".' }],
       }),
     );
-    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1);
-    const query = server.subscribes(server.conns[1]!)[0]!.payload?.query ?? "";
-    expect(query).not.toContain("seatRearLeftHeat");
-    expect(query).toContain("batteryLevel");
-    expect(manager.droppedFields).toEqual(["seatRearLeftHeat"]);
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1,
+    );
+    const query = server.subscribes(server.conns[1]!)[0]!.payload?.query ?? '';
+    expect(query).not.toContain('seatRearLeftHeat');
+    expect(query).toContain('batteryLevel');
+    expect(manager.droppedFields).toEqual(['seatRearLeftHeat']);
     expect(manager.usingCoreFieldsOnly).toBe(false);
   });
 
-  it("does not churn sockets when the server never answers pings", async () => {
+  it('does not churn sockets when the server never answers pings', async () => {
     await server.close();
     server = new FakeRivian({ autoPong: false });
     manager = createManager({ heartbeatIntervalMs: 20 });
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
     await new Promise((r) => setTimeout(r, 200));
     expect(server.conns).toHaveLength(1);
     expect(manager.isConnected).toBe(true);
   });
 
-  it("drops a socket that stops answering pings after it has answered before", async () => {
+  it('drops a socket that stops answering pings after it has answered before', async () => {
     manager = createManager({ heartbeatIntervalMs: 30 });
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 1,
+    );
     await new Promise((r) => setTimeout(r, 100)); // at least one pong observed
     server.conns[0]!.socket.pause(); // stop reading: pings go unanswered
     await server.until(() => server.conns.length === 2, 3_000);
   });
 
-  it("backs off when the subscription keeps ending without data", async () => {
+  it('backs off when the subscription keeps ending without data', async () => {
     // Rivian accepts the handshake, then immediately completes the subscription.
-    server.wss.on("connection", (socket) => {
-      socket.on("message", (raw) => {
+    server.wss.on('connection', (socket) => {
+      socket.on('message', (raw) => {
         const msg = JSON.parse(raw.toString()) as Received;
-        if (msg.type === "subscribe") {
-          socket.send(JSON.stringify({ id: msg.id, type: "complete" }));
+        if (msg.type === 'subscribe') {
+          socket.send(JSON.stringify({ id: msg.id, type: 'complete' }));
         }
       });
     });
     const connectedAt: number[] = [];
-    server.wss.on("connection", () => connectedAt.push(Date.now()));
+    server.wss.on('connection', () => connectedAt.push(Date.now()));
     manager = createManager({ initialBackoffMs: 60 });
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
     await server.until(() => connectedAt.length >= 4, 5_000);
     const gaps = connectedAt.slice(1).map((t, i) => t - connectedAt[i]!);
@@ -313,49 +387,53 @@ describe("RivianSubscriptionManager", () => {
     expect(gaps[2]!).toBeGreaterThan(gaps[0]! * 2);
   });
 
-  it("falls back to core fields when the subscription ends silently", async () => {
-    server.wss.on("connection", (socket) => {
-      socket.on("message", (raw) => {
+  it('falls back to core fields when the subscription ends silently', async () => {
+    server.wss.on('connection', (socket) => {
+      socket.on('message', (raw) => {
         const msg = JSON.parse(raw.toString()) as Received;
-        if (msg.type === "subscribe" && server.conns.length === 1) {
-          socket.send(JSON.stringify({ id: msg.id, type: "complete" }));
+        if (msg.type === 'subscribe' && server.conns.length === 1) {
+          socket.send(JSON.stringify({ id: msg.id, type: 'complete' }));
         }
       });
     });
     manager = createManager();
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1);
-    const query = server.subscribes(server.conns[1]!)[0]!.payload?.query ?? "";
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1,
+    );
+    const query = server.subscribes(server.conns[1]!)[0]!.payload?.query ?? '';
     expect(manager.usingCoreFieldsOnly).toBe(true);
-    expect(query).toContain("batteryLevel");
-    expect(query).toContain("gnssLocation");
-    expect(query).not.toContain("seatRearLeftHeat");
+    expect(query).toContain('batteryLevel');
+    expect(query).toContain('gnssLocation');
+    expect(query).not.toContain('seatRearLeftHeat');
   });
 
-  it("resets the backoff once vehicle data arrives", async () => {
+  it('resets the backoff once vehicle data arrives', async () => {
     let completes = 0;
-    server.wss.on("connection", (socket) => {
-      socket.on("message", (raw) => {
+    server.wss.on('connection', (socket) => {
+      socket.on('message', (raw) => {
         const msg = JSON.parse(raw.toString()) as Received;
-        if (msg.type !== "subscribe") return;
+        if (msg.type !== 'subscribe') return;
         if (completes < 3) {
           completes += 1;
-          socket.send(JSON.stringify({ id: msg.id, type: "complete" }));
+          socket.send(JSON.stringify({ id: msg.id, type: 'complete' }));
         } else {
-          socket.send(JSON.stringify({
-            id: msg.id,
-            type: "next",
-            payload: { data: { vehicleState: { batteryLevel: { timeStamp: "t", value: 1 } } } },
-          }));
-          setTimeout(() => socket.close(4000, "bye"), 20);
+          socket.send(
+            JSON.stringify({
+              id: msg.id,
+              type: 'next',
+              payload: { data: { vehicleState: { batteryLevel: { timeStamp: 't', value: 1 } } } },
+            }),
+          );
+          setTimeout(() => socket.close(4000, 'bye'), 20);
         }
       });
     });
     const connectedAt: number[] = [];
-    server.wss.on("connection", () => connectedAt.push(Date.now()));
+    server.wss.on('connection', () => connectedAt.push(Date.now()));
     manager = createManager({ initialBackoffMs: 60 });
-    manager.subscribe("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
     manager.start();
     await server.until(() => connectedAt.length >= 5, 5_000);
     // Attempts 1-3 escalate (60,120,240); after data the next wait is ~60 again.
@@ -363,65 +441,77 @@ describe("RivianSubscriptionManager", () => {
     expect(lastGap).toBeLessThan(200);
   });
 
-  it("delivers departure schedules and survives Rivian refusing them", async () => {
+  it('delivers departure schedules and survives Rivian refusing them', async () => {
     manager = createManager();
     const received: unknown[][] = [];
-    manager.subscribe("VIN1", () => {});
-    manager.subscribeDepartureSchedules("VIN1", (_id, list) => received.push(list));
+    manager.subscribe('VIN1', () => {});
+    manager.subscribeDepartureSchedules('VIN1', (_id, list) => received.push(list));
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
     const conn = server.conns[0]!;
     conn.socket.send(
       JSON.stringify({
-        id: "departureSchedules:VIN1",
-        type: "next",
-        payload: { data: { vehicleDepartureSchedules: [{ id: "d1", name: "Work", isEnabled: true }] } },
+        id: 'departureSchedules:VIN1',
+        type: 'next',
+        payload: {
+          data: { vehicleDepartureSchedules: [{ id: 'd1', name: 'Work', isEnabled: true }] },
+        },
       }),
     );
     await server.until(() => received.length === 1);
     expect(received[0]).toEqual([
-      { id: "d1", name: "Work", enabled: true, occurrence: null, comfortSettings: null },
+      { id: 'd1', name: 'Work', enabled: true, occurrence: null, comfortSettings: null },
     ]);
 
     conn.socket.send(
-      JSON.stringify({ id: "departureSchedules:VIN1", type: "error", payload: [{ message: "nope" }] }),
+      JSON.stringify({
+        id: 'departureSchedules:VIN1',
+        type: 'error',
+        payload: [{ message: 'nope' }],
+      }),
     );
     await new Promise((r) => setTimeout(r, 150));
     expect(server.conns).toHaveLength(1);
-    expect(manager.isUnsupported("departureSchedules")).toBe(true);
+    expect(manager.isUnsupported('departureSchedules')).toBe(true);
   });
 
-  it("isolates a rejected dynamics-Parallax subscription from the main one", async () => {
+  it('isolates a rejected dynamics-Parallax subscription from the main one', async () => {
     manager = createManager();
-    manager.subscribe("VIN1", () => {});
-    manager.subscribeParallax("VIN1", ["energy.high_voltage.battery_state"], () => {});
-    manager.subscribeParallaxDynamics("VIN1", ["dynamics.vehicle.gnss"], () => {});
+    manager.subscribe('VIN1', () => {});
+    manager.subscribeParallax('VIN1', ['energy.high_voltage.battery_state'], () => {});
+    manager.subscribeParallaxDynamics('VIN1', ['dynamics.vehicle.gnss'], () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3,
+    );
     server.conns[0]!.socket.send(
       JSON.stringify({
-        id: "parallax-dynamics:VIN1",
-        type: "error",
-        payload: [{ message: "Cannot query field" }],
+        id: 'parallax-dynamics:VIN1',
+        type: 'error',
+        payload: [{ message: 'Cannot query field' }],
       }),
     );
     await new Promise((r) => setTimeout(r, 200));
-    expect(manager.isUnsupported("parallaxDynamics")).toBe(true);
-    expect(manager.isUnsupported("parallax")).toBe(false);
+    expect(manager.isUnsupported('parallaxDynamics')).toBe(true);
+    expect(manager.isUnsupported('parallax')).toBe(false);
     expect(server.conns).toHaveLength(1);
   });
 
-  it("keeps the socket when only the charging subscription is refused", async () => {
+  it('keeps the socket when only the charging subscription is refused', async () => {
     manager = createManager();
-    manager.subscribe("VIN1", () => {});
-    manager.subscribeCharging("VIN1", () => {});
+    manager.subscribe('VIN1', () => {});
+    manager.subscribeCharging('VIN1', () => {});
     manager.start();
-    await server.until(() => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2);
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
     server.conns[0]!.socket.send(
       JSON.stringify({
-        id: "chargingSession:VIN1",
-        type: "error",
-        payload: [{ message: "unsupported" }],
+        id: 'chargingSession:VIN1',
+        type: 'error',
+        payload: [{ message: 'unsupported' }],
       }),
     );
     await new Promise((r) => setTimeout(r, 200));
@@ -430,14 +520,14 @@ describe("RivianSubscriptionManager", () => {
   });
 });
 
-describe("rejectedFields", () => {
-  it("only returns known subscription fields", () => {
+describe('rejectedFields', () => {
+  it('only returns known subscription fields', () => {
     expect(
       rejectedFields([
         { message: 'Cannot query field "seatRearLeftHeat" on type "VehicleState".' },
         { message: 'Cannot query field "somethingElse" on type "VehicleState".' },
-        { message: "unrelated" },
+        { message: 'unrelated' },
       ]),
-    ).toEqual(["seatRearLeftHeat"]);
+    ).toEqual(['seatRearLeftHeat']);
   });
 });

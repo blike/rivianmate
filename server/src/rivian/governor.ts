@@ -14,7 +14,7 @@
  *   this installation generates.
  */
 
-import { RivianCooldownError } from "./types.js";
+import { RivianCooldownError } from './types.js';
 
 const DEFAULT_MIN_SPACING_MS = 2_000;
 const RATE_LIMIT_BASE_COOLDOWN_MS = 5 * 60_000;
@@ -23,14 +23,14 @@ const HOUR_MS = 60 * 60_000;
 const WINDOW_HOURS = 24;
 
 export type RivianTrafficCounter =
-  | "httpRequests"
-  | "httpErrors"
-  | "rateLimited"
-  | "sessionRefreshes"
-  | "wsConnects"
-  | "wsReconnects"
-  | "wsMessages"
-  | "wsAuthFailures";
+  | 'httpRequests'
+  | 'httpErrors'
+  | 'rateLimited'
+  | 'sessionRefreshes'
+  | 'wsConnects'
+  | 'wsReconnects'
+  | 'wsMessages'
+  | 'wsAuthFailures';
 
 export interface RivianTrafficSnapshot {
   since: string;
@@ -70,8 +70,7 @@ export class RivianGovernor {
   constructor(options: GovernorOptions = {}) {
     this.minSpacingMs = options.minSpacingMs ?? DEFAULT_MIN_SPACING_MS;
     this.now = options.now ?? Date.now;
-    this.sleep =
-      options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.startedAt = this.now();
   }
 
@@ -86,7 +85,7 @@ export class RivianGovernor {
     // Keep the chain alive regardless of this call's outcome.
     this.queue = turn.catch(() => {});
     await turn;
-    this.count("httpRequests");
+    this.count('httpRequests');
     this.countOperation(operation);
     return fn();
   }
@@ -106,7 +105,7 @@ export class RivianGovernor {
   noteRateLimited(retryAfterMs?: number): number {
     this.consecutiveRateLimits += 1;
     this.lastRateLimitedAt = this.now();
-    this.count("rateLimited");
+    this.count('rateLimited');
     const backoff = Math.min(
       RATE_LIMIT_BASE_COOLDOWN_MS * 2 ** (this.consecutiveRateLimits - 1),
       RATE_LIMIT_MAX_COOLDOWN_MS,
@@ -150,17 +149,16 @@ export class RivianGovernor {
     }
     return {
       since: new Date(this.startedAt).toISOString(),
-      lastSuccessfulRequestAt: this.lastSuccessfulRequestAt == null ? null : new Date(this.lastSuccessfulRequestAt).toISOString(),
+      lastSuccessfulRequestAt:
+        this.lastSuccessfulRequestAt == null
+          ? null
+          : new Date(this.lastSuccessfulRequestAt).toISOString(),
       last24h,
       requestsByOperation24h,
       cooldownUntil:
-        this.cooldownUntil > this.now()
-          ? new Date(this.cooldownUntil).toISOString()
-          : null,
+        this.cooldownUntil > this.now() ? new Date(this.cooldownUntil).toISOString() : null,
       lastRateLimitedAt:
-        this.lastRateLimitedAt != null
-          ? new Date(this.lastRateLimitedAt).toISOString()
-          : null,
+        this.lastRateLimitedAt != null ? new Date(this.lastRateLimitedAt).toISOString() : null,
     };
   }
 
@@ -169,7 +167,7 @@ export class RivianGovernor {
     if (remaining <= 0) return;
     const err = new RivianCooldownError(
       `Skipping ${operation}: Rivian traffic paused for ${Math.ceil(remaining / 1000)}s after a rate limit`,
-      "RATE_LIMIT",
+      'RATE_LIMIT',
     );
     err.retryAfterMs = remaining;
     throw err;
@@ -179,7 +177,7 @@ export class RivianGovernor {
     for (;;) {
       const now = this.now();
       // A rate limit may have landed while this caller was queued.
-      this.assertNotCoolingDown("queued request");
+      this.assertNotCoolingDown('queued request');
       const wait = this.lastRequestAt + this.minSpacingMs - now;
       if (wait <= 0) {
         this.lastRequestAt = now;

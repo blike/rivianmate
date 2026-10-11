@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState } from 'react';
 
 /**
  * Segmented one-time-code input. A single transparent <input> sits over the
@@ -23,29 +23,32 @@ export function OtpInput(props: {
     const char = props.value[i];
     const active = focused && !props.disabled && i === activeIndex;
     const border = props.invalid
-      ? "border-[var(--status-critical)]"
+      ? 'border-(--status-critical)'
       : active
-        ? "border-[var(--accent)] ring-3 ring-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
+        ? 'border-(--accent) ring-3 ring-[color-mix(in_srgb,var(--accent)_22%,transparent)]'
         : char
-          ? "border-[#4a4a45]"
-          : "border-[var(--border)]";
+          ? 'border-[#4a4a45]'
+          : 'border-(--border)';
     return (
       <div
         key={i}
-        className={`flex h-14 min-w-0 flex-1 items-center justify-center rounded-xl border bg-[var(--surface-0)] text-2xl font-semibold tabular-nums transition ${border}`}
+        className={`flex h-14 min-w-0 flex-1 items-center justify-center rounded-xl border bg-(--surface-0) text-2xl font-semibold tabular-nums transition ${border}`}
       >
-        {char ?? (active ? <span className="otp-caret h-6 w-0.5 rounded-full bg-[var(--accent)]" /> : null)}
+        {char ??
+          (active ? <span className="otp-caret h-6 w-0.5 rounded-full bg-(--accent)" /> : null)}
       </div>
     );
   };
 
   return (
-    <div className={`relative ${props.invalid ? "otp-shake" : ""} ${props.disabled ? "opacity-60" : ""}`}>
+    <div
+      className={`relative ${props.invalid ? 'otp-shake' : ''} ${props.disabled ? 'opacity-60' : ''}`}
+    >
       <input
         value={props.value}
         onChange={(e) => {
           // Accept pasted codes like "123 456" or "123-456".
-          const next = e.target.value.replace(/\D/g, "").slice(0, length);
+          const next = e.target.value.replace(/\D/g, '').slice(0, length);
           props.onChange(next);
           if (next.length === length && next !== props.value) props.onComplete?.(next);
         }}

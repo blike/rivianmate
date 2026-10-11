@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from 'react';
 
 export function AuthCard(props: {
   title: string;
@@ -29,7 +29,7 @@ export function AuthCard(props: {
             className="h-16 w-16 rounded-2xl shadow-[0_8px_32px_-8px_rgba(245,197,24,0.35)]"
           />
           <span className="text-xl font-semibold tracking-tight">
-            Rivian<span className="text-[var(--accent)]">Mate</span>
+            Rivian<span className="text-(--accent)">Mate</span>
           </span>
         </div>
 
@@ -41,7 +41,7 @@ export function AuthCard(props: {
             {props.step && <StepDots {...props.step} />}
             <h1 className="text-xl font-semibold tracking-tight">{props.title}</h1>
             {props.subtitle && (
-              <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-secondary)]">
+              <p className="mt-1.5 text-sm leading-relaxed text-(--text-secondary)">
                 {props.subtitle}
               </p>
             )}
@@ -65,7 +65,7 @@ export function AuthCard(props: {
             className="btn-primary h-11 w-full rounded-lg aria-busy:cursor-wait"
           >
             {props.busy && <Spinner />}
-            {props.busy ? "Working…" : props.submitLabel}
+            {props.busy ? 'Working…' : props.submitLabel}
           </button>
           {props.footer}
         </form>
@@ -76,17 +76,17 @@ export function AuthCard(props: {
 
 function StepDots(props: { current: number; total: number }) {
   return (
-    <div className="mb-3 flex items-center gap-2 text-xs text-[var(--text-muted)]">
+    <div className="mb-3 flex items-center gap-2 text-xs text-(--text-muted)">
       <div className="flex gap-1" aria-hidden>
         {Array.from({ length: props.total }, (_, i) => (
           <span
             key={i}
             className={`h-1 rounded-full transition-all ${
               i + 1 === props.current
-                ? "w-5 bg-[var(--accent)]"
+                ? 'w-5 bg-(--accent)'
                 : i + 1 < props.current
-                  ? "w-2 bg-[var(--text-muted)]"
-                  : "w-2 bg-[var(--border)]"
+                  ? 'w-2 bg-(--text-muted)'
+                  : 'w-2 bg-(--border)'
             }`}
           />
         ))}
@@ -113,40 +113,40 @@ export function TextField(props: {
   placeholder?: string;
   autoFocus?: boolean;
   autoComplete?: string;
-  inputMode?: "text" | "numeric" | "email";
+  inputMode?: 'text' | 'numeric' | 'email';
   hint?: ReactNode;
 }) {
   const [revealed, setRevealed] = useState(false);
-  const isPassword = props.type === "password";
+  const isPassword = props.type === 'password';
   return (
     <label className="block text-sm">
-      <span className="mb-1.5 block font-medium text-[var(--text-secondary)]">{props.label}</span>
+      <span className="mb-1.5 block font-medium text-(--text-secondary)">{props.label}</span>
       <span className="relative block">
         <input
-          type={isPassword && revealed ? "text" : (props.type ?? "text")}
+          type={isPassword && revealed ? 'text' : (props.type ?? 'text')}
           value={props.value}
           onChange={(e) => props.onChange(e.target.value)}
           placeholder={props.placeholder}
           autoFocus={props.autoFocus}
           autoComplete={props.autoComplete}
           inputMode={props.inputMode}
-          className={`h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-0)] px-3 text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] hover:border-[#4a4a45] focus:border-[var(--series-1)] focus:ring-3 focus:ring-[color-mix(in_srgb,var(--series-1)_25%,transparent)] ${
-            isPassword ? "pr-16" : ""
+          className={`h-11 w-full rounded-lg border border-(--border) bg-(--surface-0) px-3 text-(--text-primary) outline-none transition placeholder:text-(--text-muted) hover:border-[#4a4a45] focus:border-(--series-1) focus:ring-3 focus:ring-[color-mix(in_srgb,var(--series-1)_25%,transparent)] ${
+            isPassword ? 'pr-16' : ''
           }`}
         />
         {isPassword && (
           <button
             type="button"
             onClick={() => setRevealed((r) => !r)}
-            aria-label={revealed ? "Hide password" : "Show password"}
-            className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            aria-label={revealed ? 'Hide password' : 'Show password'}
+            className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-(--text-muted) hover:text-(--text-primary)"
           >
-            {revealed ? "Hide" : "Show"}
+            {revealed ? 'Hide' : 'Show'}
           </button>
         )}
       </span>
       {props.hint && (
-        <span className="mt-1.5 block text-xs text-[var(--text-muted)]" aria-live="polite">
+        <span className="mt-1.5 block text-xs text-(--text-muted)" aria-live="polite">
           {props.hint}
         </span>
       )}

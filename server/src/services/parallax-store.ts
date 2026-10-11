@@ -1,7 +1,7 @@
-import { eq, lt } from "drizzle-orm";
-import type { VehicleInsightsDto } from "../api-types.js";
-import type { Db } from "../db/client.js";
-import { parallaxLatest, parallaxMessages } from "../db/schema.js";
+import { eq, lt } from 'drizzle-orm';
+import type { VehicleInsightsDto } from '../api-types.js';
+import type { Db } from '../db/client.js';
+import { parallaxLatest, parallaxMessages } from '../db/schema.js';
 import {
   PARALLAX_LOGGED_RVMS,
   type ParallaxMessage,
@@ -18,7 +18,7 @@ import {
   decodeParkedEnergy,
   decodeTripInfo,
   decodeTripProgress,
-} from "../rivian/parallax.js";
+} from '../rivian/parallax.js';
 
 /** Topics kept for the insights view, plus the logged charging topics. */
 const STORED_RVMS = new Set([
@@ -41,7 +41,7 @@ export function messageTime(timestamp: number | null): Date | null {
 }
 
 /** Suffix for the last battery state that carried cell temperatures. */
-const AWAKE = ":awake";
+const AWAKE = ':awake';
 
 /**
  * Keeps the latest Parallax message per vehicle and topic. Repeats of the
@@ -74,7 +74,10 @@ export class ParallaxStore {
         await this.db
           .insert(parallaxLatest)
           .values({ vehicleId, rvm, ...values })
-          .onConflictDoUpdate({ target: [parallaxLatest.vehicleId, parallaxLatest.rvm], set: values });
+          .onConflictDoUpdate({
+            target: [parallaxLatest.vehicleId, parallaxLatest.rvm],
+            set: values,
+          });
         if (LOGGED_RVMS.has(rvm)) {
           await this.db.insert(parallaxMessages).values({ vehicleId, rvm, ...values });
           await this.pruneLog(values.receivedAt);
@@ -120,12 +123,14 @@ export class ParallaxStore {
       cellTemps: awake?.value.cellTemps ? { ...awake.value.cellTemps, at: awake.at } : null,
       cellTempsCurrent: battery?.value.cellTemps != null,
       coldWeather: cold ? { ...cold.value, at: cold.at } : null,
-      parkedEnergy: parked && parked.value.length > 0 ? { windows: parked.value, at: parked.at } : null,
+      parkedEnergy:
+        parked && parked.value.length > 0 ? { windows: parked.value, at: parked.at } : null,
       connectivity: network ? { ...network.value, at: network.at } : null,
       navigation: trip
         ? {
             ...trip.value,
-            etaAt: progress?.value.etaMs != null ? new Date(progress.value.etaMs).toISOString() : null,
+            etaAt:
+              progress?.value.etaMs != null ? new Date(progress.value.etaMs).toISOString() : null,
             remainingKm: progress?.value.remainingKm ?? trip.value.totalDistanceKm,
             remainingS: progress?.value.remainingS ?? trip.value.totalDurationS,
             at: progress?.at ?? trip.at,

@@ -1,7 +1,7 @@
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { sql } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type {
   ChargeSpanDto,
   DriveDetailDto,
@@ -9,37 +9,37 @@ import type {
   DrivePlaceDto,
   HistoryPoint,
   LocationPointDto,
-} from "../api-types.js";
-import type { AppContext } from "../context.js";
-import { drives, locationPoints } from "../db/schema.js";
-import { driveElevation, maxSpeeds, mileageDistanceKm } from "../services/drive-detector.js";
-import { driveEnergyKwh } from "../services/drive-metrics.js";
-import type { VehicleState } from "../rivian/types.js";
-import { stateNumber } from "../services/state-utils.js";
-import { type Spot, nearbySpot } from "../services/home-charging.js";
-import { homeContext } from "./charging.js";
-import { loadChargeSpans } from "../services/charge-spans.js";
+} from '../api-types.js';
+import type { AppContext } from '../context.js';
+import { drives, locationPoints } from '../db/schema.js';
+import { driveElevation, maxSpeeds, mileageDistanceKm } from '../services/drive-detector.js';
+import { driveEnergyKwh } from '../services/drive-metrics.js';
+import type { VehicleState } from '../rivian/types.js';
+import { stateNumber } from '../services/state-utils.js';
+import { type Spot, nearbySpot } from '../services/home-charging.js';
+import { homeContext } from './charging.js';
+import { loadChargeSpans } from '../services/charge-spans.js';
 
 const METRIC_COLUMNS: Record<string, string> = {
-  battery: "battery_level",
-  range: "range_km",
-  mileage: "mileage_m",
+  battery: 'battery_level',
+  range: 'range_km',
+  mileage: 'mileage_m',
 };
 
 const historyQuerySchema = z.object({
-  metric: z.enum(["battery", "range", "mileage"]).default("battery"),
+  metric: z.enum(['battery', 'range', 'mileage']).default('battery'),
   from: z.coerce.date().default(() => new Date(Date.now() - 7 * 86400_000)),
   to: z.coerce.date().default(() => new Date()),
   /** "raw": every snapshot, unaveraged. */
-  bucket: z.enum(["raw", "5m", "15m", "1h", "6h", "1d"]).default("1h"),
+  bucket: z.enum(['raw', '5m', '15m', '1h', '6h', '1d']).default('1h'),
 });
 
 const BUCKET_INTERVALS: Record<string, string> = {
-  "5m": "5 minutes",
-  "15m": "15 minutes",
-  "1h": "1 hour",
-  "6h": "6 hours",
-  "1d": "1 day",
+  '5m': '5 minutes',
+  '15m': '15 minutes',
+  '1h': '1 hour',
+  '6h': '6 hours',
+  '1d': '1 day',
 };
 
 const MAX_LOCATIONS = 5000;
@@ -49,16 +49,13 @@ const rangeQuerySchema = z.object({
   to: z.coerce.date().default(() => new Date()),
 });
 
-export async function historyRoutes(
-  app: FastifyInstance,
-  ctx: AppContext,
-): Promise<void> {
+export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/history",
+    '/api/vehicles/:id/history',
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
       const column = METRIC_COLUMNS[q.metric]!;
-      if (q.bucket === "raw") {
+      if (q.bucket === 'raw') {
         const raw = await ctx.db.execute<{ ts: string; value: number }>(sql`
           SELECT ts, ${sql.raw(column)}::float8 AS value
           FROM vehicle_state_snapshots
@@ -67,7 +64,12 @@ export async function historyRoutes(
             AND ${sql.raw(column)} IS NOT NULL
           ORDER BY ts
         `);
-        return raw.map((r) => ({ bucket: new Date(r.ts).toISOString(), avg: r.value, min: r.value, max: r.value }));
+        return raw.map((r) => ({
+          bucket: new Date(r.ts).toISOString(),
+          avg: r.value,
+          min: r.value,
+          max: r.value,
+        }));
       }
       const interval = BUCKET_INTERVALS[q.bucket]!;
       const rows = await ctx.db.execute<{
@@ -96,16 +98,20 @@ export async function historyRoutes(
   );
 
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/charge-spans",
+    '/api/vehicles/:id/charge-spans',
     async (request): Promise<ChargeSpanDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
       const spans = await loadChargeSpans(ctx.db, request.params.id, q.from, q.to);
-      return spans.map((s) => ({ kind: s.kind, from: s.from.toISOString(), to: s.to.toISOString() }));
+      return spans.map((s) => ({
+        kind: s.kind,
+        from: s.from.toISOString(),
+        to: s.to.toISOString(),
+      }));
     },
   );
 
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/locations",
+    '/api/vehicles/:id/locations',
     async (request): Promise<LocationPointDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
       // Long ranges are thinned evenly to about MAX_LOCATIONS points, so the
@@ -141,7 +147,7 @@ export async function historyRoutes(
   );
 
   app.get<{ Params: { id: string } }>(
-    "/api/vehicles/:id/drives",
+    '/api/vehicles/:id/drives',
     async (request): Promise<DriveDto[]> => {
       const rows = await ctx.db
         .select()
@@ -161,7 +167,10 @@ export async function historyRoutes(
                 .from(locationPoints)
                 .where(
                   and(
-                    inArray(locationPoints.driveId, pending.map((r) => r.id)),
+                    inArray(
+                      locationPoints.driveId,
+                      pending.map((r) => r.id),
+                    ),
                     isNotNull(locationPoints.altitude),
                   ),
                 )
@@ -181,7 +190,10 @@ export async function historyRoutes(
         }
       }
       const fallback = await latestCapacityKwh(ctx, request.params.id);
-      const speeds = await maxSpeeds(ctx.db, rows.map((r) => r.id));
+      const speeds = await maxSpeeds(
+        ctx.db,
+        rows.map((r) => r.id),
+      );
       const state = ctx.monitor.getState(request.params.id);
       const { spots } = await homeContext(ctx);
       return rows.map((row) => toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, spots));
@@ -189,16 +201,12 @@ export async function historyRoutes(
   );
 
   app.get<{ Params: { driveId: string } }>(
-    "/api/drives/:driveId",
+    '/api/drives/:driveId',
     async (request, reply): Promise<DriveDetailDto | void> => {
       const driveId = Number(request.params.driveId);
-      const rows = await ctx.db
-        .select()
-        .from(drives)
-        .where(eq(drives.id, driveId))
-        .limit(1);
+      const rows = await ctx.db.select().from(drives).where(eq(drives.id, driveId)).limit(1);
       const drive = rows[0];
-      if (!drive) return reply.code(404).send({ error: "Not found" });
+      if (!drive) return reply.code(404).send({ error: 'Not found' });
       const points = await ctx.db
         .select()
         .from(locationPoints)
@@ -242,9 +250,9 @@ function toDriveDto(
 ): DriveDto {
   // A drive in progress shows its figures so far, from the latest state.
   const live = row.endedAt == null && current ? current : null;
-  const endBattery = live ? stateNumber(live, "batteryLevel") : row.endBattery;
+  const endBattery = live ? stateNumber(live, 'batteryLevel') : row.endBattery;
   const distanceKm = live
-    ? mileageDistanceKm(row.startMileageM, stateNumber(live, "vehicleMileage"))
+    ? mileageDistanceKm(row.startMileageM, stateNumber(live, 'vehicleMileage'))
     : row.distanceKm;
   return {
     id: row.id,
@@ -265,7 +273,7 @@ function toDriveDto(
     elevationGainM: row.elevationGainM,
     elevationLossM: row.elevationLossM,
     startRangeKm: row.startRangeKm,
-    endRangeKm: live ? stateNumber(live, "distanceToEmpty") : row.endRangeKm,
+    endRangeKm: live ? stateNumber(live, 'distanceToEmpty') : row.endRangeKm,
     maxSpeedKmh,
     driveMode: row.driveMode,
     destination:
@@ -285,13 +293,11 @@ export function drivePlace(
   address: string | null,
   homeSpots: readonly Spot[],
 ): DrivePlaceDto | null {
-  if (nearbySpot(lat, lon, homeSpots)) return { label: "Home", address, isHome: true };
+  if (nearbySpot(lat, lon, homeSpots)) return { label: 'Home', address, isHome: true };
   return place ? { label: place, address, isHome: false } : null;
 }
 
-function toLocationDto(
-  row: typeof locationPoints.$inferSelect,
-): LocationPointDto {
+function toLocationDto(row: typeof locationPoints.$inferSelect): LocationPointDto {
   return {
     ts: row.ts.toISOString(),
     lat: row.lat,

@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { ApiError, api } from "../api/client.js";
-import { AuthCard, TextField } from "../components/AuthCard.js";
+import { useState } from 'react';
+import { ApiError, api } from '../api/client.js';
+import { AuthCard, TextField } from '../components/AuthCard.js';
 
 export function Login(props: { onDone: () => void }) {
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -14,7 +14,7 @@ export function Login(props: { onDone: () => void }) {
       await api.login(password);
       props.onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      setError(err instanceof ApiError ? err.message : 'Login failed');
     } finally {
       setBusy(false);
     }

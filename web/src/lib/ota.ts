@@ -1,7 +1,7 @@
-import type { VehicleState } from "@server/api-types.js";
-import { nv, sv, titleCase } from "./state.js";
+import type { VehicleState } from '@server/api-types.js';
+import { nv, sv, titleCase } from './state.js';
 
-export type OtaPhase = "available" | "downloading" | "ready" | "installing";
+export type OtaPhase = 'available' | 'downloading' | 'ready' | 'installing';
 
 export interface SoftwareUpdate {
   /** Pending version; null if the vehicle stops reporting it mid-install. */
@@ -16,13 +16,13 @@ export interface SoftwareUpdate {
   label: string;
 }
 
-const NO_VERSION = new Set(["", "0.0.0"]);
+const NO_VERSION = new Set(['', '0.0.0']);
 
 const PHASE_LABEL: Record<OtaPhase, string> = {
-  available: "Update available",
-  downloading: "Downloading",
-  ready: "Ready to install",
-  installing: "Installing",
+  available: 'Update available',
+  downloading: 'Downloading',
+  ready: 'Ready to install',
+  installing: 'Installing',
 };
 
 const inProgress = (n: number | null): n is number => n != null && n > 0 && n < 100;
@@ -33,42 +33,42 @@ const inProgress = (n: number | null): n is number => n != null && n > 0 && n < 
  * vocabulary is only partly known (observed: Idle, Ready_To_Install).
  */
 export function softwareUpdate(state: VehicleState | undefined): SoftwareUpdate | null {
-  const current = sv(state, "otaCurrentVersion");
-  const availableRaw = sv(state, "otaAvailableVersion");
+  const current = sv(state, 'otaCurrentVersion');
+  const availableRaw = sv(state, 'otaAvailableVersion');
   const available =
     availableRaw && !NO_VERSION.has(availableRaw) && availableRaw !== current ? availableRaw : null;
-  const status = (sv(state, "otaStatus") ?? "").toLowerCase();
-  const download = nv(state, "otaDownloadProgress");
-  const install = nv(state, "otaInstallProgress");
+  const status = (sv(state, 'otaStatus') ?? '').toLowerCase();
+  const download = nv(state, 'otaDownloadProgress');
+  const install = nv(state, 'otaInstallProgress');
 
   let phase: OtaPhase | null = null;
   let progress: number | null = null;
-  if (inProgress(install) || (status.includes("install") && !status.includes("ready"))) {
-    phase = "installing";
+  if (inProgress(install) || (status.includes('install') && !status.includes('ready'))) {
+    phase = 'installing';
     progress = inProgress(install) ? install : null;
-  } else if (inProgress(download) || status.includes("download")) {
-    phase = "downloading";
+  } else if (inProgress(download) || status.includes('download')) {
+    phase = 'downloading';
     progress = inProgress(download) ? download : null;
   } else if (available) {
-    phase = status.includes("ready") ? "ready" : "available";
+    phase = status.includes('ready') ? 'ready' : 'available';
   }
   if (!phase) return null;
 
-  const duration = nv(state, "otaInstallDuration");
-  const type = sv(state, "otaInstallType");
+  const duration = nv(state, 'otaInstallDuration');
+  const type = sv(state, 'otaInstallType');
   return {
     version: available,
     phase,
     progress,
     installMinutes: duration != null && duration > 0 ? duration : null,
     type: type ? titleCase(type) : null,
-    label: PHASE_LABEL[phase] + (progress != null ? ` · ${Math.round(progress)}%` : ""),
+    label: PHASE_LABEL[phase] + (progress != null ? ` · ${Math.round(progress)}%` : ''),
   };
 }
 
 /** True when the vehicle reports the last install didn't succeed. */
 export function lastInstallFailed(state: VehicleState | undefined): boolean {
-  return /fail|error/i.test(sv(state, "otaCurrentStatus") ?? "");
+  return /fail|error/i.test(sv(state, 'otaCurrentStatus') ?? '');
 }
 
 /** "65 min" → "About 1 hr 5 min". */
@@ -76,7 +76,7 @@ export function installTimeLabel(minutes: number): string {
   const m = Math.round(minutes);
   if (m < 60) return `About ${m} min`;
   const h = Math.floor(m / 60);
-  return `About ${h} hr${m % 60 ? ` ${m % 60} min` : ""}`;
+  return `About ${h} hr${m % 60 ? ` ${m % 60} min` : ''}`;
 }
 
 /** Server route serving the saved copy of Rivian's release notes. */
@@ -93,7 +93,8 @@ const DAY_MS = 86_400_000;
 export function typicalUpdateGapDays(versions: readonly { firstSeen: string }[]): number | null {
   const installs = versions.slice(0, -1).map((v) => Date.parse(v.firstSeen));
   const gaps: number[] = [];
-  for (let i = 0; i < installs.length - 1; i++) gaps.push((installs[i]! - installs[i + 1]!) / DAY_MS);
+  for (let i = 0; i < installs.length - 1; i++)
+    gaps.push((installs[i]! - installs[i + 1]!) / DAY_MS);
   if (gaps.length === 0) return null;
   gaps.sort((a, b) => a - b);
   const mid = gaps.length / 2;

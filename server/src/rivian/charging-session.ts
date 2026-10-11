@@ -1,20 +1,15 @@
-import type {
-  ChargingCurveSample,
-  LiveSessionData,
-  LiveSessionValueRecord,
-} from "./types.js";
+import type { ChargingCurveSample, LiveSessionData, LiveSessionValueRecord } from './types.js';
 
 type Leaf = unknown;
 
 /** Leaves arrive either as scalars or as `{ value, updatedAt }` envelopes. */
 function unwrap(leaf: Leaf): { value: unknown; updatedAt?: string } | undefined {
   if (leaf === undefined || leaf === null) return undefined;
-  if (typeof leaf === "object" && "value" in (leaf as Record<string, unknown>)) {
+  if (typeof leaf === 'object' && 'value' in (leaf as Record<string, unknown>)) {
     const envelope = leaf as { value: unknown; updatedAt?: unknown };
     return {
       value: envelope.value,
-      updatedAt:
-        typeof envelope.updatedAt === "string" ? envelope.updatedAt : undefined,
+      updatedAt: typeof envelope.updatedAt === 'string' ? envelope.updatedAt : undefined,
     };
   }
   return { value: leaf };
@@ -22,7 +17,7 @@ function unwrap(leaf: Leaf): { value: unknown; updatedAt?: string } | undefined 
 
 function asNumber(leaf: Leaf): number | null {
   const raw = unwrap(leaf)?.value;
-  if (raw === undefined || raw === null || raw === "") return null;
+  if (raw === undefined || raw === null || raw === '') return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
@@ -35,10 +30,10 @@ function asString(leaf: Leaf): string | null {
 
 function asBool(leaf: Leaf): boolean | null {
   const raw = unwrap(leaf)?.value;
-  if (typeof raw === "boolean") return raw;
-  if (typeof raw === "string") {
-    if (raw.toLowerCase() === "true") return true;
-    if (raw.toLowerCase() === "false") return false;
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'string') {
+    if (raw.toLowerCase() === 'true') return true;
+    if (raw.toLowerCase() === 'false') return false;
   }
   return null;
 }
@@ -61,10 +56,10 @@ export function mapChargingSession(
   payload: unknown,
   now: () => Date = () => new Date(),
 ): LiveSessionData | null {
-  if (!payload || typeof payload !== "object") return null;
+  if (!payload || typeof payload !== 'object') return null;
   const session = payload as { liveData?: unknown; chartData?: unknown };
   const live = session.liveData as Record<string, Leaf> | null | undefined;
-  if (!live || typeof live !== "object") return null;
+  if (!live || typeof live !== 'object') return null;
 
   const ts = now().toISOString();
   const chart = Array.isArray(session.chartData)
@@ -110,11 +105,7 @@ export function mapChargingSession(
     ),
     soc: record(soc, socLeaf, ts),
     timeRemaining: record(asNumber(live.timeRemaining), live.timeRemaining, ts),
-    totalChargedEnergy: record(
-      asNumber(live.totalChargedEnergy),
-      live.totalChargedEnergy,
-      ts,
-    ),
+    totalChargedEnergy: record(asNumber(live.totalChargedEnergy), live.totalChargedEnergy, ts),
     vehicleChargerState: record(chargerState, live.vehicleChargerState, ts),
     chart: curve,
   };

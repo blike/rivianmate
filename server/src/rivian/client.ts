@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 import {
   APOLLO_CLIENT_NAME,
   BASE_HEADERS,
@@ -14,8 +14,8 @@ import {
   LOGIN_WITH_OTP,
   VEHICLE_STATE_PROPERTIES,
   buildVehicleStateQuery,
-} from "./graphql.js";
-import { RivianGovernor, parseRetryAfter } from "./governor.js";
+} from './graphql.js';
+import { RivianGovernor, parseRetryAfter } from './governor.js';
 import {
   ChargeSessionSummary,
   ChargingSchedule,
@@ -33,7 +33,7 @@ import {
   VehicleState,
   Wallbox,
   mapGraphqlError,
-} from "./types.js";
+} from './types.js';
 
 export interface RivianClientOptions {
   tokens?: RivianTokens;
@@ -58,10 +58,7 @@ export interface RivianApi {
   loginWithOtp(email: string, otpCode: string, otpToken?: string): Promise<RivianTokens>;
   getUserInfo(): Promise<UserInfo>;
   /** `vehicleId` is the id from getUserInfo's vehicles[].id, not the VIN. */
-  getVehicleState(
-    vehicleId: string,
-    properties?: readonly string[],
-  ): Promise<VehicleState>;
+  getVehicleState(vehicleId: string, properties?: readonly string[]): Promise<VehicleState>;
   getRegisteredWallboxes(): Promise<Wallbox[]>;
   /** Release notes for the vehicle's installed and pending software. */
   getOtaUpdateDetails(vehicleId: string): Promise<OtaUpdateDetails>;
@@ -108,7 +105,7 @@ export class RivianClient implements RivianApi {
     const data = await this.request<{
       createCsrfToken: { csrfToken: string; appSessionToken: string };
     }>(GRAPHQL_GATEWAY, {
-      operationName: "CreateCSRFToken",
+      operationName: 'CreateCSRFToken',
       query: CREATE_CSRF_TOKEN,
       variables: null,
     });
@@ -119,7 +116,7 @@ export class RivianClient implements RivianApi {
   refreshSession(): Promise<void> {
     this.sessionRefresh ??= (async () => {
       try {
-        this.governor.count("sessionRefreshes");
+        this.governor.count('sessionRefreshes');
         await this.createCsrfToken();
       } finally {
         this.sessionRefresh = undefined;
@@ -138,42 +135,46 @@ export class RivianClient implements RivianApi {
         userSessionToken?: string;
         otpToken?: string;
       };
-    }>(GRAPHQL_GATEWAY, {
-      operationName: "Login",
-      query: LOGIN,
-      variables: { email, password },
-    }, this.csrfHeaders());
+    }>(
+      GRAPHQL_GATEWAY,
+      {
+        operationName: 'Login',
+        query: LOGIN,
+        variables: { email, password },
+      },
+      this.csrfHeaders(),
+    );
 
     if (data.login.otpToken) {
       this.otpTokenPending = data.login.otpToken;
-      return { kind: "otp", otpToken: data.login.otpToken };
+      return { kind: 'otp', otpToken: data.login.otpToken };
     }
     this._tokens = {
       accessToken: data.login.accessToken!,
       refreshToken: data.login.refreshToken!,
       userSessionToken: data.login.userSessionToken!,
     };
-    return { kind: "tokens", tokens: this._tokens };
+    return { kind: 'tokens', tokens: this._tokens };
   }
 
-  async loginWithOtp(
-    email: string,
-    otpCode: string,
-    otpToken?: string,
-  ): Promise<RivianTokens> {
+  async loginWithOtp(email: string, otpCode: string, otpToken?: string): Promise<RivianTokens> {
     const token = otpToken ?? this.otpTokenPending;
-    if (!token) throw new RivianApiError("No pending OTP token");
+    if (!token) throw new RivianApiError('No pending OTP token');
     const data = await this.request<{
       loginWithOTP: {
         accessToken: string;
         refreshToken: string;
         userSessionToken: string;
       };
-    }>(GRAPHQL_GATEWAY, {
-      operationName: "LoginWithOTP",
-      query: LOGIN_WITH_OTP,
-      variables: { email, otpCode, otpToken: token },
-    }, this.csrfHeaders());
+    }>(
+      GRAPHQL_GATEWAY,
+      {
+        operationName: 'LoginWithOTP',
+        query: LOGIN_WITH_OTP,
+        variables: { email, otpCode, otpToken: token },
+      },
+      this.csrfHeaders(),
+    );
     this.otpTokenPending = undefined;
     this._tokens = {
       accessToken: data.loginWithOTP.accessToken,
@@ -184,10 +185,11 @@ export class RivianClient implements RivianApi {
   }
 
   async getUserInfo(): Promise<UserInfo> {
-    const data = await this.authenticatedRequest<{ currentUser: UserInfo }>(
-      GRAPHQL_GATEWAY,
-      { operationName: "getUserInfo", query: GET_USER_INFO, variables: null },
-    );
+    const data = await this.authenticatedRequest<{ currentUser: UserInfo }>(GRAPHQL_GATEWAY, {
+      operationName: 'getUserInfo',
+      query: GET_USER_INFO,
+      variables: null,
+    });
     return data.currentUser;
   }
 
@@ -195,23 +197,19 @@ export class RivianClient implements RivianApi {
     vehicleId: string,
     properties: readonly string[] = VEHICLE_STATE_PROPERTIES,
   ): Promise<VehicleState> {
-    const data = await this.authenticatedRequest<{ vehicleState: VehicleState }>(
-      GRAPHQL_GATEWAY,
-      {
-        operationName: "GetVehicleState",
-        query: buildVehicleStateQuery(properties),
-        variables: { vehicleID: vehicleId },
-      },
-    );
+    const data = await this.authenticatedRequest<{ vehicleState: VehicleState }>(GRAPHQL_GATEWAY, {
+      operationName: 'GetVehicleState',
+      query: buildVehicleStateQuery(properties),
+      variables: { vehicleID: vehicleId },
+    });
     return data.vehicleState;
   }
-
 
   async getRegisteredWallboxes(): Promise<Wallbox[]> {
     const data = await this.authenticatedRequest<{
       getRegisteredWallboxes: Wallbox[];
     }>(GRAPHQL_CHARGING, {
-      operationName: "getRegisteredWallboxes",
+      operationName: 'getRegisteredWallboxes',
       query: GET_REGISTERED_WALLBOXES,
       variables: null,
     });
@@ -225,7 +223,7 @@ export class RivianClient implements RivianApi {
         availableOTAUpdateDetails: OtaReleaseNotes | null;
       } | null;
     }>(GRAPHQL_GATEWAY, {
-      operationName: "getOTAUpdateDetails",
+      operationName: 'getOTAUpdateDetails',
       query: GET_OTA_UPDATE_DETAILS,
       variables: { vehicleId },
     });
@@ -239,19 +237,18 @@ export class RivianClient implements RivianApi {
     const data = await this.authenticatedRequest<{
       getVehicle: { chargingSchedules: ChargingSchedule[] | null } | null;
     }>(GRAPHQL_GATEWAY, {
-      operationName: "GetChargingSchedule",
+      operationName: 'GetChargingSchedule',
       query: GET_CHARGING_SCHEDULE,
       variables: { vehicleId },
     });
     return data.getVehicle?.chargingSchedules ?? [];
   }
 
-
   async getChargeHistory(): Promise<ChargeSessionSummary[]> {
     const data = await this.authenticatedRequest<{
       getCompletedSessionSummaries: ChargeSessionSummary[] | null;
     }>(GRAPHQL_CHARGING, {
-      operationName: "getCompletedSessionSummaries",
+      operationName: 'getCompletedSessionSummaries',
       query: GET_COMPLETED_SESSION_SUMMARIES,
       variables: null,
     });
@@ -260,8 +257,8 @@ export class RivianClient implements RivianApi {
 
   private csrfHeaders(): Record<string, string> {
     return {
-      "Csrf-Token": this.csrfToken ?? "",
-      "A-Sess": this.appSessionToken ?? "",
+      'Csrf-Token': this.csrfToken ?? '',
+      'A-Sess': this.appSessionToken ?? '',
     };
   }
 
@@ -271,7 +268,7 @@ export class RivianClient implements RivianApi {
     // rotating the app session does not renew that token.
     return {
       ...this.csrfHeaders(),
-      "U-Sess": this._tokens?.userSessionToken ?? "",
+      'U-Sess': this._tokens?.userSessionToken ?? '',
     };
   }
 
@@ -280,18 +277,12 @@ export class RivianClient implements RivianApi {
    * SESSION_MANAGER_ERROR or UNAUTHENTICATED; rotate the session once and
    * retry. Only a failure after that rotation is reported to the caller.
    */
-  private async authenticatedRequest<T>(
-    url: string,
-    body: GraphqlRequest,
-  ): Promise<T> {
+  private async authenticatedRequest<T>(url: string, body: GraphqlRequest): Promise<T> {
     if (!this.appSessionToken) await this.refreshSession();
     try {
       return await this.request<T>(url, body, this.sessionHeaders());
     } catch (err) {
-      if (
-        err instanceof RivianSessionManagerError ||
-        err instanceof RivianUnauthenticatedError
-      ) {
+      if (err instanceof RivianSessionManagerError || err instanceof RivianUnauthenticatedError) {
         await this.refreshSession();
         return await this.request<T>(url, body, this.sessionHeaders());
       }
@@ -317,7 +308,7 @@ export class RivianClient implements RivianApi {
         const cooldown = this.governor.noteRateLimited(err.retryAfterMs);
         err.retryAfterMs = cooldown;
       } else {
-        this.governor.count("httpErrors");
+        this.governor.count('httpErrors');
       }
       throw err;
     }
@@ -331,10 +322,10 @@ export class RivianClient implements RivianApi {
     let response: Response;
     try {
       response = await fetch(url, {
-        method: "POST",
+        method: 'POST',
         headers: {
           ...BASE_HEADERS,
-          "dc-cid": `m-ios-${randomUUID()}`,
+          'dc-cid': `m-ios-${randomUUID()}`,
           ...extraHeaders,
         },
         body: JSON.stringify(body),
@@ -349,11 +340,11 @@ export class RivianClient implements RivianApi {
     if (response.status === 429) {
       const err = new RivianRateLimitError(
         `Rivian rate limited ${body.operationName} (HTTP 429)`,
-        "RATE_LIMIT",
+        'RATE_LIMIT',
         undefined,
         429,
       );
-      err.retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+      err.retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
       throw err;
     }
 
@@ -375,7 +366,7 @@ export class RivianClient implements RivianApi {
     if (json.errors?.length) {
       const err = mapGraphqlError(json.errors, response.status, json);
       if (err instanceof RivianRateLimitError) {
-        err.retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+        err.retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
       }
       throw err;
     }

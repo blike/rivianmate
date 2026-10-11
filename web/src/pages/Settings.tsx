@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, api } from "../api/client.js";
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ApiError, api } from '../api/client.js';
 import {
   useRivianDiagnostics,
   useRivianDisconnect,
@@ -9,15 +9,15 @@ import {
   useUnits,
   useVehicles,
   useVersion,
-} from "../api/hooks.js";
-import { Skeleton } from "../components/loading.js";
-import { HomeChargingPanel } from "../components/HomeChargingPanel.js";
-import { NotificationsPanel } from "../components/NotificationsPanel.js";
-import { passwordProblem } from "@server/password-policy.js";
-import { TextField } from "../components/AuthCard.js";
-import { REPO_URL, shortCommit, versionLabel } from "../lib/version.js";
-import { ApiConnectionsPanel } from "../components/ApiConnectionsPanel.js";
-import { PasswordHint } from "../components/PasswordHint.js";
+} from '../api/hooks.js';
+import { Skeleton } from '../components/loading.js';
+import { HomeChargingPanel } from '../components/HomeChargingPanel.js';
+import { NotificationsPanel } from '../components/NotificationsPanel.js';
+import { passwordProblem } from '@server/password-policy.js';
+import { TextField } from '../components/AuthCard.js';
+import { REPO_URL, shortCommit, versionLabel } from '../lib/version.js';
+import { ApiConnectionsPanel } from '../components/ApiConnectionsPanel.js';
+import { PasswordHint } from '../components/PasswordHint.js';
 import {
   SegmentedControl,
   SettingRow,
@@ -25,27 +25,61 @@ import {
   SettingsHero,
   dangerButton,
   secondaryButton,
-} from "../components/settings.js";
+} from '../components/settings.js';
 
 const sections = [
-  { id: "general", label: "General", description: "Your vehicle, display units and Rivian account.", icon: <CarIcon /> },
-  { id: "charging", label: "Charging", description: "How home charging is priced and recognized.", icon: <BoltIcon /> },
-  { id: "notifications", label: "Notifications", description: "Alerts for doors, locks, software, charging and tires.", icon: <BellIcon /> },
-  { id: "api", label: "API & Feeds", description: "How data is arriving from Rivian.", icon: <PulseIcon /> },
-  { id: "security", label: "Security", description: "Your app password and this browser’s session.", icon: <LockIcon /> },
-  { id: "about", label: "About", description: "Version, build and project links.", icon: <InfoIcon /> },
+  {
+    id: 'general',
+    label: 'General',
+    description: 'Your vehicle, display units and Rivian account.',
+    icon: <CarIcon />,
+  },
+  {
+    id: 'charging',
+    label: 'Charging',
+    description: 'How home charging is priced and recognized.',
+    icon: <BoltIcon />,
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'Alerts for doors, locks, software, charging and tires.',
+    icon: <BellIcon />,
+  },
+  {
+    id: 'api',
+    label: 'API & Feeds',
+    description: 'How data is arriving from Rivian.',
+    icon: <PulseIcon />,
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    description: 'Your app password and this browser’s session.',
+    icon: <LockIcon />,
+  },
+  {
+    id: 'about',
+    label: 'About',
+    description: 'Version, build and project links.',
+    icon: <InfoIcon />,
+  },
 ];
 
 export function Settings() {
   const [params] = useSearchParams();
-  const section = sections.find((item) => item.id === params.get("section")) ?? sections[0]!;
+  const section = sections.find((item) => item.id === params.get('section')) ?? sections[0]!;
   const { data: status } = useStatus();
-  const { data: diagnostics, isPending: diagnosticsPending, isError: diagnosticsError } = useRivianDiagnostics(section.id === "api");
+  const {
+    data: diagnostics,
+    isPending: diagnosticsPending,
+    isError: diagnosticsError,
+  } = useRivianDiagnostics(section.id === 'api');
   const { data: vehicles } = useVehicles();
   // On phones the nav is a scrolling strip; keep the open section in view.
   const activeLink = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
-    activeLink.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    activeLink.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [section.id]);
 
   return (
@@ -56,21 +90,23 @@ export function Settings() {
       >
         {sections.map((item) => {
           const nextParams = new URLSearchParams(params);
-          nextParams.set("section", item.id);
+          nextParams.set('section', item.id);
           const active = section.id === item.id;
           return (
             <Link
               key={item.id}
               ref={active ? activeLink : undefined}
               to={{ search: `?${nextParams}` }}
-              aria-current={active ? "page" : undefined}
+              aria-current={active ? 'page' : undefined}
               className={`flex items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors ${
                 active
-                  ? "bg-[var(--surface-2)] font-medium text-[var(--text-primary)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+                  ? 'bg-(--surface-2) font-medium text-(--text-primary)'
+                  : 'text-(--text-secondary) hover:bg-(--surface-2) hover:text-(--text-primary)'
               }`}
             >
-              <span className={active ? "text-[var(--accent)]" : "text-[var(--text-muted)]"}>{item.icon}</span>
+              <span className={active ? 'text-(--accent)' : 'text-(--text-muted)'}>
+                {item.icon}
+              </span>
               {item.label}
             </Link>
           );
@@ -79,9 +115,9 @@ export function Settings() {
       <section aria-label={section.label} className="min-w-0 max-w-3xl space-y-6">
         <header>
           <h2 className="text-xl font-semibold tracking-tight">{section.label}</h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">{section.description}</p>
+          <p className="mt-1 text-sm text-(--text-secondary)">{section.description}</p>
         </header>
-        {section.id === "general" && (
+        {section.id === 'general' && (
           <General
             parallaxModes={diagnostics?.monitor.parallaxModes}
             email={status?.rivianEmail ?? null}
@@ -89,9 +125,9 @@ export function Settings() {
             mockMode={status?.mockMode ?? false}
           />
         )}
-        {section.id === "charging" && <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />}
-        {section.id === "notifications" && <NotificationsPanel />}
-        {section.id === "api" && (
+        {section.id === 'charging' && <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />}
+        {section.id === 'notifications' && <NotificationsPanel />}
+        {section.id === 'api' && (
           <ApiConnectionsPanel
             diagnostics={diagnostics}
             loading={diagnosticsPending}
@@ -100,15 +136,15 @@ export function Settings() {
             mockMode={status?.mockMode ?? false}
           />
         )}
-        {section.id === "security" && <Security />}
-        {section.id === "about" && <About />}
+        {section.id === 'security' && <Security />}
+        {section.id === 'about' && <About />}
       </section>
     </div>
   );
 }
 
 function General(props: {
-  parallaxModes: Record<string, "classic" | "parallax"> | undefined;
+  parallaxModes: Record<string, 'classic' | 'parallax'> | undefined;
   email: string | null;
   connected: boolean;
   mockMode: boolean;
@@ -122,23 +158,35 @@ function General(props: {
 
   return (
     <>
-      <SettingsGroup title={vehicles && vehicles.length > 1 ? "Vehicles" : "Vehicle"}>
+      <SettingsGroup title={vehicles && vehicles.length > 1 ? 'Vehicles' : 'Vehicle'}>
         {isPending ? (
-          <SettingRow label={<Skeleton className="w-[8em]" />} description={<Skeleton className="w-[5em]" />} />
+          <SettingRow
+            label={<Skeleton className="w-[8em]" />}
+            description={<Skeleton className="w-[5em]" />}
+          />
         ) : !vehicles?.length ? (
-          <SettingRow label="No vehicles yet" description="Vehicles on your Rivian account appear here once connected." />
+          <SettingRow
+            label="No vehicles yet"
+            description="Vehicles on your Rivian account appear here once connected."
+          />
         ) : (
           vehicles.map((v) => {
             const mode = props.parallaxModes?.[v.id];
             return (
               <SettingRow
                 key={v.id}
-                label={v.name ?? v.model ?? "Vehicle"}
-                description={[v.modelYear, v.model, mode && (mode === "parallax" ? "Parallax data" : "Classic data")]
+                label={v.name ?? v.model ?? 'Vehicle'}
+                description={[
+                  v.modelYear,
+                  v.model,
+                  mode && (mode === 'parallax' ? 'Parallax data' : 'Classic data'),
+                ]
                   .filter(Boolean)
-                  .join(" · ")}
+                  .join(' · ')}
               >
-                <span className="select-all font-mono text-xs tracking-wide text-[var(--text-secondary)]">{v.vin}</span>
+                <span className="select-all font-mono text-xs tracking-wide text-(--text-secondary)">
+                  {v.vin}
+                </span>
                 <CopyButton text={v.vin} label="Copy VIN" />
               </SettingRow>
             );
@@ -155,19 +203,22 @@ function General(props: {
             label="Measurement"
             value={units.distance}
             options={[
-              { value: "mi", label: "Imperial" },
-              { value: "km", label: "Metric" },
+              { value: 'mi', label: 'Imperial' },
+              { value: 'km', label: 'Metric' },
             ]}
             onChange={(distance) => setUnits.mutate({ ...units, distance })}
           />
         </SettingRow>
-        <SettingRow label="Temperature" description={`Cabin ${u.formatTemperature(21)} · Outside ${u.formatTemperature(4)}`}>
+        <SettingRow
+          label="Temperature"
+          description={`Cabin ${u.formatTemperature(21)} · Outside ${u.formatTemperature(4)}`}
+        >
           <SegmentedControl
             label="Temperature"
             value={units.temperature}
             options={[
-              { value: "F", label: "°F" },
-              { value: "C", label: "°C" },
+              { value: 'F', label: '°F' },
+              { value: 'C', label: '°C' },
             ]}
             onChange={(temperature) => setUnits.mutate({ ...units, temperature })}
           />
@@ -176,24 +227,27 @@ function General(props: {
 
       <SettingsGroup title="Rivian account">
         <SettingRow
-          label={props.email ?? "—"}
+          label={props.email ?? '—'}
           description={
             <span className="inline-flex items-center gap-1.5">
               <span
                 aria-hidden
                 className="h-1.5 w-1.5 rounded-full"
-                style={{ background: props.connected ? "var(--status-good)" : "var(--text-muted)" }}
+                style={{ background: props.connected ? 'var(--status-good)' : 'var(--text-muted)' }}
               />
-              {props.connected ? "Connected" : "Disconnected"}
-              {props.mockMode && " · Simulated vehicle"}
+              {props.connected ? 'Connected' : 'Disconnected'}
+              {props.mockMode && ' · Simulated vehicle'}
             </span>
           }
         />
-        <SettingRow label="Disconnect" description="Stops tracking and forgets your Rivian sign-in. Your recorded history stays.">
+        <SettingRow
+          label="Disconnect"
+          description="Stops tracking and forgets your Rivian sign-in. Your recorded history stays."
+        >
           <button
             className={dangerButton}
             onClick={async () => {
-              if (!confirm("Disconnect Rivian account and stop tracking?")) return;
+              if (!confirm('Disconnect Rivian account and stop tracking?')) return;
               await disconnect.mutateAsync();
               refetch();
             }}
@@ -207,19 +261,19 @@ function General(props: {
 }
 
 function Security() {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const changePassword = async () => {
     setMessage(null);
     try {
       await api.changePassword(current, next);
-      setCurrent("");
-      setNext("");
-      setMessage({ ok: true, text: "Password updated" });
+      setCurrent('');
+      setNext('');
+      setMessage({ ok: true, text: 'Password updated' });
     } catch (err) {
-      setMessage({ ok: false, text: err instanceof ApiError ? err.message : "Failed to update" });
+      setMessage({ ok: false, text: err instanceof ApiError ? err.message : 'Failed to update' });
     }
   };
 
@@ -238,7 +292,13 @@ function Security() {
             void changePassword();
           }}
         >
-          <TextField label="Current password" type="password" value={current} onChange={setCurrent} autoComplete="current-password" />
+          <TextField
+            label="Current password"
+            type="password"
+            value={current}
+            onChange={setCurrent}
+            autoComplete="current-password"
+          />
           <TextField
             label="New password"
             type="password"
@@ -248,14 +308,18 @@ function Security() {
             hint={<PasswordHint password={next} />}
           />
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button type="submit" className="btn-primary" disabled={!current || passwordProblem(next) !== null}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={!current || passwordProblem(next) !== null}
+            >
               Change password
             </button>
             {message && (
               <p
-                role={message.ok ? "status" : "alert"}
+                role={message.ok ? 'status' : 'alert'}
                 className="text-sm"
-                style={{ color: message.ok ? "var(--status-good)" : "var(--status-critical)" }}
+                style={{ color: message.ok ? 'var(--status-good)' : 'var(--status-critical)' }}
               >
                 {message.text}
               </p>
@@ -290,25 +354,33 @@ function About() {
             <Skeleton className="w-[10em]" />
           ) : commit ? (
             <>
-              Built from{" "}
+              Built from{' '}
               <a
                 href={`${REPO_URL}/commit/${info!.commit}`}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="font-mono text-xs text-[var(--text-primary)] underline-offset-4 hover:underline"
+                className="font-mono text-xs text-(--text-primary) underline-offset-4 hover:underline"
               >
                 {commit}
               </a>
             </>
           ) : (
-            "Development build"
+            'Development build'
           )
         }
       />
       <SettingsGroup>
-        <ExternalRow href={`${REPO_URL}/blob/main/CHANGELOG.md`} label="Changelog" description="What changed in each release" />
+        <ExternalRow
+          href={`${REPO_URL}/blob/main/CHANGELOG.md`}
+          label="Changelog"
+          description="What changed in each release"
+        />
         <ExternalRow href={REPO_URL} label="Source code" description="RivianMate on GitHub" />
-        <ExternalRow href={`${REPO_URL}/issues`} label="Report an issue" description="Bugs and feature requests" />
+        <ExternalRow
+          href={`${REPO_URL}/issues`}
+          label="Report an issue"
+          description="Bugs and feature requests"
+        />
       </SettingsGroup>
     </>
   );
@@ -320,13 +392,20 @@ function ExternalRow(props: { href: string; label: string; description: string }
       href={props.href}
       target="_blank"
       rel="noreferrer noopener"
-      className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-[var(--surface-2)]"
+      className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-(--surface-2)"
     >
       <span className="min-w-0">
         <span className="block text-sm font-medium">{props.label}</span>
-        <span className="block text-xs text-[var(--text-muted)]">{props.description}</span>
+        <span className="block text-xs text-(--text-muted)">{props.description}</span>
       </span>
-      <svg viewBox="0 0 12 12" className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <svg
+        viewBox="0 0 12 12"
+        className="h-3.5 w-3.5 shrink-0 text-(--text-muted)"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        aria-hidden
+      >
         <path d="M4.5 2.5h5v5M9.5 2.5l-7 7" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </a>
@@ -349,14 +428,23 @@ function CopyButton(props: { text: string; label: string }) {
         }
       }}
     >
-      {copied ? "Copied" : "Copy"}
+      {copied ? 'Copied' : 'Copy'}
     </button>
   );
 }
 
 function NavIcon(props: { children: ReactNode }) {
   return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      viewBox="0 0 16 16"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       {props.children}
     </svg>
   );

@@ -1,5 +1,5 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   Area,
   CartesianGrid,
@@ -9,63 +9,75 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from "recharts";
-import type { HistoryMetric } from "@server/api-types.js";
-import { api } from "../api/client.js";
-import { useUnits } from "../api/hooks.js";
-import { ContentFrame, LoadingScope, Skeleton, useLoading } from "../components/loading.js";
-import { Panel } from "../components/panels.js";
-import { TrendChart } from "../components/TrendChart.js";
-import { VehicleMap } from "../components/VehicleMap.js";
-import { isPosition } from "../lib/geo.js";
-import { type ActivityKind, activityBands, distanceByPeriod, periodSummary, positionAt } from "../lib/history.js";
-import { formatMoney } from "../lib/charging.js";
-import { fmt, fmtSeconds } from "../lib/state.js";
-import { timeTicks } from "../lib/timeAxis.js";
+} from 'recharts';
+import type { HistoryMetric } from '@server/api-types.js';
+import { api } from '../api/client.js';
+import { useUnits } from '../api/hooks.js';
+import { ContentFrame, LoadingScope, Skeleton, useLoading } from '../components/loading.js';
+import { Panel } from '../components/panels.js';
+import { TrendChart } from '../components/TrendChart.js';
+import { VehicleMap } from '../components/VehicleMap.js';
+import { isPosition } from '../lib/geo.js';
+import {
+  type ActivityKind,
+  activityBands,
+  distanceByPeriod,
+  periodSummary,
+  positionAt,
+} from '../lib/history.js';
+import { formatMoney } from '../lib/charging.js';
+import { fmt, fmtSeconds } from '../lib/state.js';
+import { timeTicks } from '../lib/timeAxis.js';
 
 const RANGES = [
   // Every reading where that stays light enough to draw; short averages beyond.
-  { label: "24h", title: "24 hours", hours: 24, bucket: "raw" },
-  { label: "7d", title: "7 days", hours: 24 * 7, bucket: "raw" },
-  { label: "30d", title: "30 days", hours: 24 * 30, bucket: "5m" },
-  { label: "90d", title: "90 days", hours: 24 * 90, bucket: "15m" },
+  { label: '24h', title: '24 hours', hours: 24, bucket: 'raw' },
+  { label: '7d', title: '7 days', hours: 24 * 7, bucket: 'raw' },
+  { label: '30d', title: '30 days', hours: 24 * 30, bucket: '5m' },
+  { label: '90d', title: '90 days', hours: 24 * 90, bucket: '15m' },
 ] as const;
 
-type MetricKind = "percent" | "distance";
+type MetricKind = 'percent' | 'distance';
 
 /** Raw values: range in km, odometer in metres. */
 const METRICS: { key: HistoryMetric; label: string; kind: MetricKind; scale?: number }[] = [
-  { key: "battery", label: "Battery", kind: "percent" },
-  { key: "range", label: "Range", kind: "distance" },
-  { key: "mileage", label: "Odometer", kind: "distance", scale: 1 / 1000 },
+  { key: 'battery', label: 'Battery', kind: 'percent' },
+  { key: 'range', label: 'Range', kind: 'distance' },
+  { key: 'mileage', label: 'Odometer', kind: 'distance', scale: 1 / 1000 },
 ];
 
 /** Plugged in but not charging is striped, so it reads apart from charging. */
-const BAND: Record<ActivityKind, { label: string; fill: string; opacity: number; swatch: string }> = {
-  drive: {
-    label: "Driving",
-    fill: "var(--series-1)",
-    opacity: 0.2,
-    swatch: "color-mix(in srgb, var(--series-1) 55%, transparent)",
-  },
-  charging: {
-    label: "Charging",
-    fill: "var(--status-good)",
-    opacity: 0.28,
-    swatch: "color-mix(in srgb, var(--status-good) 65%, transparent)",
-  },
-  plugged: {
-    label: "Plugged in",
-    fill: "url(#history-plugged)",
-    opacity: 1,
-    swatch:
-      "repeating-linear-gradient(135deg, color-mix(in srgb, var(--status-good) 70%, transparent) 0 1.5px, transparent 1.5px 4px)",
-  },
-};
+const BAND: Record<ActivityKind, { label: string; fill: string; opacity: number; swatch: string }> =
+  {
+    drive: {
+      label: 'Driving',
+      fill: 'var(--series-1)',
+      opacity: 0.2,
+      swatch: 'color-mix(in srgb, var(--series-1) 55%, transparent)',
+    },
+    charging: {
+      label: 'Charging',
+      fill: 'var(--status-good)',
+      opacity: 0.28,
+      swatch: 'color-mix(in srgb, var(--status-good) 65%, transparent)',
+    },
+    plugged: {
+      label: 'Plugged in',
+      fill: 'url(#history-plugged)',
+      opacity: 1,
+      swatch:
+        'repeating-linear-gradient(135deg, color-mix(in srgb, var(--status-good) 70%, transparent) 0 1.5px, transparent 1.5px 4px)',
+    },
+  };
 
 /** "Oct 10, 12:53 PM": no seconds. */
 const tooltipTime = (ms: number) =>
-  new Date(ms).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  new Date(ms).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
 export function History(props: { vehicleId: string }) {
   const [rangeIdx, setRangeIdx] = useState(1);
@@ -79,33 +91,39 @@ export function History(props: { vehicleId: string }) {
   }, [range.hours]);
 
   const { data: drives, isPending: drivesPending } = useQuery({
-    queryKey: ["drives", props.vehicleId],
+    queryKey: ['drives', props.vehicleId],
     queryFn: () => api.drives(props.vehicleId),
     refetchInterval: 60_000,
   });
   const { data: sessions, isPending: sessionsPending } = useQuery({
-    queryKey: ["chargingSessions", props.vehicleId],
+    queryKey: ['chargingSessions', props.vehicleId],
     queryFn: () => api.chargingSessions(props.vehicleId),
     refetchInterval: 60_000,
   });
   const { data: spans, isPending: spansPending } = useQuery({
-    queryKey: ["chargeSpans", props.vehicleId, range.label],
+    queryKey: ['chargeSpans', props.vehicleId, range.label],
     queryFn: () => api.chargeSpans(props.vehicleId, from, to),
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
 
   const { data: trail, isPending: trailPending } = useQuery({
-    queryKey: ["locations", props.vehicleId, range.label],
+    queryKey: ['locations', props.vehicleId, range.label],
     queryFn: () => api.locations(props.vehicleId, from, to),
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
   const fixes = useMemo(
-    () => (trail ?? []).filter((p) => isPosition(p.lat, p.lon)).map((p) => ({ ts: Date.parse(p.ts), lat: p.lat, lon: p.lon })),
+    () =>
+      (trail ?? [])
+        .filter((p) => isPosition(p.lat, p.lon))
+        .map((p) => ({ ts: Date.parse(p.ts), lat: p.lat, lon: p.lon })),
     [trail],
   );
-  const trailPositions = useMemo(() => fixes.map((p) => [p.lat, p.lon] as [number, number]), [fixes]);
+  const trailPositions = useMemo(
+    () => fixes.map((p) => [p.lat, p.lon] as [number, number]),
+    [fixes],
+  );
   const lastPosition = trailPositions.at(-1);
   // Hovering the chart marks where the vehicle was at that moment.
   const [hoverTs, setHoverTs] = useState<number | null>(null);
@@ -138,7 +156,11 @@ export function History(props: { vehicleId: string }) {
       <Panel
         title={metric.label}
         action={
-          <Segmented items={METRICS.map((m) => m.label)} value={metricIdx} onChange={setMetricIdx} />
+          <Segmented
+            items={METRICS.map((m) => m.label)}
+            value={metricIdx}
+            onChange={setMetricIdx}
+          />
         }
       >
         <MetricChart
@@ -188,37 +210,46 @@ function SummaryCard(props: {
   const s = props.summary;
   const tiles: { label: string; value: ReactNode; sub?: ReactNode; pending: boolean }[] = [
     {
-      label: "Drives",
+      label: 'Drives',
       value: fmt(s.drives, 0),
-      sub: s.drives > 0 ? `${u.formatDistance(s.distanceKm / s.drives)} on average` : "None in this period",
+      sub:
+        s.drives > 0
+          ? `${u.formatDistance(s.distanceKm / s.drives)} on average`
+          : 'None in this period',
       pending: props.activityPending,
     },
     {
-      label: "Time driving",
-      value: s.drivingSeconds > 0 ? fmtSeconds(s.drivingSeconds) : "—",
-      sub: s.drivingSeconds > 0 ? `${u.formatSpeed(s.distanceKm / (s.drivingSeconds / 3600))} average` : undefined,
+      label: 'Time driving',
+      value: s.drivingSeconds > 0 ? fmtSeconds(s.drivingSeconds) : '—',
+      sub:
+        s.drivingSeconds > 0
+          ? `${u.formatSpeed(s.distanceKm / (s.drivingSeconds / 3600))} average`
+          : undefined,
       pending: props.activityPending,
     },
     {
-      label: "Efficiency",
+      label: 'Efficiency',
       value: u.formatEfficiency(s.energyDistanceKm, s.energyKwh),
       sub: s.energyKwh > 0 ? `${fmt(s.energyKwh, 1)} kWh used` : undefined,
       pending: props.activityPending,
     },
     {
-      label: "Charged",
-      value: s.sessions > 0 ? `${fmt(s.chargedKwh, 1)} kWh` : "—",
-      sub: s.sessions > 0 ? `${s.sessions} session${s.sessions === 1 ? "" : "s"}` : "No sessions",
+      label: 'Charged',
+      value: s.sessions > 0 ? `${fmt(s.chargedKwh, 1)} kWh` : '—',
+      sub: s.sessions > 0 ? `${s.sessions} session${s.sessions === 1 ? '' : 's'}` : 'No sessions',
       pending: props.activityPending,
     },
     {
-      label: "Charging cost",
-      value: s.cost != null ? `${s.costEstimated ? "≈ " : ""}${formatMoney(String(s.cost), s.currency)}` : "—",
+      label: 'Charging cost',
+      value:
+        s.cost != null
+          ? `${s.costEstimated ? '≈ ' : ''}${formatMoney(String(s.cost), s.currency)}`
+          : '—',
       sub:
         s.cost != null && s.distanceKm > 0
           ? `${formatMoney(String(s.cost / (u.distance(s.distanceKm) ?? 1)), s.currency)} per ${u.distanceUnit}`
           : s.sessions > 0
-            ? "Add costs on the Charging page"
+            ? 'Add costs on the Charging page'
             : undefined,
       pending: props.activityPending,
     },
@@ -228,22 +259,31 @@ function SummaryCard(props: {
     <section className="card overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-4 p-5">
         <div>
-          <div className="text-xs text-[var(--text-muted)]">Last {props.range.title}</div>
+          <div className="text-xs text-(--text-muted)">Last {props.range.title}</div>
           <div className="mt-0.5 text-3xl font-semibold tabular-nums tracking-tight">
             <LoadingScope loading={props.activityPending}>
-              <BigValue value={fmt(u.distance(s.distanceKm), 0)} unit={`${u.distanceUnit} driven`} />
+              <BigValue
+                value={fmt(u.distance(s.distanceKm), 0)}
+                unit={`${u.distanceUnit} driven`}
+              />
             </LoadingScope>
           </div>
         </div>
-        <Segmented items={RANGES.map((r) => r.label)} value={props.rangeIdx} onChange={props.onRange} />
+        <Segmented
+          items={RANGES.map((r) => r.label)}
+          value={props.rangeIdx}
+          onChange={props.onRange}
+        />
       </div>
-      <ul className="grid grid-cols-2 gap-px border-t border-[var(--border)] bg-[var(--border)] sm:grid-cols-3 lg:grid-cols-5">
+      <ul className="grid grid-cols-2 gap-px border-t border-(--border) bg-(--border) sm:grid-cols-3 lg:grid-cols-5">
         {tiles.map((t) => (
-          <li key={t.label} className="bg-[var(--surface-1)] px-4 py-3 last:max-sm:col-span-2">
-            <div className="text-xs text-[var(--text-muted)]">{t.label}</div>
-            <div className="mt-1 text-base font-semibold tabular-nums">{t.pending ? <Skeleton className="w-[5em]" /> : t.value}</div>
-            <div className="text-xs text-[var(--text-secondary)]">
-              {t.pending ? <Skeleton className="w-[7em]" /> : (t.sub ?? " ")}
+          <li key={t.label} className="bg-(--surface-1) px-4 py-3 last:max-sm:col-span-2">
+            <div className="text-xs text-(--text-muted)">{t.label}</div>
+            <div className="mt-1 text-base font-semibold tabular-nums">
+              {t.pending ? <Skeleton className="w-[5em]" /> : t.value}
+            </div>
+            <div className="text-xs text-(--text-secondary)">
+              {t.pending ? <Skeleton className="w-[7em]" /> : (t.sub ?? ' ')}
             </div>
           </li>
         ))}
@@ -258,7 +298,7 @@ function BigValue(props: { value: string; unit: string }) {
   return (
     <>
       {props.value}
-      <span className="ml-1.5 text-base font-normal text-[var(--text-muted)]">{props.unit}</span>
+      <span className="ml-1.5 text-base font-normal text-(--text-muted)">{props.unit}</span>
     </>
   );
 }
@@ -276,22 +316,23 @@ function MetricChart(props: {
 }) {
   const { metric, range, from, to } = props;
   const u = useUnits();
-  const unit = metric.kind === "distance" ? u.distanceUnit : "%";
+  const unit = metric.kind === 'distance' ? u.distanceUnit : '%';
 
   const { data: points, isPending } = useQuery({
-    queryKey: ["history", props.vehicleId, metric.key, range.label],
+    queryKey: ['history', props.vehicleId, metric.key, range.label],
     queryFn: () => api.history(props.vehicleId, metric.key, from, to, range.bucket),
     refetchInterval: 60_000,
     // Keep the old chart while a new range loads; another metric's values
     // would be drawn on the wrong scale, so those show a placeholder instead.
-    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === metric.key ? previous : undefined),
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === metric.key ? previous : undefined,
   });
 
   const convert = useCallback(
     (v: number | null): number | null => {
       if (v == null) return null;
       const scaled = v * (metric.scale ?? 1);
-      if (metric.kind === "distance") return u.distance(scaled);
+      if (metric.kind === 'distance') return u.distance(scaled);
       return scaled;
     },
     [metric, u],
@@ -303,7 +344,7 @@ function MetricChart(props: {
   // The whole window, so shaded activity lines up with the period chosen.
   const axis = useMemo(() => timeTicks(from.getTime(), to.getTime()), [from, to]);
   const kinds = new Set(props.bands.map((b) => b.kind));
-  const digits = metric.kind === "percent" || metric.key === "mileage" ? 0 : 1;
+  const digits = metric.kind === 'percent' || metric.key === 'mileage' ? 0 : 1;
 
   return (
     <>
@@ -313,7 +354,7 @@ function MetricChart(props: {
         empty={data.length === 0}
         emptyText="No history yet. Data appears as the vehicle reports its state."
       >
-        <div style={{ height: "18rem" }}>
+        <div style={{ height: '18rem' }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={data}
@@ -325,7 +366,13 @@ function MetricChart(props: {
               onMouseLeave={() => props.onHover?.(null)}
             >
               <defs>
-                <pattern id="history-plugged" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <pattern
+                  id="history-plugged"
+                  width="6"
+                  height="6"
+                  patternUnits="userSpaceOnUse"
+                  patternTransform="rotate(45)"
+                >
                   <rect width="6" height="6" fill="var(--status-good)" fillOpacity={0.06} />
                   <rect width="1.5" height="6" fill="var(--status-good)" fillOpacity={0.35} />
                 </pattern>
@@ -354,40 +401,43 @@ function MetricChart(props: {
                 ticks={axis.ticks}
                 tickFormatter={axis.format}
                 minTickGap={24}
-                tick={{ fill: "var(--text-muted)", fontSize: 11 }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis
-                domain={metric.key === "battery" ? [0, 100] : ["auto", "auto"]}
-                tick={{ fill: "var(--text-muted)", fontSize: 11 }}
+                domain={metric.key === 'battery' ? [0, 100] : ['auto', 'auto']}
+                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
                 width={48}
                 tickFormatter={(v: number) => fmt(v, 0)}
               />
               <Tooltip
-                cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
+                cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
                 content={({ active, payload, label }) => {
                   const value = payload?.[0]?.value;
-                  if (!active || typeof value !== "number") return null;
+                  if (!active || typeof value !== 'number') return null;
                   const ts = Number(label);
                   const during =
-                    props.bands.find((b) => b.kind === "drive" && ts >= b.from && ts <= b.to) ??
+                    props.bands.find((b) => b.kind === 'drive' && ts >= b.from && ts <= b.to) ??
                     props.bands.find((b) => ts >= b.from && ts <= b.to);
                   return (
-                    <div className="min-w-[9rem] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs shadow-lg">
-                      <div className="text-[var(--text-primary)]">{tooltipTime(ts)}</div>
-                      <div className="mt-2 flex items-center gap-2 border-t border-[var(--border)] pt-2">
-                        <span className="text-[var(--text-secondary)]">{metric.label}</span>
-                        <span className="ml-auto pl-4 font-medium tabular-nums text-[var(--text-primary)]">
+                    <div className="min-w-36 rounded-lg border border-(--border) bg-(--surface-2) px-3 py-2 text-xs shadow-lg">
+                      <div className="text-(--text-primary)">{tooltipTime(ts)}</div>
+                      <div className="mt-2 flex items-center gap-2 border-t border-(--border) pt-2">
+                        <span className="text-(--text-secondary)">{metric.label}</span>
+                        <span className="ml-auto pl-4 font-medium tabular-nums text-(--text-primary)">
                           {fmt(value, digits)}
-                          <span className="ml-0.5 font-normal text-[var(--text-muted)]">{unit}</span>
+                          <span className="ml-0.5 font-normal text-(--text-muted)">{unit}</span>
                         </span>
                       </div>
                       {during && (
-                        <div className="mt-1 flex items-center gap-2 text-[var(--text-secondary)]">
-                          <span className="h-2 w-2 rounded-sm" style={{ background: BAND[during.kind].swatch }} />
+                        <div className="mt-1 flex items-center gap-2 text-(--text-secondary)">
+                          <span
+                            className="h-2 w-2 rounded-sm"
+                            style={{ background: BAND[during.kind].swatch }}
+                          />
                           {BAND[during.kind].label}
                         </div>
                       )}
@@ -409,12 +459,12 @@ function MetricChart(props: {
           </ResponsiveContainer>
         </div>
       </ContentFrame>
-      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-muted)]">
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--text-muted)">
         <li className="flex items-center gap-1.5">
-          <span className="h-0.5 w-3 rounded-full bg-[var(--accent)]" />
+          <span className="h-0.5 w-3 rounded-full bg-(--accent)" />
           {metric.label} ({unit})
         </li>
-        {(["drive", "charging", "plugged"] as const)
+        {(['drive', 'charging', 'plugged'] as const)
           .filter((k) => kinds.has(k))
           .map((k) => (
             <li key={k} className="flex items-center gap-1.5">
@@ -427,10 +477,15 @@ function MetricChart(props: {
   );
 }
 
-function DistancePanel(props: { drives: Parameters<typeof distanceByPeriod>[0]; from: Date; to: Date; hours: number }) {
+function DistancePanel(props: {
+  drives: Parameters<typeof distanceByPeriod>[0];
+  from: Date;
+  to: Date;
+  hours: number;
+}) {
   const u = useUnits();
   const loading = useLoading();
-  const unit = props.hours <= 24 ? "hour" : "day";
+  const unit = props.hours <= 24 ? 'hour' : 'day';
   const buckets = useMemo(
     () => distanceByPeriod(props.drives, props.from.getTime(), props.to.getTime(), unit),
     [props.drives, props.from, props.to, unit],
@@ -438,41 +493,69 @@ function DistancePanel(props: { drives: Parameters<typeof distanceByPeriod>[0]; 
   const data = useMemo(() => buckets.map((b, i) => ({ i, km: u.distance(b.km) })), [buckets, u]);
   const label = (i: number) => {
     const ts = buckets[i]?.ts;
-    if (ts == null) return "";
-    return unit === "hour"
-      ? new Date(ts).toLocaleTimeString([], { hour: "numeric" })
-      : new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
+    if (ts == null) return '';
+    return unit === 'hour'
+      ? new Date(ts).toLocaleTimeString([], { hour: 'numeric' })
+      : new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
-  const busiest = buckets.reduce<(typeof buckets)[number] | null>((best, b) => (b.km > (best?.km ?? 0) ? b : best), null);
+  const busiest = buckets.reduce<(typeof buckets)[number] | null>(
+    (best, b) => (b.km > (best?.km ?? 0) ? b : best),
+    null,
+  );
 
   return (
     <Panel
-      title={unit === "hour" ? "Distance by hour" : "Distance by day"}
+      title={unit === 'hour' ? 'Distance by hour' : 'Distance by day'}
       action={
         busiest && !loading ? (
-          <span className="text-xs text-[var(--text-muted)]">
-            Busiest {unit === "hour" ? new Date(busiest.ts).toLocaleTimeString([], { hour: "numeric" }) : new Date(busiest.ts).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}{" "}
+          <span className="text-xs text-(--text-muted)">
+            Busiest{' '}
+            {unit === 'hour'
+              ? new Date(busiest.ts).toLocaleTimeString([], { hour: 'numeric' })
+              : new Date(busiest.ts).toLocaleDateString([], {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}{' '}
             · {u.formatDistance(busiest.km)}
           </span>
         ) : undefined
       }
     >
-      <ContentFrame height={160} loading={loading} empty={!busiest} emptyText="No drives in this period.">
+      <ContentFrame
+        height={160}
+        loading={loading}
+        empty={!busiest}
+        emptyText="No drives in this period."
+      >
         <TrendChart
           data={data}
           xKey="i"
           xType="category"
           height={160}
-          leftDomain={[0, "auto"]}
+          leftDomain={[0, 'auto']}
           xFormatter={label}
           tooltipLabel={(i) => {
             const ts = buckets[i]?.ts;
-            if (ts == null) return "";
-            return unit === "hour"
+            if (ts == null) return '';
+            return unit === 'hour'
               ? tooltipTime(ts)
-              : new Date(ts).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+              : new Date(ts).toLocaleDateString([], {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                });
           }}
-          series={[{ key: "km", label: "Distance", color: "var(--accent)", mark: "bar", unit: u.distanceUnit, digits: 0 }]}
+          series={[
+            {
+              key: 'km',
+              label: 'Distance',
+              color: 'var(--accent)',
+              mark: 'bar',
+              unit: u.distanceUnit,
+              digits: 0,
+            },
+          ]}
         />
       </ContentFrame>
     </Panel>
@@ -481,7 +564,7 @@ function DistancePanel(props: { drives: Parameters<typeof distanceByPeriod>[0]; 
 
 function Segmented(props: { items: string[]; value: number; onChange: (i: number) => void }) {
   return (
-    <div className="flex shrink-0 rounded-md border border-[var(--border)] p-0.5">
+    <div className="flex shrink-0 rounded-md border border-(--border) p-0.5">
       {props.items.map((label, i) => (
         <button
           key={label}
@@ -489,8 +572,8 @@ function Segmented(props: { items: string[]; value: number; onChange: (i: number
           aria-pressed={i === props.value}
           className={`rounded px-2.5 py-1 text-xs ${
             i === props.value
-              ? "bg-[var(--surface-2)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              ? 'bg-(--surface-2) text-(--text-primary)'
+              : 'text-(--text-secondary) hover:text-(--text-primary)'
           }`}
         >
           {label}

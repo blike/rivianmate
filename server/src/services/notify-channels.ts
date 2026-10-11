@@ -1,6 +1,6 @@
 /** Where alerts go: an Apprise API server or a Discord webhook. */
 
-export type AlertLevel = "info" | "success" | "warning" | "failure";
+export type AlertLevel = 'info' | 'success' | 'warning' | 'failure';
 
 /** A labelled fact; Discord lays inline ones out in columns. */
 export interface AlertField {
@@ -20,7 +20,7 @@ export interface Alert {
   fields?: AlertField[];
 }
 
-export type ChannelKind = "apprise" | "discord";
+export type ChannelKind = 'apprise' | 'discord';
 
 const TIMEOUT_MS = 10_000;
 
@@ -37,40 +37,42 @@ export function channelUrlProblem(kind: ChannelKind, url: string): string | null
   try {
     parsed = new URL(url);
   } catch {
-    return "Not a valid URL";
+    return 'Not a valid URL';
   }
-  if (kind === "apprise") {
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? null : "Use an http(s) URL";
+  if (kind === 'apprise') {
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? null
+      : 'Use an http(s) URL';
   }
   const discordHost = /^(?:canary\.|ptb\.)?discord(?:app)?\.com$/.test(parsed.hostname);
-  return parsed.protocol === "https:" && discordHost && parsed.pathname.startsWith("/api/webhooks/")
+  return parsed.protocol === 'https:' && discordHost && parsed.pathname.startsWith('/api/webhooks/')
     ? null
-    : "Use a Discord webhook URL (https://discord.com/api/webhooks/…)";
+    : 'Use a Discord webhook URL (https://discord.com/api/webhooks/…)';
 }
 
 /** Host and the start of the path, with anything secret-looking cut off. */
 export function previewUrl(url: string): string {
   try {
     const u = new URL(url);
-    const parts = u.pathname.split("/").filter(Boolean);
-    const shown = parts.slice(0, 2).join("/");
-    return `${u.host}/${shown}${parts.length > 2 ? "/…" : ""}`;
+    const parts = u.pathname.split('/').filter(Boolean);
+    const shown = parts.slice(0, 2).join('/');
+    return `${u.host}/${shown}${parts.length > 2 ? '/…' : ''}`;
   } catch {
-    return "…";
+    return '…';
   }
 }
 
 /** The request body each service expects. */
 export function payload(kind: ChannelKind, alert: Alert): unknown {
   const fields = alert.fields ?? [];
-  if (kind === "apprise") {
+  if (kind === 'apprise') {
     // Plain text: one "Name: value" line per field, links as bare URLs.
     const lines = fields.map((f) => `${f.name}: ${f.url ?? f.value}`);
-    const body = lines.length ? `${alert.body}\n\n${lines.join("\n")}` : alert.body;
+    const body = lines.length ? `${alert.body}\n\n${lines.join('\n')}` : alert.body;
     return { title: alert.title, body, type: alert.level };
   }
   return {
-    username: "RivianMate",
+    username: 'RivianMate',
     allowed_mentions: { parse: [] },
     embeds: [
       {
@@ -100,13 +102,13 @@ export async function sendAlert(
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const res = await fetchImpl(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload(kind, alert)),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) {
-    const detail = (await res.text().catch(() => "")).slice(0, 200);
-    throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+    const detail = (await res.text().catch(() => '')).slice(0, 200);
+    throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
   }
 }
