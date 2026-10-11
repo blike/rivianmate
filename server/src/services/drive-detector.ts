@@ -59,8 +59,10 @@ interface PerVehicle {
 
 /**
  * Detects drives from the state stream.
- * Start: gear enters drive/reverse, or powerState "go" with a current speed.
- * End: parked continuously for 3 minutes (grace period absorbs stops).
+ * Start: gear enters drive/reverse, or, with no gear reading, powerState
+ * "go" with a current speed.
+ * End: parked continuously for 3 minutes (grace period absorbs stops),
+ * recorded as ending when it parked.
  *
  * Times come from Rivian's own stamps where it gives them, so a drive's
  * start and end don't depend on when RivianMate heard about them. Rivian
@@ -128,13 +130,10 @@ export class DriveDetector {
     const speed = speedIsCurrent ? (stateNumber(state, 'gnssSpeed') ?? 0) : 0; // m/s
 
     const byGear = gear === 'drive' || gear === 'reverse';
-    // Shifted to park since the drive's latest movement: GPS speed while
-    // standing still is noise (it reads several km/h with the position fixed).
-    const parkedSinceMoving =
-      gear === 'park' &&
-      pv.lastMovingAt !== null &&
-      stampedAt(state, 'gearStatus', now) >= pv.lastMovingAt;
-    const isMoving = byGear || (power === 'go' && speed > 1 && !parkedSinceMoving);
+    // GPS speed standing still isn't zero: it reads a few km/h, often over
+    // 1 m/s, while the position stays put. So the gear decides, and speed
+    // only counts for a vehicle that reports none.
+    const isMoving = byGear || (gear === null && power === 'go' && speed > 1);
 
     if (!pv.resumeChecked) {
       pv.resumeChecked = true;
