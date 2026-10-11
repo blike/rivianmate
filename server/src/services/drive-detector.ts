@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { drives, locationPoints, vehicleStateSnapshots } from '../db/schema.js';
 import type { TripInfo } from '../rivian/parallax.js';
@@ -59,8 +59,10 @@ interface PerVehicle {
 
 /**
  * Detects drives from the state stream.
- * Start: gear enters drive/reverse, or powerState "go" with a current speed.
- * End: parked continuously for 3 minutes (grace period absorbs stops).
+ * Start: gear enters drive/reverse, or, with no gear reading, powerState
+ * "go" with a current speed.
+ * End: parked continuously for 3 minutes (grace period absorbs stops),
+ * recorded as ending when it parked.
  *
  * Times come from Rivian's own stamps where it gives them, so a drive's
  * start and end don't depend on when RivianMate heard about them. Rivian
@@ -128,7 +130,10 @@ export class DriveDetector {
     const speed = speedIsCurrent ? (stateNumber(state, 'gnssSpeed') ?? 0) : 0; // m/s
 
     const byGear = gear === 'drive' || gear === 'reverse';
-    const isMoving = byGear || (power === 'go' && speed > 1);
+    // GPS speed standing still isn't zero: it reads a few km/h, often over
+    // 1 m/s, while the position stays put. So the gear decides, and speed
+    // only counts for a vehicle that reports none.
+    const isMoving = byGear || (gear === null && power === 'go' && speed > 1);
 
     if (!pv.resumeChecked) {
       pv.resumeChecked = true;
@@ -360,6 +365,7 @@ export class DriveDetector {
     pv.lastEndedAt = endedAt;
     this.onDriveChange(vehicleId, null);
 
+    await this.detachPointsAfter(driveId, endedAt);
     let distanceKm = mileageDistanceKm(startMileageM, readings?.mileageM ?? null);
     if (distanceKm == null || distanceKm === 0) {
       distanceKm = await this.sumPointDistance(driveId);
@@ -391,6 +397,7 @@ export class DriveDetector {
   private async closeAtLastReading(drive: typeof drives.$inferSelect): Promise<void> {
     const last = await this.lastMovingReading(drive);
     const readings = last.readings;
+    await this.detachPointsAfter(drive.id, last.at);
     const elevation = await driveElevation(this.db, drive.id);
     await this.db
       .update(drives)
@@ -472,6 +479,17 @@ export class DriveDetector {
       .orderBy(desc(locationPoints.ts))
       .limit(1);
     return point;
+  }
+
+  /**
+   * Points recorded after the drive ended belong to no drive. They're stamped
+   * while it waits out the park grace, when it's still open.
+   */
+  private async detachPointsAfter(driveId: number, endedAt: number): Promise<void> {
+    await this.db
+      .update(locationPoints)
+      .set({ driveId: null })
+      .where(and(eq(locationPoints.driveId, driveId), gt(locationPoints.ts, new Date(endedAt))));
   }
 
   private async sumPointDistance(driveId: number): Promise<number | null> {
