@@ -33,18 +33,13 @@ export const MAP_THEME = {
   accentDim: '#7a6512',
 } as const;
 
-export interface BasemapSource {
-  /** TileJSON URL for OpenMapTiles-schema vector tiles. */
-  tilesUrl: string;
-  /** Glyph URL template with {fontstack} and {range}. */
-  glyphsUrl: string;
-}
-
 /** OpenFreeMap: free OpenMapTiles-schema tiles, no API key required. */
-export const DEFAULT_BASEMAP: BasemapSource = {
+export const BASEMAP = {
+  /** TileJSON URL for the vector tiles. */
   tilesUrl: 'https://tiles.openfreemap.org/planet',
+  /** Glyph URL template with {fontstack} and {range}. */
   glyphsUrl: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
-};
+} as const;
 
 const FONT_REGULAR = ['Noto Sans Regular'];
 const FONT_BOLD = ['Noto Sans Bold'];
@@ -88,14 +83,14 @@ function roadLayer(
 }
 
 /** The app's themed basemap over OpenMapTiles-schema vector tiles. */
-export function themedStyle(basemap: BasemapSource = DEFAULT_BASEMAP): StyleSpecification {
+export function themedStyle(): StyleSpecification {
   const t = MAP_THEME;
   return {
     version: 8,
     name: 'RivianMate Night',
-    glyphs: basemap.glyphsUrl,
+    glyphs: BASEMAP.glyphsUrl,
     sources: {
-      [SOURCE]: { type: 'vector', url: basemap.tilesUrl },
+      [SOURCE]: { type: 'vector', url: BASEMAP.tilesUrl },
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': t.background } },

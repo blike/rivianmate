@@ -1,9 +1,8 @@
 import type { FeatureCollection } from 'geojson';
 import type { GeoJSONSource, LngLatBoundsLike, Map as MapLibreMap, Marker } from 'maplibre-gl';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useMapConfig } from '../api/hooks.js';
 import { loadMaplibre } from '../lib/maplibre.js';
-import { DEFAULT_BASEMAP, MAP_THEME, themedStyle } from '../lib/mapStyle.js';
+import { MAP_THEME, themedStyle } from '../lib/mapStyle.js';
 
 export const MAP_HEIGHT = '20rem';
 
@@ -133,7 +132,6 @@ export function VehicleMap(props: {
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const [ready, setReady] = useState(false);
-  const { data: mapConfig } = useMapConfig();
 
   // The latest props, readable from the one-time map setup below.
   const latest = useRef(props);
@@ -141,10 +139,10 @@ export function VehicleMap(props: {
     latest.current = props;
   });
 
-  // Create the map once the basemap config is known.
+  // Create the map once.
   useEffect(() => {
     const container = containerRef.current;
-    if (!mapConfig || !container) return;
+    if (!container) return;
     let cancelled = false;
     let map: MapLibreMap | undefined;
     let observer: ResizeObserver | undefined;
@@ -156,12 +154,7 @@ export function VehicleMap(props: {
       const bounds = follow === false ? routeBounds(trail) : null;
       map = new maplibre.Map({
         container,
-        style:
-          mapConfig.styleUrl ??
-          themedStyle({
-            tilesUrl: mapConfig.tilesUrl ?? DEFAULT_BASEMAP.tilesUrl,
-            glyphsUrl: mapConfig.glyphsUrl ?? DEFAULT_BASEMAP.glyphsUrl,
-          }),
+        style: themedStyle(),
         ...(bounds
           ? { bounds, fitBoundsOptions: FIT }
           : { center: [lon, lat] as [number, number], zoom: 14 }),
@@ -209,7 +202,7 @@ export function VehicleMap(props: {
       mapRef.current = null;
       markerRef.current = null;
     };
-  }, [mapConfig]);
+  }, []);
 
   // Vehicle position and heading; follow it unless showing a fixed route.
   useEffect(() => {

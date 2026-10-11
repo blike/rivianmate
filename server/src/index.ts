@@ -50,18 +50,16 @@ async function main(): Promise<void> {
     bus,
     (tokens) => rivianFactory.createConnection(tokens),
     (msg) => console.log(`[monitor] ${msg}`),
-    config.REVERSE_GEOCODING
-      ? new DrivePlaces(
-          db,
-          // Mock drives are in made-up places; don't look them up.
-          config.MOCK_RIVIAN
-            ? mockGeocode
-            : nominatimGeocoder(
-                `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`,
-              ),
-          (msg) => console.log(`[places] ${msg}`),
-        )
-      : undefined,
+    new DrivePlaces(
+      db,
+      // Mock drives are in made-up places; don't look them up.
+      config.MOCK_RIVIAN
+        ? mockGeocode
+        : nominatimGeocoder(
+            `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`,
+          ),
+      (msg) => console.log(`[places] ${msg}`),
+    ),
   );
 
   const notifications = new NotificationService(

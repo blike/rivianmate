@@ -25,7 +25,6 @@ import type {
   NotificationSettingsDto,
   NotificationSettingsUpdate,
   NotificationTestResult,
-  MapConfigResponse,
 } from '@server/api-types.js';
 
 export type {
@@ -120,7 +119,6 @@ export const api = {
     }),
   testNotifications: () =>
     request<NotificationTestResult[]>('/api/settings/notifications/test', { method: 'POST' }),
-  mapConfig: () => request<MapConfigResponse>('/api/map-config'),
   units: () => request<UnitPreferences>('/api/settings/units'),
   setUnits: (units: UnitPreferences) =>
     request<UnitPreferences>('/api/settings/units', {
