@@ -1,5 +1,5 @@
-import type { VehicleState } from '@server/api-types.js';
-import { nv, sv, titleCase } from './state.js';
+import type { VehicleState } from '@server/api-types';
+import { nv, sv, titleCase } from './state';
 
 export type OtaPhase = 'available' | 'downloading' | 'ready' | 'installing';
 

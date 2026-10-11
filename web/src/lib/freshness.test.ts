@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { freshness, lastSeenAt, locationIsBehind } from './freshness.js';
+import { freshness, lastSeenAt, locationIsBehind } from './freshness';
 
 const NOW = Date.parse('2026-10-01T12:00:00Z');
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();

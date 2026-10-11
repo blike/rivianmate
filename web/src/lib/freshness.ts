@@ -1,4 +1,4 @@
-import type { VehicleState } from '@server/api-types.js';
+import type { VehicleState } from '@server/api-types';
 
 export type FreshnessLevel = 'live' | 'recent' | 'asleep' | 'stale';
 

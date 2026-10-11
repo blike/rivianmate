@@ -1,4 +1,4 @@
-import { PASSWORD_MIN_LENGTH, passwordProblem, unguessablePart } from '@server/password-policy.js';
+import { PASSWORD_MIN_LENGTH, passwordProblem, unguessablePart } from '@server/password-policy';
 
 /** Live feedback under a new-password field, using the server's policy. */
 export function PasswordHint(props: { password: string }) {

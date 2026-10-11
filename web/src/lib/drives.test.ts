@@ -6,7 +6,7 @@ import {
   minuteTicks,
   profilePosition,
   rangeUsedKm,
-} from './drives.js';
+} from './drives';
 
 describe('driveProfile', () => {
   it('places points by minutes into the drive', () => {

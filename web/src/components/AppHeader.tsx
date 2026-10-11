@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import type { VehicleDto } from '@server/api-types.js';
+import type { VehicleDto } from '@server/api-types';
 
 export const NAV = [
   { to: '/', label: 'Dashboard' },

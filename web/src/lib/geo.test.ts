@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { haversineKm, isPosition, withCumulativeKm } from './geo.js';
+import { haversineKm, isPosition, withCumulativeKm } from './geo';
 
 describe('geo', () => {
   it('measures one degree of latitude as ~111 km', () => {

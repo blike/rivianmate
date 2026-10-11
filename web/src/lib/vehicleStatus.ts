@@ -1,6 +1,6 @@
-import type { VehicleState } from '@server/api-types.js';
-import { closureStatuses } from './closures.js';
-import { nv, sv, titleCase } from './state.js';
+import type { VehicleState } from '@server/api-types';
+import { closureStatuses } from './closures';
+import { nv, sv, titleCase } from './state';
 
 /** Explicit null is an absent warning, not a measured fluid level. */
 export function brakeFluidLabel(state: VehicleState | undefined): string {

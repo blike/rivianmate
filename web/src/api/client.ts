@@ -25,7 +25,7 @@ import type {
   NotificationSettingsDto,
   NotificationSettingsUpdate,
   NotificationTestResult,
-} from '@server/api-types.js';
+} from '@server/api-types';
 
 export type {
   HomeChargingSettings,

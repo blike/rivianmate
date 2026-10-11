@@ -1,4 +1,4 @@
-import { fmt } from '../lib/state.js';
+import { fmt } from '../lib/state';
 
 export interface SplitSegment {
   key: string;

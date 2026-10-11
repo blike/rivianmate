@@ -1,5 +1,5 @@
-import type { ChargingSessionDto } from '@server/api-types.js';
-import { fmt, titleCase } from './state.js';
+import type { ChargingSessionDto } from '@server/api-types';
+import { fmt, titleCase } from './state';
 
 /**
  * Seconds spent charging so far, counting a stretch still running; null

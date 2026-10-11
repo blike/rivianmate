@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { fmt } from '../lib/state.js';
+import { fmt } from '../lib/state';
 
 export interface TrendSeries {
   key: string;

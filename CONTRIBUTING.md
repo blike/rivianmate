@@ -81,6 +81,13 @@ data: add columns with defaults or as nullable, and backfill in the migration wh
 - Put logic that can be tested in plain functions (for example `web/src/lib/` and
   `server/src/services/`) and add tests next to it as `*.test.ts`. Tests that need Postgres are
   named `*.db.test.ts`.
+- The web app is organized by feature:
+  - Each page lives in `web/src/features/<feature>/`, with the components and logic only it uses.
+    The page file fetches data and lays out the page; what it shows comes from its own files.
+  - Components used by more than one feature go in `web/src/components/`, and shared logic in
+    `web/src/lib/`. Move something there once a second feature needs it.
+  - Data fetching that more than one place needs is a hook in `web/src/api/hooks.ts`.
+  - Name a file after the component it exports, in PascalCase, and import it without an extension.
 - In the web app, use the theme's CSS variables rather than fixed colors, in Tailwind's short form:
   `text-(--text-muted)`, `bg-(--surface-1)`, not `text-[var(--text-muted)]`. The Tailwind CSS editor
   extension suggests the canonical form of any class. Check your change on a phone-width screen as

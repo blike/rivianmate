@@ -5,7 +5,7 @@ import {
   closureStatuses,
   lockedValue,
   vehicleBody,
-} from './closures.js';
+} from './closures';
 
 const v = (value: string) => ({ timeStamp: 't', value });
 

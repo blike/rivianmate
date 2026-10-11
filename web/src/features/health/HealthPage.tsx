@@ -1,0 +1,51 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../api/client';
+import { useInsights, useVehicleState } from '../../api/hooks';
+import { LoadingScope } from '../../components/LoadingState';
+import { BatteryPanel } from './BatteryPanel';
+import { Overview } from './Overview';
+import { SoftwarePanel } from './SoftwarePanel';
+import { TiresPanel } from './TiresPanel';
+
+export function HealthPage(props: { vehicleId: string }) {
+  const { data: state, isPending: statePending } = useVehicleState(props.vehicleId);
+  const {
+    data: insights,
+    isPending: insightsPending,
+    isError: insightsError,
+  } = useInsights(props.vehicleId);
+  const {
+    data: battery,
+    isPending: batteryPending,
+    isError: batteryError,
+  } = useQuery({
+    queryKey: ['batteryHealth', props.vehicleId],
+    queryFn: () => api.batteryHealth(props.vehicleId),
+    refetchInterval: 60_000,
+  });
+
+  return (
+    <div className="space-y-4">
+      <LoadingScope loading={statePending}>
+        <Overview state={state} />
+      </LoadingScope>
+
+      {(batteryError || insightsError) && (
+        <p role="alert" className="text-sm text-(--status-critical)">
+          Could not refresh vehicle health readings. Existing values may be out of date.
+        </p>
+      )}
+
+      <BatteryPanel
+        battery={battery}
+        insights={insights}
+        batteryPending={batteryPending || statePending}
+        insightsPending={insightsPending}
+      />
+
+      <TiresPanel vehicleId={props.vehicleId} state={state} statePending={statePending} />
+
+      <SoftwarePanel vehicleId={props.vehicleId} />
+    </div>
+  );
+}
