@@ -1,5 +1,5 @@
-import type { UnitPreferences } from '@server/api-types.js';
-import { fmt } from './state.js';
+import type { UnitPreferences } from '@server/api-types';
+import { fmt } from './state';
 
 export const DEFAULT_UNITS: UnitPreferences = { distance: 'mi', temperature: 'F' };
 

@@ -1,12 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import type {
-  LiveSessionData,
-  NotificationSettingsUpdate,
-  VehicleState,
-} from '@server/api-types.js';
-import { DEFAULT_UNITS, unitFormatter } from '../lib/units.js';
-import { api, type HomeChargingSettings, type UnitPreferences } from './client.js';
+import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
+import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
+import { api, type HomeChargingSettings, type UnitPreferences } from './client';
 
 export function useStatus() {
   return useQuery({ queryKey: ['status'], queryFn: api.status, staleTime: 5000 });
@@ -53,6 +49,48 @@ export function useLiveCharging(vehicleId: string | undefined) {
     queryFn: () => null,
     enabled: false,
     staleTime: Infinity,
+  });
+}
+
+/** Anything still under way (a drive, navigation) refreshes this often. */
+const LIVE_REFRESH_MS = 15_000;
+
+export function useDrives(vehicleId: string) {
+  return useQuery({
+    queryKey: ['drives', vehicleId],
+    queryFn: () => api.drives(vehicleId),
+    // A drive in progress grows by the second.
+    refetchInterval: (query) =>
+      query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
+  });
+}
+
+export function useDrive(driveId: number | null) {
+  return useQuery({
+    queryKey: ['drive', driveId],
+    queryFn: () => api.drive(driveId!),
+    enabled: driveId != null,
+    refetchInterval: (query) =>
+      query.state.data && !query.state.data.endedAt ? LIVE_REFRESH_MS : false,
+    // Keep the previous drive on screen while the next one loads.
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useChargingSessions(vehicleId: string) {
+  return useQuery({
+    queryKey: ['chargingSessions', vehicleId],
+    queryFn: () => api.chargingSessions(vehicleId),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useInsights(vehicleId: string) {
+  return useQuery({
+    queryKey: ['insights', vehicleId],
+    queryFn: () => api.insights(vehicleId),
+    // Navigation progress changes by the second; other readings slowly.
+    refetchInterval: (query) => (query.state.data?.navigation ? LIVE_REFRESH_MS : 60_000),
   });
 }
 

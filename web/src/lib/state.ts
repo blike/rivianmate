@@ -1,5 +1,5 @@
-import type { VehicleState } from '@server/api-types.js';
-import { isPosition } from './geo.js';
+import type { VehicleState } from '@server/api-types';
+import { isPosition } from './geo';
 
 interface ValueRecord {
   timeStamp?: string;

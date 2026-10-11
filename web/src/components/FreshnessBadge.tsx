@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { VehicleState } from '@server/api-types.js';
-import { type FreshnessLevel, freshness } from '../lib/freshness.js';
-import { Skeleton, useLoading } from './loading.js';
+import type { VehicleState } from '@server/api-types';
+import { type FreshnessLevel, freshness } from '../lib/freshness';
+import { Dot } from './Dot';
+import { Skeleton, useLoading } from './LoadingState';
 
 const DOT: Record<FreshnessLevel, string> = {
   live: 'var(--status-good)',
@@ -31,7 +32,7 @@ export function FreshnessBadge(props: { state: VehicleState | undefined }) {
       className="inline-flex items-center gap-1.5 rounded-full border border-(--border) px-2.5 py-0.5 text-xs text-(--text-secondary)"
       title={f.lastSeen ? f.lastSeen.toLocaleString() : undefined}
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: DOT[f.level] }} />
+      <Dot color={DOT[f.level]} />
       {f.label}
     </span>
   );

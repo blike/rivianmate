@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unitFormatter } from './units.js';
+import { unitFormatter } from './units';
 
 describe('unitFormatter', () => {
   it('formats imperial', () => {

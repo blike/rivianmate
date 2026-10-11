@@ -1,8 +1,8 @@
 import type { FeatureCollection } from 'geojson';
 import type { GeoJSONSource, LngLatBoundsLike, Map as MapLibreMap, Marker } from 'maplibre-gl';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { loadMaplibre } from '../lib/maplibre.js';
-import { MAP_THEME, themedStyle } from '../lib/mapStyle.js';
+import { loadMaplibre } from '../lib/maplibre';
+import { MAP_THEME, themedStyle } from '../lib/mapStyle';
 
 export const MAP_HEIGHT = '20rem';
 

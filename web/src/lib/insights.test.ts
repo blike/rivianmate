@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parkedSegments, parkedWindows, signalLabel, wifiBand, windowLabel } from './insights.js';
+import { parkedSegments, parkedWindows, signalLabel, wifiBand, windowLabel } from './insights';
 
 describe('parkedWindows', () => {
   it('keeps whole-hour windows, longest first', () => {

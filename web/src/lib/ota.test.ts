@@ -1,11 +1,6 @@
-import type { VehicleState } from '@server/api-types.js';
+import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import {
-  installTimeLabel,
-  lastInstallFailed,
-  softwareUpdate,
-  typicalUpdateGapDays,
-} from './ota.js';
+import { installTimeLabel, lastInstallFailed, softwareUpdate, typicalUpdateGapDays } from './ota';
 
 const v = (value: string | number) => ({ timeStamp: 't', value });
 const state = (fields: Record<string, string | number>) =>

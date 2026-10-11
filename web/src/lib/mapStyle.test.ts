@@ -1,6 +1,6 @@
 import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
-import { BASEMAP, themedStyle } from './mapStyle.js';
+import { BASEMAP, themedStyle } from './mapStyle';
 
 describe('themedStyle', () => {
   it('is a valid MapLibre style', () => {

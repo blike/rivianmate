@@ -1,11 +1,11 @@
-import type { VehicleState } from '@server/api-types.js';
+import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
 import {
   brakeFluidLabel,
   preconditioningLabel,
   securitySummary,
   vehicleActivity,
-} from './vehicleStatus.js';
+} from './vehicleStatus';
 
 const v = (value: string | number) => ({ timeStamp: 't', value });
 const state = (fields: Record<string, string | number>) =>

@@ -1,1 +1,1 @@
-export * from '@server/closures.js';
+export * from '@server/closures';

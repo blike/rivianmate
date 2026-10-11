@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { useLiveState, useStatus, useUnitPreferences, useVehicles } from './api/hooks.js';
-import { AppHeader } from './components/AppHeader.js';
-import { Charging } from './pages/Charging.js';
-import { Dashboard } from './pages/Dashboard.js';
-import { Drives } from './pages/Drives.js';
-import { Health } from './pages/Health.js';
-import { History } from './pages/History.js';
-import { Login } from './pages/Login.js';
-import { RivianConnect } from './pages/RivianConnect.js';
-import { Settings } from './pages/Settings.js';
-import { Setup } from './pages/Setup.js';
+import { useLiveState, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
+import { AppHeader } from './components/AppHeader';
+import { ChargingPage } from './features/charging/ChargingPage';
+import { DashboardPage } from './features/dashboard/DashboardPage';
+import { DrivesPage } from './features/drives/DrivesPage';
+import { HealthPage } from './features/health/HealthPage';
+import { HistoryPage } from './features/history/HistoryPage';
+import { LoginPage } from './features/auth/LoginPage';
+import { RivianConnectPage } from './features/auth/RivianConnectPage';
+import { SettingsPage } from './features/settings/SettingsPage';
+import { SetupPage } from './features/auth/SetupPage';
 
 export default function App() {
   const { data: status, isLoading, refetch } = useStatus();
@@ -23,11 +23,11 @@ export default function App() {
     );
   }
 
-  if (status.needsSetup) return <Setup onDone={() => refetch()} />;
-  if (!status.authed) return <Login onDone={() => refetch()} />;
+  if (status.needsSetup) return <SetupPage onDone={() => refetch()} />;
+  if (!status.authed) return <LoginPage onDone={() => refetch()} />;
   if (!status.rivianConnected) {
     return (
-      <RivianConnect
+      <RivianConnectPage
         mockMode={status.mockMode}
         reauth={status.rivianAuthState === 'unauthenticated'}
         email={status.rivianEmail}
@@ -57,12 +57,12 @@ function Shell() {
           </p>
         ) : (
           <Routes>
-            <Route path="/" element={<Dashboard vehicleId={vehicleId} vehicle={vehicle} />} />
-            <Route path="/history" element={<History vehicleId={vehicleId} />} />
-            <Route path="/drives" element={<Drives vehicleId={vehicleId} />} />
-            <Route path="/charging" element={<Charging vehicleId={vehicleId} />} />
-            <Route path="/health" element={<Health vehicleId={vehicleId} />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/" element={<DashboardPage vehicleId={vehicleId} vehicle={vehicle} />} />
+            <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
+            <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />
+            <Route path="/charging" element={<ChargingPage vehicleId={vehicleId} />} />
+            <Route path="/health" element={<HealthPage vehicleId={vehicleId} />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

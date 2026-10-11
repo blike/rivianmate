@@ -6,8 +6,8 @@ import {
   sessionCost,
   sessionTotals,
   socRange,
-} from './charging.js';
-import { fmtSeconds } from './state.js';
+} from './charging';
+import { fmtSeconds } from './state';
 
 describe('chargingSecondsNow', () => {
   const now = Date.parse('2026-10-01T12:00:00Z');

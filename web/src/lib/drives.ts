@@ -1,5 +1,5 @@
-import type { LocationPointDto } from '@server/api-types.js';
-import { isPosition } from './geo.js';
+import type { LocationPointDto } from '@server/api-types';
+import { isPosition } from './geo';
 
 /**
  * Speed (km/h) and altitude (m) by minutes into the drive, for charting.
