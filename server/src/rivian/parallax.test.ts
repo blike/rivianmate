@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { b64, double, float, graphBar, int, message, string } from '../testing/protobuf.js';
 import {
+  RVM_CABIN_TEMPERATURES,
+  RVM_CLOSURES,
+  RVM_DEFROST,
+  RVM_GEAR,
+  RVM_LOCKS,
+  RVM_ODOMETER,
+  RVM_POWER,
+  RVM_PRECONDITIONING,
   chargerStateFromStatus,
+  chargerStatusFromStatus,
   decodeBatteryCharacteristics,
   decodeBatteryState,
   decodeChargeBreakdown,
@@ -19,6 +28,7 @@ import {
   decodeTripProgress,
   describeParallax,
   readProtoFields,
+  vehicleStateFromParallax,
   vehicleSupportsParallax,
 } from './parallax.js';
 
@@ -514,5 +524,137 @@ describe('describeParallax', () => {
       { path: '2.11', name: 'Window: length (minutes)', value: 1440 },
     ]);
     expect(describeParallax({ rvm: 'x', payload: '', timestamp: null })).toEqual([]);
+  });
+});
+
+describe('vehicleStateFromParallax', () => {
+  const TS = '2026-10-12T13:58:09.952Z';
+  const read = (rvm: string, bytes: number[]) => vehicleStateFromParallax(rvm, b64(bytes), TS);
+  const v = (value: string | number) => ({ timeStamp: TS, value });
+  const entry = (position: number, state?: number) =>
+    message(1, [...int(1, position), ...(state == null ? [] : int(2, state))]);
+
+  it('reads power state and gear as legacy values', () => {
+    expect(read(RVM_POWER, int(1, 4))).toEqual({ powerState: v('go') });
+    expect(read(RVM_POWER, int(1, 1))).toEqual({ powerState: v('sleep') });
+    expect(read(RVM_GEAR, int(1, 4))).toEqual({ gearStatus: v('drive') });
+    expect(read(RVM_GEAR, int(1, 2))).toEqual({ gearStatus: v('reverse') });
+    expect(read(RVM_GEAR, int(1, 1))).toEqual({ gearStatus: v('park') });
+  });
+
+  it('skips unknown or missing power states and gears', () => {
+    expect(read(RVM_POWER, int(1, 9))).toBeNull();
+    expect(read(RVM_GEAR, [])).toBeNull();
+    expect(read(RVM_GEAR, int(1, 0))).toBeNull();
+  });
+
+  it('reads the odometer (km) as legacy vehicleMileage (m)', () => {
+    expect(read(RVM_ODOMETER, int(1, 456))).toEqual({ vehicleMileage: v(456_000) });
+    expect(read(RVM_ODOMETER, int(1, 0))).toBeNull();
+    expect(read(RVM_ODOMETER, int(1, 3_000_000))).toBeNull();
+  });
+
+  it('reads an R2 closure frame: doors, liftgate, windows and charge port', () => {
+    const state = read(RVM_CLOSURES, [
+      ...entry(1, 1), // driver door open
+      ...entry(2, 2),
+      ...entry(3, 2),
+      ...entry(4, 2),
+      ...entry(5, 4), // frunk opening
+      ...entry(6, 0), // no tailgate on an R2
+      ...entry(7, 5), // liftgate closing
+      ...entry(10, 2),
+      ...entry(12, 3), // window ajar
+      ...entry(13, 2),
+      ...entry(14, 2),
+      ...entry(15, 2),
+      ...entry(16, 2), // rear drop glass: no legacy field
+      ...entry(10000), // stateless marker ending every R2 frame
+    ]);
+    expect(state).toEqual({
+      doorFrontLeftClosed: v('open'),
+      doorFrontRightClosed: v('closed'),
+      doorRearLeftClosed: v('closed'),
+      doorRearRightClosed: v('closed'),
+      closureFrunkClosed: v('open'),
+      closureLiftgateClosed: v('open'),
+      chargePortState: v('closed'),
+      windowFrontLeftClosed: v('open'),
+      windowFrontRightClosed: v('closed'),
+      windowRearLeftClosed: v('closed'),
+      windowRearRightClosed: v('closed'),
+    });
+  });
+
+  it('reads an open or ajar charge port as open, and skips unknown closure states', () => {
+    expect(read(RVM_CLOSURES, entry(10, 1))).toEqual({ chargePortState: v('open') });
+    expect(read(RVM_CLOSURES, entry(10, 3))).toEqual({ chargePortState: v('open') });
+    expect(read(RVM_CLOSURES, entry(10, 4))).toEqual({ chargePortState: v('closed') });
+    expect(read(RVM_CLOSURES, [...entry(1, 9), ...entry(2, 2)])).toEqual({
+      doorFrontRightClosed: v('closed'),
+    });
+    expect(read(RVM_CLOSURES, entry(20, 2))).toBeNull();
+  });
+
+  it('reads locks, skipping unmapped positions and unknown states', () => {
+    expect(
+      read(RVM_LOCKS, [
+        ...entry(1, 1),
+        ...entry(2, 2),
+        ...entry(5, 3),
+        ...entry(7, 1),
+        ...entry(14, 1), // no legacy field
+        ...entry(3, 7), // unknown state
+      ]),
+    ).toEqual({
+      doorFrontLeftLocked: v('locked'),
+      doorFrontRightLocked: v('unlocked'),
+      closureFrunkLocked: v('unlocked'),
+      closureLiftgateLocked: v('locked'),
+    });
+  });
+
+  it('reads cabin temperatures, skipping implausible ones', () => {
+    expect(read(RVM_CABIN_TEMPERATURES, [...float(3, 23.5), ...float(4, 21)])).toEqual({
+      cabinClimateInteriorTemperature: v(23.5),
+      cabinClimateDriverTemperature: v(21),
+    });
+    expect(read(RVM_CABIN_TEMPERATURES, float(3, 500))).toBeNull();
+  });
+
+  it('reads preconditioning (an empty message is off) and defrost', () => {
+    expect(read(RVM_PRECONDITIONING, [])).toEqual({ cabinPreconditioningStatus: v('off') });
+    expect(read(RVM_PRECONDITIONING, int(1, 4))).toEqual({
+      cabinPreconditioningStatus: v('active'),
+    });
+    expect(read(RVM_PRECONDITIONING, int(1, 2))).toEqual({
+      cabinPreconditioningStatus: v('initiate'),
+    });
+    expect(read(RVM_DEFROST, int(1, 2))).toEqual({ defrostDefogStatus: v('on') });
+    expect(read(RVM_DEFROST, int(1, 4))).toEqual({ defrostDefogStatus: v('off') });
+    expect(read(RVM_DEFROST, int(1, 3))).toBeNull();
+  });
+
+  it('ignores other topics and malformed payloads', () => {
+    expect(read('dynamics.vehicle.gnss', int(1, 1))).toBeNull();
+    expect(vehicleStateFromParallax(RVM_GEAR, '/w==', TS)).toBeNull();
+  });
+});
+
+describe('chargerStatusFromStatus', () => {
+  it('reads the plug connection as legacy chargerStatus', () => {
+    // Captured from an R2 as it was unplugged (October 8, 2026).
+    expect(chargerStatusFromStatus(decodeChargingStatus('CAEQAQ==')!)).toBe(
+      'chrgr_sts_not_connected',
+    );
+    const status = (plugConnection: number, displayStatus: number) => ({
+      plugConnection,
+      displayStatus,
+      evseType: 1,
+    });
+    expect(chargerStatusFromStatus(status(2, 3))).toBe('chrgr_sts_connected_charging');
+    expect(chargerStatusFromStatus(status(2, 2))).toBe('chrgr_sts_connected_no_chrg');
+    expect(chargerStatusFromStatus(status(2, 4))).toBe('chrgr_sts_connected_no_chrg');
+    expect(chargerStatusFromStatus(status(0, 0))).toBeNull();
   });
 });

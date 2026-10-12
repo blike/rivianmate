@@ -8,7 +8,9 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
 import { drives, locationPoints, vehicleStateSnapshots, vehicles } from '../db/schema.js';
+import { RVM_GEAR, RVM_ODOMETER, vehicleStateFromParallax } from '../rivian/parallax.js';
 import type { VehicleState } from '../rivian/types.js';
+import { b64, int } from '../testing/protobuf.js';
 import { DriveDetector } from './drive-detector.js';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -199,6 +201,29 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
     await d.onState('v1', moving);
 
     expect(await rows()).toHaveLength(1);
+  });
+
+  it('records an R2 drive from Parallax gear and odometer alone', async () => {
+    // An R2 leaves legacy gear and power null; gear and odometer come from
+    // Parallax, and its GPS speed is a stale reading from hours earlier.
+    const r2 = (gear: number, km: number, stamp: string): VehicleState => ({
+      ...vehicleStateFromParallax(RVM_GEAR, b64(int(1, gear)), stamp),
+      ...vehicleStateFromParallax(RVM_ODOMETER, b64(int(1, km)), stamp),
+      gnssSpeed: { value: 5.377, timeStamp: '2026-10-12T10:39:09Z' },
+      batteryLevel: { value: 62, timeStamp: stamp },
+    });
+    const d = detector();
+    clock = at('2026-10-12T13:58:12Z');
+    await d.onState('v1', r2(4, 429, '2026-10-12T13:58:09.952Z'));
+    clock = at('2026-10-12T14:15:46Z');
+    await d.onState('v1', r2(1, 443, '2026-10-12T14:15:43.162Z'));
+    await settle();
+
+    const [drive, ...more] = await rows();
+    expect(more).toHaveLength(0);
+    expect(drive!.startedAt.toISOString()).toBe('2026-10-12T13:58:09.952Z');
+    expect(drive!.endedAt!.toISOString()).toBe('2026-10-12T14:15:43.162Z');
+    expect(drive!.distanceKm).toBe(14);
   });
 
   it('ends at once when the parked state arrives late (e.g. after the host slept)', async () => {

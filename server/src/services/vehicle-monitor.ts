@@ -8,12 +8,16 @@ import {
   PARALLAX_DYNAMICS_FIELDS,
   PARALLAX_DYNAMICS_RVMS,
   PARALLAX_MONITOR_RVMS,
+  RVM_CHARGING_STATUS,
   RVM_GNSS,
   RVM_TIRES,
   RVM_TRIP_INFO,
+  chargerStatusFromStatus,
+  decodeChargingStatus,
   decodeGnss,
   decodeTires,
   decodeTripInfo,
+  vehicleStateFromParallax,
   vehicleSupportsParallax,
 } from '../rivian/parallax.js';
 import type { SchedulesDto, VehicleInsightsDto } from '../api-types.js';
@@ -320,6 +324,16 @@ export class VehicleMonitor {
           void this.driveDetector
             .noteDestination(vehicle.id, destination)
             .catch((err: Error) => this.log(`drive destination: ${err.message}`));
+        } else if (message.rvm === RVM_CHARGING_STATUS) {
+          // The plug state, which an R2 doesn't report in vehicle state.
+          const status = decodeChargingStatus(message.payload);
+          const chargerStatus = status && chargerStatusFromStatus(status);
+          if (chargerStatus) {
+            const timeStamp = (messageTime(message.timestamp) ?? new Date()).toISOString();
+            void this.handleDelta(vehicle.id, {
+              chargerStatus: { timeStamp, value: chargerStatus },
+            });
+          }
         }
       });
       if (parallaxActive) {
@@ -367,6 +381,9 @@ export class VehicleMonitor {
                 }
               }
               if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
+            } else {
+              const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
+              if (delta) void this.handleDelta(vehicle.id, delta);
             }
           },
         );

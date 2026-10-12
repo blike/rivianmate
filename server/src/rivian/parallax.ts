@@ -6,6 +6,8 @@
  * decoding here is defensive: anything unexpected is skipped, never thrown.
  */
 
+import type { VehicleState } from './types.js';
+
 /** Live charging graph: the bars the Rivian app draws for a session. */
 export const RVM_CHARGING_GRAPH = 'energy_edge_compute.graphs.charging_graph_global';
 
@@ -223,8 +225,69 @@ export const RVM_GNSS = 'dynamics.vehicle.gnss';
 /** Live tire pressure topic — subscribed via subscribeParallaxDynamics, not PARALLAX_MONITOR_RVMS. */
 export const RVM_TIRES = 'dynamics.tires.state';
 
+// Vehicle state topics, read as the legacy fields they stand in for. The R2
+// leaves those legacy fields null (gear, power, doors, locks, cabin), so
+// these are its only source; an R1 reports both and the newer reading wins.
+export const RVM_POWER = 'vehicle.power.state';
+export const RVM_GEAR = 'dynamics.vehicle.gear';
+export const RVM_ODOMETER = 'dynamics.vehicle.odometer';
+export const RVM_CLOSURES = 'body.closures.states';
+export const RVM_LOCKS = 'body.locks.states';
+export const RVM_CABIN_TEMPERATURES = 'comfort.cabin.cabin_temperatures';
+export const RVM_PRECONDITIONING = 'comfort.cabin.cabin_preconditioning_status';
+export const RVM_DEFROST = 'comfort.cabin.defrost_defog_status';
+
+/**
+ * `body.closures.states` positions, as the Rivian app numbers them, from
+ * community captures. 10 is the charge port; 16, the R2's rear drop glass,
+ * has no legacy field; 10000 is a stateless marker that ends every R2
+ * frame. An R2 reports 1–5, 7 and 12–15, all closed so far, so which
+ * position is which door isn't confirmed on it yet.
+ */
+const CLOSURE_FIELDS: Record<number, string> = {
+  1: 'doorFrontLeftClosed',
+  2: 'doorFrontRightClosed',
+  3: 'doorRearLeftClosed',
+  4: 'doorRearRightClosed',
+  5: 'closureFrunkClosed',
+  6: 'closureTailgateClosed',
+  7: 'closureLiftgateClosed',
+  8: 'closureSideBinLeftClosed',
+  9: 'closureSideBinRightClosed',
+  11: 'closureTonneauClosed',
+  12: 'windowFrontLeftClosed',
+  13: 'windowFrontRightClosed',
+  14: 'windowRearLeftClosed',
+  15: 'windowRearRightClosed',
+};
+const CLOSURE_CHARGE_PORT = 10;
+
+/** `body.locks.states` positions: the closures' numbering, for those that lock. */
+const LOCK_FIELDS: Record<number, string> = {
+  1: 'doorFrontLeftLocked',
+  2: 'doorFrontRightLocked',
+  3: 'doorRearLeftLocked',
+  4: 'doorRearRightLocked',
+  5: 'closureFrunkLocked',
+  6: 'closureTailgateLocked',
+  7: 'closureLiftgateLocked',
+  8: 'closureSideBinLeftLocked',
+  9: 'closureSideBinRightLocked',
+};
+
 /** Topics for the isolated "dynamics" Parallax subscription (own id/fate — see subscription.ts). */
-export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
+export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [
+  RVM_GNSS,
+  RVM_TIRES,
+  RVM_POWER,
+  RVM_GEAR,
+  RVM_ODOMETER,
+  RVM_CLOSURES,
+  RVM_LOCKS,
+  RVM_CABIN_TEMPERATURES,
+  RVM_PRECONDITIONING,
+  RVM_DEFROST,
+];
 
 /**
  * VehicleState fields shared by legacy and dynamics subscriptions. Merge
@@ -243,6 +306,17 @@ export const PARALLAX_DYNAMICS_FIELDS: readonly string[] = [
   'tirePressureStatusFrontRight',
   'tirePressureStatusRearLeft',
   'tirePressureStatusRearRight',
+  'powerState',
+  'gearStatus',
+  'vehicleMileage',
+  'chargePortState',
+  'chargerStatus',
+  'cabinClimateInteriorTemperature',
+  'cabinClimateDriverTemperature',
+  'cabinPreconditioningStatus',
+  'defrostDefogStatus',
+  ...Object.values(CLOSURE_FIELDS),
+  ...Object.values(LOCK_FIELDS),
 ];
 
 const TIRE_POSITION_SUFFIX: Record<number, string> = {
@@ -449,6 +523,112 @@ export function decodeTires(payloadBase64: string): TireReading[] {
   return readings;
 }
 
+const POWER_STATES: Record<number, string> = { 1: 'sleep', 2: 'standby', 3: 'ready', 4: 'go' };
+const GEARS: Record<number, string> = { 1: 'park', 2: 'reverse', 3: 'neutral', 4: 'drive' };
+const PRECONDITIONING_STATUSES: Record<number, string> = {
+  0: 'off',
+  1: 'initiate',
+  2: 'initiate',
+  3: 'off',
+  4: 'active',
+};
+const DEFROST_STATUSES: Record<number, string> = { 0: 'off', 1: 'off', 2: 'on', 4: 'off' };
+
+/**
+ * A vehicle state topic's message as the legacy fields it carries, stamped
+ * `timeStamp`, in legacy's values ("park", "closed", "locked", …). Null for
+ * other topics, or when nothing in the message could be read. Enum values
+ * come from community captures. An R2 has so far shown sleep, park,
+ * closed, locked, preconditioning off and defrost off; the rest are
+ * unconfirmed on it.
+ *
+ * - `vehicle.power.state`: 1 power state (1 sleep, 2 standby, 3 ready, 4 go).
+ * - `dynamics.vehicle.gear`: 1 gear (1 park, 2 reverse, 3 neutral, 4 drive).
+ * - `dynamics.vehicle.odometer`: 1 odometer (whole km).
+ * - `body.closures.states` / `body.locks.states`: repeated 1, each with 1
+ *   position (see CLOSURE_FIELDS) and 2 state. Closures: 1 open, 2 closed,
+ *   3 ajar, 4 opening, 5 closing; 0 or missing means not fitted. Locks:
+ *   1 locked, 2 unlocked, 3 partly unlocked.
+ * - `cabin_temperatures`: 3 cabin, 4 driver setting (float, °C).
+ * - `cabin_preconditioning_status`: 1 status (1–2 initiate, 4 active, 0 or
+ *   3 off; an empty message is off).
+ * - `defrost_defog_status`: 1 status (2 on; 0, 1 and 4 off).
+ *
+ * Entries with an unknown position or value are skipped; the rest of the
+ * message still counts.
+ */
+export function vehicleStateFromParallax(
+  rvm: string,
+  payloadBase64: string,
+  timeStamp: string,
+): VehicleState | null {
+  const bytes = Buffer.from(payloadBase64, 'base64');
+  const m = fieldsOf(bytes);
+  if (!m) return null;
+  const state: VehicleState = {};
+  const set = (key: string, value: string | number | null | undefined) => {
+    if (value != null) state[key] = { timeStamp, value };
+  };
+  const entries = () =>
+    (readProtoFields(bytes) ?? []).flatMap((f) => {
+      if (f.field !== 1 || f.wire !== 2) return [];
+      const e = fieldsOf(f.value);
+      return [{ position: e?.int(1) ?? null, state: e?.int(2) ?? null }];
+    });
+  const temperature = (n: number | null) =>
+    n != null && Number.isFinite(n) && n >= -80 && n <= 100 ? f32(n) : null;
+
+  switch (rvm) {
+    case RVM_POWER:
+      set('powerState', POWER_STATES[m.int(1) ?? 0]);
+      break;
+    case RVM_GEAR:
+      set('gearStatus', GEARS[m.int(1) ?? 0]);
+      break;
+    case RVM_ODOMETER: {
+      const km = m.int(1);
+      if (km != null && km > 0 && km <= 2_000_000) set('vehicleMileage', km * 1000);
+      break;
+    }
+    case RVM_CLOSURES:
+      for (const { position, state: status } of entries()) {
+        if (position == null || !status) continue;
+        if (position === CLOSURE_CHARGE_PORT) {
+          // As legacy chargePortState: open or ajar are open; moving or shut are closed.
+          if (status >= 1 && status <= 5)
+            set('chargePortState', status === 1 || status === 3 ? 'open' : 'closed');
+          continue;
+        }
+        const key = CLOSURE_FIELDS[position];
+        // Opening, closing and ajar aren't closed, as legacy reports them.
+        if (key && status >= 1 && status <= 5) set(key, status === 2 ? 'closed' : 'open');
+      }
+      break;
+    case RVM_LOCKS:
+      for (const { position, state: status } of entries()) {
+        const key = position == null ? undefined : LOCK_FIELDS[position];
+        if (key && status != null && status >= 1 && status <= 3) {
+          set(key, status === 1 ? 'locked' : 'unlocked');
+        }
+      }
+      break;
+    case RVM_CABIN_TEMPERATURES:
+      set('cabinClimateInteriorTemperature', temperature(m.float(3)));
+      set('cabinClimateDriverTemperature', temperature(m.float(4)));
+      break;
+    case RVM_PRECONDITIONING:
+      // Proto3 leaves a zero out, so an empty message is status 0: off.
+      set('cabinPreconditioningStatus', PRECONDITIONING_STATUSES[m.int(1) ?? 0]);
+      break;
+    case RVM_DEFROST:
+      set('defrostDefogStatus', DEFROST_STATUSES[m.int(1) ?? 0]);
+      break;
+    default:
+      return null;
+  }
+  return Object.keys(state).length > 0 ? state : null;
+}
+
 export interface ColdWeather {
   /** Battery % usable now, % held back by the cold, and range lost (km). */
   usableSoc: number | null;
@@ -651,6 +831,20 @@ export function chargerStateFromStatus(status: ChargingStatus): string | null {
 }
 
 /**
+ * The legacy chargerStatus matching a status's plug connection: 1 unplugged
+ * (sent as an R2 was unplugged on October 8, 2026), 2 plugged in. Null for
+ * other values. The R2 leaves legacy chargerStatus null, so this is its
+ * only plug state.
+ */
+export function chargerStatusFromStatus(status: ChargingStatus): string | null {
+  if (status.plugConnection === 1) return 'chrgr_sts_not_connected';
+  if (status.plugConnection !== 2) return null;
+  return status.displayStatus === 3
+    ? 'chrgr_sts_connected_charging'
+    : 'chrgr_sts_connected_no_chrg';
+}
+
+/**
  * What the decoders above read each field as, by path ("3.1" is field 1
  * inside field 3; "*" matches any field). Shown next to the raw fields in
  * the feed viewer; keep in step with the decoders.
@@ -745,6 +939,20 @@ const FIELD_NAMES: Record<string, Record<string, string>> = {
     '2.2': 'Tire: status (1 = OK)',
     '2.3': 'Tire: pressure (bar)',
   },
+  [RVM_POWER]: { '1': 'Power state (1 sleep, 2 standby, 3 ready, 4 go)' },
+  [RVM_GEAR]: { '1': 'Gear (1 park, 2 reverse, 3 neutral, 4 drive)' },
+  [RVM_ODOMETER]: { '1': 'Odometer (km)' },
+  [RVM_CLOSURES]: {
+    '1.1': 'Closure: position',
+    '1.2': 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+  },
+  [RVM_LOCKS]: {
+    '1.1': 'Lock: position',
+    '1.2': 'Lock: state (1 locked, 2 unlocked, 3 partly unlocked)',
+  },
+  [RVM_CABIN_TEMPERATURES]: { '3': 'Cabin (°C)', '4': 'Driver setting (°C)' },
+  [RVM_PRECONDITIONING]: { '1': 'Status (1–2 starting, 4 active, 0/3 off)' },
+  [RVM_DEFROST]: { '1': 'Status (2 on)' },
 };
 
 export interface RawField {
