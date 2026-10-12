@@ -18,7 +18,7 @@ export function dayTotals(sessions: ChargingSessionDto[]): string {
   return `${fmt(totals.energyKwh, 1)} kWh${totals.cost != null ? ` · ${totals.estimated ? '≈ ' : ''}${formatMoney(String(totals.cost), currency)}` : ''}`;
 }
 
-/** "62→85% · 2h 10m · ≈ $3.20" */
+/** "62.0% → 85.0% · 2h 10m · ≈ $3.20" */
 export function sessionFacts(s: ChargingSessionDto): string {
   const cost = sessionCost(s);
   const charging = chargingSecondsNow(s);

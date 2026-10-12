@@ -37,7 +37,7 @@ export function SessionCard(props: {
       label: 'Battery',
       value: s ? socRange(s.startSoc, s.endSoc) : '—',
       sub:
-        s?.startSoc != null && s.endSoc != null ? `+${fmt(s.endSoc - s.startSoc, 0)}%` : undefined,
+        s?.startSoc != null && s.endSoc != null ? `+${fmt(s.endSoc - s.startSoc, 1)}%` : undefined,
     },
     {
       label: 'Time charging',

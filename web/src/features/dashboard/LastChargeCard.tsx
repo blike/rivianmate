@@ -48,9 +48,9 @@ export function LastChargeCard(props: { session: ChargingSessionDto | undefined;
         ) : (
           <>
             <span className="shrink-0 text-base font-medium tabular-nums">
-              {s.startSoc != null ? `${fmt(s.startSoc, 0)}%` : '?'}
+              {s.startSoc != null ? `${fmt(s.startSoc, 1)}%` : '?'}
               <span className="mx-1.5 text-(--accent)">→</span>
-              {s.endSoc != null ? `${fmt(s.endSoc, 0)}%` : '?'}
+              {s.endSoc != null ? `${fmt(s.endSoc, 1)}%` : '?'}
             </span>
             <SocSpan start={s.startSoc} end={s.endSoc} />
             <span className="shrink-0 truncate text-sm text-(--text-secondary)">
