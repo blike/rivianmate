@@ -1,6 +1,6 @@
 import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
-import { HomeIcon } from '../../components/HomeIcon';
+import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { relativeTime } from '../../lib/freshness';
 import { fmt, fmtDuration } from '../../lib/state';
@@ -89,12 +89,12 @@ export function LastDriveCard(props: {
   );
 }
 
-/** "Home" with its icon, or a short address, with the full address on hover. */
+/** A saved location's name with its icon, or a short address, with the full address on hover. */
 function Place(props: { place: DrivePlaceDto | null | undefined; fallback: string }) {
   const p = props.place;
   return (
     <span className="min-w-0 truncate" title={p?.address ?? p?.label ?? props.fallback}>
-      {p?.isHome && <HomeIcon />}
+      {p && <PlaceIcon isHome={p.isHome} saved={p.locationId != null} />}
       {p?.label ?? props.fallback}
     </span>
   );

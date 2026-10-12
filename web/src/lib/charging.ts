@@ -21,14 +21,25 @@ export function socRange(start: number | null, end: number | null): string {
   return `${part(start)} → ${part(end)}`;
 }
 
+const moneyPrefix = (currency: string | null) =>
+  currency === 'USD' || !currency ? '$' : `${currency} `;
+
 export function formatMoney(amount: string, currency: string | null): string {
-  const prefix = currency === 'USD' || !currency ? '$' : `${currency} `;
-  return `${prefix}${fmt(Number(amount), 2)}`;
+  return `${moneyPrefix(currency)}${fmt(Number(amount), 2)}`;
+}
+
+/** "$0.131/kWh", "Free", or "No rate"; rates keep up to three decimals. */
+export function rateLabel(rate: number | null, currency: string): string {
+  if (rate == null) return 'No rate';
+  if (rate === 0) return 'Free';
+  return `${moneyPrefix(currency)}${Number(rate.toFixed(3))}/kWh`;
 }
 
 export function chargerLabel(
-  s: Pick<ChargingSessionDto, 'chargerType' | 'isHome' | 'vendor' | 'chargerId'>,
+  s: Pick<ChargingSessionDto, 'chargerType' | 'isHome' | 'vendor' | 'chargerId' | 'location'>,
 ): string {
+  // A saved location's name says where better than the network did.
+  if (s.location) return s.location.name;
   // One name for Rivian's own chargers, however the session recorded it.
   if (s.chargerType === 'rivian_charger' || /^rivian\b/i.test(s.vendor ?? '')) return 'Rivian';
   if (s.isHome) return 'Home';

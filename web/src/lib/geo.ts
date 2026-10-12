@@ -26,3 +26,31 @@ export function isPosition(lat: unknown, lon: unknown): lat is number {
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
   return Math.abs(lat) > 1e-4 || Math.abs(lon) > 1e-4;
 }
+
+const EARTH_RADIUS_M = 6_371_000;
+
+/** A circle on the map as a closed ring of [lon, lat] points. */
+export function circlePolygon(
+  lat: number,
+  lon: number,
+  radiusM: number,
+  steps = 64,
+): [number, number][] {
+  const r = (deg: number) => (deg * Math.PI) / 180;
+  const deg = (rad: number) => (rad * 180) / Math.PI;
+  const d = radiusM / EARTH_RADIUS_M;
+  const lat1 = r(lat);
+  const ring: [number, number][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const bearing = (2 * Math.PI * (i % steps)) / steps;
+    const lat2 = Math.asin(
+      Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(bearing),
+    );
+    const dLon = Math.atan2(
+      Math.sin(bearing) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2),
+    );
+    ring.push([lon + deg(dLon), deg(lat2)]);
+  }
+  return ring;
+}

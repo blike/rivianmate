@@ -69,8 +69,10 @@ function SessionItem(props: {
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm">
-            <span className={s.isHome ? 'font-medium' : ''}>{chargerLabel(s)}</span>
-            {s.city && !s.isHome && <span className="text-(--text-muted)"> · {s.city}</span>}
+            <span className={s.isHome || s.location ? 'font-medium' : ''}>{chargerLabel(s)}</span>
+            {s.city && !s.isHome && !s.location && (
+              <span className="text-(--text-muted)"> · {s.city}</span>
+            )}
           </span>
           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
             {!s.endedAt && (

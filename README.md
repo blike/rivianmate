@@ -99,8 +99,8 @@ Everything is set through environment variables, which Docker Compose reads from
 | `APP_PASSWORD`      | no          | Sets the app password on first start instead of using the setup screen. At least 12 characters, and not a common password or pattern                                                                            |
 | `DATABASE_URL`      | no          | Postgres connection string. Compose sets it for the bundled database; set it only to use an external Postgres                                                                                                   |
 
-Units, your home location and electricity rate, notifications, and vehicles are set in the app under
-**Settings**.
+Units and currency, saved locations (Home, Work, anywhere you park) with their charging rates,
+notifications, and vehicles are set in the app under **Settings**.
 
 ### Notifications
 

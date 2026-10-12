@@ -228,9 +228,9 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
             {!settings.homeKnown &&
               (['doorOpen', 'windowOpen', 'unlocked'] as const).some((k) => events[k].awayOnly) && (
                 <p className="px-4 py-3 text-xs text-(--status-warning)">
-                  No home location is set, so “not at home” alerts are always sent.{' '}
-                  <Link to="?section=charging" className="underline">
-                    Set one in Charging
+                  No location counts as home, so “not at home” alerts are always sent.{' '}
+                  <Link to="?section=locations" className="underline">
+                    Set one in Locations
                   </Link>
                   .
                 </p>

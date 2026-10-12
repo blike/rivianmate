@@ -13,7 +13,7 @@ import { RivianGovernor } from './rivian/governor.js';
 import { MockRivian, mockGeocode } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
 import { getPasswordHash } from './routes/auth.js';
-import { DrivePlaces, nominatimGeocoder } from './services/drive-places.js';
+import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { TokenStore } from './services/token-store.js';
@@ -44,6 +44,7 @@ async function main(): Promise<void> {
   const governor = new RivianGovernor();
   const rivianFactory: RivianFactory = config.MOCK_RIVIAN ? mockFactory() : realFactory(governor);
 
+  const userAgent = `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`;
   const monitor = new VehicleMonitor(
     db,
     tokenStore,
@@ -53,11 +54,7 @@ async function main(): Promise<void> {
     new DrivePlaces(
       db,
       // Mock drives are in made-up places; don't look them up.
-      config.MOCK_RIVIAN
-        ? mockGeocode
-        : nominatimGeocoder(
-            `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`,
-          ),
+      config.MOCK_RIVIAN ? mockGeocode : nominatimGeocoder(userAgent),
       (msg) => console.log(`[places] ${msg}`),
     ),
   );
@@ -84,6 +81,8 @@ async function main(): Promise<void> {
     notifications,
     rivianFactory,
     governor,
+    // Searches are typed by the user, so they run in mock mode too.
+    searchPlaces: nominatimSearch(userAgent),
     pendingConnect: null,
   };
 

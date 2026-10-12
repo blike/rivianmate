@@ -22,7 +22,8 @@ export function SessionPicker(props: {
         items: day.items.map((s) => ({
           id: s.id,
           time: clock(chargeStart(s)),
-          title: s.city && !s.isHome ? `${chargerLabel(s)} · ${s.city}` : chargerLabel(s),
+          title:
+            s.city && !s.isHome && !s.location ? `${chargerLabel(s)} · ${s.city}` : chargerLabel(s),
           detail: sessionFacts(s),
           value: s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : undefined,
           live: !s.endedAt,
