@@ -12,8 +12,18 @@ export function BatteryBar(props: {
   charging: boolean;
 }) {
   const loading = useLoading();
-  const level = loading || props.level == null ? 0 : Math.min(100, Math.max(0, props.level));
-  const tone = props.charging ? 'charging' : level < 15 ? 'low' : level < 30 ? 'warn' : 'ok';
+  const known = !loading && props.level != null;
+  const level = known ? Math.min(100, Math.max(0, props.level!)) : 0;
+  // An unknown level empties the bar without turning it red on the way down.
+  const tone = props.charging
+    ? 'charging'
+    : !known
+      ? 'ok'
+      : level < 15
+        ? 'low'
+        : level < 30
+          ? 'warn'
+          : 'ok';
   return (
     <div className="mt-4">
       <div

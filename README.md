@@ -112,16 +112,15 @@ Telegram, Slack, email and [many more](https://github.com/caronc/apprise/wiki). 
 ### TeslaMate
 
 Also have a Tesla logged by [TeslaMate](https://github.com/teslamate-org/teslamate)? Add its
-database under **Settings → TeslaMate** and its cars join the vehicle menu, on the same dashboard,
-drives, charging, history and health pages, with drives and charging sessions updating live while
-they happen.
+database under **Settings → General → Accounts** and its cars join the vehicle menu, on the same
+dashboard, drives, charging, history and health pages, with drives and charging sessions updating
+live while they happen.
 
 RivianMate only reads from TeslaMate: it opens a read-only session, copies nothing into its own
 database, and never writes to TeslaMate's. Enter a Postgres URL such as
 `postgres://teslamate:password@192.168.1.10:5432/teslamate`. The database has to be reachable from
 the RivianMate container, for example by publishing TeslaMate's Postgres port or by putting both on
-the same Docker network. The URL is stored encrypted with `APP_SECRET`. Settings also shows how to
-create a user that can only read, if you'd rather not use TeslaMate's own.
+the same Docker network. The URL is stored encrypted with `APP_SECRET`.
 
 TeslaMate doesn't log some things Rivian reports, such as locks, doors, the charge limit and pending
 software updates, so those parts of the pages are left out for Tesla vehicles, and notifications

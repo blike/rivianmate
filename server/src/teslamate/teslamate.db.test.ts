@@ -65,6 +65,13 @@ const FIXTURE = `
       (1, ${ago(1350)}, 70, 70, 15, 11, 370, 350, false),
       (1, ${ago(1261)}, 90, 90, 30, 11, 470, 450, false);
 
+  -- A charge TeslaMate never closed, ten days ago.
+  INSERT INTO charging_processes (id, car_id, start_date, start_battery_level, position_id)
+    VALUES (3, 1, ${ago(14400)}, 40, 4);
+  INSERT INTO charges (charging_process_id, date, battery_level, charge_energy_added,
+      charger_power, ideal_battery_range_km)
+    VALUES (3, ${ago(14340)}, 45, 4, 11, 230);
+
   -- Car 1 is driving now.
   INSERT INTO drives (id, car_id, start_date) VALUES (2, 1, ${ago(10)});
   INSERT INTO positions (id, car_id, drive_id, date, latitude, longitude, speed, odometer,
@@ -261,6 +268,10 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     const spans = await source.chargeSpans('tm-1', from, to);
     expect(spans).toHaveLength(1);
     expect(spans[0]!.kind).toBe('charging');
+    // The unclosed charge ends at its last reading, not now.
+    const older = await source.chargeSpans('tm-1', new Date(Date.now() - 11 * 86_400_000), to);
+    expect(older).toHaveLength(2);
+    expect(Date.parse(older[0]!.to) - Date.parse(older[0]!.from)).toBe(60 * 60_000);
     const trail = await source.locations('tm-1', from, to);
     expect(trail).toHaveLength(7);
   });

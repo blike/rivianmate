@@ -4,7 +4,7 @@ import { ContentFrame, LoadingScope, Skeleton, useLoading } from '../../componen
 import { Panel } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { TrendChart } from '../../components/TrendChart';
-import { dateTime, shortDate } from '../../lib/format';
+import { longDateTime, shortDate } from '../../lib/format';
 import { fmt } from '../../lib/state';
 import { capacityTrend, capacityOfRated } from './health';
 
@@ -53,7 +53,7 @@ export function BatteryPanel(props: {
                   xKey="ts"
                   height={180}
                   xFormatter={shortDate}
-                  tooltipLabel={dateTime}
+                  tooltipLabel={longDateTime}
                   series={[
                     {
                       key: 'kwh',

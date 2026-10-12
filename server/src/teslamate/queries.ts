@@ -398,13 +398,21 @@ export function chargeIntervals(
   from: Date,
   to: Date,
 ): Promise<{ from: Date; to: Date }[]> {
+  // TeslaMate leaves a process open when it restarts mid-charge, so an open
+  // one ends at its last reading; a running charge logs one every few seconds.
   return sql<{ from: Date; to: Date }[]>`
-    SELECT ${utc(sql, 'start_date')} AS from,
-           COALESCE(end_date, now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS to
-    FROM charging_processes
-    WHERE car_id = ${carId} AND start_date <= ${at(sql, to)}
-      AND COALESCE(end_date, now() AT TIME ZONE 'UTC') >= ${at(sql, from)}
-    ORDER BY start_date
+    SELECT * FROM (
+      SELECT ${utc(sql, 'cp.start_date')} AS from,
+             COALESCE(cp.end_date, last.date, cp.start_date) AT TIME ZONE 'UTC' AS to
+      FROM charging_processes cp
+      LEFT JOIN LATERAL (
+        SELECT MAX(date) AS date FROM charges
+        WHERE charging_process_id = cp.id AND cp.end_date IS NULL
+      ) last ON true
+      WHERE cp.car_id = ${carId} AND cp.start_date <= ${at(sql, to)}
+    ) spans
+    WHERE spans.to >= ${from.toISOString()}::timestamptz
+    ORDER BY spans.from
   `;
 }
 

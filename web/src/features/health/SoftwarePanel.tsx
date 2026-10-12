@@ -72,7 +72,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
               <Stop kind="past" grow={0.8}>
                 <div className="text-sm text-(--text-muted)">{hidden} earlier</div>
                 <div className="whitespace-nowrap text-xs text-(--text-muted)">
-                  Since {shortDate(before[0]!.firstSeen)}
+                  Since {longDate(before[0]!.firstSeen)}
                 </div>
               </Stop>
             )}
@@ -90,7 +90,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
             <Stop
               kind="installed"
               grow={2}
-              next={update ? 'update' : 'none'}
+              next={update ? 'update' : undefined}
               progress={trackFill(update)}
             >
               <Eyebrow color={update || failed ? 'var(--text-muted)' : 'var(--status-good)'}>
@@ -112,24 +112,13 @@ export function SoftwarePanel(props: { vehicleId: string }) {
               </div>
               {current && !teslamate && <NotesLink vehicleId={props.vehicleId} version={current} />}
             </Stop>
-            {update ? (
+            {update && (
               <Stop
                 kind="update"
                 grow={2}
                 active={update.phase === 'downloading' || update.phase === 'installing'}
               >
                 <PendingDetails vehicleId={props.vehicleId} update={update} />
-              </Stop>
-            ) : (
-              <Stop kind="none" grow={1.2}>
-                <div className="text-sm text-(--text-muted)">
-                  {teslamate ? 'Next update' : 'No update waiting'}
-                </div>
-                <div className="text-xs text-(--text-muted)">
-                  {teslamate
-                    ? 'TeslaMate records updates once installed.'
-                    : 'New versions appear here when offered.'}
-                </div>
               </Stop>
             )}
           </ol>
@@ -155,7 +144,7 @@ function trackFill(update: SoftwareUpdate | null): number | null {
   return 100;
 }
 
-type StopKind = 'past' | 'installed' | 'update' | 'none';
+type StopKind = 'past' | 'installed' | 'update';
 
 /**
  * One point on the track: a marker, the segment to the next point, and its
@@ -164,14 +153,14 @@ type StopKind = 'past' | 'installed' | 'update' | 'none';
 function Stop(props: {
   kind: StopKind;
   grow: number;
-  /** For the installed stop: what follows it, which colors its segment. */
-  next?: 'update' | 'none';
+  /** For the installed stop: a pending update after it, which colors its segment. */
+  next?: 'update';
   progress?: number | null;
   active?: boolean;
   children: ReactNode;
 }) {
-  const last = props.kind === 'update' || props.kind === 'none';
   const toUpdate = props.next === 'update';
+  const last = props.kind === 'update' || (props.kind === 'installed' && !toUpdate);
   const fill = props.progress;
 
   return (
@@ -224,10 +213,6 @@ function Marker(props: { kind: StopKind; active?: boolean }) {
             props.active ? 'chip-dot--pulse' : ''
           }`}
         />
-      );
-    case 'none':
-      return (
-        <span aria-hidden className={`${base} border-2 border-dashed border-(--text-muted)`} />
       );
   }
 }

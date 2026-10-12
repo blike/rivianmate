@@ -1,30 +1,13 @@
 import { useState } from 'react';
-import {
-  useRivianDisconnect,
-  useSetUnits,
-  useStatus,
-  useUnits,
-  useVehicles,
-} from '../../api/hooks';
-import { Dot } from '../../components/Dot';
+import { useSetUnits, useUnits, useVehicles } from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
-import {
-  SegmentedControl,
-  SettingRow,
-  SettingsGroup,
-  dangerButton,
-  secondaryButton,
-} from './SettingsControls';
+import { SegmentedControl, SettingRow, SettingsGroup, secondaryButton } from './SettingsControls';
+import { AccountsPanel } from './AccountsPanel';
 
 export function GeneralSection(props: {
   parallaxModes: Record<string, 'classic' | 'parallax'> | undefined;
-  email: string | null;
-  connected: boolean;
-  mockMode: boolean;
 }) {
   const { data: vehicles, isPending } = useVehicles();
-  const { refetch } = useStatus();
-  const disconnect = useRivianDisconnect();
   const u = useUnits();
   const { units } = u;
   const setUnits = useSetUnits();
@@ -99,33 +82,7 @@ export function GeneralSection(props: {
         </SettingRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Rivian account">
-        <SettingRow
-          label={props.email ?? '—'}
-          description={
-            <span className="inline-flex items-center gap-1.5">
-              <Dot color={props.connected ? 'var(--status-good)' : 'var(--text-muted)'} />
-              {props.connected ? 'Connected' : 'Disconnected'}
-              {props.mockMode && ' · Simulated vehicle'}
-            </span>
-          }
-        />
-        <SettingRow
-          label="Disconnect"
-          description="Stops tracking and forgets your Rivian sign-in. Your recorded history stays."
-        >
-          <button
-            className={dangerButton}
-            onClick={async () => {
-              if (!confirm('Disconnect Rivian account and stop tracking?')) return;
-              await disconnect.mutateAsync();
-              refetch();
-            }}
-          >
-            Disconnect
-          </button>
-        </SettingRow>
-      </SettingsGroup>
+      <AccountsPanel />
     </>
   );
 }
