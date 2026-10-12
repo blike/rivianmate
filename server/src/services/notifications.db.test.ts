@@ -38,7 +38,7 @@ describe.skipIf(!url)('NotificationService with Postgres', () => {
     await handle.sql`TRUNCATE app_settings, wallboxes RESTART IDENTITY CASCADE`;
   });
 
-  const service = (state: { current: VehicleState }) => {
+  const service = (state: { current: VehicleState }, now: () => number = Date.now) => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
     const svc = new NotificationService(
       handle.db,
@@ -47,6 +47,7 @@ describe.skipIf(!url)('NotificationService with Postgres', () => {
       () => state.current,
       () => {},
       fetchImpl as unknown as typeof fetch,
+      now,
     );
     return { svc, fetchImpl };
   };
@@ -119,6 +120,47 @@ describe.skipIf(!url)('NotificationService with Postgres', () => {
     const second = service(state);
     await second.svc.check('v1');
     expect(second.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet about an unlocked vehicle at home when its GPS fix drops out', async () => {
+    await handle.db.insert(appSettings).values({
+      key: 'home_charging',
+      value: JSON.stringify({
+        ratePerKwh: null,
+        currency: 'USD',
+        homeLat: 33.07,
+        homeLon: -117.25,
+      }),
+    });
+    const fix = (latitude: number, longitude: number) => ({
+      gnssLocation: { latitude, longitude, timeStamp: 't' },
+    });
+    const parked = {
+      powerState: v('ota_update'),
+      doorFrontLeftClosed: v('closed'),
+      doorFrontLeftLocked: v('unlocked'),
+    };
+    const state = { current: { ...parked, ...fix(33.07, -117.25) } as VehicleState };
+    let now = Date.UTC(2026, 9, 12, 4);
+    const { svc, fetchImpl } = service(state, () => now);
+    await svc.saveSettings({
+      enabled: true,
+      destinations: [{ kind: 'discord', name: null, url: DISCORD }],
+      appUrl: null,
+      events: DEFAULT_EVENTS,
+    });
+    await svc.check('v1');
+    await svc.check('v1');
+    now += 60 * 60_000;
+    // Modules restarting mid-update report 0,0.
+    state.current = { ...parked, ...fix(0, 0) } as VehicleState;
+    await svc.check('v1');
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    // Away from home, the same unlocked vehicle is announced.
+    state.current = { ...parked, ...fix(34, -118) } as VehicleState;
+    await svc.check('v1');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('tracks changes but sends nothing while turned off', async () => {

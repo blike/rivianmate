@@ -304,6 +304,21 @@ body {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+/*
+ * The fill is a width on wide screens and a height on phones. Animating the
+ * value rather than either dimension keeps a breakpoint change from sliding
+ * the bar from full to its progress.
+ */
+@property --ota-fill {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+.ota-progress {
+  transition: --ota-fill 700ms;
+}
+
 .ota-progress--indeterminate {
   animation: ota-indeterminate 1.6s ease-in-out infinite;
 }
@@ -318,7 +333,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .battery-bar__fill {
+  .battery-bar__fill,
+  .ota-progress {
     transition: none;
   }
   .battery-bar__fill--charging::after,

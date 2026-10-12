@@ -61,6 +61,50 @@ describe('softwareUpdate', () => {
     });
   });
 
+  it('follows the statuses seen through a real update', () => {
+    const at = (otaStatus: string, extra: Record<string, string | number> = {}) =>
+      softwareUpdate(state({ ...base, otaStatus, ...extra }));
+    expect(at('Ready_To_Download')).toMatchObject({ phase: 'available' });
+    expect(at('Connection_Lost')).toMatchObject({
+      phase: 'waiting',
+      label: 'Waiting for connection',
+    });
+    expect(at('Downloading')).toMatchObject({ phase: 'downloading', progress: null });
+    expect(at('Preparing')).toMatchObject({ phase: 'preparing', label: 'Preparing' });
+    expect(at('Ready_To_Install')).toMatchObject({ phase: 'ready' });
+    expect(at('Awaiting_Install')).toMatchObject({
+      phase: 'installing',
+      label: 'Starting install',
+    });
+    expect(at('Ready_To_Install', { powerState: 'ota_update' })).toMatchObject({
+      phase: 'installing',
+    });
+    expect(at('Installing', { otaInstallProgress: 0 })).toMatchObject({
+      phase: 'installing',
+      label: 'Installing',
+    });
+  });
+
+  it('ignores a leftover status once nothing is pending', () => {
+    const done = { otaCurrentVersion: '2026.36.0', otaAvailableVersion: '0.0.0' };
+    expect(softwareUpdate(state({ ...done, otaStatus: 'Ready_To_Download' }))).toBeNull();
+    expect(softwareUpdate(state({ ...done, otaStatus: 'Connection_Lost' }))).toBeNull();
+  });
+
+  it('is done once the pending version is installed, despite a leftover status', () => {
+    expect(
+      softwareUpdate(
+        state({
+          otaCurrentVersion: '2026.36.0',
+          otaAvailableVersion: '2026.36.0',
+          otaStatus: 'Installing',
+          otaInstallProgress: 99,
+          powerState: 'sleep',
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('keeps showing an install when the pending version drops out', () => {
     expect(
       softwareUpdate(

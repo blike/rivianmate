@@ -97,15 +97,20 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
       const available =
         availableRaw && availableRaw !== '0.0.0' && availableRaw !== current ? availableRaw : null;
 
-      return {
-        current,
-        available,
-        versions: history.map((h) => ({
-          version: h.version,
-          firstSeen: new Date(h.first_seen).toISOString(),
-          hasNotes: withNotes.has(h.version),
-        })),
-      };
+      const versions = history.map((h) => ({
+        version: h.version,
+        firstSeen: new Date(h.first_seen).toISOString(),
+        hasNotes: withNotes.has(h.version),
+      }));
+      // Live state reports a new version before a snapshot records it.
+      if (current && current !== '0.0.0' && !versions.some((v) => v.version === current)) {
+        versions.unshift({
+          version: current,
+          firstSeen: new Date().toISOString(),
+          hasNotes: withNotes.has(current),
+        });
+      }
+      return { current, available, versions };
     },
   );
 

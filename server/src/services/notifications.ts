@@ -144,6 +144,8 @@ export class NotificationService {
   private queues = new Map<string, Promise<void>>();
   private settings?: Promise<ResolvedSettings>;
   private home?: { at: number; spots: Promise<Spot[]>; pressure: Promise<'psi' | 'bar'> };
+  /** Where each vehicle last had a GPS fix, for when the fix drops out. */
+  private lastAtHome = new Map<string, boolean>();
   private timer?: NodeJS.Timeout;
   private unsubscribe?: () => void;
 
@@ -264,8 +266,15 @@ export class NotificationService {
     const prev = await this.ruleState(vehicleId);
     const loc = stateLocation(state);
     const spots = await this.homeSpots();
-    const atHome =
-      loc && spots.length > 0 ? nearbySpot(loc.latitude, loc.longitude, spots) !== null : null;
+    // The fix drops out (e.g. reads 0,0 while modules restart mid-update)
+    // without the vehicle moving, so it's taken to be where it last was.
+    let atHome: boolean | null = null;
+    if (spots.length > 0 && loc) {
+      atHome = nearbySpot(loc.latitude, loc.longitude, spots) !== null;
+      this.lastAtHome.set(vehicleId, atHome);
+    } else if (spots.length > 0) {
+      atHome = this.lastAtHome.get(vehicleId) ?? null;
+    }
 
     const { next, alerts } = evaluateRules(prev, {
       state,
