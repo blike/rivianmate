@@ -85,14 +85,23 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
             <Skeleton className="w-[16em]" />
           ) : (
             <>
-              <Place place={d.start} />
-              <span aria-label="to" className="text-(--text-muted)">
-                →
-              </span>
-              {d.end ? (
-                <Place place={d.end} />
+              {live && to == null ? (
+                <>
+                  <span className="text-(--text-secondary)">From</span>
+                  <Place place={d.start} />
+                </>
               ) : (
-                <span className="text-(--text-secondary)">{to ?? (live ? '…' : '—')}</span>
+                <>
+                  <Place place={d.start} />
+                  <span aria-label="to" className="text-(--text-muted)">
+                    →
+                  </span>
+                  {d.end ? (
+                    <Place place={d.end} />
+                  ) : (
+                    <span className="text-(--text-secondary)">{to ?? '—'}</span>
+                  )}
+                </>
               )}
             </>
           )}
