@@ -1,5 +1,98 @@
 # Changelog
 
+## v0.6.0 — 2026-10-11
+
+RivianMate `v0.6.0` is here with **redesigned pages**, **notifications**, saved **software release
+notes**, and various fixes.
+
+### New features
+
+#### Redesigned pages
+
+- **History**: a summary of driving, efficiency and charging cost, distance by day, and a chart that
+  shades drives, charging and plugged-in time. Hovering the chart marks the spot on the map. #26
+- **Drives and Charging**: header cards with key figures, lists grouped by day with daily totals,
+  and a picker on narrow screens. #26 #27
+- **Navigation**: a new menu on phones. #27
+- **Schedules**: the next charging window first, and a week view of charging windows. #26
+- **Health**: an overview of checks, battery capacity as the vehicle reports it with a trend line,
+  and a tire diagram with slow-leak detection. #22 #26
+- **Settings**: grouped rows, an Imperial / Metric choice, and an example cost for the home rate.
+  #26
+
+#### Notifications
+
+- Get alerts for vehicle events in Discord, or through an
+  [Apprise](https://github.com/caronc/apprise) server in Pushover, ntfy, Telegram, Slack, email and
+  more. #23 #25
+- Door or window left open, and vehicle left unlocked, after a set time while parked
+- "Only when not at home" option for closure alerts
+- Tire pressure, low battery and charging complete
+- Software update available, installed and failed, with a link to the release notes
+- Off by default; turn on and add destinations under **Settings → Notifications**
+
+#### Software updates
+
+- Release notes for each version are saved, so they stay available after an update installs. #24
+- Live download and install progress on the dashboard and in Health. #24
+- Health shows installed versions as a timeline, with any pending update at the end. #24 #26
+
+#### API & Feeds
+
+- Status for each Rivian feed: receiving, waiting, unsupported or errored. #22
+- The latest data each feed received, down to the raw Parallax fields. #33
+
+### Improvements
+
+- Drive and charge battery levels show one decimal place. #31 #35
+- Drives show range used or gained, Wh per mile (or km) and kWh used. #35
+- A drive under way with no destination is titled "From Home" instead of "Home → …". #35
+- The dashboard's last drive card shows the home icon when applicable and wraps long addresses. #35
+- The Drives chart marks the hovered point on the route map, and its tooltip shows time into the
+  drive and time of day. #24
+- History's 7d, 30d and 90d ranges start at midnight, and every distance bar is labeled. #31
+- Clearer brake fluid and preconditioning labels on the dashboard. #21
+
+### Fixes
+
+- GPS location, speed and tire pressure are restored on vehicles where Rivian's older feed stopped
+  providing them. #14 #15
+- Rivian charging sessions no longer show a falsely low cost. Rivian's billed total replaces the
+  early estimate, and existing sessions are corrected on the next charge-history import. #26
+- Drives end when the vehicle parks, without a trailing stretch of near-zero speed, and parking
+  noise no longer starts a new drive. Drives already recorded are repaired. #29
+- The dashboard no longer shows "Asleep" while the vehicle is awake or driving. #32
+- Software release notes appear again. #24
+
+### Migrations
+
+This release includes three database migrations, which run automatically on startup:
+
+- `0013_ota_release_notes_pdf`: stores release-notes PDFs
+- `0014_session_cost_edited`: keeps charging costs entered by hand
+- `0015_drive_ends_at_park`: repairs drives that ended late
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and database volume, then run
+`docker compose pull && docker compose up -d`.
+
+### Configuration
+
+`MAP_STYLE_URL`, `MAP_TILES_URL`, `MAP_GLYPHS_URL` and `REVERSE_GEOCODING` are no longer used and
+can be removed from `.env`. Maps always use OpenFreeMap, and drive addresses are always looked up.
+
+### Updates
+
+- RivianMate is now licensed under GPL-3.0. #28
+- Added contributing and security guides, issue templates and a rewritten README. #28
+- Code formatting checked in CI with Prettier. #28
+
+### Thanks
+
+@edasque @s3rverro0m
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.5.0...v0.6.0](https://github.com/blike/rivianmate/compare/v0.5.0...v0.6.0)
+
 ## v0.5.0 — 2026-10-04
 
 - Redesigned dashboard with a themed MapLibre GL map, active navigation (distance, arrival time, and

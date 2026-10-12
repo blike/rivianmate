@@ -124,8 +124,8 @@ Images are published to Docker Hub as
 | Tag         | Tracks                                               |
 | ----------- | ---------------------------------------------------- |
 | `latest`    | The newest stable release (the default)              |
-| `0` / `0.5` | The newest release in that major or minor line       |
-| `0.5.0`     | Exactly that release                                 |
+| `0` / `0.6` | The newest release in that major or minor line       |
+| `0.6.0`     | Exactly that release                                 |
 | `edge`      | Every commit on `main`, including unreleased changes |
 
 ## Privacy and security
