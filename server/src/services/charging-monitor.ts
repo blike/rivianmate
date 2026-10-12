@@ -28,7 +28,7 @@ import {
 } from '../rivian/types.js';
 import { isChargingState, stampedAt } from './charging-time.js';
 import { LiveChargeState, type LiveSource } from './live-charging.js';
-import { nearbySpot } from './home-charging.js';
+import { nearbySpot } from './locations.js';
 import type { LiveBus } from './live-bus.js';
 import { type ResumableSession, closeTime } from './session-resume.js';
 import { stateNumber, stateString } from './state-utils.js';

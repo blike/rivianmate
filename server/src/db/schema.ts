@@ -312,3 +312,20 @@ export const geocodeCache = pgTable('geocode_cache', {
   address: text('address'),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Places the user named (Home, Work…), each an area around a point. Drives
+ * and charging sessions inside one take its name, and sessions its rate.
+ */
+export const savedLocations = pgTable('saved_locations', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  name: text('name').notNull(),
+  lat: doublePrecision('lat').notNull(),
+  lon: doublePrecision('lon').notNull(),
+  radiusM: integer('radius_m').notNull().default(150),
+  /** Counts as home for "only when not at home" alerts and home charging. */
+  isHome: boolean('is_home').notNull().default(false),
+  /** Price per kWh here; null = no estimate, 0 = free. */
+  ratePerKwh: real('rate_per_kwh'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

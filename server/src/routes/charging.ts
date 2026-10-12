@@ -4,13 +4,16 @@ import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import {
-  type HomeChargingSettings,
+  type ChargingSettings,
+  type SavedLocation,
   type Spot,
-  estimateHomeCost,
-  homeSpots,
-  isHomeSession,
-} from '../services/home-charging.js';
-import { getHomeChargingSettings } from './settings.js';
+  estimateCost,
+  sessionPlace,
+  sessionRate,
+  wallboxSpots,
+} from '../services/locations.js';
+import { loadLocations } from './locations.js';
+import { getChargingSettings } from './settings.js';
 import {
   chargingCurvePoints,
   chargingSessions,
@@ -40,13 +43,13 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .where(eq(chargingSessions.vehicleId, request.params.id))
         .orderBy(desc(chargingSessions.startedAt))
         .limit(200);
-      const home = await homeContext(ctx);
+      const places = await placeContext(ctx);
       const oldest = rows.at(-1);
       const spans = oldest
         ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date())
         : [];
       return rows.map((row) =>
-        toSessionDto(row, home, chargingWindow(spans, row.startedAt, row.endedAt)),
+        toSessionDto(row, places, chargingWindow(spans, row.startedAt, row.endedAt)),
       );
     },
   );
@@ -102,7 +105,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .where(eq(chargingSessions.id, Number(request.params.sessionId)))
         .returning();
       if (!updated[0]) return reply.code(404).send({ error: 'Not found' });
-      return toSessionDto(updated[0], await homeContext(ctx));
+      return toSessionDto(updated[0], await placeContext(ctx));
     },
   );
 
@@ -141,17 +144,21 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
   });
 }
 
-interface HomeContext {
-  settings: HomeChargingSettings;
-  spots: Spot[];
+export interface PlaceContext {
+  settings: ChargingSettings;
+  locations: SavedLocation[];
+  wallboxes: Spot[];
 }
 
-export async function homeContext(ctx: AppContext): Promise<HomeContext> {
-  const settings = await getHomeChargingSettings(ctx);
+export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
   const boxes = await ctx.db
     .select({ latitude: wallboxes.latitude, longitude: wallboxes.longitude })
     .from(wallboxes);
-  return { settings, spots: homeSpots(settings, boxes) };
+  return {
+    settings: await getChargingSettings(ctx),
+    locations: await loadLocations(ctx),
+    wallboxes: wallboxSpots(boxes),
+  };
 }
 
 /** Snapshot rows are stamped on write, which can trail the readings inside. */
@@ -200,14 +207,15 @@ async function socCurveFromState(
 
 function toSessionDto(
   row: typeof chargingSessions.$inferSelect,
-  home: HomeContext,
+  places: PlaceContext,
   charging: { from: Date; to: Date } | null = null,
 ): ChargingSessionDto {
-  const isHome = isHomeSession(row, home.spots);
-  // Estimates use today's rate, so changing the rate reprices past estimates;
-  // a cost recorded or entered for the session always takes precedence.
+  const place = sessionPlace(row, places.locations, places.wallboxes);
+  const { location, isHome } = place;
+  // Estimates use today's rates, so changing one reprices past estimates;
+  // a cost recorded or entered for the session always wins.
   const estimatedCost =
-    isHome && row.cost == null ? estimateHomeCost(row.energyKwh, home.settings.ratePerKwh) : null;
+    row.cost == null ? estimateCost(row.energyKwh, sessionRate(place, places.locations)) : null;
   return {
     id: row.id,
     vehicleId: row.vehicleId,
@@ -228,8 +236,8 @@ function toSessionDto(
     avgPowerKw: row.avgPowerKw,
     maxPowerKw: row.maxPowerKw,
     cost: row.cost,
-    // Estimates are priced in the home rate's currency.
-    currency: row.currency ?? (estimatedCost != null ? home.settings.currency : null),
+    // Estimates are priced in the rates' currency.
+    currency: row.currency ?? (estimatedCost != null ? places.settings.currency : null),
     lat: row.lat,
     lon: row.lon,
     source: row.source,
@@ -237,6 +245,7 @@ function toSessionDto(
     city: row.city,
     isPublic: row.isPublic,
     isHome,
+    location: location && { id: location.id, name: location.name, isHome: location.isHome },
     estimatedCost,
   };
 }

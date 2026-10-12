@@ -1,4 +1,4 @@
-import type { DriveDto } from '@server/api-types';
+import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
 import type { UnitFormatter } from '../../lib/units';
 
@@ -14,6 +14,10 @@ export const batteryChange = (used: number) => `${used > 0 ? '−' : '+'}${fmt(M
 
 /** "2101 Ireland Grove Road, Bloomington" → "2101 Ireland Grove Road", for tight rows. */
 export const shortPlace = (label: string) => label.split(',')[0]!.trim();
+
+/** A saved location's name as given; an address shortened for tight rows. */
+export const placeName = (p: DrivePlaceDto) =>
+  p.locationId != null ? p.label : shortPlace(p.label);
 
 /** "38m · −6.3% · 1.84 mi/kWh" */
 export function driveFacts(d: DriveDto, u: UnitFormatter): string {
@@ -32,13 +36,13 @@ export function driveFacts(d: DriveDto, u: UnitFormatter): string {
  * drive under way with no destination, which is titled by its start alone.
  */
 export function destination(d: DriveDto): string | null {
-  if (d.endedAt) return d.end ? shortPlace(d.end.label) : '—';
+  if (d.endedAt) return d.end ? placeName(d.end) : '—';
   return d.destination?.name ? `Navigating to ${d.destination.name}` : null;
 }
 
 /** "Home → Office", or "From Home" for a drive under way with no destination. */
 export function driveTitle(d: DriveDto): string {
-  const from = d.start ? shortPlace(d.start.label) : '—';
+  const from = d.start ? placeName(d.start) : '—';
   const to = destination(d);
   return to == null ? `From ${from}` : `${from} → ${to}`;
 }

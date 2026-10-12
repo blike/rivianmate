@@ -34,6 +34,59 @@ export function nominatimGeocoder(
   };
 }
 
+export interface FoundPlace {
+  label: string;
+  lat: number;
+  lon: number;
+}
+
+/** Finds places matching typed text, best first, favoring ones near `near`. */
+export type PlaceSearch = (
+  query: string,
+  near?: { lat: number; lon: number },
+) => Promise<FoundPlace[]>;
+
+const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
+/** Nominatim allows one request a second. */
+const SEARCH_GAP_MS = 1100;
+/** Degrees around `near` that results are preferred within (~50 km). */
+const NEAR_DEG = 0.5;
+
+/**
+ * Nominatim's search, run when the user asks (its usage policy rules out
+ * searching as they type). Results near `near` rank first, without
+ * excluding the rest.
+ */
+export function nominatimSearch(
+  userAgent: string,
+  fetchFn: typeof fetch = fetch,
+  now: () => number = Date.now,
+): PlaceSearch {
+  let nextAt = 0;
+  return async (query, near) => {
+    const wait = nextAt - now();
+    nextAt = Math.max(now(), nextAt) + SEARCH_GAP_MS;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    const params = new URLSearchParams({ format: 'jsonv2', limit: '5', q: query });
+    if (near) {
+      const { lat, lon } = near;
+      params.set(
+        'viewbox',
+        [lon - NEAR_DEG, lat + NEAR_DEG, lon + NEAR_DEG, lat - NEAR_DEG].join(','),
+      );
+    }
+    const res = await fetchFn(`${NOMINATIM_SEARCH_URL}?${params}`, {
+      headers: { 'User-Agent': userAgent, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+    const results = (await res.json()) as { display_name?: string; lat?: string; lon?: string }[];
+    return results
+      .map((r) => ({ label: r.display_name ?? '', lat: Number(r.lat), lon: Number(r.lon) }))
+      .filter((r) => r.label && Number.isFinite(r.lat) && Number.isFinite(r.lon));
+  };
+}
+
 interface NominatimResult {
   error?: string;
   name?: string;

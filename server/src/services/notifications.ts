@@ -12,8 +12,9 @@ import type { TokenCrypto } from '../crypto.js';
 import type { Db } from '../db/client.js';
 import { appSettings, wallboxes } from '../db/schema.js';
 import type { VehicleState } from '../rivian/types.js';
-import { getHomeChargingSettings, getUnitPreferences } from '../routes/settings.js';
-import { type Spot, homeSpots, nearbySpot } from './home-charging.js';
+import { loadLocations } from '../routes/locations.js';
+import { getUnitPreferences } from '../routes/settings.js';
+import { type Spot, homeSpots, nearbySpot } from './locations.js';
 import type { LiveBus } from './live-bus.js';
 import { type RuleState, emptyRuleState, evaluateRules } from './notification-rules.js';
 import { type Alert, channelUrlProblem, previewUrl, sendAlert } from './notify-channels.js';
@@ -234,6 +235,11 @@ export class NotificationService {
     return this.getSettings();
   }
 
+  /** Saved locations changed: where home is is looked up again. */
+  placesChanged(): void {
+    this.home = undefined;
+  }
+
   /** Sends a test alert to every destination. */
   async test(): Promise<NotificationTestResult[]> {
     const s = await this.resolved();
@@ -372,11 +378,10 @@ export class NotificationService {
       this.home = {
         at: this.now(),
         spots: (async () => {
-          const settings = await getHomeChargingSettings(ctx);
           const boxes = await this.db
             .select({ latitude: wallboxes.latitude, longitude: wallboxes.longitude })
             .from(wallboxes);
-          return homeSpots(settings, boxes);
+          return homeSpots(await loadLocations(ctx), boxes);
         })(),
         pressure: getUnitPreferences(ctx).then((u) => (u.distance === 'mi' ? 'psi' : 'bar')),
       };

@@ -1,6 +1,6 @@
 import type { ChargingSessionDto } from '../../api/client';
 import { useUnits } from '../../api/hooks';
-import { HomeIcon } from '../../components/HomeIcon';
+import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
 import {
@@ -90,10 +90,10 @@ export function SessionCard(props: {
           ) : (
             <>
               <span className="min-w-0 truncate">
-                {s.isHome && <HomeIcon />}
+                <PlaceIcon isHome={s.isHome} saved={s.location != null} />
                 {chargerLabel(s)}
               </span>
-              {s.city && !s.isHome && (
+              {s.city && !s.isHome && !s.location && (
                 <span className="text-base font-normal text-(--text-secondary)">{s.city}</span>
               )}
             </>

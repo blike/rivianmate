@@ -1,9 +1,12 @@
-import type { DriveDto } from '@server/api-types';
+import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { useMemo } from 'react';
 import { useUnits } from '../../api/hooks';
 import { drivesByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
-import { shortPlace, driveFacts, destination } from './format';
+import { placeName, driveFacts, destination } from './format';
+
+/** Home or a saved location, which stand out from plain addresses. */
+const savedPlace = (p: DrivePlaceDto | null) => p != null && (p.isHome || p.locationId != null);
 
 /** Drives by day, newest first, each day with its total. */
 export function DriveList(props: {
@@ -70,13 +73,13 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
             }
           >
             {to == null && <span className="text-(--text-muted)">From </span>}
-            <span className={d.start?.isHome ? 'font-medium' : ''}>
-              {d.start ? shortPlace(d.start.label) : '—'}
+            <span className={savedPlace(d.start) ? 'font-medium' : ''}>
+              {d.start ? placeName(d.start) : '—'}
             </span>
             {to != null && (
               <>
                 <span className="text-(--text-muted)"> → </span>
-                <span className={d.end?.isHome ? 'font-medium' : ''}>{to}</span>
+                <span className={savedPlace(d.end) ? 'font-medium' : ''}>{to}</span>
               </>
             )}
           </span>

@@ -25,10 +25,11 @@ export function CarIcon() {
   );
 }
 
-export function BoltIcon() {
+export function PinIcon() {
   return (
     <NavIcon>
-      <path d="M9 1.5 3.5 9h4l-.5 5.5L12.5 7h-4L9 1.5Z" />
+      <path d="M8 14.5s4.5-4.6 4.5-8a4.5 4.5 0 0 0-9 0c0 3.4 4.5 8 4.5 8Z" />
+      <circle cx="8" cy="6.5" r="1.6" />
     </NavIcon>
   );
 }

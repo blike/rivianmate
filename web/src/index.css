@@ -162,6 +162,36 @@ body {
   animation: rm-pulse 2.4s ease-out infinite;
 }
 
+/* App-styled confirmation dialogs (components/ConfirmDialog). */
+.rm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(2px);
+}
+
+/* The location picker's pin: fixed at the map's center, its tip on the spot. */
+.rm-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -22px 0 0 -11px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--accent);
+  border: 2px solid #121211;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+.rm-pin::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: #121211;
+}
+
 .rm-vehicle__puck {
   position: absolute;
   inset: 9px;

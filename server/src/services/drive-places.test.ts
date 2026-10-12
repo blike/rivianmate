@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { formatNominatim, geocodeKey } from './drive-places.js';
+import { describe, expect, it, vi } from 'vitest';
+import { formatNominatim, geocodeKey, nominatimSearch } from './drive-places.js';
 
 describe('formatNominatim', () => {
   it('labels a place by street address and town, keeping the full address', () => {
@@ -43,5 +43,31 @@ describe('formatNominatim', () => {
 describe('geocodeKey', () => {
   it('rounds to ~11 m', () => {
     expect(geocodeKey(33.0714378, -117.2566376)).toBe(geocodeKey(33.07141, -117.25661));
+  });
+});
+
+describe('nominatimSearch', () => {
+  it('reads results as labeled points, preferring ones near a spot', async () => {
+    const fetchFn = vi.fn(
+      async (_url: string) =>
+        new Response(
+          JSON.stringify([
+            {
+              display_name: 'Illinois State University, Normal, Illinois',
+              lat: '40.51',
+              lon: '-88.99',
+            },
+            { display_name: 'Nowhere', lat: 'x', lon: '1' },
+          ]),
+        ),
+    );
+    const search = nominatimSearch('test', fetchFn as unknown as typeof fetch, () => 0);
+    expect(await search('illinois state', { lat: 40.5, lon: -89 })).toEqual([
+      { label: 'Illinois State University, Normal, Illinois', lat: 40.51, lon: -88.99 },
+    ]);
+    const url = new URL(fetchFn.mock.calls[0]![0]);
+    expect(url.searchParams.get('q')).toBe('illinois state');
+    expect(url.searchParams.get('viewbox')).toBe('-89.5,41,-88.5,40');
+    expect(url.searchParams.has('bounded')).toBe(false);
   });
 });

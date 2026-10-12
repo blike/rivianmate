@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import {
+  useChargingSettings,
   useRivianDisconnect,
+  useSetChargingSettings,
   useSetUnits,
   useStatus,
   useUnits,
   useVehicles,
 } from '../../api/hooks';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Dot } from '../../components/Dot';
 import { Skeleton } from '../../components/LoadingState';
 import {
@@ -16,6 +19,8 @@ import {
   secondaryButton,
 } from './SettingsControls';
 
+const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
+
 export function GeneralSection(props: {
   parallaxModes: Record<string, 'classic' | 'parallax'> | undefined;
   email: string | null;
@@ -25,9 +30,12 @@ export function GeneralSection(props: {
   const { data: vehicles, isPending } = useVehicles();
   const { refetch } = useStatus();
   const disconnect = useRivianDisconnect();
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const u = useUnits();
   const { units } = u;
   const setUnits = useSetUnits();
+  const { data: charging } = useChargingSettings();
+  const setCharging = useSetChargingSettings();
 
   return (
     <>
@@ -96,6 +104,21 @@ export function GeneralSection(props: {
             onChange={(temperature) => setUnits.mutate({ ...units, temperature })}
           />
         </SettingRow>
+        <SettingRow label="Currency" htmlFor="currency" description="For charging rates and costs.">
+          <select
+            id="currency"
+            value={charging?.currency ?? 'USD'}
+            disabled={!charging || setCharging.isPending}
+            onChange={(e) => setCharging.mutate({ currency: e.target.value })}
+            className="rounded-md border border-(--border) bg-(--surface-2) px-2 py-1.5 text-sm outline-none"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
       </SettingsGroup>
 
       <SettingsGroup title="Rivian account">
@@ -113,18 +136,29 @@ export function GeneralSection(props: {
           label="Disconnect"
           description="Stops tracking and forgets your Rivian sign-in. Your recorded history stays."
         >
-          <button
-            className={dangerButton}
-            onClick={async () => {
-              if (!confirm('Disconnect Rivian account and stop tracking?')) return;
-              await disconnect.mutateAsync();
-              refetch();
-            }}
-          >
+          <button className={dangerButton} onClick={() => setConfirmingDisconnect(true)}>
             Disconnect
           </button>
         </SettingRow>
       </SettingsGroup>
+
+      <ConfirmDialog
+        open={confirmingDisconnect}
+        title="Disconnect your Rivian account?"
+        confirmLabel="Disconnect"
+        busy={disconnect.isPending}
+        onCancel={() => setConfirmingDisconnect(false)}
+        onConfirm={() =>
+          disconnect.mutate(undefined, {
+            onSettled: () => {
+              setConfirmingDisconnect(false);
+              refetch();
+            },
+          })
+        }
+      >
+        RivianMate stops tracking and forgets your Rivian sign-in. Your recorded history stays.
+      </ConfirmDialog>
     </>
   );
 }

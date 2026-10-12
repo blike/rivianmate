@@ -4,36 +4,30 @@ import { z } from 'zod';
 import type { UnitPreferences, VersionResponse } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { appSettings } from '../db/schema.js';
-import { DEFAULT_HOME_CHARGING, type HomeChargingSettings } from '../services/home-charging.js';
+import { type ChargingSettings, DEFAULT_CHARGING } from '../services/locations.js';
 import { loadVersion } from '../version.js';
 
 const UNITS_KEY = 'display_units';
 const HOME_CHARGING_KEY = 'home_charging';
 
-const homeChargingSchema = z
-  .object({
-    ratePerKwh: z.number().min(0).max(10).nullable(),
-    currency: z.string().regex(/^[A-Z]{3}$/),
-    homeLat: z.number().min(-90).max(90).nullable(),
-    homeLon: z.number().min(-180).max(180).nullable(),
-  })
-  .refine((s) => (s.homeLat == null) === (s.homeLon == null), {
-    message: 'homeLat and homeLon must be set together',
-  });
+/** Earlier versions kept the home location and rate here too; they're ignored now. */
+const chargingSchema = z.object({ currency: z.string().regex(/^[A-Z]{3}$/) });
 
-export async function getHomeChargingSettings(
-  ctx: Pick<AppContext, 'db'>,
-): Promise<HomeChargingSettings> {
+async function readHomeCharging(ctx: Pick<AppContext, 'db'>): Promise<Record<string, unknown>> {
   const rows = await ctx.db
     .select()
     .from(appSettings)
     .where(eq(appSettings.key, HOME_CHARGING_KEY));
-  if (!rows[0]) return DEFAULT_HOME_CHARGING;
   try {
-    return homeChargingSchema.parse(JSON.parse(rows[0].value));
+    return rows[0] ? (JSON.parse(rows[0].value) as Record<string, unknown>) : {};
   } catch {
-    return DEFAULT_HOME_CHARGING;
+    return {};
   }
+}
+
+export async function getChargingSettings(ctx: Pick<AppContext, 'db'>): Promise<ChargingSettings> {
+  const parsed = chargingSchema.safeParse(await readHomeCharging(ctx));
+  return parsed.success ? parsed.data : DEFAULT_CHARGING;
 }
 
 export const DEFAULT_UNITS: UnitPreferences = { distance: 'mi', temperature: 'F' };
@@ -60,13 +54,14 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext): Pro
 
   app.get('/api/settings/units', async (): Promise<UnitPreferences> => getUnitPreferences(ctx));
 
-  app.get('/api/settings/home-charging', async (): Promise<HomeChargingSettings> =>
-    getHomeChargingSettings(ctx),
+  app.get('/api/settings/charging', async (): Promise<ChargingSettings> =>
+    getChargingSettings(ctx),
   );
 
-  app.put('/api/settings/home-charging', async (request): Promise<HomeChargingSettings> => {
-    const settings = homeChargingSchema.parse(request.body);
-    const value = JSON.stringify(settings);
+  app.put('/api/settings/charging', async (request): Promise<ChargingSettings> => {
+    const settings = chargingSchema.parse(request.body);
+    // Older fields stay, so going back to an earlier version keeps them.
+    const value = JSON.stringify({ ...(await readHomeCharging(ctx)), ...settings });
     await ctx.db
       .insert(appSettings)
       .values({ key: HOME_CHARGING_KEY, value })

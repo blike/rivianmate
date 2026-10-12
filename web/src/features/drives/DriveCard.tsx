@@ -1,7 +1,7 @@
 import type { DriveDetailDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { Dot } from '../../components/Dot';
-import { HomeIcon } from '../../components/HomeIcon';
+import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
 import { averageSpeedKmh, rangeUsedKm } from '../../lib/drives';
@@ -114,12 +114,12 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   );
 }
 
-/** "Home" or a short address, with the full address on hover. */
+/** A saved location's name or a short address, with the full address on hover. */
 function Place(props: { place: DrivePlaceDto | null }) {
   if (!props.place) return <span className="text-(--text-muted)">Unknown</span>;
   return (
     <span className="min-w-0 truncate" title={props.place.address ?? props.place.label}>
-      {props.place.isHome && <HomeIcon />}
+      <PlaceIcon isHome={props.place.isHome} saved={props.place.locationId != null} />
       {props.place.label}
     </span>
   );
