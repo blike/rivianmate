@@ -5,7 +5,7 @@ import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingSta
 import { VehicleMap } from '../../components/VehicleMap';
 import { chargeOutlook } from '../../lib/charging';
 import { locationIsBehind } from '../../lib/freshness';
-import { softwareUpdate } from '../../lib/ota';
+import { isActivePhase, softwareUpdate } from '../../lib/ota';
 import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
 import { type ActivityKind, securitySummary, vehicleActivity } from '../../lib/vehicleStatus';
 import { BatteryBar } from './BatteryBar';
@@ -127,10 +127,7 @@ export function Hero(props: {
                   <span title={security.open.join(', ') || undefined}>{security.openLabel}</span>
                 </Chip>
                 {ota && (
-                  <Chip
-                    dot="var(--accent)"
-                    pulse={ota.phase === 'downloading' || ota.phase === 'installing'}
-                  >
+                  <Chip dot="var(--accent)" pulse={isActivePhase(ota.phase)}>
                     {ota.label}
                     {ota.progress == null && ota.version && ` · ${ota.version}`}
                   </Chip>
