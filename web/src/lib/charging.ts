@@ -14,11 +14,11 @@ export function chargingSecondsNow(
   return (s.chargingSeconds ?? 0) + running;
 }
 
-/** "40→70%", with "?" for an unknown end, or "—" when both are unknown. */
+/** "39.7% → 70.0%", with "?" for an unknown end, or "—" when both are unknown. */
 export function socRange(start: number | null, end: number | null): string {
   if (start == null && end == null) return '—';
-  const part = (v: number | null) => (v == null ? '?' : fmt(v, 0));
-  return `${part(start)}→${part(end)}%`;
+  const part = (v: number | null) => (v == null ? '?' : `${fmt(v, 1)}%`);
+  return `${part(start)} → ${part(end)}`;
 }
 
 export function formatMoney(amount: string, currency: string | null): string {

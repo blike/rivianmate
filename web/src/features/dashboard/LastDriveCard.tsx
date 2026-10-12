@@ -1,5 +1,6 @@
-import type { DriveDto } from '@server/api-types';
+import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
+import { HomeIcon } from '../../components/HomeIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { relativeTime } from '../../lib/freshness';
 import { fmt, fmtDuration } from '../../lib/state';
@@ -61,34 +62,40 @@ export function LastDriveCard(props: {
       }
       icon={<DriveIcon />}
     >
-      <div className="flex min-w-0 items-center gap-2 text-base font-medium">
+      {/* Places wrap onto their own lines, as on the Drives page, before truncating. */}
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-base font-medium">
         {loading ? (
           <Skeleton className="w-[14em]" />
         ) : to == null ? (
           <>
-            <span className="min-w-0 truncate" title={d?.start?.address ?? from}>
-              <span className="text-(--text-muted)">From </span>
-              {from}
-            </span>
-            <span className="ml-auto shrink-0 rounded-full border border-(--border) px-2 py-0.5 text-xs font-normal text-(--text-muted)">
+            <span className="text-(--text-muted)">From</span>
+            <Place place={d?.start} fallback={from} />
+            <span className="ml-auto shrink-0 self-center rounded-full border border-(--border) px-2 py-0.5 text-xs font-normal text-(--text-muted)">
               No destination
             </span>
           </>
         ) : (
           <>
-            <span className="max-w-[45%] shrink-0 truncate" title={d?.start?.address ?? from}>
-              {from}
-            </span>
+            <Place place={d?.start} fallback={from} />
             <span className="shrink-0 text-(--accent)" aria-label="to">
               →
             </span>
-            <span className="truncate" title={d?.end?.address ?? to}>
-              {to}
-            </span>
+            <Place place={live ? null : d?.end} fallback={to} />
           </>
         )}
       </div>
       <ActivityStats items={stats} />
     </ActivityCard>
+  );
+}
+
+/** "Home" with its icon, or a short address, with the full address on hover. */
+function Place(props: { place: DrivePlaceDto | null | undefined; fallback: string }) {
+  const p = props.place;
+  return (
+    <span className="min-w-0 truncate" title={p?.address ?? p?.label ?? props.fallback}>
+      {p?.isHome && <HomeIcon />}
+      {p?.label ?? props.fallback}
+    </span>
   );
 }

@@ -63,13 +63,22 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
         <span className="min-w-0">
           <span
             className="block truncate text-sm"
-            title={`${d.start?.address ?? d.start?.label ?? '—'} → ${d.end?.address ?? to}`}
+            title={
+              to == null
+                ? `From ${d.start?.address ?? d.start?.label ?? '—'}`
+                : `${d.start?.address ?? d.start?.label ?? '—'} → ${d.end?.address ?? to}`
+            }
           >
+            {to == null && <span className="text-(--text-muted)">From </span>}
             <span className={d.start?.isHome ? 'font-medium' : ''}>
               {d.start ? shortPlace(d.start.label) : '—'}
             </span>
-            <span className="text-(--text-muted)"> → </span>
-            <span className={d.end?.isHome ? 'font-medium' : ''}>{to}</span>
+            {to != null && (
+              <>
+                <span className="text-(--text-muted)"> → </span>
+                <span className={d.end?.isHome ? 'font-medium' : ''}>{to}</span>
+              </>
+            )}
           </span>
           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
             {!d.endedAt && <span className="mr-1.5 text-(--status-good)">In progress ·</span>}

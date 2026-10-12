@@ -7,7 +7,6 @@ import { type StatTile, StatTiles } from '../../components/StatTiles';
 import { averageSpeedKmh, rangeUsedKm } from '../../lib/drives';
 import { clock, longDay } from '../../lib/format';
 import { fmt, fmtDuration, titleCase } from '../../lib/state';
-import { batteryUsed, batteryChange } from './format';
 
 /** The chosen drive: where it went up front, then its figures. */
 export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
@@ -15,14 +14,20 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   const loading = useLoading();
   const d = props.drive;
   const live = d != null && !d.endedAt;
-  const used = d ? batteryUsed(d) : null;
   const rangeUsed = d ? rangeUsedKm(d.startRangeKm, d.endRangeKm) : null;
   const avgSpeed = d ? averageSpeedKmh(d.distanceKm, d.startedAt, d.endedAt) : null;
   const to =
     d?.end?.label ?? (live && d?.destination?.name ? `Navigating to ${d.destination.name}` : null);
 
   const tiles: StatTile[] = [
-    { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
+    {
+      label: 'Distance',
+      value: u.formatDistance(d?.distanceKm, 1),
+      sub:
+        rangeUsed != null
+          ? `${rangeUsed < 0 ? 'Gained' : 'Used'} ${u.formatDistance(Math.abs(rangeUsed))} of range`
+          : undefined,
+    },
     {
       label: 'Duration',
       value: d ? fmtDuration(d.startedAt, d.endedAt) : '—',
@@ -31,7 +36,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
     {
       label: 'Efficiency',
       value: u.formatEfficiency(d?.distanceKm, d?.energyKwh),
-      sub: d?.energyKwh != null ? `${fmt(d.energyKwh, 1)} kWh used` : undefined,
+      sub: u.formatConsumption(d?.distanceKm, d?.energyKwh) ?? undefined,
     },
     {
       label: 'Battery',
@@ -39,10 +44,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
         d?.startBattery != null && d.endBattery != null
           ? `${fmt(d.startBattery, 1)}% → ${fmt(d.endBattery, 1)}%`
           : '—',
-      sub:
-        used != null
-          ? `${batteryChange(used)}${rangeUsed != null ? ` · ${u.formatDistance(rangeUsed)} of range` : ''}`
-          : undefined,
+      sub: d?.energyKwh != null ? `${fmt(d.energyKwh, 1)} kWh used` : undefined,
     },
     {
       label: 'Top speed',
@@ -85,14 +87,23 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
             <Skeleton className="w-[16em]" />
           ) : (
             <>
-              <Place place={d.start} />
-              <span aria-label="to" className="text-(--text-muted)">
-                →
-              </span>
-              {d.end ? (
-                <Place place={d.end} />
+              {live && to == null ? (
+                <>
+                  <span className="text-(--text-secondary)">From</span>
+                  <Place place={d.start} />
+                </>
               ) : (
-                <span className="text-(--text-secondary)">{to ?? (live ? '…' : '—')}</span>
+                <>
+                  <Place place={d.start} />
+                  <span aria-label="to" className="text-(--text-muted)">
+                    →
+                  </span>
+                  {d.end ? (
+                    <Place place={d.end} />
+                  ) : (
+                    <span className="text-(--text-secondary)">{to ?? '—'}</span>
+                  )}
+                </>
               )}
             </>
           )}

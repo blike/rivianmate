@@ -26,8 +26,8 @@ describe('chargingSecondsNow', () => {
 
 describe('socRange', () => {
   it('shows start → end, marking a missing side', () => {
-    expect(socRange(39.7, 70)).toBe('40→70%');
-    expect(socRange(39.7, null)).toBe('40→?%');
+    expect(socRange(39.7, 70)).toBe('39.7% → 70.0%');
+    expect(socRange(39.7, null)).toBe('39.7% → ?');
     expect(socRange(null, null)).toBe('—');
   });
 });

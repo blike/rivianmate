@@ -27,10 +27,20 @@ export function driveFacts(d: DriveDto, u: UnitFormatter): string {
     .join(' · ');
 }
 
-/** Where a drive ended, or where it's headed while under way. */
-export function destination(d: DriveDto): string {
+/**
+ * Where a drive ended, or where it's headed while under way; null for a
+ * drive under way with no destination, which is titled by its start alone.
+ */
+export function destination(d: DriveDto): string | null {
   if (d.endedAt) return d.end ? shortPlace(d.end.label) : '—';
-  return d.destination?.name ? `Navigating to ${d.destination.name}` : '…';
+  return d.destination?.name ? `Navigating to ${d.destination.name}` : null;
+}
+
+/** "Home → Office", or "From Home" for a drive under way with no destination. */
+export function driveTitle(d: DriveDto): string {
+  const from = d.start ? shortPlace(d.start.label) : '—';
+  const to = destination(d);
+  return to == null ? `From ${from}` : `${from} → ${to}`;
 }
 
 /** Axis labels for whole minutes into a drive: "25 min", or "1h 30m" style for drives of two hours or more. */

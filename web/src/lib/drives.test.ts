@@ -73,9 +73,10 @@ describe('averageSpeedKmh / rangeUsedKm', () => {
     expect(averageSpeedKmh(null, '2026-10-01T15:00:00Z', null)).toBeNull();
   });
 
-  it('reports range used only when it dropped', () => {
+  it('reports range used, negative when it rose', () => {
     expect(rangeUsedKm(375, 357)).toBe(18);
-    expect(rangeUsedKm(357, 375)).toBeNull();
+    expect(rangeUsedKm(357, 375)).toBe(-18);
+    expect(rangeUsedKm(null, 375)).toBeNull();
   });
 });
 

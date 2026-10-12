@@ -12,6 +12,8 @@ describe('unitFormatter', () => {
     expect(u.formatPressure(3.2)).toBe('46 psi');
     expect(u.formatEfficiency(40, 10)).toBe('2.49 mi/kWh');
     expect(u.formatEfficiency(40, 0)).toBe('—');
+    expect(u.formatConsumption(40, 10)).toBe('402 Wh/mi');
+    expect(u.formatConsumption(40, 0)).toBeNull();
   });
 
   it('formats metric', () => {
@@ -22,5 +24,6 @@ describe('unitFormatter', () => {
     expect(u.formatElevation(100)).toBe('100 m');
     expect(u.formatPressure(3.2)).toBe('3.20 bar');
     expect(u.formatEfficiency(40, 10)).toBe('25.0 kWh/100 km');
+    expect(u.formatConsumption(40, 10)).toBe('250 Wh/km');
   });
 });

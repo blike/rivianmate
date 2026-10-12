@@ -69,6 +69,15 @@ export function unitFormatter(units: UnitPreferences) {
         ? `${fmt((distanceKm * KM_TO_MI) / energyKwh, 2)} mi/kWh`
         : `${fmt((energyKwh / distanceKm) * 100, 1)} kWh/100 km`;
     },
+    /** Energy per distance driven: "300 Wh/mi" or "186 Wh/km". */
+    formatConsumption: (
+      distanceKm: number | null | undefined,
+      energyKwh: number | null | undefined,
+    ) => {
+      const d = distance(distanceKm);
+      if (d == null || energyKwh == null || !(energyKwh > 0) || !(d > 0)) return null;
+      return `${fmt((energyKwh * 1000) / d, 0)} Wh/${distanceUnit}`;
+    },
     /** `c` in °C. */
     formatTemperature: (c: number | null | undefined, digits = 0) =>
       c == null ? '—' : `${fmt(temperature(c), digits)} ${temperatureUnit}`,
