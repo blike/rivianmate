@@ -276,9 +276,13 @@ const LOCK_FIELDS: Record<number, string> = {
 };
 
 /** Topics for the isolated "dynamics" Parallax subscription (own id/fate — see subscription.ts). */
-export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [
-  RVM_GNSS,
-  RVM_TIRES,
+export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
+
+/**
+ * Topics for the vehicle state Parallax subscription, kept apart from the
+ * dynamics one so a vehicle rejecting any of these can't stop GPS and tires.
+ */
+export const PARALLAX_VEHICLE_STATE_RVMS: readonly string[] = [
   RVM_POWER,
   RVM_GEAR,
   RVM_ODOMETER,
@@ -525,18 +529,29 @@ export function decodeTires(payloadBase64: string): TireReading[] {
 
 const POWER_STATES: Record<number, string> = { 1: 'sleep', 2: 'standby', 3: 'ready', 4: 'go' };
 const GEARS: Record<number, string> = { 1: 'park', 2: 'reverse', 3: 'neutral', 4: 'drive' };
+// Legacy's spellings: preconditioning off is the literal "undefined", and
+// defrost is capitalized.
 const PRECONDITIONING_STATUSES: Record<number, string> = {
-  0: 'off',
+  0: 'undefined',
   1: 'initiate',
   2: 'initiate',
-  3: 'off',
+  3: 'undefined',
   4: 'active',
 };
-const DEFROST_STATUSES: Record<number, string> = { 0: 'off', 1: 'off', 2: 'on', 4: 'off' };
+const DEFROST_STATUSES: Record<number, string> = { 0: 'Off', 1: 'Off', 2: 'On', 4: 'Off' };
+/** Legacy chargePortState for a closure state; it has no ajar, so ajar reads as open. */
+const CHARGE_PORT_STATES: Record<number, string> = {
+  1: 'open',
+  2: 'close',
+  3: 'open',
+  4: 'opening',
+  5: 'closing',
+};
 
 /**
  * A vehicle state topic's message as the legacy fields it carries, stamped
- * `timeStamp`, in legacy's values ("park", "closed", "locked", …). Null for
+ * `timeStamp`, in exactly legacy's values ("park", "closed", "close", "Off",
+ * …), so consumers and stored history read the same either way. Null for
  * other topics, or when nothing in the message could be read. Enum values
  * come from community captures. An R2 has so far shown sleep, park,
  * closed, locked, preconditioning off and defrost off; the rest are
@@ -594,9 +609,7 @@ export function vehicleStateFromParallax(
       for (const { position, state: status } of entries()) {
         if (position == null || !status) continue;
         if (position === CLOSURE_CHARGE_PORT) {
-          // As legacy chargePortState: open or ajar are open; moving or shut are closed.
-          if (status >= 1 && status <= 5)
-            set('chargePortState', status === 1 || status === 3 ? 'open' : 'closed');
+          set('chargePortState', CHARGE_PORT_STATES[status]);
           continue;
         }
         const key = CLOSURE_FIELDS[position];

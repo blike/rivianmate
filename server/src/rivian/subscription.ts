@@ -53,8 +53,18 @@ export interface VehicleStateStream {
     rvms: readonly string[],
     callback: ParallaxCallback,
   ): void;
-  /** True once Rivian has refused an optional subscription. */
-  isUnsupported?(kind: OptionalSubKind): boolean;
+  /**
+   * A third Parallax subscription (own id, own rejection fate) for the
+   * vehicle state topics (gear, power, closures, …), so a vehicle rejecting
+   * one of them can't stop GPS and tires.
+   */
+  subscribeParallaxVehicleState?(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+  ): void;
+  /** True once Rivian has refused an optional subscription, for one vehicle or any. */
+  isUnsupported?(kind: OptionalSubKind, vehicleId?: string): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
   readonly droppedFields?: readonly string[];
   diagnostics?(): StreamDiagnostics;
@@ -96,8 +106,16 @@ export interface SubscriptionManagerOptions {
   heartbeatIntervalMs?: number;
 }
 
-type OptionalSubKind = 'chargingSession' | 'departureSchedules' | 'parallax' | 'parallaxDynamics';
+type OptionalSubKind =
+  | 'chargingSession'
+  | 'departureSchedules'
+  | 'parallax'
+  | 'parallaxDynamics'
+  | 'parallaxVehicleState';
 type SubKind = 'vehicleState' | OptionalSubKind;
+
+const isParallax = (kind: SubKind) =>
+  kind === 'parallax' || kind === 'parallaxDynamics' || kind === 'parallaxVehicleState';
 
 export interface FeedDiagnostics {
   id: string;
@@ -149,7 +167,7 @@ interface Subscription {
 
 /** The feeds a subscription shows as: one, or one per Parallax domain. */
 function feedsOf(sub: Subscription): { id: string; domain: string | null; topics: string[] }[] {
-  if (sub.kind !== 'parallax' && sub.kind !== 'parallaxDynamics') {
+  if (!isParallax(sub.kind)) {
     return [{ id: sub.id, domain: null, topics: [] }];
   }
   const domains = new Map<string, string[]>();
@@ -188,8 +206,11 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private coreFieldsOnly = false;
   /** Whether the current socket has delivered any vehicle state yet. */
   private gotVehicleData = false;
-  /** Optional subscriptions Rivian refused; not re-sent for this process. */
-  private unsupported = new Set<SubKind>();
+  /**
+   * Ids of optional subscriptions Rivian refused; not re-sent for this
+   * process. Per subscription, so one vehicle's refusal leaves the others'.
+   */
+  private unsupported = new Set<string>();
   private started = false;
   private connected = false;
   private everConnected = false;
@@ -272,9 +293,28 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     });
   }
 
-  /** Optional subscriptions Rivian refused (for diagnostics/UI). */
-  isUnsupported(kind: OptionalSubKind): boolean {
-    return this.unsupported.has(kind);
+  subscribeParallaxVehicleState(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+  ): void {
+    this.addSubscription({
+      id: `parallax-vehicle-state:${vehicleId}`,
+      kind: 'parallaxVehicleState',
+      vehicleId,
+      rvms,
+      onParallax: callback,
+    });
+  }
+
+  /** Optional subscriptions Rivian refused, for one vehicle or any (for diagnostics/UI). */
+  isUnsupported(kind: OptionalSubKind, vehicleId?: string): boolean {
+    return [...this.subscriptions.values()].some(
+      (sub) =>
+        sub.kind === kind &&
+        (vehicleId == null || sub.vehicleId === vehicleId) &&
+        this.unsupported.has(sub.id),
+    );
   }
 
   diagnostics(): StreamDiagnostics {
@@ -307,7 +347,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             kind: sub.kind,
             domain,
             topics,
-            status: this.unsupported.has(sub.kind)
+            status: this.unsupported.has(sub.id)
               ? 'unsupported'
               : sub.errored && this.started
                 ? 'errored'
@@ -561,11 +601,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
         ) {
           this.noteFeedMessage(sub, data.vehicleDepartureSchedules);
           sub.onDepartures?.(sub.vehicleId, mapDepartureSchedules(data.vehicleDepartureSchedules));
-        } else if (
-          (sub.kind === 'parallax' || sub.kind === 'parallaxDynamics') &&
-          data &&
-          'parallaxMessages' in data
-        ) {
+        } else if (isParallax(sub.kind) && data && 'parallaxMessages' in data) {
           const m = data.parallaxMessages as Partial<Record<keyof ParallaxMessage, unknown>> | null;
           if (m && typeof m.rvm === 'string') {
             this.noteFeedMessage(sub);
@@ -616,7 +652,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       // Optional feature: if Rivian refuses it, keep the socket (charging
       // keeps its vehicle-state data; schedules show as unavailable).
       if (msg.type === 'error') {
-        this.unsupported.add(sub.kind);
+        this.unsupported.add(sub.id);
         this.log(`${sub.kind} subscription rejected: ${summarize(errors)}`);
       }
       return undefined;
@@ -641,7 +677,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private sendSubscribe(sub: Subscription): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     if (this.sentIds.has(sub.id)) return;
-    if (this.unsupported.has(sub.kind)) return;
+    if (this.unsupported.has(sub.id)) return;
     this.sentIds.add(sub.id);
     const payload =
       sub.kind === 'vehicleState'
@@ -661,7 +697,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
               query: CHARGING_SESSION_SUBSCRIPTION,
               variables: { vehicleID: sub.vehicleId },
             }
-          : sub.kind === 'parallax' || sub.kind === 'parallaxDynamics'
+          : isParallax(sub.kind)
             ? {
                 operationName: 'ParallaxMessages',
                 query: PARALLAX_MESSAGES_SUBSCRIPTION,

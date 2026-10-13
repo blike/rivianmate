@@ -17,6 +17,7 @@ const feedNames = {
   vehicleState: 'Vehicle state',
   parallax: 'Parallax',
   parallaxDynamics: 'Parallax dynamics',
+  parallaxVehicleState: 'Parallax vehicle state',
   chargingSession: 'Charging',
   departureSchedules: 'Departure schedules',
 };

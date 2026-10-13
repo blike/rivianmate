@@ -7,6 +7,7 @@ import { CORE_VEHICLE_STATE_PROPERTIES } from '../rivian/graphql.js';
 import {
   PARALLAX_DYNAMICS_FIELDS,
   PARALLAX_DYNAMICS_RVMS,
+  PARALLAX_VEHICLE_STATE_RVMS,
   PARALLAX_MONITOR_RVMS,
   RVM_CHARGING_STATUS,
   RVM_GNSS,
@@ -38,7 +39,7 @@ import { OtaNotesStore } from './ota-notes.js';
 import { ParallaxStore, messageTime } from './parallax-store.js';
 import type { LiveBus } from './live-bus.js';
 import { SnapshotWriter } from './snapshot-writer.js';
-import { mergeVehicleState, stateLocation, stateString } from './state-utils.js';
+import { mergeVehicleState, normalizeReadings, stateLocation, stateString } from './state-utils.js';
 import type { TokenStore } from './token-store.js';
 
 const WS_DOWN_POLL_AFTER_MS = 5 * 60_000;
@@ -271,8 +272,8 @@ export class VehicleMonitor {
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
       try {
-        const state = await this.pollState(vehicle.id);
-        this.states.set(vehicle.id, state ?? {});
+        const state = normalizeReadings((await this.pollState(vehicle.id)) ?? {});
+        this.states.set(vehicle.id, state);
       } catch (err) {
         this.log(`initial state poll failed for ${vehicle.vin}: ${describeRivianError(err)}`);
         this.states.set(vehicle.id, {});
@@ -381,10 +382,18 @@ export class VehicleMonitor {
                 }
               }
               if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
-            } else {
-              const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
-              if (delta) void this.handleDelta(vehicle.id, delta);
             }
+          },
+        );
+        // Its own subscription too: a vehicle rejecting one of these topics
+        // can't stop GPS and tires above.
+        stream.subscribeParallaxVehicleState?.(
+          vehicle.id,
+          PARALLAX_VEHICLE_STATE_RVMS,
+          (_vehicleId, message) => {
+            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
+            const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
+            if (delta) void this.handleDelta(vehicle.id, delta);
           },
         );
       }
@@ -435,8 +444,9 @@ export class VehicleMonitor {
 
   private async handleDelta(vehicleId: string, delta: VehicleState): Promise<void> {
     if (!this.vehicles.some((v) => v.id === vehicleId)) return;
+    const readings = normalizeReadings(delta);
     const cached = this.states.get(vehicleId) ?? {};
-    const changed = mergeVehicleState(cached, delta, PARALLAX_DYNAMICS_FIELDS);
+    const changed = mergeVehicleState(cached, readings, PARALLAX_DYNAMICS_FIELDS);
     this.states.set(vehicleId, cached);
     if (changed.length === 0) return;
 
@@ -481,7 +491,8 @@ export class VehicleMonitor {
 
   getSchedules(vehicleId: string): SchedulesDto {
     const entry = this.schedules.get(vehicleId);
-    const unavailable = this.connection?.stream.isUnsupported?.('departureSchedules') ?? false;
+    const unavailable =
+      this.connection?.stream.isUnsupported?.('departureSchedules', vehicleId) ?? false;
     const silentLongEnough =
       this.streamConnectedAt !== null &&
       Date.now() - this.streamConnectedAt >= DEPARTURES_SILENCE_MS;

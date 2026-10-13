@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { VehicleState } from '../rivian/types.js';
 import { PARALLAX_DYNAMICS_FIELDS } from '../rivian/parallax.js';
-import { isPosition, mergeVehicleState, stateLocation } from './state-utils.js';
+import { isPosition, mergeVehicleState, normalizeReadings, stateLocation } from './state-utils.js';
 
 describe('stateLocation', () => {
   const at = (latitude: number, longitude: number) =>
@@ -75,5 +75,44 @@ describe('GPS and tire stream fallback', () => {
       PARALLAX_DYNAMICS_FIELDS,
     );
     expect(cached.gnssLocation).toEqual(current);
+  });
+});
+
+describe('normalizeReadings', () => {
+  const at = (value: string | number) => ({ timeStamp: '2026-10-12T23:36:02Z', value });
+
+  it('drops float32 noise and puts bearing on a 0–360 compass', () => {
+    const location = { latitude: 33.0714452, longitude: -117.2565921, timeStamp: 'x' };
+    expect(
+      normalizeReadings({
+        batteryLevel: at(53.600002),
+        gnssBearing: at(-169.853),
+        gnssSpeed: at(4.951428413391113),
+        gearStatus: at('park'),
+        gnssLocation: location,
+      }),
+    ).toEqual({
+      batteryLevel: at(53.6),
+      gnssBearing: at(190.147),
+      gnssSpeed: at(4.951),
+      gearStatus: at('park'),
+      gnssLocation: location,
+    });
+    expect(normalizeReadings({ gnssBearing: at(359.9999) }).gnssBearing).toEqual(at(0));
+  });
+});
+
+describe('invalid sensor states', () => {
+  it('drops "undefined" except where it is a reading (preconditioning off)', () => {
+    const cached: VehicleState = {
+      cabinPreconditioningStatus: { timeStamp: 'a', value: 'active' },
+      driveMode: { timeStamp: 'a', value: 'everyday' },
+    };
+    const changed = mergeVehicleState(cached, {
+      cabinPreconditioningStatus: { timeStamp: 'b', value: 'undefined' },
+      driveMode: { timeStamp: 'b', value: 'undefined' },
+    });
+    expect(changed).toEqual(['cabinPreconditioningStatus']);
+    expect(cached.driveMode).toEqual({ timeStamp: 'a', value: 'everyday' });
   });
 });

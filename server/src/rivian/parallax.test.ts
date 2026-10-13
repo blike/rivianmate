@@ -578,7 +578,7 @@ describe('vehicleStateFromParallax', () => {
       doorRearRightClosed: v('closed'),
       closureFrunkClosed: v('open'),
       closureLiftgateClosed: v('open'),
-      chargePortState: v('closed'),
+      chargePortState: v('close'),
       windowFrontLeftClosed: v('open'),
       windowFrontRightClosed: v('closed'),
       windowRearLeftClosed: v('closed'),
@@ -586,10 +586,11 @@ describe('vehicleStateFromParallax', () => {
     });
   });
 
-  it('reads an open or ajar charge port as open, and skips unknown closure states', () => {
+  it('reads the charge port as legacy does (ajar as open), and skips unknown closure states', () => {
     expect(read(RVM_CLOSURES, entry(10, 1))).toEqual({ chargePortState: v('open') });
     expect(read(RVM_CLOSURES, entry(10, 3))).toEqual({ chargePortState: v('open') });
-    expect(read(RVM_CLOSURES, entry(10, 4))).toEqual({ chargePortState: v('closed') });
+    expect(read(RVM_CLOSURES, entry(10, 4))).toEqual({ chargePortState: v('opening') });
+    expect(read(RVM_CLOSURES, entry(10, 5))).toEqual({ chargePortState: v('closing') });
     expect(read(RVM_CLOSURES, [...entry(1, 9), ...entry(2, 2)])).toEqual({
       doorFrontRightClosed: v('closed'),
     });
@@ -622,16 +623,18 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_CABIN_TEMPERATURES, float(3, 500))).toBeNull();
   });
 
-  it('reads preconditioning (an empty message is off) and defrost', () => {
-    expect(read(RVM_PRECONDITIONING, [])).toEqual({ cabinPreconditioningStatus: v('off') });
+  it('reads preconditioning (an empty message is off) and defrost, spelled as legacy does', () => {
+    expect(read(RVM_PRECONDITIONING, [])).toEqual({
+      cabinPreconditioningStatus: v('undefined'),
+    });
     expect(read(RVM_PRECONDITIONING, int(1, 4))).toEqual({
       cabinPreconditioningStatus: v('active'),
     });
     expect(read(RVM_PRECONDITIONING, int(1, 2))).toEqual({
       cabinPreconditioningStatus: v('initiate'),
     });
-    expect(read(RVM_DEFROST, int(1, 2))).toEqual({ defrostDefogStatus: v('on') });
-    expect(read(RVM_DEFROST, int(1, 4))).toEqual({ defrostDefogStatus: v('off') });
+    expect(read(RVM_DEFROST, int(1, 2))).toEqual({ defrostDefogStatus: v('On') });
+    expect(read(RVM_DEFROST, int(1, 4))).toEqual({ defrostDefogStatus: v('Off') });
     expect(read(RVM_DEFROST, int(1, 3))).toBeNull();
   });
 

@@ -558,6 +558,42 @@ describe('RivianSubscriptionManager', () => {
     expect(server.conns).toHaveLength(1);
   });
 
+  it("keeps GPS, tires and other vehicles' feeds when one vehicle refuses vehicle state topics", async () => {
+    manager = createManager({ initialBackoffMs: 60_000 });
+    for (const vin of ['VIN1', 'VIN2']) {
+      manager.subscribe(vin, () => {});
+      manager.subscribeParallaxDynamics(vin, ['dynamics.vehicle.gnss'], () => {});
+      manager.subscribeParallaxVehicleState(vin, ['body.closures.states'], () => {});
+    }
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 6,
+    );
+    server.conns[0]!.socket.send(
+      JSON.stringify({
+        id: 'parallax-vehicle-state:VIN1',
+        type: 'error',
+        payload: [{ message: 'Cannot query field' }],
+      }),
+    );
+    await server.until(() => manager.isUnsupported('parallaxVehicleState', 'VIN1'));
+    expect(manager.isUnsupported('parallaxVehicleState', 'VIN2')).toBe(false);
+    expect(manager.isUnsupported('parallaxDynamics')).toBe(false);
+    expect(server.conns).toHaveLength(1);
+
+    // On the next connection only the refused subscription stays unsent.
+    server.conns[0]!.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'Connection TTL expired');
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 5,
+    );
+    expect(server.subscribes(server.conns[1]!).map((m) => m.id)).not.toContain(
+      'parallax-vehicle-state:VIN1',
+    );
+    expect(server.subscribes(server.conns[1]!).map((m) => m.id)).toContain(
+      'parallax-vehicle-state:VIN2',
+    );
+  });
+
   it('keeps the socket when only the charging subscription is refused', async () => {
     manager = createManager();
     manager.subscribe('VIN1', () => {});

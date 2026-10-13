@@ -1,6 +1,28 @@
 import type { GnssLocation, TimeStampedValue, VehicleState } from '../rivian/types.js';
 
 const INVALID_SENSOR_STATES = new Set(['fault', 'signal_not_available', 'undefined']);
+/** Fields where "undefined" is a real reading: preconditioning off. */
+const UNDEFINED_IS_A_VALUE = new Set(['cabinPreconditioningStatus']);
+
+/**
+ * Readings as the app keeps them, from either feed: numbers without float32
+ * noise (53.600002 is 53.6), and bearing as a 0–360 compass heading (legacy
+ * sends −180 to 180, Parallax 0–360).
+ */
+export function normalizeReadings(delta: VehicleState): VehicleState {
+  const out: VehicleState = {};
+  for (const [key, reading] of Object.entries(delta)) {
+    const record = reading as TimeStampedValue | undefined;
+    if (record == null || typeof record.value !== 'number' || !('timeStamp' in record)) {
+      out[key] = reading;
+      continue;
+    }
+    let value = Math.round(record.value * 1000) / 1000;
+    if (key === 'gnssBearing') value = ((value % 360) + 360) % 360;
+    out[key] = { ...record, value };
+  }
+  return out;
+}
 
 /**
  * Merge a subscription delta into the cached full state, dropping invalid
@@ -16,7 +38,11 @@ export function mergeVehicleState(
   for (const [key, incoming] of Object.entries(delta)) {
     if (incoming == null) continue;
     const record = incoming as TimeStampedValue;
-    if (typeof record.value === 'string' && INVALID_SENSOR_STATES.has(record.value)) {
+    if (
+      typeof record.value === 'string' &&
+      INVALID_SENSOR_STATES.has(record.value) &&
+      !(record.value === 'undefined' && UNDEFINED_IS_A_VALUE.has(key))
+    ) {
       continue;
     }
     const prev = cached[key];
