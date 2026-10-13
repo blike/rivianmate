@@ -2,6 +2,7 @@ import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
 import {
   brakeFluidLabel,
+  chargePortLabel,
   preconditioningLabel,
   securitySummary,
   vehicleActivity,
@@ -80,6 +81,13 @@ describe('dashboard warning labels', () => {
     expect(brakeFluidLabel({ brakeFluidLow: null } as unknown as VehicleState)).toBe('Normal');
     expect(brakeFluidLabel(state({ brakeFluidLow: 'false' }))).toBe('OK');
     expect(brakeFluidLabel(state({ brakeFluidLow: 'true' }))).toBe('Low');
+  });
+
+  it('reads the charge port\'s "close" as Closed', () => {
+    expect(chargePortLabel(state({ chargePortState: 'close' }))).toBe('Closed');
+    expect(chargePortLabel(state({ chargePortState: 'open' }))).toBe('Open');
+    expect(chargePortLabel(state({ chargePortState: 'opening' }))).toBe('Opening');
+    expect(chargePortLabel(undefined)).toBe('—');
   });
 
   it('maps the observed inactive preconditioning enum without masking missing or active values', () => {

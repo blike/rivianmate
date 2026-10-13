@@ -12,6 +12,12 @@ export function brakeFluidLabel(state: VehicleState | undefined): string {
   return value == null ? 'Unknown' : titleCase(value);
 }
 
+/** Rivian spells a shut charge port "close". */
+export function chargePortLabel(state: VehicleState | undefined): string {
+  const value = sv(state, 'chargePortState');
+  return value === 'close' ? 'Closed' : titleCase(value);
+}
+
 /** Rivian's literal "undefined" is observed when cabin preconditioning is off. */
 export function preconditioningLabel(state: VehicleState | undefined): string {
   const value = sv(state, 'cabinPreconditioningStatus');

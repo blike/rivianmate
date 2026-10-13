@@ -4,7 +4,7 @@ import { LoadingScope } from '../../components/LoadingState';
 import { Panel, Row } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { sv, titleCase } from '../../lib/state';
-import { brakeFluidLabel } from '../../lib/vehicleStatus';
+import { brakeFluidLabel, chargePortLabel } from '../../lib/vehicleStatus';
 import { BatteryEnergyPanel } from './BatteryEnergyPanel';
 import { ClimatePanel } from './ClimatePanel';
 import { ClosuresGrid } from './ClosuresGrid';
@@ -57,7 +57,7 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
                 <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
                 <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
                 <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
-                <Row label="Charge port" value={titleCase(sv(state, 'chargePortState'))} />
+                <Row label="Charge port" value={chargePortLabel(state)} />
               </dl>
             </Panel>
 

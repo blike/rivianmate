@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { b64, double, float, graphBar, int, message, string } from '../testing/protobuf.js';
 import {
+  RVM_BATTERY_STATE,
   RVM_CABIN_TEMPERATURES,
   RVM_CLOSURES,
   RVM_DEFROST,
   RVM_GEAR,
   RVM_LOCKS,
+  RVM_LOW_VOLTAGE_BATTERY,
+  RVM_ODOMETER,
+  RVM_OTA_DEPLOYMENT,
   RVM_POWER,
   RVM_PRECONDITIONING,
+  RVM_RANGE,
+  RVM_SOC_SLIDER,
   chargerStateFromStatus,
   chargerStatusFromStatus,
   decodeBatteryCharacteristics,
@@ -547,6 +553,12 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_GEAR, int(1, 0))).toBeNull();
   });
 
+  it('reads the odometer (km) as legacy vehicleMileage (m)', () => {
+    expect(read(RVM_ODOMETER, int(1, 456))).toEqual({ vehicleMileage: v(456_000) });
+    expect(read(RVM_ODOMETER, int(1, 0))).toBeNull();
+    expect(read(RVM_ODOMETER, int(1, 3_000_000))).toBeNull();
+  });
+
   it('reads an R2 closure frame: doors, liftgate, windows, rear glass and charge port', () => {
     const state = read(RVM_CLOSURES, [
       ...entry(1, 1), // driver door open
@@ -630,6 +642,56 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_DEFROST, int(1, 2))).toEqual({ defrostDefogStatus: v('On') });
     expect(read(RVM_DEFROST, int(1, 4))).toEqual({ defrostDefogStatus: v('Off') });
     expect(read(RVM_DEFROST, int(1, 3))).toBeNull();
+  });
+
+  it('reads battery state and the charge limit as legacy battery fields', () => {
+    // Captured from an R1S, matching its legacy batteryLevel, batteryCapacity
+    // and batteryLimit (52.4, 111.33, 70).
+    const battery = read(RVM_BATTERY_STATE, [
+      ...message(1, [...double(1, 52.4), ...double(2, 111.33)]),
+      ...message(3, []),
+    ]);
+    expect(battery).toEqual({ batteryLevel: v(52.4), batteryCapacity: v(111.33) });
+    expect(vehicleStateFromParallax(RVM_SOC_SLIDER, 'CEY=', TS)).toEqual({
+      batteryLimit: v(70),
+    });
+  });
+
+  it('skips battery readings out of range or missing', () => {
+    expect(read(RVM_BATTERY_STATE, message(1, [...double(1, 140), ...double(2, 900)]))).toBeNull();
+    expect(read(RVM_BATTERY_STATE, message(2, [...float(1, 42.8)]))).toBeNull();
+    expect(read(RVM_SOC_SLIDER, int(1, 0))).toBeNull();
+  });
+
+  it('reads range and 12V health as legacy distanceToEmpty and twelveVoltBatteryHealth', () => {
+    // Captured from an R1S beside legacy distanceToEmpty 282 and NORMAL_OPERATION.
+    expect(vehicleStateFromParallax(RVM_RANGE, 'CJoCEAEYAQ==', TS)).toEqual({
+      distanceToEmpty: v(282),
+    });
+    expect(vehicleStateFromParallax(RVM_LOW_VOLTAGE_BATTERY, 'CAE=', TS)).toEqual({
+      twelveVoltBatteryHealth: v('NORMAL_OPERATION'),
+    });
+  });
+
+  it('skips range without the field 2 seen so far, and unknown 12V values', () => {
+    expect(read(RVM_RANGE, int(1, 282))).toBeNull();
+    expect(read(RVM_RANGE, [...int(1, 282), ...int(2, 2)])).toBeNull();
+    expect(read(RVM_LOW_VOLTAGE_BATTERY, int(1, 3))).toBeNull();
+  });
+
+  it('reads the installed software version from deployment state', () => {
+    // Captured from an R1S 15 s after legacy reported 2026.36.0 installed.
+    const installed = 'CjQIARIaCgkyMDI2LjM2LjAY6g8gJDIIZDJmNzM0NzQiFCoSCAEQARoCEAAiAhAAKgAweEAC';
+    expect(vehicleStateFromParallax(RVM_OTA_DEPLOYMENT, installed, TS)).toEqual({
+      otaCurrentVersion: v('2026.36.0'),
+    });
+  });
+
+  it('skips deployments in other states, and malformed versions', () => {
+    const deployment = (state: number, version: string) =>
+      message(1, [...int(1, state), ...message(2, string(1, version))]);
+    expect(read(RVM_OTA_DEPLOYMENT, deployment(2, '2026.40.0'))).toBeNull();
+    expect(read(RVM_OTA_DEPLOYMENT, deployment(1, 'VehicleOTAState'))).toBeNull();
   });
 
   it('ignores other topics and malformed payloads', () => {

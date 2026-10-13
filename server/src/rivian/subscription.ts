@@ -63,6 +63,15 @@ export interface VehicleStateStream {
     rvms: readonly string[],
     callback: ParallaxCallback,
   ): void;
+  /**
+   * A fourth Parallax subscription (own id, own rejection fate) for topics
+   * still being decoded, so one a vehicle rejects can't stop vehicle state.
+   */
+  subscribeParallaxExtras?(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+  ): void;
   /** True once Rivian has refused an optional subscription, for one vehicle or any. */
   isUnsupported?(kind: OptionalSubKind, vehicleId?: string): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
@@ -111,11 +120,15 @@ type OptionalSubKind =
   | 'departureSchedules'
   | 'parallax'
   | 'parallaxDynamics'
-  | 'parallaxVehicleState';
+  | 'parallaxVehicleState'
+  | 'parallaxExtras';
 type SubKind = 'vehicleState' | OptionalSubKind;
 
 const isParallax = (kind: SubKind) =>
-  kind === 'parallax' || kind === 'parallaxDynamics' || kind === 'parallaxVehicleState';
+  kind === 'parallax' ||
+  kind === 'parallaxDynamics' ||
+  kind === 'parallaxVehicleState' ||
+  kind === 'parallaxExtras';
 
 export interface FeedDiagnostics {
   id: string;
@@ -176,8 +189,56 @@ function feedsOf(sub: Subscription): { id: string; domain: string | null; topics
     const domain = prefix === 'energy_edge_compute' ? 'energy' : prefix;
     domains.set(domain, [...(domains.get(domain) ?? []), topic]);
   }
-  return [...domains].map(([domain, topics]) => ({ id: `${sub.id}:${domain}`, domain, topics }));
+  // Keyed by vehicle and domain, not subscription, so a domain split across
+  // Parallax subscriptions (dynamics: GPS and tires, and gear) shows as one feed.
+  return [...domains].map(([domain, topics]) => ({
+    id: `parallax:${sub.vehicleId}:${domain}`,
+    domain,
+    topics,
+  }));
 }
+
+/** A feed, and the subscriptions carrying its topics. */
+interface Feed {
+  id: string;
+  vehicleId: string;
+  kind: SubKind;
+  domain: string | null;
+  topics: string[];
+  parts: { sub: Subscription; topics: string[] }[];
+}
+
+/** One feed per legacy subscription, and per vehicle and Parallax domain. */
+function feedsFrom(subs: Iterable<Subscription>): Feed[] {
+  const feeds = new Map<string, Feed>();
+  for (const sub of subs) {
+    for (const { id, domain, topics } of feedsOf(sub)) {
+      const feed = feeds.get(id);
+      if (feed) {
+        feed.topics.push(...topics);
+        feed.parts.push({ sub, topics });
+      } else {
+        feeds.set(id, {
+          id,
+          vehicleId: sub.vehicleId,
+          kind: sub.kind,
+          domain,
+          topics: [...topics],
+          parts: [{ sub, topics }],
+        });
+      }
+    }
+  }
+  return [...feeds.values()];
+}
+
+/** A merged feed's status: errored or receiving if any part is, unsupported only if all are. */
+const FEED_STATUS_ORDER: FeedDiagnostics['status'][] = [
+  'errored',
+  'receiving',
+  'waiting',
+  'unsupported',
+];
 
 type DisconnectReason =
   | { kind: 'ttl' }
@@ -307,6 +368,20 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     });
   }
 
+  subscribeParallaxExtras(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+  ): void {
+    this.addSubscription({
+      id: `parallax-extras:${vehicleId}`,
+      kind: 'parallaxExtras',
+      vehicleId,
+      rvms,
+      onParallax: callback,
+    });
+  }
+
   /** Optional subscriptions Rivian refused, for one vehicle or any (for diagnostics/UI). */
   isUnsupported(kind: OptionalSubKind, vehicleId?: string): boolean {
     return [...this.subscriptions.values()].some(
@@ -328,65 +403,67 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             ? 'reconnecting'
             : 'connecting',
       lastMessageAt: this.lastMessageAt == null ? null : new Date(this.lastMessageAt).toISOString(),
-      feeds: [...this.subscriptions.values()].flatMap((sub) =>
-        feedsOf(sub).map(({ id, domain, topics }): FeedDiagnostics => {
+      feeds: feedsFrom(this.subscriptions.values()).map((feed): FeedDiagnostics => {
+        const parts = feed.parts.map(({ sub, topics }) => {
           const lastMessageAt =
-            domain == null
+            feed.domain == null
               ? sub.lastMessageAt
               : topics.reduce<number | undefined>((latest, topic) => {
                   const at = sub.topicMessages?.get(topic);
                   return at == null ? latest : Math.max(latest ?? at, at);
                 }, undefined);
           const received =
-            domain == null
+            feed.domain == null
               ? sub.receivedOnConnection
               : topics.some((topic) => sub.topicsOnConnection?.has(topic));
-          return {
-            id,
-            vehicleId: sub.vehicleId,
-            kind: sub.kind,
-            domain,
-            topics,
-            status: this.unsupported.has(sub.id)
-              ? 'unsupported'
-              : sub.errored && this.started
-                ? 'errored'
-                : this.connected &&
-                    this.sentIds.has(sub.id) &&
-                    received &&
-                    lastMessageAt != null &&
-                    now - lastMessageAt < 5 * 60_000
-                  ? 'receiving'
-                  : 'waiting',
-            lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
-          };
-        }),
-      ),
+          const status: FeedDiagnostics['status'] = this.unsupported.has(sub.id)
+            ? 'unsupported'
+            : sub.errored && this.started
+              ? 'errored'
+              : this.connected &&
+                  this.sentIds.has(sub.id) &&
+                  received &&
+                  lastMessageAt != null &&
+                  now - lastMessageAt < 5 * 60_000
+                ? 'receiving'
+                : 'waiting';
+          return { lastMessageAt, status };
+        });
+        const lastMessageAt = parts.reduce<number | undefined>(
+          (latest, p) =>
+            p.lastMessageAt == null ? latest : Math.max(latest ?? p.lastMessageAt, p.lastMessageAt),
+          undefined,
+        );
+        return {
+          id: feed.id,
+          vehicleId: feed.vehicleId,
+          kind: feed.kind,
+          domain: feed.domain,
+          topics: feed.topics,
+          status: FEED_STATUS_ORDER.find((s) => parts.some((p) => p.status === s))!,
+          lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
+        };
+      }),
     };
   }
 
   /** What a feed last received since startup; null for an unknown feed. */
   latestData(feedId: string): FeedLatestData | null {
-    for (const sub of this.subscriptions.values()) {
-      const feed = feedsOf(sub).find((f) => f.id === feedId);
-      if (!feed) continue;
-      if (feed.domain == null) {
-        return {
-          feedId,
-          messages: sub.latest
-            ? [
-                {
-                  topic: null,
-                  receivedAt: new Date(sub.latest.at).toISOString(),
-                  data: sub.latest.data,
-                },
-              ]
-            : [],
-        };
-      }
+    const feed = feedsFrom(this.subscriptions.values()).find((f) => f.id === feedId);
+    if (!feed) return null;
+    if (feed.domain == null) {
+      const latest = feed.parts[0]!.sub.latest;
       return {
         feedId,
-        messages: feed.topics.flatMap((topic) => {
+        messages: latest
+          ? [{ topic: null, receivedAt: new Date(latest.at).toISOString(), data: latest.data }]
+          : [],
+      };
+    }
+    return {
+      feedId,
+      messages: feed.parts.flatMap(({ sub, topics }) =>
+        topics.flatMap((topic) => {
           const latest = sub.latestByTopic?.get(topic);
           if (!latest) return [];
           return [
@@ -397,9 +474,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             },
           ];
         }),
-      };
-    }
-    return null;
+      ),
+    };
   }
 
   private noteFeedMessage(sub: Subscription, data?: unknown): void {

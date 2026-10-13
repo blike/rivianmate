@@ -226,6 +226,36 @@ describe('RivianSubscriptionManager', () => {
     expect(feed('navigation').status).toBe('waiting');
   });
 
+  it('shows a domain split across Parallax subscriptions as one feed', async () => {
+    manager = createManager();
+    manager.subscribeParallaxDynamics('v1', ['dynamics.vehicle.gnss'], () => {});
+    manager.subscribeParallaxVehicleState(
+      'v1',
+      ['dynamics.vehicle.gear', 'body.closures.states'],
+      () => {},
+    );
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
+    const feeds = () => manager.diagnostics().feeds;
+    expect(feeds().map((f) => f.domain)).toEqual(['dynamics', 'body']);
+    expect(feeds()[0]!.topics).toEqual(['dynamics.vehicle.gnss', 'dynamics.vehicle.gear']);
+
+    // Gear alone counts for the merged feed, and its latest data lists both subscriptions' topics.
+    server.conns[0]!.socket.send(
+      JSON.stringify({
+        type: 'next',
+        id: 'parallax-vehicle-state:v1',
+        payload: { data: { parallaxMessages: { rvm: 'dynamics.vehicle.gear', payload: 'CAE=' } } },
+      }),
+    );
+    await server.until(() => feeds()[0]!.status === 'receiving');
+    expect(manager.latestData('parallax:v1:dynamics')!.messages.map((m) => m.topic)).toEqual([
+      'dynamics.vehicle.gear',
+    ]);
+  });
+
   it('sends session headers and subscribes once per vehicle and kind', async () => {
     manager = createManager();
     const states: VehicleState[] = [];

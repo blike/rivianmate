@@ -3,6 +3,7 @@ import type { VehicleInsightsDto } from '../api-types.js';
 import type { Db } from '../db/client.js';
 import { parallaxLatest, parallaxMessages } from '../db/schema.js';
 import {
+  PARALLAX_EXTRAS_RVMS,
   PARALLAX_LOGGED_RVMS,
   type ParallaxMessage,
   RVM_BATTERY_STATE,
@@ -30,8 +31,9 @@ const STORED_RVMS = new Set([
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
   ...PARALLAX_LOGGED_RVMS,
+  ...PARALLAX_EXTRAS_RVMS,
 ]);
-const LOGGED_RVMS = new Set(PARALLAX_LOGGED_RVMS);
+const LOGGED_RVMS = new Set([...PARALLAX_LOGGED_RVMS, ...PARALLAX_EXTRAS_RVMS]);
 const LOG_RETENTION_MS = 30 * 24 * 3600_000;
 const PRUNE_EVERY_MS = 3600_000;
 /** Rivian's message time; seconds or milliseconds since the epoch. */
