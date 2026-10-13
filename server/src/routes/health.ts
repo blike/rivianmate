@@ -4,7 +4,7 @@ import {
   RVM_BATTERY_STATE,
   decodeBatteryCharacteristics,
   decodeBatteryState,
-} from '../rivian/parallax.js';
+} from '../rivian/parallax/index.js';
 import { stateNumber } from '../services/state-utils.js';
 import { and, asc, eq, gte } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';

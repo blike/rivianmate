@@ -5,21 +5,18 @@ import type { RivianApi } from '../rivian/client.js';
 import {
   type ChargeBreakdown,
   type ChargingGraphBar,
+  type Decoded,
   type ParallaxMessage,
-  RVM_BATTERY_STATE,
-  RVM_CHARGE_BREAKDOWN,
-  RVM_CHARGING_STATUS,
-  RVM_CHARGING_GRAPH,
-  RVM_SOC_SLIDER,
-  RVM_TIME_ESTIMATION,
-  decodeBatteryState,
-  decodeChargeBreakdown,
-  decodeChargingGraph,
-  decodeChargingStatus,
+  batteryState,
+  chargeBreakdown,
   chargerStateFromStatus,
-  decodeSocSlider,
-  decodeTimeEstimation,
-} from '../rivian/parallax.js';
+  chargingGraph,
+  chargingStatus,
+  decodeMessage,
+  isTopic,
+  socSlider,
+  timeEstimation,
+} from '../rivian/parallax/index.js';
 import {
   LiveSessionData,
   RivianRateLimitError,
@@ -194,18 +191,22 @@ export class ChargingMonitor {
    * subscribe, so bars go to the open session, or else to the finished
    * session they fall within.
    */
-  ingestParallax(vehicleId: string, message: ParallaxMessage): Promise<void> {
+  ingestParallax(
+    vehicleId: string,
+    message: ParallaxMessage,
+    decoded: Decoded | null = decodeMessage(message),
+  ): Promise<void> {
     const at = parallaxTime(message.timestamp) ?? this.now();
-    if (message.rvm === RVM_TIME_ESTIMATION) {
+    if (isTopic(decoded, timeEstimation)) {
       // Empty once charging stops; null then means no estimate.
-      const minutes = decodeTimeEstimation(message.payload)?.minutesRemaining || null;
+      const minutes = decoded.value?.minutesRemaining || null;
       this.observe(vehicleId, 'parallax', at, [
         ['secondsLeft', minutes == null ? null : minutes * 60],
       ]);
       return Promise.resolve();
     }
-    if (message.rvm === RVM_BATTERY_STATE) {
-      const battery = decodeBatteryState(message.payload);
+    if (isTopic(decoded, batteryState)) {
+      const battery = decoded.value;
       if (battery?.soc != null) {
         this.observe(vehicleId, 'parallax', at, [
           ['soc', battery.soc],
@@ -214,24 +215,23 @@ export class ChargingMonitor {
       }
       return Promise.resolve();
     }
-    if (message.rvm === RVM_CHARGING_STATUS) {
-      const status = decodeChargingStatus(message.payload);
-      const state = status && chargerStateFromStatus(status);
+    if (isTopic(decoded, chargingStatus)) {
+      const state = decoded.value && chargerStateFromStatus(decoded.value);
       if (state) this.observe(vehicleId, 'parallax', at, [['chargerState', state]]);
       return Promise.resolve();
     }
-    if (message.rvm === RVM_SOC_SLIDER) {
-      const slider = decodeSocSlider(message.payload);
+    if (isTopic(decoded, socSlider)) {
+      const slider = decoded.value;
       if (slider) this.observe(vehicleId, 'parallax', at, [['socLimit', slider.limit]]);
       return Promise.resolve();
     }
-    if (message.rvm === RVM_CHARGE_BREAKDOWN) {
-      const breakdown = decodeChargeBreakdown(message.payload);
+    if (isTopic(decoded, chargeBreakdown)) {
+      const breakdown = decoded.value;
       if (!breakdown || breakdown.totalKwh <= 0) return Promise.resolve();
       return this.enqueue(vehicleId, () => this.applyBreakdown(vehicleId, breakdown, at));
     }
-    if (message.rvm !== RVM_CHARGING_GRAPH) return Promise.resolve();
-    const bars = decodeChargingGraph(message.payload);
+    if (!isTopic(decoded, chargingGraph)) return Promise.resolve();
+    const bars = decoded.value ?? [];
     if (bars.length === 0) return Promise.resolve();
     const sentAt = graphSentAt(message.timestamp, bars[0]!.startMs, this.now());
     const recorded = bars.filter((b) => b.startMs <= sentAt + GRAPH_CLOCK_SLACK_MS);

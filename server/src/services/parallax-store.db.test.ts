@@ -12,7 +12,7 @@ import {
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
   RVM_TIME_ESTIMATION,
-} from '../rivian/parallax.js';
+} from '../rivian/parallax/index.js';
 import { b64, double, float, int, message, string } from '../testing/protobuf.js';
 import { ParallaxStore } from './parallax-store.js';
 

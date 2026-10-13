@@ -16,9 +16,6 @@ import { SettingsGroup, SettingsHero } from './SettingsControls';
 const feedNames = {
   vehicleState: 'Vehicle state',
   parallax: 'Parallax',
-  parallaxDynamics: 'Parallax dynamics',
-  parallaxVehicleState: 'Parallax vehicle state',
-  parallaxExtras: 'Parallax extras',
   chargingSession: 'Charging',
   departureSchedules: 'Departure schedules',
 };

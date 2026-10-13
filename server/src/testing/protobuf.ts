@@ -1,6 +1,6 @@
-import { b64, float, int, message } from '../rivian/protobuf-encode.js';
+import { b64, float, int, message } from '../rivian/parallax/encode.js';
 
-export { b64, double, float, int, message, string } from '../rivian/protobuf-encode.js';
+export { b64, double, float, int, message, string } from '../rivian/parallax/encode.js';
 
 /** A `k70/g` charging graph bar. */
 export const graphBar = (soc: number, kw: number, startMs: number, endMs: number) => [

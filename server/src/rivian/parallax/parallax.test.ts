@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { b64, double, float, graphBar, int, message, string } from '../testing/protobuf.js';
+import { b64, double, float, graphBar, int, message, string } from '../../testing/protobuf.js';
 import {
   RVM_BATTERY_STATE,
   RVM_CABIN_TEMPERATURES,
@@ -35,7 +35,7 @@ import {
   readProtoFields,
   vehicleStateFromParallax,
   vehicleSupportsParallax,
-} from './parallax.js';
+} from './index.js';
 
 const START = Date.parse('2026-10-01T07:00:00Z');
 const bar = graphBar;

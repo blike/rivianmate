@@ -15,7 +15,7 @@ import {
   RVM_CHARGING_GRAPH,
   RVM_SOC_SLIDER,
   RVM_TIME_ESTIMATION,
-} from '../rivian/parallax.js';
+} from '../rivian/parallax/index.js';
 import { b64, chargingGraph, float, graphBar, int, message, string } from '../testing/protobuf.js';
 import { ChargingMonitor } from './charging-monitor.js';
 import { LiveBus } from './live-bus.js';
