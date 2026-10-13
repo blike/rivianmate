@@ -226,6 +226,36 @@ describe('RivianSubscriptionManager', () => {
     expect(feed('navigation').status).toBe('waiting');
   });
 
+  it('shows a domain split across Parallax subscriptions as one feed', async () => {
+    manager = createManager();
+    manager.subscribeParallaxDynamics('v1', ['dynamics.vehicle.gnss'], () => {});
+    manager.subscribeParallaxVehicleState(
+      'v1',
+      ['dynamics.vehicle.gear', 'body.closures.states'],
+      () => {},
+    );
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
+    const feeds = () => manager.diagnostics().feeds;
+    expect(feeds().map((f) => f.domain)).toEqual(['dynamics', 'body']);
+    expect(feeds()[0]!.topics).toEqual(['dynamics.vehicle.gnss', 'dynamics.vehicle.gear']);
+
+    // Gear alone counts for the merged feed, and its latest data lists both subscriptions' topics.
+    server.conns[0]!.socket.send(
+      JSON.stringify({
+        type: 'next',
+        id: 'parallax-vehicle-state:v1',
+        payload: { data: { parallaxMessages: { rvm: 'dynamics.vehicle.gear', payload: 'CAE=' } } },
+      }),
+    );
+    await server.until(() => feeds()[0]!.status === 'receiving');
+    expect(manager.latestData('parallax:v1:dynamics')!.messages.map((m) => m.topic)).toEqual([
+      'dynamics.vehicle.gear',
+    ]);
+  });
+
   it('sends session headers and subscribes once per vehicle and kind', async () => {
     manager = createManager();
     const states: VehicleState[] = [];
@@ -556,6 +586,42 @@ describe('RivianSubscriptionManager', () => {
     expect(manager.isUnsupported('parallaxDynamics')).toBe(true);
     expect(manager.isUnsupported('parallax')).toBe(false);
     expect(server.conns).toHaveLength(1);
+  });
+
+  it("keeps GPS, tires and other vehicles' feeds when one vehicle refuses vehicle state topics", async () => {
+    manager = createManager({ initialBackoffMs: 60_000 });
+    for (const vin of ['VIN1', 'VIN2']) {
+      manager.subscribe(vin, () => {});
+      manager.subscribeParallaxDynamics(vin, ['dynamics.vehicle.gnss'], () => {});
+      manager.subscribeParallaxVehicleState(vin, ['body.closures.states'], () => {});
+    }
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 6,
+    );
+    server.conns[0]!.socket.send(
+      JSON.stringify({
+        id: 'parallax-vehicle-state:VIN1',
+        type: 'error',
+        payload: [{ message: 'Cannot query field' }],
+      }),
+    );
+    await server.until(() => manager.isUnsupported('parallaxVehicleState', 'VIN1'));
+    expect(manager.isUnsupported('parallaxVehicleState', 'VIN2')).toBe(false);
+    expect(manager.isUnsupported('parallaxDynamics')).toBe(false);
+    expect(server.conns).toHaveLength(1);
+
+    // On the next connection only the refused subscription stays unsent.
+    server.conns[0]!.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'Connection TTL expired');
+    await server.until(
+      () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 5,
+    );
+    expect(server.subscribes(server.conns[1]!).map((m) => m.id)).not.toContain(
+      'parallax-vehicle-state:VIN1',
+    );
+    expect(server.subscribes(server.conns[1]!).map((m) => m.id)).toContain(
+      'parallax-vehicle-state:VIN2',
+    );
   });
 
   it('keeps the socket when only the charging subscription is refused', async () => {

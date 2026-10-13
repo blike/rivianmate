@@ -17,6 +17,8 @@ const feedNames = {
   vehicleState: 'Vehicle state',
   parallax: 'Parallax',
   parallaxDynamics: 'Parallax dynamics',
+  parallaxVehicleState: 'Parallax vehicle state',
+  parallaxExtras: 'Parallax extras',
   chargingSession: 'Charging',
   departureSchedules: 'Departure schedules',
 };
@@ -26,6 +28,11 @@ const pollingLabels = {
   waiting: 'Waiting for stream recovery',
   fallback: 'Fallback polling active',
 };
+
+/** A feed's row name: its Parallax domain, or the legacy subscription's name. */
+function feedName(feed: { domain: string | null; kind: keyof typeof feedNames }) {
+  return feed.domain ?? feedNames[feed.kind];
+}
 
 type FeedState = 'receiving' | 'waiting' | 'unsupported' | 'errored';
 
@@ -183,6 +190,10 @@ export function ApiConnectionsPanel({
   const coolingDown = cooldown != null;
   const counted = diagnostics ? countedSince(diagnostics.traffic.since, now) : '';
   const feeds = stream?.feeds ?? [];
+  const vehicleName = (id: string) => {
+    const vehicle = vehicles.find((v) => v.id === id);
+    return vehicle?.name ?? vehicle?.model ?? 'Vehicle';
+  };
   const receiving = feeds.filter((f) => f.status === 'receiving').length;
   const lastData =
     feeds
@@ -238,9 +249,13 @@ export function ApiConnectionsPanel({
         </SettingsGroup>
       ) : (
         (['Legacy', 'Parallax'] as const).map((group) => {
-          const list = feeds.filter((feed) =>
-            group === 'Legacy' ? feed.domain == null : feed.domain != null,
-          );
+          const list = feeds
+            .filter((feed) => (group === 'Legacy' ? feed.domain == null : feed.domain != null))
+            .sort(
+              (a, b) =>
+                feedName(a).localeCompare(feedName(b)) ||
+                vehicleName(a.vehicleId).localeCompare(vehicleName(b.vehicleId)),
+            );
           if (!list.length) return null;
           return (
             <SettingsGroup
@@ -262,15 +277,12 @@ export function ApiConnectionsPanel({
                 <div key={feed.id} className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-sm font-medium capitalize">
-                        {feed.domain ?? feedNames[feed.kind]}
-                      </div>
+                      <div className="text-sm font-medium capitalize">{feedName(feed)}</div>
                       <div
                         className="text-xs text-(--text-muted)"
                         title={receivedAt(feed.lastMessageAt)}
                       >
-                        {vehicles.length > 1 &&
-                          `${vehicles.find((v) => v.id === feed.vehicleId)?.name ?? vehicles.find((v) => v.id === feed.vehicleId)?.model ?? 'Vehicle'} · `}
+                        {vehicles.length > 1 && `${vehicleName(feed.vehicleId)} · `}
                         Last data: {ago(feed.lastMessageAt, now)}
                       </div>
                     </div>

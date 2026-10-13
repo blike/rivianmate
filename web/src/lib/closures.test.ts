@@ -46,4 +46,16 @@ describe('closures', () => {
     expect(suv).not.toContain('Tailgate');
     expect(closurePlaceholders('R1T').windows).toHaveLength(4);
   });
+
+  it('shows the rear drop glass only on an R2', () => {
+    const state = { windowRearRightClosed: v('closed'), windowRearGlassClosed: v('open') };
+    const r2 = closureStatuses(state, 'R2').windows;
+    expect(r2.map((w) => [w.label, w.closed])).toEqual([
+      ['Window RR', true],
+      ['Rear glass', false],
+    ]);
+    expect(closureStatuses(state, 'R1S').windows.map((w) => w.label)).toEqual(['Window RR']);
+    expect(closurePlaceholders('R2').windows.map((w) => w.label)).toContain('Rear glass');
+    expect(closurePlaceholders('R1S').windows).toHaveLength(4);
+  });
 });

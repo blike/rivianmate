@@ -3,17 +3,25 @@ import type { Db } from '../db/client.js';
 import { vehicles as vehiclesTable } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import type { VehicleStateStream } from '../rivian/subscription.js';
+import { isR2 } from '../closures.js';
 import { CORE_VEHICLE_STATE_PROPERTIES } from '../rivian/graphql.js';
 import {
   PARALLAX_DYNAMICS_FIELDS,
   PARALLAX_DYNAMICS_RVMS,
+  PARALLAX_EXTRAS_RVMS,
+  PARALLAX_R2_VEHICLE_STATE_RVMS,
+  PARALLAX_VEHICLE_STATE_RVMS,
   PARALLAX_MONITOR_RVMS,
+  RVM_CHARGING_STATUS,
   RVM_GNSS,
   RVM_TIRES,
   RVM_TRIP_INFO,
+  chargerStatusFromStatus,
+  decodeChargingStatus,
   decodeGnss,
   decodeTires,
   decodeTripInfo,
+  vehicleStateFromParallax,
   vehicleSupportsParallax,
 } from '../rivian/parallax.js';
 import type { SchedulesDto, VehicleInsightsDto } from '../api-types.js';
@@ -34,8 +42,10 @@ import { OtaNotesStore } from './ota-notes.js';
 import { ParallaxStore, messageTime } from './parallax-store.js';
 import type { LiveBus } from './live-bus.js';
 import { SnapshotWriter } from './snapshot-writer.js';
-import { mergeVehicleState, stateLocation, stateString } from './state-utils.js';
+import { mergeVehicleState, normalizeReadings, stateLocation, stateString } from './state-utils.js';
 import type { TokenStore } from './token-store.js';
+
+type StateSource = 'legacy' | 'parallax';
 
 const WS_DOWN_POLL_AFTER_MS = 5 * 60_000;
 /** Fallback polling only runs while the socket is down, and slowly. */
@@ -103,6 +113,8 @@ export class VehicleMonitor {
   private connection?: RivianConnection;
   private vehicles: MonitoredVehicle[] = [];
   private states = new Map<string, VehicleState>();
+  /** Each feed's latest reading per field, before merging (for debugging). */
+  private sourceStates = new Map<string, Record<StateSource, VehicleState>>();
   private snapshotWriter: SnapshotWriter;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
@@ -267,8 +279,9 @@ export class VehicleMonitor {
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
       try {
-        const state = await this.pollState(vehicle.id);
-        this.states.set(vehicle.id, state ?? {});
+        const state = normalizeReadings((await this.pollState(vehicle.id)) ?? {});
+        this.states.set(vehicle.id, state);
+        this.noteSource(vehicle.id, state, 'legacy');
       } catch (err) {
         this.log(`initial state poll failed for ${vehicle.vin}: ${describeRivianError(err)}`);
         this.states.set(vehicle.id, {});
@@ -305,7 +318,7 @@ export class VehicleMonitor {
       // Rivian's vehicleState/chargingSession take the vehicle id from
       // getUserInfo, not the VIN (a VIN yields VEHICLE_NOT_FOUND).
       stream.subscribe(vehicle.id, (vehicleId, delta) => {
-        void this.handleDelta(vehicleId, delta);
+        void this.handleDelta(vehicleId, delta, 'legacy');
       });
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
@@ -320,6 +333,24 @@ export class VehicleMonitor {
           void this.driveDetector
             .noteDestination(vehicle.id, destination)
             .catch((err: Error) => this.log(`drive destination: ${err.message}`));
+        } else if (message.rvm === RVM_CHARGING_STATUS) {
+          // The plug state, which an R2 doesn't report in vehicle state.
+          const status = decodeChargingStatus(message.payload);
+          const chargerStatus = status && chargerStatusFromStatus(status);
+          if (chargerStatus) {
+            const timeStamp = (messageTime(message.timestamp) ?? new Date()).toISOString();
+            void this.handleDelta(
+              vehicle.id,
+              { chargerStatus: { timeStamp, value: chargerStatus } },
+              'parallax',
+            );
+          }
+        } else {
+          // Battery level, capacity and charge limit, which an R2 may not
+          // report in vehicle state.
+          const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
+          const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
+          if (delta) void this.handleDelta(vehicle.id, delta, 'parallax');
         }
       });
       if (parallaxActive) {
@@ -348,7 +379,8 @@ export class VehicleMonitor {
                   delta.gnssBearing = { timeStamp: ts, value: reading.bearing };
                 if (reading.speedMps != null)
                   delta.gnssSpeed = { timeStamp: ts, value: reading.speedMps };
-                if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
+                if (Object.keys(delta).length > 0)
+                  void this.handleDelta(vehicle.id, delta, 'parallax');
               }
             } else if (message.rvm === RVM_TIRES) {
               const delta: VehicleState = {};
@@ -366,8 +398,31 @@ export class VehicleMonitor {
                   };
                 }
               }
-              if (Object.keys(delta).length > 0) void this.handleDelta(vehicle.id, delta);
+              if (Object.keys(delta).length > 0)
+                void this.handleDelta(vehicle.id, delta, 'parallax');
             }
+          },
+        );
+        // Its own subscription too: a vehicle rejecting one of these topics
+        // can't stop GPS and tires above.
+        stream.subscribeParallaxVehicleState?.(
+          vehicle.id,
+          isR2(vehicle.model) ? PARALLAX_R2_VEHICLE_STATE_RVMS : PARALLAX_VEHICLE_STATE_RVMS,
+          (_vehicleId, message) => {
+            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
+            const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
+            if (delta) void this.handleDelta(vehicle.id, delta, 'parallax');
+          },
+        );
+        // And topics still being decoded, logged for that.
+        stream.subscribeParallaxExtras?.(
+          vehicle.id,
+          PARALLAX_EXTRAS_RVMS,
+          (_vehicleId, message) => {
+            void this.parallaxStore.ingest(vehicle.id, message);
+            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
+            const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
+            if (delta) void this.handleDelta(vehicle.id, delta, 'parallax');
           },
         );
       }
@@ -416,10 +471,24 @@ export class VehicleMonitor {
     this.connection = undefined;
   }
 
-  private async handleDelta(vehicleId: string, delta: VehicleState): Promise<void> {
+  private noteSource(vehicleId: string, delta: VehicleState, source: StateSource): void {
+    let sources = this.sourceStates.get(vehicleId);
+    if (!sources) this.sourceStates.set(vehicleId, (sources = { legacy: {}, parallax: {} }));
+    for (const [key, value] of Object.entries(delta)) {
+      if (value != null) sources[source][key] = value;
+    }
+  }
+
+  private async handleDelta(
+    vehicleId: string,
+    delta: VehicleState,
+    source: StateSource,
+  ): Promise<void> {
     if (!this.vehicles.some((v) => v.id === vehicleId)) return;
+    const readings = normalizeReadings(delta);
+    this.noteSource(vehicleId, readings, source);
     const cached = this.states.get(vehicleId) ?? {};
-    const changed = mergeVehicleState(cached, delta, PARALLAX_DYNAMICS_FIELDS);
+    const changed = mergeVehicleState(cached, readings, PARALLAX_DYNAMICS_FIELDS);
     this.states.set(vehicleId, cached);
     if (changed.length === 0) return;
 
@@ -464,7 +533,8 @@ export class VehicleMonitor {
 
   getSchedules(vehicleId: string): SchedulesDto {
     const entry = this.schedules.get(vehicleId);
-    const unavailable = this.connection?.stream.isUnsupported?.('departureSchedules') ?? false;
+    const unavailable =
+      this.connection?.stream.isUnsupported?.('departureSchedules', vehicleId) ?? false;
     const silentLongEnough =
       this.streamConnectedAt !== null &&
       Date.now() - this.streamConnectedAt >= DEPARTURES_SILENCE_MS;
@@ -579,7 +649,7 @@ export class VehicleMonitor {
       try {
         const state = await this.pollState(vehicle.id);
         this.handleAuthOk();
-        if (state) await this.handleDelta(vehicle.id, state);
+        if (state) await this.handleDelta(vehicle.id, state, 'legacy');
       } catch (err) {
         if (err instanceof RivianUnauthenticatedError) {
           await this.handleAuthFailure();
