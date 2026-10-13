@@ -230,7 +230,6 @@ export const RVM_TIRES = 'dynamics.tires.state';
 // these are its only source; an R1 reports both and the newer reading wins.
 export const RVM_POWER = 'vehicle.power.state';
 export const RVM_GEAR = 'dynamics.vehicle.gear';
-export const RVM_ODOMETER = 'dynamics.vehicle.odometer';
 export const RVM_CLOSURES = 'body.closures.states';
 export const RVM_LOCKS = 'body.locks.states';
 export const RVM_CABIN_TEMPERATURES = 'comfort.cabin.cabin_temperatures';
@@ -239,9 +238,9 @@ export const RVM_DEFROST = 'comfort.cabin.defrost_defog_status';
 
 /**
  * `body.closures.states` positions, as the Rivian app numbers them, from
- * community captures. 10 is the charge port; 16, the R2's rear drop glass,
- * has no legacy field; 10000 is a stateless marker that ends every R2
- * frame. An R2 reports 1–5, 7 and 12–15, all closed so far, so which
+ * community captures. 10 is the charge port; 16 is the R2's rear drop
+ * glass, which has no legacy field, so it's named here in legacy's style;
+ * 10000 is a stateless marker that ends every R2 frame. An R2 reports 1–5, 7 and 12–15, all closed so far, so which
  * position is which door isn't confirmed on it yet.
  */
 const CLOSURE_FIELDS: Record<number, string> = {
@@ -259,6 +258,7 @@ const CLOSURE_FIELDS: Record<number, string> = {
   13: 'windowFrontRightClosed',
   14: 'windowRearLeftClosed',
   15: 'windowRearRightClosed',
+  16: 'windowRearGlassClosed',
 };
 const CLOSURE_CHARGE_PORT = 10;
 
@@ -285,7 +285,6 @@ export const PARALLAX_DYNAMICS_RVMS: readonly string[] = [RVM_GNSS, RVM_TIRES];
 export const PARALLAX_VEHICLE_STATE_RVMS: readonly string[] = [
   RVM_POWER,
   RVM_GEAR,
-  RVM_ODOMETER,
   RVM_CLOSURES,
   RVM_LOCKS,
   RVM_CABIN_TEMPERATURES,
@@ -312,7 +311,6 @@ export const PARALLAX_DYNAMICS_FIELDS: readonly string[] = [
   'tirePressureStatusRearRight',
   'powerState',
   'gearStatus',
-  'vehicleMileage',
   'chargePortState',
   'chargerStatus',
   'cabinClimateInteriorTemperature',
@@ -559,7 +557,6 @@ const CHARGE_PORT_STATES: Record<number, string> = {
  *
  * - `vehicle.power.state`: 1 power state (1 sleep, 2 standby, 3 ready, 4 go).
  * - `dynamics.vehicle.gear`: 1 gear (1 park, 2 reverse, 3 neutral, 4 drive).
- * - `dynamics.vehicle.odometer`: 1 odometer (whole km).
  * - `body.closures.states` / `body.locks.states`: repeated 1, each with 1
  *   position (see CLOSURE_FIELDS) and 2 state. Closures: 1 open, 2 closed,
  *   3 ajar, 4 opening, 5 closing; 0 or missing means not fitted. Locks:
@@ -600,11 +597,6 @@ export function vehicleStateFromParallax(
     case RVM_GEAR:
       set('gearStatus', GEARS[m.int(1) ?? 0]);
       break;
-    case RVM_ODOMETER: {
-      const km = m.int(1);
-      if (km != null && km > 0 && km <= 2_000_000) set('vehicleMileage', km * 1000);
-      break;
-    }
     case RVM_CLOSURES:
       for (const { position, state: status } of entries()) {
         if (position == null || !status) continue;
@@ -954,7 +946,6 @@ const FIELD_NAMES: Record<string, Record<string, string>> = {
   },
   [RVM_POWER]: { '1': 'Power state (1 sleep, 2 standby, 3 ready, 4 go)' },
   [RVM_GEAR]: { '1': 'Gear (1 park, 2 reverse, 3 neutral, 4 drive)' },
-  [RVM_ODOMETER]: { '1': 'Odometer (km)' },
   [RVM_CLOSURES]: {
     '1.1': 'Closure: position',
     '1.2': 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',

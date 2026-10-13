@@ -6,7 +6,6 @@ import {
   RVM_DEFROST,
   RVM_GEAR,
   RVM_LOCKS,
-  RVM_ODOMETER,
   RVM_POWER,
   RVM_PRECONDITIONING,
   chargerStateFromStatus,
@@ -548,13 +547,7 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_GEAR, int(1, 0))).toBeNull();
   });
 
-  it('reads the odometer (km) as legacy vehicleMileage (m)', () => {
-    expect(read(RVM_ODOMETER, int(1, 456))).toEqual({ vehicleMileage: v(456_000) });
-    expect(read(RVM_ODOMETER, int(1, 0))).toBeNull();
-    expect(read(RVM_ODOMETER, int(1, 3_000_000))).toBeNull();
-  });
-
-  it('reads an R2 closure frame: doors, liftgate, windows and charge port', () => {
+  it('reads an R2 closure frame: doors, liftgate, windows, rear glass and charge port', () => {
     const state = read(RVM_CLOSURES, [
       ...entry(1, 1), // driver door open
       ...entry(2, 2),
@@ -568,7 +561,7 @@ describe('vehicleStateFromParallax', () => {
       ...entry(13, 2),
       ...entry(14, 2),
       ...entry(15, 2),
-      ...entry(16, 2), // rear drop glass: no legacy field
+      ...entry(16, 1), // rear drop glass open
       ...entry(10000), // stateless marker ending every R2 frame
     ]);
     expect(state).toEqual({
@@ -583,6 +576,7 @@ describe('vehicleStateFromParallax', () => {
       windowFrontRightClosed: v('closed'),
       windowRearLeftClosed: v('closed'),
       windowRearRightClosed: v('closed'),
+      windowRearGlassClosed: v('open'),
     });
   });
 

@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
 import { drives, locationPoints, vehicleStateSnapshots, vehicles } from '../db/schema.js';
-import { RVM_GEAR, RVM_ODOMETER, vehicleStateFromParallax } from '../rivian/parallax.js';
+import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax.js';
 import type { VehicleState } from '../rivian/types.js';
 import { b64, int } from '../testing/protobuf.js';
 import { DriveDetector } from './drive-detector.js';
@@ -203,12 +203,13 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
     expect(await rows()).toHaveLength(1);
   });
 
-  it('records an R2 drive from Parallax gear and odometer alone', async () => {
-    // An R2 leaves legacy gear and power null; gear and odometer come from
-    // Parallax, and its GPS speed is a stale reading from hours earlier.
+  it('records an R2 drive from Parallax gear and legacy mileage alone', async () => {
+    // An R2 leaves legacy gear and power null, so gear comes from Parallax.
+    // Its legacy mileage is whole km, and its GPS speed is a stale reading
+    // from hours earlier.
     const r2 = (gear: number, km: number, stamp: string): VehicleState => ({
       ...vehicleStateFromParallax(RVM_GEAR, b64(int(1, gear)), stamp),
-      ...vehicleStateFromParallax(RVM_ODOMETER, b64(int(1, km)), stamp),
+      vehicleMileage: { value: km * 1000, timeStamp: stamp },
       gnssSpeed: { value: 5.377, timeStamp: '2026-10-12T10:39:09Z' },
       batteryLevel: { value: 62, timeStamp: stamp },
     });
