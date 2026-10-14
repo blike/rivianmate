@@ -18,6 +18,11 @@ export type { ChargingSchedule, DepartureSchedule, FeedLatestData, LiveSessionDa
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */
   charging: ChargingSchedule[] | null;
+  /**
+   * `charging` is only Parallax's next window, as legacy had no schedules
+   * (an R2): one day of the week, not the whole schedule.
+   */
+  chargingFromParallax: boolean;
   departures: DepartureSchedule[] | null;
   departuresUnavailable: boolean;
   chargingUpdatedAt: string | null;

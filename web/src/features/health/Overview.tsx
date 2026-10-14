@@ -32,9 +32,10 @@ export function Overview(props: { state: VehicleState | undefined }) {
         </div>
         <FreshnessBadge state={props.state} />
       </div>
-      <ul className="grid grid-cols-2 gap-px border-t border-(--border) bg-(--border) sm:grid-cols-3 lg:grid-cols-6">
+      {/* Tiles grow to fill each row, however many checks the vehicle reports. */}
+      <ul className="flex flex-wrap gap-px border-t border-(--border) bg-(--border)">
         {checks.map((c) => (
-          <li key={c.key} className="bg-(--surface-1) px-4 py-3">
+          <li key={c.key} className="min-w-0 flex-1 basis-36 bg-(--surface-1) px-4 py-3">
             <div className="text-xs text-(--text-muted)">{c.label}</div>
             <div className="mt-1 flex items-center gap-2 text-sm font-medium">
               {loading ? (

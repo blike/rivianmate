@@ -1,4 +1,4 @@
-import { eq, lt } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import type { VehicleInsightsDto } from '../api-types.js';
 import type { Db } from '../db/client.js';
 import { parallaxLatest, parallaxMessages } from '../db/schema.js';
@@ -83,6 +83,16 @@ export class ParallaxStore {
     await this.db
       .delete(parallaxMessages)
       .where(lt(parallaxMessages.receivedAt, new Date(now.getTime() - LOG_RETENTION_MS)));
+  }
+
+  /** A topic's latest decoded message for a vehicle, and when Rivian sent it. */
+  async latest<T>(vehicleId: string, def: RvmDef<T>): Promise<{ value: T; at: Date } | null> {
+    const [row] = await this.db
+      .select()
+      .from(parallaxLatest)
+      .where(and(eq(parallaxLatest.vehicleId, vehicleId), eq(parallaxLatest.rvm, def.rvm)));
+    const value = row ? (def.decode?.(row.payload) ?? null) : null;
+    return row && value != null ? { value, at: row.messageAt ?? row.receivedAt } : null;
   }
 
   async insights(vehicleId: string): Promise<VehicleInsightsDto> {

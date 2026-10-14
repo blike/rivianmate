@@ -23,8 +23,6 @@ export interface RvmDef<T = unknown> {
   /** The subscription it rides on, unless its maturity is `probe`. */
   readonly group: Exclude<ParallaxGroup, 'probe'>;
   readonly maturity: Maturity;
-  /** Only subscribed on an R2, for a reading legacy gives other models better. */
-  readonly r2Only?: boolean;
   /** Payload to typed value; null when it can't be read. Never throws. */
   decode?(payload: string): T | null;
   /** The legacy VehicleState fields the value stands in for, in legacy's values. */

@@ -484,8 +484,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       ...double(1, this.lat),
       ...double(2, this.lon),
       ...double(3, driving ? Math.round(240 + 35 * Math.sin(this.tickInPhase / 8)) : 240),
+      // Speed is left out at a standstill, as the vehicle sends it.
+      ...(driving ? float(4, LOOP_M / PHASE_TICKS.driving / (TICK_MS / 1000)) : []),
       ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
-      ...float(6, driving ? LOOP_M / PHASE_TICKS.driving / (TICK_MS / 1000) : 0),
     ]);
   }
 

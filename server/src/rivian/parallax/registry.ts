@@ -3,7 +3,6 @@
  * the fields merged with legacy and the feed viewer's names all come from
  * here, so a new topic is one definition in its domain file.
  */
-import { isR2 } from '../../closures.js';
 import type { VehicleState } from '../types.js';
 import type { Maturity, ParallaxGroup, RvmDef } from './define.js';
 import { BODY_RVMS } from './domains/body.js';
@@ -69,11 +68,9 @@ export function groupOf(def: { group: RvmDef['group']; maturity: Maturity }): Pa
   return def.maturity === 'probe' ? 'probe' : def.group;
 }
 
-/** A group's topics for a vehicle of this model; empty groups aren't subscribed. */
-export function parallaxGroupTopics(group: ParallaxGroup, model?: string | null): string[] {
-  return PARALLAX_RVMS.filter((def) => groupOf(def) === group && (!def.r2Only || isR2(model))).map(
-    (def) => def.rvm,
-  );
+/** A group's topics; empty groups aren't subscribed. */
+export function parallaxGroupTopics(group: ParallaxGroup): string[] {
+  return PARALLAX_RVMS.filter((def) => groupOf(def) === group).map((def) => def.rvm);
 }
 
 /** Rivian's domain: a topic's first segment, with the edge-compute graphs under energy. */
@@ -90,6 +87,15 @@ export function domainOf(rvm: string): string {
 export const PARALLAX_STATE_FIELDS: readonly string[] = [
   ...new Set(PARALLAX_RVMS.flatMap((def) => def.stateKeys ?? [])),
 ];
+
+/**
+ * Fields Parallax supplies that legacy reports better (the odometer in
+ * metres, not whole km): legacy's reading is used whenever it has one, and
+ * Parallax's only where it has none (an R2). Charging schedules work the
+ * same way, outside vehicle state: Parallax's next window stands in only
+ * without legacy's schedules (VehicleMonitor.getSchedules).
+ */
+export const LEGACY_PREFERRED_FIELDS: readonly string[] = ['vehicleMileage'];
 
 /** Topics whose latest payload is kept. */
 export const PARALLAX_STORED_RVMS: ReadonlySet<string> = new Set(

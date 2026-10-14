@@ -16,12 +16,14 @@ import {
   RVM_SOC_SLIDER,
   chargerStateFromStatus,
   chargerStatusFromStatus,
+  chargingWindowSchedule,
   decodeBatteryCharacteristics,
   decodeBatteryState,
   decodeChargeBreakdown,
   decodeChargingGraph,
   decodeChargingGraphBar,
   decodeChargingStatus,
+  decodeChargingWindow,
   decodeColdWeather,
   decodeGnss,
   decodeNetwork,
@@ -387,6 +389,53 @@ describe('decodeChargingStatus', () => {
   });
 });
 
+describe('decodeChargingWindow', () => {
+  // As an R1S sent it, but with made-up coordinates: Saturday's window,
+  // midnight (left out) to 14:00 at 32 A.
+  const window = (fields: number[]) =>
+    b64([
+      ...int(1, 1),
+      ...message(2, [
+        ...fields,
+        ...int(4, 32),
+        ...message(5, [...double(1, 33), ...double(2, -117)]),
+      ]),
+    ]);
+  const saturday = window([...int(2, 840), ...int(3, 840), ...int(6, 7), ...int(7, 7)]);
+
+  it('reads the next window, with Sunday as day 1', () => {
+    expect(decodeChargingWindow(saturday)).toEqual({
+      startDay: 7,
+      startMinute: 0,
+      endDay: 7,
+      endMinute: 840,
+      amps: 32,
+      latitude: 33,
+      longitude: -117,
+    });
+    expect(chargingWindowSchedule(decodeChargingWindow(saturday)!)).toEqual({
+      enabled: true,
+      startTime: 0,
+      duration: 840,
+      amperage: 32,
+      weekDays: ['Saturday'],
+      location: { latitude: 33, longitude: -117 },
+    });
+    expect(decodeChargingWindow('')).toBeNull();
+  });
+
+  it('reads a window that runs past midnight into the next day', () => {
+    const overnight = decodeChargingWindow(
+      window([...int(1, 1380), ...int(2, 360), ...int(6, 6), ...int(7, 7)]),
+    )!;
+    expect(chargingWindowSchedule(overnight)).toMatchObject({
+      startTime: 1380,
+      duration: 420,
+      weekDays: ['Friday'],
+    });
+  });
+});
+
 describe('decodeTimeEstimation', () => {
   it('reads the hold time in seconds', () => {
     expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({
@@ -441,7 +490,7 @@ describe('decodeGnss', () => {
       longitude: -122.419418,
       altitude: 15.3,
       bearing: null,
-      speedMps: null,
+      speedMps: 0, // a fix without speed is a standstill
     });
   });
 
@@ -452,11 +501,17 @@ describe('decodeGnss', () => {
     expect(decodeGnss(b64(float(5, 45)))?.bearing).toBeCloseTo(45, 1);
   });
 
-  it('keeps speed in m/s, matching what drive-detector/vehicleStatus/snapshot-writer expect', () => {
-    // Raw 3.185 m/s (captured while parked) is a plausible "just came to a
-    // stop" speed; converting it to km/h would make drive-detection's
-    // "speed > 1" (m/s) threshold trip on ordinary GPS jitter at rest.
-    expect(decodeGnss(b64(float(6, 3.185)))?.speedMps).toBeCloseTo(3.185, 2);
+  it('reads speed in m/s from field 4, and field 6 not at all', () => {
+    // As captured from an R1S beside legacy gnssSpeed: 22.13 at 22.27 m/s,
+    // with field 6 at 0.601; and parked, with field 6 at 0.722 and no field 4.
+    const fix = [...double(1, 33), ...double(2, -117)];
+    expect(decodeGnss(b64([...fix, ...float(4, 22.13), ...float(6, 0.601)]))?.speedMps).toBeCloseTo(
+      22.13,
+      2,
+    );
+    expect(decodeGnss(b64([...fix, ...float(6, 0.722)]))?.speedMps).toBe(0);
+    // No fix at all says nothing about speed.
+    expect(decodeGnss(b64(float(5, 45)))?.speedMps).toBeNull();
   });
 
   it('returns null for an empty payload', () => {
@@ -569,7 +624,7 @@ describe('vehicleStateFromParallax', () => {
       ...entry(6, 0), // no tailgate on an R2
       ...entry(7, 5), // liftgate closing
       ...entry(10, 2),
-      ...entry(12, 3), // window ajar
+      ...entry(12, 1), // window open
       ...entry(13, 2),
       ...entry(14, 2),
       ...entry(15, 2),
@@ -603,12 +658,32 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_CLOSURES, entry(20, 2))).toBeNull();
   });
 
+  it('reads doors and windows only as open or closed', () => {
+    expect(
+      read(RVM_CLOSURES, [...entry(1, 3), ...entry(2, 4), ...entry(3, 5), ...entry(4, 1)]),
+    ).toEqual({ doorRearRightClosed: v('open') });
+    expect(
+      read(RVM_CLOSURES, [
+        ...entry(12, 3),
+        ...entry(13, 4),
+        ...entry(14, 5),
+        ...entry(15, 2),
+        ...entry(16, 1),
+      ]),
+    ).toEqual({ windowRearRightClosed: v('closed'), windowRearGlassClosed: v('open') });
+    // Other closures still read ajar, opening and closing as open.
+    expect(read(RVM_CLOSURES, [...entry(5, 3), ...entry(7, 5)])).toEqual({
+      closureFrunkClosed: v('open'),
+      closureLiftgateClosed: v('open'),
+    });
+  });
+
   it('reads locks, skipping unmapped positions and unknown states', () => {
     expect(
       read(RVM_LOCKS, [
         ...entry(1, 1),
         ...entry(2, 2),
-        ...entry(5, 3),
+        ...entry(5, 3), // partly unlocked: not seen yet, so not read
         ...entry(7, 1),
         ...entry(14, 1), // no legacy field
         ...entry(3, 7), // unknown state
@@ -616,7 +691,6 @@ describe('vehicleStateFromParallax', () => {
     ).toEqual({
       doorFrontLeftLocked: v('locked'),
       doorFrontRightLocked: v('unlocked'),
-      closureFrunkLocked: v('unlocked'),
       closureLiftgateLocked: v('locked'),
     });
   });

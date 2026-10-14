@@ -3,6 +3,7 @@ import { useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
 import { Panel, Row } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
+import { showLegacyOnly } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
 import { brakeFluidLabel, chargePortLabel } from '../../lib/vehicleStatus';
 import { BatteryEnergyPanel } from './BatteryEnergyPanel';
@@ -53,17 +54,32 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
             <Panel title="Vehicle health">
               <dl className="space-y-1 text-sm">
                 <Row label="12V battery" value={titleCase(sv(state, 'twelveVoltBatteryHealth'))} />
-                <Row label="Brake fluid" value={brakeFluidLabel(state)} />
-                <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
-                <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
-                <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
+                {showLegacyOnly(state, 'brakeFluidLow') && (
+                  <Row label="Brake fluid" value={brakeFluidLabel(state)} />
+                )}
+                {showLegacyOnly(state, 'wiperFluidState') && (
+                  <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
+                )}
+                {showLegacyOnly(state, 'driveMode') && (
+                  <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
+                )}
+                {showLegacyOnly(state, 'gearGuardLocked') && (
+                  <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
+                )}
                 <Row label="Charge port" value={chargePortLabel(state)} />
               </dl>
             </Panel>
 
             <LoadingScope loading={insightsPending}>
               <Panel title="Battery & energy">
-                <BatteryEnergyPanel insights={insights} cellType={sv(state, 'batteryCellType')} />
+                <BatteryEnergyPanel
+                  insights={insights}
+                  cellType={
+                    showLegacyOnly(state, 'batteryCellType')
+                      ? sv(state, 'batteryCellType')
+                      : undefined
+                  }
+                />
               </Panel>
 
               <Panel title="Connectivity">

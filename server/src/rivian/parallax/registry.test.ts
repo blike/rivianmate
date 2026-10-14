@@ -31,6 +31,7 @@ describe('Parallax registry', () => {
       new Set([
         'vehicle.power.state',
         'dynamics.vehicle.gear',
+        'dynamics.vehicle.odometer',
         'body.closures.states',
         'body.locks.states',
         'comfort.cabin.cabin_temperatures',
@@ -49,16 +50,9 @@ describe('Parallax registry', () => {
         'ota.user_schedule.ota_config',
       ]),
     );
-    // Every topic is subscribed somewhere on an R2.
-    const subscribed = PARALLAX_GROUPS.flatMap((g) => parallaxGroupTopics(g.id, 'R2'));
+    // Every topic is subscribed in some group.
+    const subscribed = PARALLAX_GROUPS.flatMap((g) => parallaxGroupTopics(g.id));
     expect(subscribed).toHaveLength(PARALLAX_RVMS.length);
-  });
-
-  it('subscribes the odometer on an R2 only', () => {
-    expect(parallaxGroupTopics('vehicleState', 'R2')).toContain('dynamics.vehicle.odometer');
-    for (const model of ['R1S', 'R1T', null, undefined]) {
-      expect(parallaxGroupTopics('vehicleState', model)).not.toContain('dynamics.vehicle.odometer');
-    }
   });
 
   it('subscribes unverified topics apart from the working groups', () => {

@@ -67,9 +67,14 @@ function entries(payloadBase64: string) {
   });
 }
 
+/** Doors and windows, which have only ever been seen open or closed. */
+const OPEN_CLOSED_POSITIONS = new Set([1, 2, 3, 4, 12, 13, 14, 15, 16]);
+
 /**
- * Closures: 1 open, 2 closed, 3 ajar, 4 opening, 5 closing; 0 or missing
- * means not fitted. Entries with an unknown position or state are skipped.
+ * Closures: 1 open, 2 closed, 3 ajar, 4 opening, 5 closing (the Rivian
+ * app's names); 0 or missing means not fitted. Doors and windows are read
+ * only as open or closed, until one sends anything else. Entries with an
+ * unknown position or state are skipped.
  */
 export const closures = defineRvm({
   rvm: RVM_CLOSURES,
@@ -84,8 +89,9 @@ export const closures = defineRvm({
           continue;
         }
         const key = CLOSURE_FIELDS[position];
+        const known = state >= 1 && state <= (OPEN_CLOSED_POSITIONS.has(position) ? 2 : 5);
         // Opening, closing and ajar aren't closed, as legacy reports them.
-        if (key && state >= 1 && state <= 5) put(key, state === 2 ? 'closed' : 'open');
+        if (key && known) put(key, state === 2 ? 'closed' : 'open');
       }
     }),
   toState: stampReadings,
@@ -96,7 +102,10 @@ export const closures = defineRvm({
   },
 });
 
-/** Locks: 1 locked, 2 unlocked, 3 partly unlocked. */
+/**
+ * Locks: 1 locked, 2 unlocked. The app also has 3, partly unlocked, but no
+ * vehicle has sent it, so it's left unread until one does.
+ */
 export const locks = defineRvm({
   rvm: RVM_LOCKS,
   group: 'vehicleState',
@@ -105,16 +114,14 @@ export const locks = defineRvm({
     readings((put) => {
       for (const { position, state } of entries(payload) ?? []) {
         const key = position == null ? undefined : LOCK_FIELDS[position];
-        if (key && state != null && state >= 1 && state <= 3) {
-          put(key, state === 1 ? 'locked' : 'unlocked');
-        }
+        if (key && (state === 1 || state === 2)) put(key, state === 1 ? 'locked' : 'unlocked');
       }
     }),
   toState: stampReadings,
   stateKeys: Object.values(LOCK_FIELDS),
   fieldNames: {
     '1.1': 'Lock: position',
-    '1.2': 'Lock: state (1 locked, 2 unlocked, 3 partly unlocked)',
+    '1.2': 'Lock: state (1 locked, 2 unlocked; 3 partly unlocked, not read)',
   },
 });
 

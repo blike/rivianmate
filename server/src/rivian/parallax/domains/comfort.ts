@@ -39,7 +39,9 @@ export const cabinTemperatures = defineRvm({
 
 /**
  * `cabin_preconditioning_status`: 1 status (1–2 initiate, 4 active, 0 or 3
- * off). Proto3 leaves a zero out, so an empty message is off.
+ * off). Proto3 leaves a zero out, so an empty message is off. 8 is sent
+ * just as legacy reports "unavailable" (9 of 9 times on an R1S, 2026-10-13);
+ * it isn't read, so the last status holds.
  */
 export const preconditioning = defineRvm({
   rvm: RVM_PRECONDITIONING,
