@@ -37,16 +37,18 @@ describe('Parallax registry', () => {
         'comfort.cabin.cabin_temperatures',
         'comfort.cabin.cabin_preconditioning_status',
         'comfort.cabin.defrost_defog_status',
+        'dynamics.vehicle.range',
+        'energy.low_voltage.battery_state',
+        'ota.deployment.state',
       ]),
     );
-    expect(parallaxGroupTopics('core')).toHaveLength(15);
+    expect(parallaxGroupTopics('core')).toHaveLength(13);
     expect(new Set(parallaxGroupTopics('probe'))).toEqual(
       new Set([
-        'dynamics.vehicle.range',
+        'charging.session.trip_target',
+        'charging.session.notification',
         'comfort.cabin.pet_mode_status',
-        'energy.low_voltage.battery_state',
         'ota.ota_state.vehicle_ota_state',
-        'ota.deployment.state',
         'ota.user_schedule.ota_config',
       ]),
     );

@@ -91,7 +91,7 @@ export function chargerStatusFromStatus(status: ChargingStatus): string | null {
 export const chargingStatus = defineRvm({
   rvm: RVM_CHARGING_STATUS,
   group: 'core',
-  maturity: 'confirmed',
+  maturity: 'partial',
   decode: decodeChargingStatus,
   toState(status, timeStamp) {
     const value = chargerStatusFromStatus(status);
@@ -133,14 +133,14 @@ export const socSlider = defineRvm({
 export const tripTarget = defineRvm({
   rvm: RVM_TRIP_TARGET,
   group: 'core',
-  maturity: 'partial',
+  maturity: 'probe',
   store: 'log',
 });
 
 export const chargingNotification = defineRvm({
   rvm: RVM_CHARGING_NOTIFICATION,
   group: 'core',
-  maturity: 'partial',
+  maturity: 'probe',
   store: 'log',
 });
 

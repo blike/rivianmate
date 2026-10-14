@@ -175,8 +175,8 @@ export const odometer = defineRvm({
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
-  group: 'dynamics',
-  maturity: 'probe',
+  group: 'vehicleState',
+  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);

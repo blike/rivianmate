@@ -15,6 +15,14 @@ export type ParallaxGroup = 'core' | 'dynamics' | 'vehicleState' | 'probe';
  * payloads. `partial`: some fields confirmed, or only recorded so far.
  * `probe`: unverified, so it's subscribed in the probe group.
  */
+/**
+ * How far a topic is trusted, from Parallax validation against legacy:
+ * - confirmed: every field the app reads has matched legacy at every value
+ *   seen in use (or, with no legacy equivalent, matched captures).
+ * - partial: read by the app, with values still to be seen matching legacy.
+ * - probe: only logged for decoding; nothing stores or shows it. Probes
+ *   ride their own subscription, so one a vehicle rejects can't stop the rest.
+ */
 export type Maturity = 'confirmed' | 'partial' | 'probe';
 
 /** One Parallax topic: how to subscribe to it, read it, keep it and use it. */

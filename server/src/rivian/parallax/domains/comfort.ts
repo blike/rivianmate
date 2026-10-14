@@ -25,7 +25,7 @@ const temperature = (n: number | null | undefined) =>
 export const cabinTemperatures = defineRvm({
   rvm: RVM_CABIN_TEMPERATURES,
   group: 'vehicleState',
-  maturity: 'partial',
+  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);

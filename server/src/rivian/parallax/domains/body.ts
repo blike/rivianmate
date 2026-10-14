@@ -109,7 +109,7 @@ export const closures = defineRvm({
 export const locks = defineRvm({
   rvm: RVM_LOCKS,
   group: 'vehicleState',
-  maturity: 'partial',
+  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
       for (const { position, state } of entries(payload) ?? []) {
