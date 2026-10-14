@@ -26,12 +26,15 @@ const pollingLabels = {
   fallback: 'Fallback polling active',
 };
 
+/** Parallax domains that aren't simply capitalized. */
+const domainNames: Record<string, string> = { ota: 'OTA' };
+
 /** A feed's row name: its Parallax domain, or the legacy subscription's name. */
 function feedName(feed: { domain: string | null; kind: keyof typeof feedNames }) {
-  return feed.domain ?? feedNames[feed.kind];
+  return feed.domain ? (domainNames[feed.domain] ?? feed.domain) : feedNames[feed.kind];
 }
 
-type FeedState = 'receiving' | 'waiting' | 'unsupported' | 'errored';
+type FeedState = 'receiving' | 'empty' | 'waiting' | 'unsupported' | 'errored';
 
 function receivedAt(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : 'Not yet recorded';
@@ -47,20 +50,41 @@ function countedSince(since: string, now: number) {
 }
 
 /**
- * What a feed last received, fetched when opened. Parallax feeds list each
- * topic's raw fields.
+ * A feed's second line: when it last had data, and what it last received,
+ * fetched when opened. Parallax feeds list each topic's raw fields.
  */
-function FeedLatest(props: { feedId: string; topics: string[] }) {
+function FeedLatest(props: {
+  feedId: string;
+  topics: string[];
+  /** When the feed last had data, on the left. */
+  lastData: ReactNode;
+  lastDataTitle: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <details
-      className="mt-1.5 text-xs text-(--text-secondary)"
+      className="group/latest text-xs text-(--text-secondary)"
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
-      <summary className="cursor-pointer text-(--text-muted) hover:text-(--text-secondary)">
-        Latest data
-        {props.topics.length > 0 &&
-          ` · ${props.topics.length} ${props.topics.length === 1 ? 'topic' : 'topics'}`}
+      <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 truncate text-(--text-muted)" title={props.lastDataTitle}>
+          {props.lastData}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-(--text-muted) group-hover/latest:text-(--text-secondary)">
+          Latest data
+          {props.topics.length > 0 &&
+            ` · ${props.topics.length} ${props.topics.length === 1 ? 'topic' : 'topics'}`}
+          <svg
+            viewBox="0 0 16 16"
+            aria-hidden
+            className="h-3 w-3 transition-transform group-open/latest:rotate-90"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
       </summary>
       {open && <FeedLatestBody feedId={props.feedId} topics={props.topics} />}
     </details>
@@ -150,20 +174,29 @@ function useNow(): number {
   return now;
 }
 
+const feedStatusLabels: Record<FeedState, string> = {
+  receiving: 'Receiving',
+  empty: 'No data',
+  waiting: 'Waiting',
+  unsupported: 'Unsupported',
+  errored: 'Errored',
+};
+
 function FeedStatus({ status }: { status: FeedState }) {
   const colors = {
     receiving: 'var(--status-good)',
+    empty: 'var(--text-muted)',
     waiting: 'var(--text-secondary)',
     unsupported: 'var(--text-muted)',
     errored: 'var(--status-critical)',
   };
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-xs font-medium capitalize"
+      className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium"
       style={{ color: colors[status] }}
     >
       <Dot color={colors[status]} />
-      {status}
+      {feedStatusLabels[status]}
     </span>
   );
 }
@@ -266,26 +299,29 @@ export function ApiConnectionsPanel({
               }
               note={
                 group === 'Parallax' || !feeds.some((f) => f.domain != null)
-                  ? 'Receiving means data arrived in the last 5 minutes. Waiting is normal while the vehicle sleeps or isn’t charging. Unsupported means Rivian declined the subscription.'
+                  ? 'Receiving means data arrived in the last 5 minutes. Waiting is normal while the vehicle sleeps or isn’t charging. No data means Rivian accepted the subscription but has only sent empty readings, as it does for an R2. Unsupported means Rivian declined the subscription.'
                   : undefined
               }
             >
               {list.map((feed) => (
-                <div key={feed.id} className="px-4 py-3">
+                <div key={feed.id} className="space-y-0.5 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium capitalize">{feedName(feed)}</div>
-                      <div
-                        className="text-xs text-(--text-muted)"
-                        title={receivedAt(feed.lastMessageAt)}
-                      >
-                        {vehicles.length > 1 && `${vehicleName(feed.vehicleId)} · `}
-                        Last data: {ago(feed.lastMessageAt, now)}
-                      </div>
+                    <div className="min-w-0 truncate text-sm font-medium capitalize">
+                      {feedName(feed)}
                     </div>
                     <FeedStatus status={feed.status} />
                   </div>
-                  <FeedLatest feedId={feed.id} topics={feed.topics} />
+                  <FeedLatest
+                    feedId={feed.id}
+                    topics={feed.topics}
+                    lastDataTitle={receivedAt(feed.lastMessageAt)}
+                    lastData={
+                      <>
+                        {vehicles.length > 1 && `${vehicleName(feed.vehicleId)} · `}
+                        Last data: {ago(feed.lastMessageAt, now)}
+                      </>
+                    }
+                  />
                 </div>
               ))}
             </SettingsGroup>

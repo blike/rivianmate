@@ -1,6 +1,13 @@
 import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import { capacityOfRated, capacityTrend, healthChecks, healthSummary, tireTrend } from './health';
+import {
+  capacityOfRated,
+  capacityTrend,
+  healthChecks,
+  healthSummary,
+  packOfRated,
+  tireTrend,
+} from './health';
 
 const v = (value: string | number) => ({ timeStamp: 't', value });
 const state = (fields: Record<string, string | number>) =>
@@ -82,6 +89,48 @@ describe('healthChecks', () => {
     expect(healthSummary(checks).detail).toBe(
       'No warnings from the 12V battery, tires and software.',
     );
+  });
+});
+
+describe('battery pack', () => {
+  const packCheck = (fields: Record<string, string | number>, ofRated: number | null) =>
+    healthChecks(state(fields), ofRated).find((c) => c.key === 'pack');
+
+  it('judges usable capacity against rated, normal from 70%', () => {
+    expect(packCheck(healthy, 95)).toMatchObject({ level: 'good', value: 'Normal' });
+    expect(packCheck(healthy, 70)).toMatchObject({ level: 'good', value: 'Normal' });
+    expect(packCheck(healthy, 68.6)).toMatchObject({ level: 'attention', value: '69% of rated' });
+  });
+
+  it('flags a thermal event whatever the capacity', () => {
+    const hot = { ...healthy, batteryHvThermalEvent: 'on' };
+    expect(packCheck(hot, 95)).toMatchObject({ level: 'attention', value: 'Thermal event' });
+  });
+
+  it('shows for a vehicle without the thermal reading (an R2) once capacity is known', () => {
+    const r2 = { twelveVoltBatteryHealth: 'NORMAL_OPERATION' };
+    expect(packCheck(r2, null)).toBeUndefined();
+    // Kept in place while battery health loads, so the tiles don't shift.
+    expect(healthChecks(state(r2), null, true).map((c) => c.key)).toEqual(['pack', '12v']);
+    expect(packCheck(r2, 92)).toMatchObject({ level: 'good', value: 'Normal' });
+  });
+
+  it('takes the latest capacity, or the last reported one, against rated', () => {
+    const rated = { kwh: 110, at: 't' };
+    expect(
+      packOfRated({ latest: { kwh: 104.5, at: 't' }, reported: [], ratedCapacity: rated }),
+    ).toBeCloseTo(95);
+    expect(
+      packOfRated({
+        latest: null,
+        reported: [{ day: 'd', at: 't', kwh: 99 }],
+        ratedCapacity: rated,
+      }),
+    ).toBeCloseTo(90);
+    expect(
+      packOfRated({ latest: { kwh: 104.5, at: 't' }, reported: [], ratedCapacity: null }),
+    ).toBeNull();
+    expect(packOfRated(undefined)).toBeNull();
   });
 });
 

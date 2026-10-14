@@ -662,7 +662,11 @@ export class ChargingMonitor {
     this.liveState(vehicleId).forgetSessionReadings(endedAt);
     // A finished charge has no forecast.
     await this.replaceForecast(open.id, []);
-    this.log(`charging session ended for ${vehicleId}`);
+    if (await this.discardIfEmpty(open.id)) {
+      this.log(`charging session discarded for ${vehicleId}: nothing was charged`);
+    } else {
+      this.log(`charging session ended for ${vehicleId}`);
+    }
     this.onSessionEnded?.(vehicleId);
   }
 
@@ -919,6 +923,31 @@ export class ChargingMonitor {
           : {}),
       })
       .where(eq(chargingSessions.id, session.id));
+    await this.discardIfEmpty(session.id);
+  }
+
+  /**
+   * Deletes a closed session that never charged: plugged in and out, or a
+   * scheduled charge that never started. It has no charging time, no energy
+   * from either feed, no power on its curve, and nothing from Rivian's
+   * history or the owner. Its curve points go with it.
+   */
+  private async discardIfEmpty(id: number): Promise<boolean> {
+    const deleted = await this.db
+      .delete(chargingSessions)
+      .where(
+        and(
+          eq(chargingSessions.id, id),
+          sql`COALESCE(${chargingSessions.chargingSeconds}, 0) = 0`,
+          sql`COALESCE(${chargingSessions.energyKwh}, 0) = 0`,
+          sql`COALESCE(${chargingSessions.packKwh}, 0) = 0`,
+          isNull(chargingSessions.rivianTransactionId),
+          eq(chargingSessions.costEdited, false),
+          sql`NOT EXISTS (SELECT 1 FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id} AND p.power_kw > 0)`,
+        ),
+      )
+      .returning({ id: chargingSessions.id });
+    return deleted.length > 0;
   }
 }
 

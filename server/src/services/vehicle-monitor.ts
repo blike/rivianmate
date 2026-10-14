@@ -32,6 +32,7 @@ import type { DrivePlaces } from './drive-places.js';
 import { OtaNotesStore } from './ota-notes.js';
 import { ParallaxRouter } from './parallax-router.js';
 import { ParallaxStore } from './parallax-store.js';
+import { ChargingScheduleRefresh } from './schedule-refresh.js';
 import type { LiveBus } from './live-bus.js';
 import { SnapshotWriter } from './snapshot-writer.js';
 import { mergeVehicleState, normalizeReadings, stateLocation, stateString } from './state-utils.js';
@@ -120,6 +121,11 @@ export class VehicleMonitor {
   /** Each vehicle's LEGACY_PREFERRED_FIELDS that legacy has reported. */
   private legacyPreferred = new Map<string, Set<string>>();
   private scheduleTimer?: NodeJS.Timeout;
+  /** Re-queries schedules when Parallax's next charging window changes. */
+  private readonly scheduleRefresh = new ChargingScheduleRefresh(async (vehicleId) => {
+    const schedules = await this.fetchChargingSchedules(vehicleId);
+    return Array.isArray(schedules) ? schedules : null;
+  });
   private chargingScheduleUnsupported = false;
   private wsDownTimer?: NodeJS.Timeout;
   private fallbackPollTimer?: NodeJS.Timeout;
@@ -317,6 +323,9 @@ export class VehicleMonitor {
         chargingMonitor.ingestParallax(vehicleId, message, decoded),
       )
       .on((vehicleId, decoded, message) => this.parallaxStore.ingest(vehicleId, message, decoded))
+      .onTopic(chargingTimeWindow, (vehicleId, window) =>
+        this.scheduleRefresh.noteWindow(vehicleId, window),
+      )
       .onTopic(tripInfo, (vehicleId, trip) =>
         this.driveDetector.noteDestination(vehicleId, trip?.destination ?? null),
       )
@@ -381,6 +390,7 @@ export class VehicleMonitor {
     this.chargeHistory = undefined;
     if (this.scheduleTimer) clearInterval(this.scheduleTimer);
     this.scheduleTimer = undefined;
+    this.scheduleRefresh.stop();
     this.driveDetector.stop();
     this.drivePlaces?.stop();
     this.clearFallbackTimers();
@@ -517,26 +527,38 @@ export class VehicleMonitor {
   }
 
   private async refreshChargingSchedules(): Promise<void> {
-    const api = this.connection?.api;
-    if (!api || !this.running || this.chargingScheduleUnsupported) return;
     for (const vehicle of this.vehicles) {
-      try {
-        const schedules = await api.getChargingSchedules(vehicle.id);
-        const entry = this.scheduleEntry(vehicle.id);
-        entry.charging = schedules;
-        entry.chargingAt = new Date();
-      } catch (err) {
-        if (isGraphqlValidationError(err)) {
-          this.chargingScheduleUnsupported = true;
-          this.log(`charging schedule query not supported: ${describeRivianError(err)}`);
-          return;
-        }
-        if (err instanceof RivianUnauthenticatedError) {
-          await this.handleAuthFailure();
-          return;
-        }
-        this.log(`charging schedule fetch failed: ${describeRivianError(err)}`);
+      if ((await this.fetchChargingSchedules(vehicle.id)) === 'stop') return;
+    }
+  }
+
+  /**
+   * One vehicle's charging schedules from Rivian, kept for getSchedules;
+   * 'failed' when they couldn't be fetched, 'stop' when no vehicle's can be.
+   */
+  private async fetchChargingSchedules(
+    vehicleId: string,
+  ): Promise<ChargingSchedule[] | 'failed' | 'stop'> {
+    const api = this.connection?.api;
+    if (!api || !this.running || this.chargingScheduleUnsupported) return 'stop';
+    try {
+      const schedules = await api.getChargingSchedules(vehicleId);
+      const entry = this.scheduleEntry(vehicleId);
+      entry.charging = schedules;
+      entry.chargingAt = new Date();
+      return schedules;
+    } catch (err) {
+      if (isGraphqlValidationError(err)) {
+        this.chargingScheduleUnsupported = true;
+        this.log(`charging schedule query not supported: ${describeRivianError(err)}`);
+        return 'stop';
       }
+      if (err instanceof RivianUnauthenticatedError) {
+        await this.handleAuthFailure();
+        return 'stop';
+      }
+      this.log(`charging schedule fetch failed: ${describeRivianError(err)}`);
+      return 'failed';
     }
   }
 

@@ -1,14 +1,18 @@
-import type { VehicleState } from '@server/api-types';
+import type { BatteryHealthDto, VehicleState } from '@server/api-types';
 import { Dot } from '../../components/Dot';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { Skeleton, useLoading } from '../../components/LoadingState';
-import { type CheckLevel, healthChecks, healthSummary } from './health';
+import { type CheckLevel, healthChecks, healthSummary, packOfRated } from './health';
 import { LEVEL_COLOR } from './levels';
 
 /** The verdict up front, then each system the vehicle reports on. */
-export function Overview(props: { state: VehicleState | undefined }) {
+export function Overview(props: {
+  state: VehicleState | undefined;
+  battery: BatteryHealthDto | undefined;
+  batteryPending: boolean;
+}) {
   const loading = useLoading();
-  const checks = healthChecks(props.state);
+  const checks = healthChecks(props.state, packOfRated(props.battery), props.batteryPending);
   const summary = healthSummary(checks);
   const color = LEVEL_COLOR[summary.level];
 
