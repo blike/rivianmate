@@ -88,6 +88,7 @@ describe('Parallax registry', () => {
         'otaCurrentVersion',
         'chargePortState',
         'chargerStatus',
+        'chargerState',
         'cabinClimateInteriorTemperature',
         'cabinClimateDriverTemperature',
         'cabinPreconditioningStatus',

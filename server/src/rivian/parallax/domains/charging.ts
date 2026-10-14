@@ -23,10 +23,8 @@ export interface ChargingStatus {
 /**
  * `charging.session.status` (`f70/v`): 1 plug connection status, 2 display
  * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
- * Seen on a home L2 charger: plug 2 while plugged in; display 5 scheduled,
- * 2 ready, 3 charging (matching chargerState); EVSE type 1. Display 4
- * matched charging_complete on October 2, 2026 at 19:01:41 UTC. Display
- * 1 is sent while unplugged, as legacy says charging_ready; it isn't read.
+ * Seen on a home L2 charger: plug 1 unplugged, 2 plugged in; display
+ * statuses as chargerStateFromStatus reads them; EVSE type 1.
  */
 export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
   const m = decodePayload(payloadBase64);
@@ -62,15 +60,26 @@ export function decodeSocSlider(payloadBase64: string): { limit: number } | null
 }
 
 /**
- * The legacy chargerState matching a status's display status, for the
- * values seen so far (5 scheduled, 2 ready, 3 charging, 4 complete); null otherwise.
- * Parallax reports these about 30 s before vehicle state does.
+ * The legacy chargerState matching a status's display status: 1 ready,
+ * 2 connecting, 3 charging, 4 complete (October 2, 2026), 5 scheduled,
+ * 8 stopped from the app. 2 and 8 matched legacy each time on an R1S
+ * (2 of 2, 2026-10-13); 2 was read as ready before. 1 is ready only while
+ * unplugged, as legacy reports it: sent just after plugging in, legacy says
+ * connecting or scheduled instead, so it's left unread then. Null for other
+ * values. Parallax reports these about 30 s before vehicle state does.
  */
 export function chargerStateFromStatus(status: ChargingStatus): string | null {
+  if (status.displayStatus === 1) return status.plugConnection === 1 ? 'charging_ready' : null;
   return (
-    { 2: 'charging_ready', 3: 'charging_active', 4: 'charging_complete', 5: 'charging_scheduled' }[
-      status.displayStatus
-    ] ?? null
+    (
+      {
+        2: 'charging_connecting',
+        3: 'charging_active',
+        4: 'charging_complete',
+        5: 'charging_scheduled',
+        8: 'charging_user_stopped',
+      } as Record<number, string>
+    )[status.displayStatus] ?? null
   );
 }
 
@@ -93,11 +102,16 @@ export const chargingStatus = defineRvm({
   group: 'core',
   maturity: 'partial',
   decode: decodeChargingStatus,
+  // Both plug and charger state, as the R2 leaves legacy's null.
   toState(status, timeStamp) {
-    const value = chargerStatusFromStatus(status);
-    return value ? { chargerStatus: { timeStamp, value } } : {};
+    const plug = chargerStatusFromStatus(status);
+    const charger = chargerStateFromStatus(status);
+    return {
+      ...(plug ? { chargerStatus: { timeStamp, value: plug } } : {}),
+      ...(charger ? { chargerState: { timeStamp, value: charger } } : {}),
+    };
   },
-  stateKeys: ['chargerStatus'],
+  stateKeys: ['chargerStatus', 'chargerState'],
   store: 'log',
   fieldNames: {
     '1': 'Plug connection (enum)',

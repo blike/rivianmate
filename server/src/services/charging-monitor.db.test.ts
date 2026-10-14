@@ -120,6 +120,22 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect([rows[0]!.startSoc, rows[0]!.endSoc]).toEqual([40, 71]);
   });
 
+  it('discards a plug-in that never charged', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
+    await note(m, '2026-10-01T00:31:00Z', UNPLUGGED, 'charging_ready', 40);
+    await note(m, '2026-10-01T00:32:00Z', PLUGGED, 'charging_scheduled', 40);
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T08:00:00Z', UNPLUGGED, 'charging_ready', 50);
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:32:00.000Z');
+    expect(rows[0]!.chargingSeconds).toBe(3600);
+  });
+
   it('continues a plug-in across a restart, keeping its charging time', async () => {
     const before = monitor();
     await before.start();

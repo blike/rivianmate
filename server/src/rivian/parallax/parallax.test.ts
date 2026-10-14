@@ -476,13 +476,37 @@ describe('decodeSocSlider', () => {
 
 describe('chargerStateFromStatus', () => {
   it('maps the display statuses seen on a live charge', () => {
-    // Captured: scheduled, ready, charging, and complete.
+    // Captured: scheduled, connecting, charging, complete, and stopped from the app.
     expect(
-      ['CAIQBRgB', 'CAIQAhgB', 'CAIQAxgB', 'CAIQBBgB'].map((p) =>
+      ['CAIQBRgB', 'CAIQAhgB', 'CAIQAxgB', 'CAIQBBgB', 'CAIQCBgB'].map((p) =>
         chargerStateFromStatus(decodeChargingStatus(p)!),
       ),
-    ).toEqual(['charging_scheduled', 'charging_ready', 'charging_active', 'charging_complete']);
+    ).toEqual([
+      'charging_scheduled',
+      'charging_connecting',
+      'charging_active',
+      'charging_complete',
+      'charging_user_stopped',
+    ]);
     expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
+  });
+
+  it('reads 1 as ready only while unplugged', () => {
+    expect(chargerStateFromStatus(decodeChargingStatus('CAEQAQ==')!)).toBe('charging_ready');
+    // Sent just after plugging in, while legacy says connecting or scheduled.
+    expect(chargerStateFromStatus(decodeChargingStatus('CAIQAQ==')!)).toBeNull();
+  });
+
+  it('supplies charger state as well as plug state', () => {
+    const TS = '2026-10-14T02:04:12.000Z';
+    const rvm = 'charging.session.status';
+    expect(vehicleStateFromParallax(rvm, 'CAIQCBgB', TS)).toEqual({
+      chargerStatus: { timeStamp: TS, value: 'chrgr_sts_connected_no_chrg' },
+      chargerState: { timeStamp: TS, value: 'charging_user_stopped' },
+    });
+    expect(vehicleStateFromParallax(rvm, 'CAIQAQ==', TS)).toEqual({
+      chargerStatus: { timeStamp: TS, value: 'chrgr_sts_connected_no_chrg' },
+    });
   });
 });
 

@@ -1,4 +1,4 @@
-import type { VehicleState } from '@server/api-types';
+import type { BatteryHealthDto, VehicleState } from '@server/api-types';
 import { lastInstallFailed, softwareUpdate } from '../../lib/ota';
 import { sv, titleCase } from '../../lib/state';
 import { brakeFluidLabel } from '../../lib/vehicleStatus';
@@ -110,17 +110,30 @@ function tires(state: VehicleState | undefined): HealthCheck {
   return { key: 'tires', label: 'Tires', level: 'good', value: 'Normal' };
 }
 
-function packThermal(state: VehicleState | undefined): HealthCheck {
-  const value = sv(state, 'batteryHvThermalEvent');
-  if (value == null) return unknown('pack', 'Battery pack');
+/** Usable capacity below this share of rated needs a look. */
+const PACK_MIN_OF_RATED = 70;
+
+/**
+ * The pack's usable capacity against its rated capacity, which an R2
+ * reports too, and any thermal event the vehicle reported (legacy only).
+ */
+function pack(state: VehicleState | undefined, ofRated: number | null): HealthCheck {
+  const thermal = sv(state, 'batteryHvThermalEvent');
   // Observed: off. Anything else is a thermal event the vehicle reported.
-  const ok = /^(off|none|false|normal)$/i.test(value);
-  return {
+  const thermalOk = thermal == null || /^(off|none|false|normal)$/i.test(thermal);
+  const check = (level: CheckLevel, value: string): HealthCheck => ({
     key: 'pack',
     label: 'Battery pack',
-    level: ok ? 'good' : 'attention',
-    value: ok ? 'Normal' : 'Thermal event',
-  };
+    level,
+    value,
+  });
+  if (!thermalOk) return check('attention', 'Thermal event');
+  if (ofRated != null) {
+    return ofRated >= PACK_MIN_OF_RATED
+      ? check('good', 'Normal')
+      : check('attention', `${Math.round(ofRated)}% of rated`);
+  }
+  return thermal == null ? unknown('pack', 'Battery pack') : check('good', 'Normal');
 }
 
 function software(state: VehicleState | undefined): HealthCheck {
@@ -145,13 +158,19 @@ const CHECK_FIELDS: Record<string, readonly string[]> = {
 /**
  * Everything the vehicle reports about its own condition, in display order.
  * A check whose fields the vehicle has never sent is left out: a vehicle
- * without the legacy feed (an R2) has no battery thermal or fluid readings,
- * and would otherwise show them as unknown for good. Before any state
- * arrives, every check is listed, as unknown.
+ * without the legacy feed (an R2) has no fluid readings, and would
+ * otherwise show them as unknown for good. The battery pack shows with a
+ * capacity against rated (`packOfRated`) as well. Before any state arrives,
+ * every check is listed, as unknown.
  */
-export function healthChecks(state: VehicleState | undefined): HealthCheck[] {
+export function healthChecks(
+  state: VehicleState | undefined,
+  packOfRated: number | null = null,
+  /** Battery health is still loading: keep the pack's place, as it may show. */
+  packPending = false,
+): HealthCheck[] {
   const checks = [
-    packThermal(state),
+    pack(state, packOfRated),
     twelveVolt(state),
     tires(state),
     brakeFluid(state),
@@ -159,7 +178,11 @@ export function healthChecks(state: VehicleState | undefined): HealthCheck[] {
     software(state),
   ];
   if (!state) return checks;
-  return checks.filter((c) => CHECK_FIELDS[c.key]!.some((field) => field in state));
+  return checks.filter(
+    (c) =>
+      (c.key === 'pack' && (packOfRated != null || packPending)) ||
+      CHECK_FIELDS[c.key]!.some((field) => field in state),
+  );
 }
 
 /** "a, b and c". */
@@ -281,6 +304,12 @@ export function capacityTrend(
     changeKwh: readings.length > 1 ? last.kwh - first.kwh : null,
     since: readings.length > 1 ? first.at : null,
   };
+}
+
+/** The latest usable capacity as a percentage of rated, from battery health; null without both. */
+export function packOfRated(battery: BatteryHealthDto | undefined): number | null {
+  const latest = battery?.latest?.kwh ?? battery?.reported.at(-1)?.kwh;
+  return capacityOfRated(latest, battery?.ratedCapacity?.kwh);
 }
 
 /** Reported usable capacity as a percentage of the pack's rated capacity. */

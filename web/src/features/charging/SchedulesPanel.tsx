@@ -122,21 +122,22 @@ export function SchedulesPanel(props: { vehicleId: string; className?: string })
             )}
           </Section>
 
-          <Section title="Departures">
-            {isPending ? (
-              <SkeletonBlock height="2.5rem" />
-            ) : data?.departuresUnavailable ? (
-              <Empty>Rivian doesn’t provide departure schedules for this vehicle.</Empty>
-            ) : !departures?.length ? (
-              <Empty>None set in the Rivian app.</Empty>
-            ) : (
-              <ul className="divide-y divide-(--border)">
-                {departures.map((d) => (
-                  <DepartureRow key={d.id} departure={d} />
-                ))}
-              </ul>
-            )}
-          </Section>
+          {/* Left out where Rivian doesn't provide them, as in the layout above. */}
+          {showDepartures && (
+            <Section title="Departures">
+              {isPending ? (
+                <SkeletonBlock height="2.5rem" />
+              ) : !departures?.length ? (
+                <Empty>None set in the Rivian app.</Empty>
+              ) : (
+                <ul className="divide-y divide-(--border)">
+                  {departures.map((d) => (
+                    <DepartureRow key={d.id} departure={d} />
+                  ))}
+                </ul>
+              )}
+            </Section>
+          )}
         </div>
 
         <div className="min-w-0">

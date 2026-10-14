@@ -108,6 +108,23 @@ type SubKind = 'vehicleState' | OptionalSubKind;
 
 const isParallax = (kind: SubKind) => kind === 'parallax';
 
+/** Keys that come with every legacy message, data or not. */
+const NOT_DATA_KEYS = new Set(['cloudConnection', '__typename', 'timeStamp', 'updatedAt']);
+
+/**
+ * Whether a legacy message carries a reading: any value but null, an empty
+ * list, or what comes with every message (the connection status, stamps).
+ * Rivian accepts an R2's legacy subscriptions but sends only these.
+ */
+export function carriesData(value: unknown): boolean {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.some(carriesData);
+  if (typeof value === 'object') {
+    return Object.entries(value).some(([key, v]) => !NOT_DATA_KEYS.has(key) && carriesData(v));
+  }
+  return true;
+}
+
 export interface FeedDiagnostics {
   id: string;
   vehicleId: string;
@@ -116,7 +133,11 @@ export interface FeedDiagnostics {
   group: ParallaxGroup | null;
   domain: string | null;
   topics: string[];
-  status: 'receiving' | 'waiting' | 'unsupported' | 'errored';
+  /**
+   * empty: a legacy feed whose messages have only ever carried nulls (and
+   * the connection status), as Rivian sends an R2. Its data isn't there.
+   */
+  status: 'receiving' | 'empty' | 'waiting' | 'unsupported' | 'errored';
   lastMessageAt: string | null;
 }
 
@@ -145,6 +166,8 @@ interface Subscription {
   vehicleId: string;
   lastMessageAt?: number;
   receivedOnConnection?: boolean;
+  /** A legacy feed's messages have carried a reading since startup (see carriesData). */
+  carriedData?: boolean;
   topicMessages?: Map<string, number>;
   topicsOnConnection?: Set<string>;
   errored?: boolean;
@@ -219,6 +242,7 @@ function feedsFrom(subs: Iterable<Subscription>): Feed[] {
 const FEED_STATUS_ORDER: FeedDiagnostics['status'][] = [
   'errored',
   'receiving',
+  'empty',
   'waiting',
   'unsupported',
 ];
@@ -368,13 +392,19 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             ? 'unsupported'
             : sub.errored && this.started
               ? 'errored'
-              : this.connected &&
+              : feed.domain == null &&
+                  this.connected &&
                   this.sentIds.has(sub.id) &&
-                  received &&
                   lastMessageAt != null &&
-                  now - lastMessageAt < 5 * 60_000
-                ? 'receiving'
-                : 'waiting';
+                  !sub.carriedData
+                ? 'empty'
+                : this.connected &&
+                    this.sentIds.has(sub.id) &&
+                    received &&
+                    lastMessageAt != null &&
+                    now - lastMessageAt < 5 * 60_000
+                  ? 'receiving'
+                  : 'waiting';
           return { lastMessageAt, status };
         });
         const lastMessageAt = parts.reduce<number | undefined>(
@@ -430,6 +460,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private noteFeedMessage(sub: Subscription, data?: unknown): void {
     sub.lastMessageAt = Date.now();
     sub.receivedOnConnection = true;
+    if (!isParallax(sub.kind) && carriesData(data)) sub.carriedData = true;
     if (data !== undefined) sub.latest = { at: sub.lastMessageAt, data };
   }
 

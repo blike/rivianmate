@@ -131,14 +131,14 @@ describe('RivianSubscriptionManager', () => {
       JSON.stringify({
         type: 'next',
         id: 'chargingSession:VIN1',
-        payload: { data: { chargingSession: null } },
+        payload: { data: { chargingSession: { liveData: { powerKW: { value: 7.2 } } } } },
       }),
     );
     conn.socket.send(
       JSON.stringify({
         type: 'next',
         id: 'vehicleState:VIN1',
-        payload: { data: { vehicleState: {} } },
+        payload: { data: { vehicleState: { batteryLevel: { value: 80, timeStamp: 't' } } } },
       }),
     );
     await server.until(
@@ -185,6 +185,36 @@ describe('RivianSubscriptionManager', () => {
     manager.stop();
     expect(manager.diagnostics().state).toBe('stopped');
     expect(feed('vehicleState').status).toBe('waiting');
+  });
+
+  it('shows a legacy feed that only ever sends nulls (an R2) as having no data', async () => {
+    manager = createManager();
+    manager.subscribe('VIN1', () => {});
+    manager.subscribeCharging('VIN1', () => {});
+    const feed = (kind: string) => manager.diagnostics().feeds.find((f) => f.kind === kind)!;
+    manager.start();
+    await server.until(
+      () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 2,
+    );
+    const send = (id: string, data: unknown) =>
+      server.conns[0]!.socket.send(JSON.stringify({ type: 'next', id, payload: { data } }));
+    // As pasted from an R2: the connection status, and every field null.
+    send('vehicleState:VIN1', {
+      vehicleState: {
+        cloudConnection: { lastSync: '2026-10-13T06:21:38.778Z', isOnline: true },
+        batteryLevel: null,
+        gnssLocation: null,
+      },
+    });
+    send('chargingSession:VIN1', {
+      chargingSession: { chartData: [], liveData: { powerKW: null, startTime: null } },
+    });
+    await server.until(
+      () => feed('vehicleState').status === 'empty' && feed('chargingSession').status === 'empty',
+    );
+    send('vehicleState:VIN1', { vehicleState: { batteryLevel: { value: 80, timeStamp: 't' } } });
+    await server.until(() => feed('vehicleState').status === 'receiving');
+    expect(feed('chargingSession').status).toBe('empty');
   });
 
   it('tracks Parallax domains independently, including empty cleared payloads', async () => {
