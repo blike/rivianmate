@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
 import { drives, locationPoints, vehicleStateSnapshots, vehicles } from '../db/schema.js';
-import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax.js';
+import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax/index.js';
 import type { VehicleState } from '../rivian/types.js';
 import { b64, int } from '../testing/protobuf.js';
 import { DriveDetector } from './drive-detector.js';

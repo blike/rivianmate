@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { drives, locationPoints, vehicleStateSnapshots } from '../db/schema.js';
-import type { TripInfo } from '../rivian/parallax.js';
+import type { TripInfo } from '../rivian/parallax/index.js';
 import type { VehicleState } from '../rivian/types.js';
 import { stampedAt } from './charging-time.js';
 import { elevationChange } from './drive-metrics.js';

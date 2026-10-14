@@ -160,7 +160,11 @@ describe('RivianSubscriptionManager', () => {
     await server.until(() => feed('vehicleState').status === 'errored');
     expect(feed('vehicleState').lastMessageAt).toBe(lastData);
     conn.socket.send(
-      JSON.stringify({ type: 'error', id: 'parallax:VIN1', payload: [{ message: 'unsupported' }] }),
+      JSON.stringify({
+        type: 'error',
+        id: 'parallax:core:VIN1',
+        payload: [{ message: 'unsupported' }],
+      }),
     );
     await server.until(() => feed('parallax').status === 'unsupported');
     conn.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'renew');
@@ -207,7 +211,7 @@ describe('RivianSubscriptionManager', () => {
       conn.socket.send(
         JSON.stringify({
           type: 'next',
-          id: 'parallax:v1',
+          id: 'parallax:core:v1',
           payload: { data: { parallaxMessages: { rvm, payload: '' } } },
         }),
       );
@@ -226,13 +230,14 @@ describe('RivianSubscriptionManager', () => {
     expect(feed('navigation').status).toBe('waiting');
   });
 
-  it('shows a domain split across Parallax subscriptions as one feed', async () => {
+  it('shows a domain split across Parallax groups as one feed', async () => {
     manager = createManager();
-    manager.subscribeParallaxDynamics('v1', ['dynamics.vehicle.gnss'], () => {});
-    manager.subscribeParallaxVehicleState(
+    manager.subscribeParallax('v1', ['dynamics.vehicle.gnss'], () => {}, 'dynamics');
+    manager.subscribeParallax(
       'v1',
       ['dynamics.vehicle.gear', 'body.closures.states'],
       () => {},
+      'vehicleState',
     );
     manager.start();
     await server.until(
@@ -242,11 +247,11 @@ describe('RivianSubscriptionManager', () => {
     expect(feeds().map((f) => f.domain)).toEqual(['dynamics', 'body']);
     expect(feeds()[0]!.topics).toEqual(['dynamics.vehicle.gnss', 'dynamics.vehicle.gear']);
 
-    // Gear alone counts for the merged feed, and its latest data lists both subscriptions' topics.
+    // Gear alone counts for the merged feed, and its latest data comes from either group.
     server.conns[0]!.socket.send(
       JSON.stringify({
         type: 'next',
-        id: 'parallax-vehicle-state:v1',
+        id: 'parallax:vehicleState:v1',
         payload: { data: { parallaxMessages: { rvm: 'dynamics.vehicle.gear', payload: 'CAE=' } } },
       }),
     );
@@ -362,7 +367,7 @@ describe('RivianSubscriptionManager', () => {
     send('vehicleState:VIN1', { vehicleState: { batteryLevel: stamped(62) } });
     send('vehicleState:VIN1', { vehicleState: { gearStatus: stamped('drive') } });
     const parallax = (rvm: string, payload: string) =>
-      send('parallax:VIN1', { parallaxMessages: { rvm, payload } });
+      send('parallax:core:VIN1', { parallaxMessages: { rvm, payload } });
     parallax('charging.session.soc_slider', Buffer.from([0x08, 80]).toString('base64'));
     parallax('charging.session.notification', Buffer.from([0x08, 5]).toString('base64'));
     await server.until(() => manager.latestData('parallax:VIN1:charging')?.messages.length === 2);
@@ -570,21 +575,21 @@ describe('RivianSubscriptionManager', () => {
     manager = createManager();
     manager.subscribe('VIN1', () => {});
     manager.subscribeParallax('VIN1', ['energy.high_voltage.battery_state'], () => {});
-    manager.subscribeParallaxDynamics('VIN1', ['dynamics.vehicle.gnss'], () => {});
+    manager.subscribeParallax('VIN1', ['dynamics.vehicle.gnss'], () => {}, 'dynamics');
     manager.start();
     await server.until(
       () => server.conns[0] !== undefined && server.subscribes(server.conns[0]).length === 3,
     );
     server.conns[0]!.socket.send(
       JSON.stringify({
-        id: 'parallax-dynamics:VIN1',
+        id: 'parallax:dynamics:VIN1',
         type: 'error',
         payload: [{ message: 'Cannot query field' }],
       }),
     );
     await new Promise((r) => setTimeout(r, 200));
-    expect(manager.isUnsupported('parallaxDynamics')).toBe(true);
-    expect(manager.isUnsupported('parallax')).toBe(false);
+    expect(manager.isUnsupported('parallax', undefined, 'dynamics')).toBe(true);
+    expect(manager.isUnsupported('parallax', undefined, 'core')).toBe(false);
     expect(server.conns).toHaveLength(1);
   });
 
@@ -592,8 +597,8 @@ describe('RivianSubscriptionManager', () => {
     manager = createManager({ initialBackoffMs: 60_000 });
     for (const vin of ['VIN1', 'VIN2']) {
       manager.subscribe(vin, () => {});
-      manager.subscribeParallaxDynamics(vin, ['dynamics.vehicle.gnss'], () => {});
-      manager.subscribeParallaxVehicleState(vin, ['body.closures.states'], () => {});
+      manager.subscribeParallax(vin, ['dynamics.vehicle.gnss'], () => {}, 'dynamics');
+      manager.subscribeParallax(vin, ['body.closures.states'], () => {}, 'vehicleState');
     }
     manager.start();
     await server.until(
@@ -601,14 +606,14 @@ describe('RivianSubscriptionManager', () => {
     );
     server.conns[0]!.socket.send(
       JSON.stringify({
-        id: 'parallax-vehicle-state:VIN1',
+        id: 'parallax:vehicleState:VIN1',
         type: 'error',
         payload: [{ message: 'Cannot query field' }],
       }),
     );
-    await server.until(() => manager.isUnsupported('parallaxVehicleState', 'VIN1'));
-    expect(manager.isUnsupported('parallaxVehicleState', 'VIN2')).toBe(false);
-    expect(manager.isUnsupported('parallaxDynamics')).toBe(false);
+    await server.until(() => manager.isUnsupported('parallax', 'VIN1', 'vehicleState'));
+    expect(manager.isUnsupported('parallax', 'VIN2', 'vehicleState')).toBe(false);
+    expect(manager.isUnsupported('parallax', undefined, 'dynamics')).toBe(false);
     expect(server.conns).toHaveLength(1);
 
     // On the next connection only the refused subscription stays unsent.
@@ -617,10 +622,10 @@ describe('RivianSubscriptionManager', () => {
       () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 5,
     );
     expect(server.subscribes(server.conns[1]!).map((m) => m.id)).not.toContain(
-      'parallax-vehicle-state:VIN1',
+      'parallax:vehicleState:VIN1',
     );
     expect(server.subscribes(server.conns[1]!).map((m) => m.id)).toContain(
-      'parallax-vehicle-state:VIN2',
+      'parallax:vehicleState:VIN2',
     );
   });
 

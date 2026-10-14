@@ -3,33 +3,24 @@ import type { Db } from '../db/client.js';
 import { vehicles as vehiclesTable } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import type { VehicleStateStream } from '../rivian/subscription.js';
-import { isR2 } from '../closures.js';
 import { CORE_VEHICLE_STATE_PROPERTIES } from '../rivian/graphql.js';
 import {
-  PARALLAX_DYNAMICS_FIELDS,
-  PARALLAX_DYNAMICS_RVMS,
-  PARALLAX_EXTRAS_RVMS,
-  PARALLAX_R2_VEHICLE_STATE_RVMS,
-  PARALLAX_VEHICLE_STATE_RVMS,
-  PARALLAX_MONITOR_RVMS,
-  RVM_CHARGING_STATUS,
-  RVM_GNSS,
-  RVM_TIRES,
-  RVM_TRIP_INFO,
-  chargerStatusFromStatus,
-  decodeChargingStatus,
-  decodeGnss,
-  decodeTires,
-  decodeTripInfo,
-  vehicleStateFromParallax,
+  LEGACY_PREFERRED_FIELDS,
+  PARALLAX_GROUPS,
+  PARALLAX_STATE_FIELDS,
+  chargingTimeWindow,
+  chargingWindowSchedule,
+  parallaxGroupTopics,
+  tripInfo,
   vehicleSupportsParallax,
-} from '../rivian/parallax.js';
+} from '../rivian/parallax/index.js';
 import type { SchedulesDto, VehicleInsightsDto } from '../api-types.js';
 import {
   ChargingSchedule,
   DepartureSchedule,
   RivianTokens,
   RivianUnauthenticatedError,
+  TimeStampedValue,
   VehicleState,
   describeRivianError,
   isGraphqlValidationError,
@@ -39,13 +30,12 @@ import { ChargingMonitor } from './charging-monitor.js';
 import { DriveDetector } from './drive-detector.js';
 import type { DrivePlaces } from './drive-places.js';
 import { OtaNotesStore } from './ota-notes.js';
-import { ParallaxStore, messageTime } from './parallax-store.js';
+import { ParallaxRouter } from './parallax-router.js';
+import { ParallaxStore } from './parallax-store.js';
 import type { LiveBus } from './live-bus.js';
 import { SnapshotWriter } from './snapshot-writer.js';
 import { mergeVehicleState, normalizeReadings, stateLocation, stateString } from './state-utils.js';
 import type { TokenStore } from './token-store.js';
-
-type StateSource = 'legacy' | 'parallax';
 
 const WS_DOWN_POLL_AFTER_MS = 5 * 60_000;
 /** Fallback polling only runs while the socket is down, and slowly. */
@@ -65,6 +55,13 @@ const SCHEDULE_REFRESH_MS = 6 * 3600_000;
  * so a connected socket that stays silent this long means none are set.
  */
 const DEPARTURES_SILENCE_MS = 30_000;
+/** Which feed a vehicle state reading came from. */
+type StateSource = 'legacy' | 'parallax';
+/**
+ * Parallax sends the next charging window again as each one ends, so one
+ * this old is from a schedule that's since been switched off.
+ */
+const PARALLAX_WINDOW_MAX_AGE_MS = 8 * 24 * 3600_000;
 /** State fields that shape a charging session (plug, charging, SOC). */
 const CHARGING_FIELDS = ['chargerStatus', 'chargerState', 'batteryLevel'];
 
@@ -113,8 +110,6 @@ export class VehicleMonitor {
   private connection?: RivianConnection;
   private vehicles: MonitoredVehicle[] = [];
   private states = new Map<string, VehicleState>();
-  /** Each feed's latest reading per field, before merging (for debugging). */
-  private sourceStates = new Map<string, Record<StateSource, VehicleState>>();
   private snapshotWriter: SnapshotWriter;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
@@ -122,6 +117,8 @@ export class VehicleMonitor {
   private readonly parallaxStore: ParallaxStore;
   private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
+  /** Each vehicle's LEGACY_PREFERRED_FIELDS that legacy has reported. */
+  private legacyPreferred = new Map<string, Set<string>>();
   private scheduleTimer?: NodeJS.Timeout;
   private chargingScheduleUnsupported = false;
   private wsDownTimer?: NodeJS.Timeout;
@@ -281,7 +278,7 @@ export class VehicleMonitor {
       try {
         const state = normalizeReadings((await this.pollState(vehicle.id)) ?? {});
         this.states.set(vehicle.id, state);
-        this.noteSource(vehicle.id, state, 'legacy');
+        this.noteLegacyPreferred(vehicle.id, state);
       } catch (err) {
         this.log(`initial state poll failed for ${vehicle.vin}: ${describeRivianError(err)}`);
         this.states.set(vehicle.id, {});
@@ -313,6 +310,17 @@ export class VehicleMonitor {
     stream.onAuthFailure = () => void this.handleAuthFailure();
     stream.onAuthenticated = () => this.handleAuthOk();
     stream.onConnectionChange = (connected) => this.handleStreamConnection(connected);
+    // Each Parallax message is decoded once and handed to everything that
+    // uses it; topics carrying legacy fields merge into vehicle state.
+    const parallax = new ParallaxRouter(this.log)
+      .on((vehicleId, decoded, message) =>
+        chargingMonitor.ingestParallax(vehicleId, message, decoded),
+      )
+      .on((vehicleId, decoded, message) => this.parallaxStore.ingest(vehicleId, message, decoded))
+      .onTopic(tripInfo, (vehicleId, trip) =>
+        this.driveDetector.noteDestination(vehicleId, trip?.destination ?? null),
+      )
+      .onState((vehicleId, delta) => this.handleDelta(vehicleId, delta, 'parallax'));
     for (const vehicle of this.vehicles) {
       const parallaxActive = vehicleSupportsParallax(vehicle.supportedFeatures);
       // Rivian's vehicleState/chargingSession take the vehicle id from
@@ -323,107 +331,17 @@ export class VehicleMonitor {
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
       });
-      // Unconditional, as upstream originally had it — unaffected by
-      // whether this vehicle also gets the dynamics subscription below.
-      stream.subscribeParallax?.(vehicle.id, PARALLAX_MONITOR_RVMS, (_vehicleId, message) => {
-        void chargingMonitor.ingestParallax(vehicle.id, message);
-        void this.parallaxStore.ingest(vehicle.id, message);
-        if (message.rvm === RVM_TRIP_INFO) {
-          const destination = decodeTripInfo(message.payload)?.destination ?? null;
-          void this.driveDetector
-            .noteDestination(vehicle.id, destination)
-            .catch((err: Error) => this.log(`drive destination: ${err.message}`));
-        } else if (message.rvm === RVM_CHARGING_STATUS) {
-          // The plug state, which an R2 doesn't report in vehicle state.
-          const status = decodeChargingStatus(message.payload);
-          const chargerStatus = status && chargerStatusFromStatus(status);
-          if (chargerStatus) {
-            const timeStamp = (messageTime(message.timestamp) ?? new Date()).toISOString();
-            void this.handleDelta(
-              vehicle.id,
-              { chargerStatus: { timeStamp, value: chargerStatus } },
-              'parallax',
-            );
-          }
-        } else {
-          // Battery level, capacity and charge limit, which an R2 may not
-          // report in vehicle state.
-          const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
-          const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
-          if (delta) void this.handleDelta(vehicle.id, delta, 'parallax');
-        }
-      });
-      if (parallaxActive) {
-        // Its own subscription (own id, own rejection fate): a vehicle that
-        // rejects dynamics.vehicle.gnss (e.g. an R1) can't take down the
-        // battery/charging/trip Parallax subscription above.
-        stream.subscribeParallaxDynamics?.(
+      // One subscription per group, each with its own id and rejection fate,
+      // so a vehicle refusing one topic (an R1 refuses GPS) keeps the rest.
+      for (const group of PARALLAX_GROUPS) {
+        if (group.needsFeatureFlag && !parallaxActive) continue;
+        const topics = parallaxGroupTopics(group.id);
+        if (topics.length === 0) continue;
+        stream.subscribeParallax?.(
           vehicle.id,
-          PARALLAX_DYNAMICS_RVMS,
-          (_vehicleId, message) => {
-            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
-            if (message.rvm === RVM_GNSS) {
-              const reading = decodeGnss(message.payload);
-              if (reading) {
-                const delta: VehicleState = {};
-                if (reading.latitude != null && reading.longitude != null) {
-                  delta.gnssLocation = {
-                    latitude: reading.latitude,
-                    longitude: reading.longitude,
-                    timeStamp: ts,
-                  };
-                }
-                if (reading.altitude != null)
-                  delta.gnssAltitude = { timeStamp: ts, value: reading.altitude };
-                if (reading.bearing != null)
-                  delta.gnssBearing = { timeStamp: ts, value: reading.bearing };
-                if (reading.speedMps != null)
-                  delta.gnssSpeed = { timeStamp: ts, value: reading.speedMps };
-                if (Object.keys(delta).length > 0)
-                  void this.handleDelta(vehicle.id, delta, 'parallax');
-              }
-            } else if (message.rvm === RVM_TIRES) {
-              const delta: VehicleState = {};
-              for (const tire of decodeTires(message.payload)) {
-                if (tire.pressureBar != null) {
-                  delta[`tirePressure${tire.position}`] = {
-                    timeStamp: ts,
-                    value: tire.pressureBar,
-                  };
-                }
-                if (tire.status != null) {
-                  delta[`tirePressureStatus${tire.position}`] = {
-                    timeStamp: ts,
-                    value: tire.status,
-                  };
-                }
-              }
-              if (Object.keys(delta).length > 0)
-                void this.handleDelta(vehicle.id, delta, 'parallax');
-            }
-          },
-        );
-        // Its own subscription too: a vehicle rejecting one of these topics
-        // can't stop GPS and tires above.
-        stream.subscribeParallaxVehicleState?.(
-          vehicle.id,
-          isR2(vehicle.model) ? PARALLAX_R2_VEHICLE_STATE_RVMS : PARALLAX_VEHICLE_STATE_RVMS,
-          (_vehicleId, message) => {
-            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
-            const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
-            if (delta) void this.handleDelta(vehicle.id, delta, 'parallax');
-          },
-        );
-        // And topics still being decoded, logged for that.
-        stream.subscribeParallaxExtras?.(
-          vehicle.id,
-          PARALLAX_EXTRAS_RVMS,
-          (_vehicleId, message) => {
-            void this.parallaxStore.ingest(vehicle.id, message);
-            const ts = (messageTime(message.timestamp) ?? new Date()).toISOString();
-            const delta = vehicleStateFromParallax(message.rvm, message.payload, ts);
-            if (delta) void this.handleDelta(vehicle.id, delta, 'parallax');
-          },
+          topics,
+          (_vehicleId, message) => parallax.dispatch(vehicle.id, message),
+          group.id,
         );
       }
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
@@ -471,11 +389,41 @@ export class VehicleMonitor {
     this.connection = undefined;
   }
 
-  private noteSource(vehicleId: string, delta: VehicleState, source: StateSource): void {
-    let sources = this.sourceStates.get(vehicleId);
-    if (!sources) this.sourceStates.set(vehicleId, (sources = { legacy: {}, parallax: {} }));
-    for (const [key, value] of Object.entries(delta)) {
-      if (value != null) sources[source][key] = value;
+  /**
+   * Readings to merge, with LEGACY_PREFERRED_FIELDS settled: legacy's
+   * reading replaces Parallax's even when it's older, and Parallax's is
+   * used only while legacy hasn't reported the field (an R2).
+   */
+  private preferLegacy(
+    vehicleId: string,
+    readings: VehicleState,
+    source: StateSource,
+    cached: VehicleState,
+  ): VehicleState {
+    if (!LEGACY_PREFERRED_FIELDS.some((f) => readings[f] != null)) return readings;
+    if (source === 'legacy') {
+      this.noteLegacyPreferred(vehicleId, readings);
+      for (const f of LEGACY_PREFERRED_FIELDS) {
+        const incoming = readings[f] as TimeStampedValue | undefined;
+        const held = cached[f] as TimeStampedValue | undefined;
+        // Newest-wins merging would keep a newer Parallax reading over it.
+        if (incoming && held && Date.parse(held.timeStamp) > Date.parse(incoming.timeStamp)) {
+          delete cached[f];
+        }
+      }
+      return readings;
+    }
+    const legacyHas = this.legacyPreferred.get(vehicleId);
+    if (!legacyHas) return readings;
+    return Object.fromEntries(Object.entries(readings).filter(([key]) => !legacyHas.has(key)));
+  }
+
+  private noteLegacyPreferred(vehicleId: string, readings: VehicleState): void {
+    for (const f of LEGACY_PREFERRED_FIELDS) {
+      if (readings[f] == null) continue;
+      let seen = this.legacyPreferred.get(vehicleId);
+      if (!seen) this.legacyPreferred.set(vehicleId, (seen = new Set()));
+      seen.add(f);
     }
   }
 
@@ -486,9 +434,12 @@ export class VehicleMonitor {
   ): Promise<void> {
     if (!this.vehicles.some((v) => v.id === vehicleId)) return;
     const readings = normalizeReadings(delta);
-    this.noteSource(vehicleId, readings, source);
     const cached = this.states.get(vehicleId) ?? {};
-    const changed = mergeVehicleState(cached, readings, PARALLAX_DYNAMICS_FIELDS);
+    const changed = mergeVehicleState(
+      cached,
+      this.preferLegacy(vehicleId, readings, source, cached),
+      PARALLAX_STATE_FIELDS,
+    );
     this.states.set(vehicleId, cached);
     if (changed.length === 0) return;
 
@@ -531,18 +482,27 @@ export class VehicleMonitor {
     return this.otaNotes.storedVersions(vehicleId);
   }
 
-  getSchedules(vehicleId: string): SchedulesDto {
+  async getSchedules(vehicleId: string): Promise<SchedulesDto> {
     const entry = this.schedules.get(vehicleId);
+    // Without legacy's schedules (an R2), Parallax's next window stands in.
+    const window = entry?.charging?.length
+      ? null
+      : await this.parallaxStore.latest(vehicleId, chargingTimeWindow);
+    const fresh = window && Date.now() - window.at.getTime() < PARALLAX_WINDOW_MAX_AGE_MS;
+    const fromParallax = fresh ? chargingWindowSchedule(window.value) : null;
     const unavailable =
       this.connection?.stream.isUnsupported?.('departureSchedules', vehicleId) ?? false;
     const silentLongEnough =
       this.streamConnectedAt !== null &&
       Date.now() - this.streamConnectedAt >= DEPARTURES_SILENCE_MS;
     return {
-      charging: entry?.charging ?? null,
+      charging: fromParallax ? [fromParallax] : (entry?.charging ?? null),
+      chargingFromParallax: fromParallax != null,
       departures: entry?.departures ?? (!unavailable && silentLongEnough ? [] : null),
       departuresUnavailable: unavailable,
-      chargingUpdatedAt: entry?.chargingAt?.toISOString() ?? null,
+      chargingUpdatedAt: fromParallax
+        ? window!.at.toISOString()
+        : (entry?.chargingAt?.toISOString() ?? null),
       departuresUpdatedAt: entry?.departuresAt?.toISOString() ?? null,
     };
   }

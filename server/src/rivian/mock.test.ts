@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockRivian } from './mock.js';
-import { decodeGnss, RVM_GNSS, type GnssReading } from './parallax.js';
+import { decodeGnss, RVM_GNSS, type GnssReading } from './parallax/index.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -9,9 +9,14 @@ describe('mock dynamics GPS', () => {
     vi.useFakeTimers();
     const mock = new MockRivian();
     const readings: GnssReading[] = [];
-    mock.subscribeParallaxDynamics('mock', [RVM_GNSS], (_id, message) => {
-      if (message.rvm === RVM_GNSS) readings.push(decodeGnss(message.payload)!);
-    });
+    mock.subscribeParallax(
+      'mock',
+      [RVM_GNSS],
+      (_id, message) => {
+        if (message.rvm === RVM_GNSS) readings.push(decodeGnss(message.payload)!);
+      },
+      'dynamics',
+    );
     try {
       mock.start();
       const initial = readings.at(-1)!;

@@ -12,7 +12,8 @@ import {
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
   RVM_TIME_ESTIMATION,
-} from '../rivian/parallax.js';
+  chargingTimeWindow,
+} from '../rivian/parallax/index.js';
 import { b64, double, float, int, message, string } from '../testing/protobuf.js';
 import { ParallaxStore } from './parallax-store.js';
 
@@ -43,6 +44,22 @@ describe.skipIf(!url)('ParallaxStore with Postgres', () => {
   beforeEach(async () => {
     await handle.sql`TRUNCATE vehicles RESTART IDENTITY CASCADE`;
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
+  });
+
+  it('reads back a topic’s latest message, decoded', async () => {
+    const store = new ParallaxStore(handle.db);
+    expect(await store.latest('v1', chargingTimeWindow)).toBeNull();
+    const window = (day: number) => ({
+      rvm: chargingTimeWindow.rvm,
+      timestamp: at,
+      payload: b64(message(2, [...int(2, 360), ...int(6, day), ...int(7, day)])),
+    });
+    await store.ingest('v1', window(2));
+    await store.ingest('v1', window(3));
+    expect(await store.latest('v1', chargingTimeWindow)).toEqual({
+      value: expect.objectContaining({ startDay: 3, endMinute: 360 }),
+      at: new Date(at),
+    });
   });
 
   it('keeps the last awake cell temperatures after the vehicle sleeps', async () => {

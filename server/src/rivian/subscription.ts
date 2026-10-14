@@ -15,7 +15,13 @@ import {
   SUBSCRIPTION_PROPERTIES,
   buildVehicleStateSubscription,
 } from './graphql.js';
-import { type ParallaxMessage, type RawField, describeParallax } from './parallax.js';
+import {
+  type ParallaxGroup,
+  type ParallaxMessage,
+  type RawField,
+  describeParallax,
+  domainOf,
+} from './parallax/index.js';
 import type {
   DepartureSchedule,
   LiveSessionData,
@@ -40,40 +46,22 @@ export interface VehicleStateStream {
   subscribeCharging?(vehicleId: string, callback: ChargingSessionCallback): void;
   /** Departure schedules (subscription-only in Rivian's API). */
   subscribeDepartureSchedules?(vehicleId: string, callback: DepartureSchedulesCallback): void;
-  /** Parallax protobuf messages for the given topics (RVMs). */
-  subscribeParallax?(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void;
   /**
-   * A second, independent Parallax subscription (own id, own rejection
-   * fate) for topics not every vehicle accepts (e.g. an R1 may not accept
-   * dynamics.vehicle.gnss) — so a rejection here can't mark the main
-   * Parallax subscription (battery/charging/trip) unsupported too.
+   * Parallax protobuf messages for the given topics (RVMs). Each group is
+   * its own subscription with its own rejection fate, so a vehicle refusing
+   * one group's topics keeps the others.
    */
-  subscribeParallaxDynamics?(
+  subscribeParallax?(
     vehicleId: string,
     rvms: readonly string[],
     callback: ParallaxCallback,
+    group?: ParallaxGroup,
   ): void;
   /**
-   * A third Parallax subscription (own id, own rejection fate) for the
-   * vehicle state topics (gear, power, closures, …), so a vehicle rejecting
-   * one of them can't stop GPS and tires.
+   * True once Rivian has refused an optional subscription, for one vehicle
+   * or any; for Parallax, one group or any.
    */
-  subscribeParallaxVehicleState?(
-    vehicleId: string,
-    rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void;
-  /**
-   * A fourth Parallax subscription (own id, own rejection fate) for topics
-   * still being decoded, so one a vehicle rejects can't stop vehicle state.
-   */
-  subscribeParallaxExtras?(
-    vehicleId: string,
-    rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void;
-  /** True once Rivian has refused an optional subscription, for one vehicle or any. */
-  isUnsupported?(kind: OptionalSubKind, vehicleId?: string): boolean;
+  isUnsupported?(kind: OptionalSubKind, vehicleId?: string, group?: ParallaxGroup): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
   readonly droppedFields?: readonly string[];
   diagnostics?(): StreamDiagnostics;
@@ -115,25 +103,17 @@ export interface SubscriptionManagerOptions {
   heartbeatIntervalMs?: number;
 }
 
-type OptionalSubKind =
-  | 'chargingSession'
-  | 'departureSchedules'
-  | 'parallax'
-  | 'parallaxDynamics'
-  | 'parallaxVehicleState'
-  | 'parallaxExtras';
+type OptionalSubKind = 'chargingSession' | 'departureSchedules' | 'parallax';
 type SubKind = 'vehicleState' | OptionalSubKind;
 
-const isParallax = (kind: SubKind) =>
-  kind === 'parallax' ||
-  kind === 'parallaxDynamics' ||
-  kind === 'parallaxVehicleState' ||
-  kind === 'parallaxExtras';
+const isParallax = (kind: SubKind) => kind === 'parallax';
 
 export interface FeedDiagnostics {
   id: string;
   vehicleId: string;
   kind: SubKind;
+  /** A Parallax feed's subscription group. */
+  group: ParallaxGroup | null;
   domain: string | null;
   topics: string[];
   status: 'receiving' | 'waiting' | 'unsupported' | 'errored';
@@ -172,6 +152,7 @@ interface Subscription {
   onCharging?: ChargingSessionCallback;
   onDepartures?: DepartureSchedulesCallback;
   rvms?: readonly string[];
+  group?: ParallaxGroup;
   onParallax?: ParallaxCallback;
   /** The last data received, for diagnostics: the whole payload, or per Parallax topic. */
   latest?: { at: number; data: unknown };
@@ -185,12 +166,11 @@ function feedsOf(sub: Subscription): { id: string; domain: string | null; topics
   }
   const domains = new Map<string, string[]>();
   for (const topic of sub.rvms ?? []) {
-    const prefix = topic.split('.')[0]!;
-    const domain = prefix === 'energy_edge_compute' ? 'energy' : prefix;
+    const domain = domainOf(topic);
     domains.set(domain, [...(domains.get(domain) ?? []), topic]);
   }
-  // Keyed by vehicle and domain, not subscription, so a domain split across
-  // Parallax subscriptions (dynamics: GPS and tires, and gear) shows as one feed.
+  // Keyed by vehicle and domain, not group, so a domain split across groups
+  // (dynamics: GPS and tires, and gear) shows as one feed.
   return [...domains].map(([domain, topics]) => ({
     id: `parallax:${sub.vehicleId}:${domain}`,
     domain,
@@ -203,6 +183,8 @@ interface Feed {
   id: string;
   vehicleId: string;
   kind: SubKind;
+  /** The group of the feed's first subscription. */
+  group: ParallaxGroup | null;
   domain: string | null;
   topics: string[];
   parts: { sub: Subscription; topics: string[] }[];
@@ -222,6 +204,7 @@ function feedsFrom(subs: Iterable<Subscription>): Feed[] {
           id,
           vehicleId: sub.vehicleId,
           kind: sub.kind,
+          group: sub.group ?? null,
           domain,
           topics: [...topics],
           parts: [{ sub, topics }],
@@ -330,64 +313,29 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     });
   }
 
-  subscribeParallax(vehicleId: string, rvms: readonly string[], callback: ParallaxCallback): void {
+  subscribeParallax(
+    vehicleId: string,
+    rvms: readonly string[],
+    callback: ParallaxCallback,
+    group: ParallaxGroup = 'core',
+  ): void {
     this.addSubscription({
-      id: `parallax:${vehicleId}`,
+      id: `parallax:${group}:${vehicleId}`,
       kind: 'parallax',
       vehicleId,
       rvms,
-      onParallax: callback,
-    });
-  }
-
-  subscribeParallaxDynamics(
-    vehicleId: string,
-    rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void {
-    this.addSubscription({
-      id: `parallax-dynamics:${vehicleId}`,
-      kind: 'parallaxDynamics',
-      vehicleId,
-      rvms,
-      onParallax: callback,
-    });
-  }
-
-  subscribeParallaxVehicleState(
-    vehicleId: string,
-    rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void {
-    this.addSubscription({
-      id: `parallax-vehicle-state:${vehicleId}`,
-      kind: 'parallaxVehicleState',
-      vehicleId,
-      rvms,
-      onParallax: callback,
-    });
-  }
-
-  subscribeParallaxExtras(
-    vehicleId: string,
-    rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void {
-    this.addSubscription({
-      id: `parallax-extras:${vehicleId}`,
-      kind: 'parallaxExtras',
-      vehicleId,
-      rvms,
+      group,
       onParallax: callback,
     });
   }
 
   /** Optional subscriptions Rivian refused, for one vehicle or any (for diagnostics/UI). */
-  isUnsupported(kind: OptionalSubKind, vehicleId?: string): boolean {
+  isUnsupported(kind: OptionalSubKind, vehicleId?: string, group?: ParallaxGroup): boolean {
     return [...this.subscriptions.values()].some(
       (sub) =>
         sub.kind === kind &&
         (vehicleId == null || sub.vehicleId === vehicleId) &&
+        (group == null || sub.group === group) &&
         this.unsupported.has(sub.id),
     );
   }
@@ -438,6 +386,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
           id: feed.id,
           vehicleId: feed.vehicleId,
           kind: feed.kind,
+          group: feed.group,
           domain: feed.domain,
           topics: feed.topics,
           status: FEED_STATUS_ORDER.find((s) => parts.some((p) => p.status === s))!,
@@ -729,7 +678,9 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       // keeps its vehicle-state data; schedules show as unavailable).
       if (msg.type === 'error') {
         this.unsupported.add(sub.id);
-        this.log(`${sub.kind} subscription rejected: ${summarize(errors)}`);
+        this.log(
+          `${sub.group ? `parallax ${sub.group}` : sub.kind} subscription rejected: ${summarize(errors)}`,
+        );
       }
       return undefined;
     }

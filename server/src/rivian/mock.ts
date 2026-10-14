@@ -30,8 +30,11 @@ import {
   RVM_TIRES,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
-} from './parallax.js';
-import { b64, double, float, int, message, string } from './protobuf-encode.js';
+  type ParallaxGroup,
+  groupOf,
+  rvmDef,
+} from './parallax/index.js';
+import { b64, double, float, int, message, string } from './parallax/encode.js';
 
 /** Made-up addresses for mock drives (no real lookups in mock mode). */
 export const mockGeocode = async (lat: number, lon: number) => {
@@ -173,8 +176,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   private callback?: VehicleStateCallback;
   private chargingCallback?: ChargingSessionCallback;
-  private parallaxCallback?: ParallaxCallback;
-  private parallaxDynamicsCallback?: ParallaxCallback;
+  private parallaxCallbacks = new Map<ParallaxGroup, ParallaxCallback>();
   private subscribedId = MOCK_VEHICLE_ID;
   private timer?: NodeJS.Timeout;
   private phase: Phase = 'parked';
@@ -421,16 +423,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     _vehicleId: string,
     _rvms: readonly string[],
     callback: ParallaxCallback,
+    group: ParallaxGroup = 'core',
   ): void {
-    this.parallaxCallback = callback;
-  }
-
-  subscribeParallaxDynamics(
-    _vehicleId: string,
-    _rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void {
-    this.parallaxDynamicsCallback = callback;
+    this.parallaxCallbacks.set(group, callback);
   }
 
   start(): void {
@@ -468,7 +463,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.emitGnss();
     const tire = (pos: number, bar: number) =>
       message(2, [...int(1, pos), ...int(2, 1), ...double(3, bar)]);
-    this.emitParallaxDynamics(RVM_TIRES, [
+    this.emitParallax(RVM_TIRES, [
       ...tire(1, 2.8),
       ...tire(2, 2.85),
       ...tire(3, 2.75),
@@ -476,29 +471,23 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ]);
   }
 
-  /** Parallax topics come in as base64 protobuf, as from Rivian. */
+  /** Parallax topics come in as base64 protobuf, as from Rivian, on their group's subscription. */
   private emitParallax(rvm: string, bytes: number[]): void {
-    this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
+    const def = rvmDef(rvm);
+    const callback = this.parallaxCallbacks.get(def ? groupOf(def) : 'core');
+    callback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
   }
 
   private emitGnss(): void {
     const driving = this.phase === 'driving';
-    this.emitParallaxDynamics(RVM_GNSS, [
+    this.emitParallax(RVM_GNSS, [
       ...double(1, this.lat),
       ...double(2, this.lon),
       ...double(3, driving ? Math.round(240 + 35 * Math.sin(this.tickInPhase / 8)) : 240),
+      // Speed is left out at a standstill, as the vehicle sends it.
+      ...(driving ? float(4, LOOP_M / PHASE_TICKS.driving / (TICK_MS / 1000)) : []),
       ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
-      ...float(6, driving ? LOOP_M / PHASE_TICKS.driving / (TICK_MS / 1000) : 0),
     ]);
-  }
-
-  /** The isolated GNSS/tires subscription, separate from the main Parallax one. */
-  private emitParallaxDynamics(rvm: string, bytes: number[]): void {
-    this.parallaxDynamicsCallback?.(this.subscribedId, {
-      rvm,
-      payload: b64(bytes),
-      timestamp: Date.now(),
-    });
   }
 
   /** Navigating to the Rivian service center for the length of the drive. */

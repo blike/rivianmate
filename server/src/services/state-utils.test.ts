@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { VehicleState } from '../rivian/types.js';
-import { PARALLAX_DYNAMICS_FIELDS } from '../rivian/parallax.js';
+import { PARALLAX_STATE_FIELDS } from '../rivian/parallax/index.js';
 import { isPosition, mergeVehicleState, normalizeReadings, stateLocation } from './state-utils.js';
 
 describe('stateLocation', () => {
@@ -32,18 +32,10 @@ describe('GPS and tire stream fallback', () => {
     const at = '2026-10-04T10:01:00Z';
     const nextAt = '2026-10-04T10:02:00Z';
     // Legacy remains usable when dynamics has never delivered (including rejection).
-    mergeVehicleState(
-      cached,
-      { gnssSpeed: { timeStamp: oldAt, value: 5 } },
-      PARALLAX_DYNAMICS_FIELDS,
-    );
+    mergeVehicleState(cached, { gnssSpeed: { timeStamp: oldAt, value: 5 } }, PARALLAX_STATE_FIELDS);
     expect(cached.gnssSpeed?.value).toBe(5);
     // A newer Parallax reading takes over.
-    mergeVehicleState(
-      cached,
-      { gnssSpeed: { timeStamp: at, value: 10 } },
-      PARALLAX_DYNAMICS_FIELDS,
-    );
+    mergeVehicleState(cached, { gnssSpeed: { timeStamp: at, value: 10 } }, PARALLAX_STATE_FIELDS);
     // A delayed legacy speed must not roll it back; an unreported tire still updates.
     mergeVehicleState(
       cached,
@@ -51,7 +43,7 @@ describe('GPS and tire stream fallback', () => {
         gnssSpeed: { timeStamp: oldAt, value: 0 },
         tirePressureFrontLeft: { timeStamp: oldAt, value: 2.8 },
       },
-      PARALLAX_DYNAMICS_FIELDS,
+      PARALLAX_STATE_FIELDS,
     );
     expect(cached.gnssSpeed?.value).toBe(10);
     expect(cached.tirePressureFrontLeft?.value).toBe(2.8);
@@ -59,7 +51,7 @@ describe('GPS and tire stream fallback', () => {
     mergeVehicleState(
       cached,
       { gnssSpeed: { timeStamp: nextAt, value: 0 } },
-      PARALLAX_DYNAMICS_FIELDS,
+      PARALLAX_STATE_FIELDS,
     );
     expect(cached.gnssSpeed?.value).toBe(0);
   });
@@ -72,7 +64,7 @@ describe('GPS and tire stream fallback', () => {
       {
         gnssLocation: { latitude: 35, longitude: -117, timeStamp: '2026-10-04T10:00:00Z' },
       },
-      PARALLAX_DYNAMICS_FIELDS,
+      PARALLAX_STATE_FIELDS,
     );
     expect(cached.gnssLocation).toEqual(current);
   });
@@ -114,5 +106,40 @@ describe('invalid sensor states', () => {
     });
     expect(changed).toEqual(['cabinPreconditioningStatus']);
     expect(cached.driveMode).toEqual({ timeStamp: 'a', value: 'everyday' });
+  });
+});
+
+describe('mergeVehicleState', () => {
+  it('merges deltas and reports changed keys', () => {
+    const cached: VehicleState = {
+      batteryLevel: { timeStamp: 't0', value: 50 },
+    };
+    const changed = mergeVehicleState(cached, {
+      batteryLevel: { timeStamp: 't1', value: 51 },
+      powerState: { timeStamp: 't1', value: 'go' },
+    });
+    expect(changed.sort()).toEqual(['batteryLevel', 'powerState']);
+    expect((cached.batteryLevel as { value: unknown }).value).toBe(51);
+  });
+
+  it('drops invalid sensor values, keeping the previous one', () => {
+    const cached: VehicleState = {
+      chargerStatus: { timeStamp: 't0', value: 'chrgr_sts_not_connected' },
+    };
+    const changed = mergeVehicleState(cached, {
+      chargerStatus: { timeStamp: 't1', value: 'signal_not_available' },
+    });
+    expect(changed).toEqual([]);
+    expect((cached.chargerStatus as { value: unknown }).value).toBe('chrgr_sts_not_connected');
+  });
+
+  it('does not report unchanged values', () => {
+    const cached: VehicleState = {
+      powerState: { timeStamp: 't0', value: 'sleep' },
+    };
+    const changed = mergeVehicleState(cached, {
+      powerState: { timeStamp: 't0', value: 'sleep' },
+    });
+    expect(changed).toEqual([]);
   });
 });

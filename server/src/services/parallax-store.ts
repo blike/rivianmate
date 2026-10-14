@@ -1,53 +1,34 @@
-import { eq, lt } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import type { VehicleInsightsDto } from '../api-types.js';
 import type { Db } from '../db/client.js';
 import { parallaxLatest, parallaxMessages } from '../db/schema.js';
 import {
-  PARALLAX_EXTRAS_RVMS,
+  type Decoded,
   PARALLAX_LOGGED_RVMS,
+  PARALLAX_STORED_RVMS,
   type ParallaxMessage,
-  RVM_BATTERY_STATE,
-  RVM_CHARGE_BREAKDOWN,
-  RVM_COLD_WEATHER,
-  RVM_NETWORK,
-  RVM_PARKED_ENERGY,
-  RVM_TRIP_INFO,
-  RVM_TRIP_PROGRESS,
-  decodeBatteryState,
-  decodeColdWeather,
-  decodeNetwork,
-  decodeParkedEnergy,
-  decodeTripInfo,
-  decodeTripProgress,
-} from '../rivian/parallax.js';
+  type RvmDef,
+  batteryState,
+  coldWeather,
+  decodeMessage,
+  isTopic,
+  messageTime,
+  network,
+  parkedEnergy,
+  tripInfo,
+  tripProgress,
+} from '../rivian/parallax/index.js';
 
-/** Topics kept for the insights view, plus the logged charging topics. */
-const STORED_RVMS = new Set([
-  RVM_BATTERY_STATE,
-  RVM_CHARGE_BREAKDOWN,
-  RVM_COLD_WEATHER,
-  RVM_PARKED_ENERGY,
-  RVM_NETWORK,
-  RVM_TRIP_INFO,
-  RVM_TRIP_PROGRESS,
-  ...PARALLAX_LOGGED_RVMS,
-  ...PARALLAX_EXTRAS_RVMS,
-]);
-const LOGGED_RVMS = new Set([...PARALLAX_LOGGED_RVMS, ...PARALLAX_EXTRAS_RVMS]);
 const LOG_RETENTION_MS = 30 * 24 * 3600_000;
 const PRUNE_EVERY_MS = 3600_000;
-/** Rivian's message time; seconds or milliseconds since the epoch. */
-export function messageTime(timestamp: number | null): Date | null {
-  if (!timestamp) return null;
-  return new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
-}
 
 /** Suffix for the last battery state that carried cell temperatures. */
 const AWAKE = ':awake';
 
 /**
- * Keeps the latest Parallax message per vehicle and topic. Repeats of the
- * same payload aren't rewritten, so a chatty topic costs no writes.
+ * Keeps the latest Parallax message per vehicle and topic, for topics whose
+ * definition asks for it (`store`). Repeats of the same payload aren't
+ * rewritten, so a chatty topic costs no writes.
  */
 export class ParallaxStore {
   private lastPayload = new Map<string, string>();
@@ -58,10 +39,14 @@ export class ParallaxStore {
     private readonly log: (msg: string) => void = () => {},
   ) {}
 
-  async ingest(vehicleId: string, message: ParallaxMessage): Promise<void> {
-    if (!STORED_RVMS.has(message.rvm)) return;
+  async ingest(
+    vehicleId: string,
+    message: ParallaxMessage,
+    decoded: Decoded | null = decodeMessage(message),
+  ): Promise<void> {
+    if (!PARALLAX_STORED_RVMS.has(message.rvm)) return;
     const rows = [message.rvm];
-    if (message.rvm === RVM_BATTERY_STATE && decodeBatteryState(message.payload)?.cellTemps) {
+    if (isTopic(decoded, batteryState) && decoded.value?.cellTemps) {
       rows.push(message.rvm + AWAKE);
     }
     try {
@@ -80,7 +65,7 @@ export class ParallaxStore {
             target: [parallaxLatest.vehicleId, parallaxLatest.rvm],
             set: values,
           });
-        if (LOGGED_RVMS.has(rvm)) {
+        if (PARALLAX_LOGGED_RVMS.has(rvm)) {
           await this.db.insert(parallaxMessages).values({ vehicleId, rvm, ...values });
           await this.pruneLog(values.receivedAt);
         }
@@ -100,6 +85,16 @@ export class ParallaxStore {
       .where(lt(parallaxMessages.receivedAt, new Date(now.getTime() - LOG_RETENTION_MS)));
   }
 
+  /** A topic's latest decoded message for a vehicle, and when Rivian sent it. */
+  async latest<T>(vehicleId: string, def: RvmDef<T>): Promise<{ value: T; at: Date } | null> {
+    const [row] = await this.db
+      .select()
+      .from(parallaxLatest)
+      .where(and(eq(parallaxLatest.vehicleId, vehicleId), eq(parallaxLatest.rvm, def.rvm)));
+    const value = row ? (def.decode?.(row.payload) ?? null) : null;
+    return row && value != null ? { value, at: row.messageAt ?? row.receivedAt } : null;
+  }
+
   async insights(vehicleId: string): Promise<VehicleInsightsDto> {
     const rows = await this.db
       .select()
@@ -107,27 +102,27 @@ export class ParallaxStore {
       .where(eq(parallaxLatest.vehicleId, vehicleId));
     const byRvm = new Map(rows.map((r) => [r.rvm, r]));
     const at = (r: (typeof rows)[number]) => (r.messageAt ?? r.receivedAt).toISOString();
-    const read = <T>(rvm: string, decodeFn: (payload: string) => T | null) => {
-      const row = byRvm.get(rvm);
-      const value = row ? decodeFn(row.payload) : null;
+    const read = <T>(def: RvmDef<T>, suffix = '') => {
+      const row = byRvm.get(def.rvm + suffix);
+      const value = row ? (def.decode?.(row.payload) ?? null) : null;
       return row && value != null ? { value, at: at(row) } : null;
     };
 
-    const battery = read(RVM_BATTERY_STATE, decodeBatteryState);
-    const awake = read(RVM_BATTERY_STATE + AWAKE, decodeBatteryState);
-    const cold = read(RVM_COLD_WEATHER, decodeColdWeather);
-    const parked = read(RVM_PARKED_ENERGY, decodeParkedEnergy);
-    const network = read(RVM_NETWORK, decodeNetwork);
+    const battery = read(batteryState);
+    const awake = read(batteryState, AWAKE);
+    const cold = read(coldWeather);
+    const parked = read(parkedEnergy);
+    const net = read(network);
     // Progress outlives the trip, so navigation needs an active trip_info.
-    const trip = read(RVM_TRIP_INFO, decodeTripInfo);
-    const progress = trip ? read(RVM_TRIP_PROGRESS, decodeTripProgress) : null;
+    const trip = read(tripInfo);
+    const progress = trip ? read(tripProgress) : null;
     return {
       cellTemps: awake?.value.cellTemps ? { ...awake.value.cellTemps, at: awake.at } : null,
       cellTempsCurrent: battery?.value.cellTemps != null,
       coldWeather: cold ? { ...cold.value, at: cold.at } : null,
       parkedEnergy:
         parked && parked.value.length > 0 ? { windows: parked.value, at: parked.at } : null,
-      connectivity: network ? { ...network.value, at: network.at } : null,
+      connectivity: net ? { ...net.value, at: net.at } : null,
       navigation: trip
         ? {
             ...trip.value,
