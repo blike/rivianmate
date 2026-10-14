@@ -70,8 +70,8 @@ export const defrost = defineRvm({
   fieldNames: { '1': 'Status (2 on)' },
 });
 
-// Logged while its fields are worked out against legacy petModeStatus and
-// petModeTemperatureStatus.
+// Logged for decoding, against legacy petModeStatus and
+// petModeTemperatureStatus; nothing reads it yet.
 export const petMode = defineRvm({
   rvm: RVM_PET_MODE,
   group: 'vehicleState',

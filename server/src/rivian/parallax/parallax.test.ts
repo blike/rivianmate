@@ -32,6 +32,7 @@ import {
   decodeTripInfo,
   decodeTripProgress,
   describeParallax,
+  fieldsOf,
   readProtoFields,
   vehicleStateFromParallax,
   vehicleSupportsParallax,
@@ -95,6 +96,19 @@ describe('readProtoFields', () => {
   it('rejects truncated or invalid bytes', () => {
     expect(readProtoFields(new Uint8Array([0x0a, 0x05, 0x01]))).toBeNull(); // length past the end
     expect(readProtoFields(new Uint8Array([0x0b]))).toBeNull(); // group wire type
+  });
+
+  it('reads each message of a repeated field, in order, skipping other wire types', () => {
+    const m = fieldsOf(
+      new Uint8Array([
+        ...message(1, int(1, 7)),
+        ...int(1, 3), // a varint where a message belongs
+        ...message(2, int(1, 8)),
+        ...message(1, int(1, 9)),
+      ]),
+    );
+    expect(m?.repeated(1).map((e) => e.int(1))).toEqual([7, 9]);
+    expect(m?.repeated(5)).toEqual([]);
   });
 });
 

@@ -2,8 +2,7 @@
  * `body.*`: closures and locks, read as the legacy fields they stand in
  * for. The R2 leaves those legacy fields null, so these are its only source.
  */
-import { defineRvm, readings, stampReadings } from '../define.js';
-import { fieldsOf, readProtoFields } from '../wire.js';
+import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 
 export const RVM_CLOSURES = 'body.closures.states';
 export const RVM_LOCKS = 'body.locks.states';
@@ -56,15 +55,12 @@ const CHARGE_PORT_STATES: Record<number, string> = {
   5: 'closing',
 };
 
-/** Repeated field 1, each with 1 position and 2 state; null if the payload isn't protobuf. */
+/** Repeated field 1, each with 1 position and 2 state; none if the payload isn't protobuf. */
 function entries(payloadBase64: string) {
-  const fields = readProtoFields(Buffer.from(payloadBase64, 'base64'));
-  if (!fields) return null;
-  return fields.flatMap((f) => {
-    if (f.field !== 1 || f.wire !== 2) return [];
-    const e = fieldsOf(f.value);
-    return [{ position: e?.int(1) ?? null, state: e?.int(2) ?? null }];
-  });
+  return (fieldsOrEmpty(payloadBase64)?.repeated(1) ?? []).map((e) => ({
+    position: e.int(1),
+    state: e.int(2),
+  }));
 }
 
 /**
@@ -77,7 +73,7 @@ export const closures = defineRvm({
   maturity: 'partial',
   decode: (payload) =>
     readings((put) => {
-      for (const { position, state } of entries(payload) ?? []) {
+      for (const { position, state } of entries(payload)) {
         if (position == null || !state) continue;
         if (position === CLOSURE_CHARGE_PORT) {
           put('chargePortState', CHARGE_PORT_STATES[state]);
@@ -103,7 +99,7 @@ export const locks = defineRvm({
   maturity: 'partial',
   decode: (payload) =>
     readings((put) => {
-      for (const { position, state } of entries(payload) ?? []) {
+      for (const { position, state } of entries(payload)) {
         const key = position == null ? undefined : LOCK_FIELDS[position];
         if (key && state != null && state >= 1 && state <= 3) {
           put(key, state === 1 ? 'locked' : 'unlocked');

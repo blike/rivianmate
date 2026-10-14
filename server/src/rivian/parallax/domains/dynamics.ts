@@ -1,7 +1,7 @@
 /** `dynamics.*`: position, tires, gear, odometer and range. */
 import type { VehicleState } from '../../types.js';
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
-import { decodePayload, fieldsOf, readProtoFields } from '../wire.js';
+import { decodePayload } from '../wire.js';
 
 export const RVM_GNSS = 'dynamics.vehicle.gnss';
 export const RVM_TIRES = 'dynamics.tires.state';
@@ -58,20 +58,14 @@ export interface TireReading {
  * (2026-09-29), not community docs.
  */
 export function decodeTires(payloadBase64: string): TireReading[] {
-  if (!payloadBase64) return [];
-  const fields = readProtoFields(Buffer.from(payloadBase64, 'base64'));
-  if (!fields) return [];
   const readings: TireReading[] = [];
-  for (const f of fields) {
-    if (f.field !== 2 || f.wire !== 2) continue;
-    const inner = fieldsOf(f.value);
-    const position = inner?.int(1);
-    const suffix = position != null ? TIRE_POSITION_SUFFIX[position] : undefined;
+  for (const tire of decodePayload(payloadBase64)?.repeated(2) ?? []) {
+    const suffix = TIRE_POSITION_SUFFIX[tire.int(1) ?? 0];
     if (!suffix) continue;
-    const status = inner?.int(2);
+    const status = tire.int(2);
     readings.push({
       position: suffix,
-      pressureBar: inner?.double(3) ?? null,
+      pressureBar: tire.double(3),
       status: status == null ? null : status === 1 ? 'OK' : 'Warning',
     });
   }
