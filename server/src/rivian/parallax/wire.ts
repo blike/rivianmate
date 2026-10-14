@@ -75,6 +75,8 @@ export interface Fields {
   int(n: number): number | null;
   string(n: number): string | null;
   message(n: number): Fields | null;
+  /** Each embedded message in repeated field `n`, in order; entries that aren't messages are skipped. */
+  repeated(n: number): Fields[];
 }
 
 export function fieldsOf(bytes: Uint8Array | null | undefined): Fields | null {
@@ -102,6 +104,12 @@ export function fieldsOf(bytes: Uint8Array | null | undefined): Fields | null {
     message(n: number) {
       const f = find(n);
       return f?.wire === 2 ? fieldsOf(f.value) : null;
+    },
+    repeated(n: number) {
+      return fields.flatMap((f) => {
+        const inner = f.field === n && f.wire === 2 ? fieldsOf(f.value) : null;
+        return inner ? [inner] : [];
+      });
     },
   };
 }

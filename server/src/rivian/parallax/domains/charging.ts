@@ -127,7 +127,7 @@ export const socSlider = defineRvm({
   fieldNames: { '1': 'Charge limit (%)' },
 });
 
-// Recorded for decoding; nothing reads these yet.
+// Logged for decoding; nothing reads these yet.
 export const tripTarget = defineRvm({
   rvm: RVM_TRIP_TARGET,
   group: 'core',

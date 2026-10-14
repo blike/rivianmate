@@ -3,7 +3,7 @@
  * only the installed version is read so far.
  */
 import { defineRvm, readings, stampReadings } from '../define.js';
-import { fieldsOf, readProtoFields } from '../wire.js';
+import { decodePayload } from '../wire.js';
 
 export const RVM_OTA_STATE = 'ota.ota_state.vehicle_ota_state';
 export const RVM_OTA_DEPLOYMENT = 'ota.deployment.state';
@@ -21,11 +21,9 @@ export const otaDeployment = defineRvm({
   maturity: 'probe',
   decode: (payload) =>
     readings((put) => {
-      for (const f of readProtoFields(Buffer.from(payload, 'base64')) ?? []) {
-        if (f.field !== 1 || f.wire !== 2) continue;
-        const deployment = fieldsOf(f.value);
-        const version = deployment?.message(2)?.string(1);
-        if (deployment?.int(1) === 1 && version && /^\d{4}\.\d+\.\d+$/.test(version)) {
+      for (const deployment of decodePayload(payload)?.repeated(1) ?? []) {
+        const version = deployment.message(2)?.string(1);
+        if (deployment.int(1) === 1 && version && /^\d{4}\.\d+\.\d+$/.test(version)) {
           put('otaCurrentVersion', version);
         }
       }
