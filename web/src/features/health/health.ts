@@ -132,9 +132,25 @@ function software(state: VehicleState | undefined): HealthCheck {
   return { key: 'software', label: 'Software', level: 'good', value: 'Up to date' };
 }
 
-/** Everything the vehicle reports about its own condition, in display order. */
+/** The fields each check reads. */
+const CHECK_FIELDS: Record<string, readonly string[]> = {
+  pack: ['batteryHvThermalEvent'],
+  '12v': ['twelveVoltBatteryHealth'],
+  tires: TIRES.map((t) => t.status),
+  brake: ['brakeFluidLow'],
+  washer: ['wiperFluidState'],
+  software: ['otaCurrentVersion', 'otaAvailableVersion', 'otaCurrentStatus'],
+};
+
+/**
+ * Everything the vehicle reports about its own condition, in display order.
+ * A check whose fields the vehicle has never sent is left out: a vehicle
+ * without the legacy feed (an R2) has no battery thermal or fluid readings,
+ * and would otherwise show them as unknown for good. Before any state
+ * arrives, every check is listed, as unknown.
+ */
 export function healthChecks(state: VehicleState | undefined): HealthCheck[] {
-  return [
+  const checks = [
     packThermal(state),
     twelveVolt(state),
     tires(state),
@@ -142,7 +158,13 @@ export function healthChecks(state: VehicleState | undefined): HealthCheck[] {
     washerFluid(state),
     software(state),
   ];
+  if (!state) return checks;
+  return checks.filter((c) => CHECK_FIELDS[c.key]!.some((field) => field in state));
 }
+
+/** "a, b and c". */
+const listOf = (items: string[]) =>
+  items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
 export interface HealthSummary {
   level: CheckLevel;
@@ -177,7 +199,7 @@ export function healthSummary(checks: readonly HealthCheck[]): HealthSummary {
     detail:
       missing > 0
         ? 'No warnings in what the vehicle has reported so far.'
-        : 'No warnings from the battery, tires, fluids or software.',
+        : `No warnings from the ${listOf(checks.map((c) => c.label.replace(/^[A-Z](?=[a-z])/, (l) => l.toLowerCase())))}.`,
   };
 }
 

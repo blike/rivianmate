@@ -31,7 +31,12 @@ describe('healthChecks', () => {
       ['Washer fluid', 'good', 'Normal'],
       ['Software', 'good', 'Up to date'],
     ]);
-    expect(healthSummary(checks)).toMatchObject({ level: 'good', title: 'Everything looks good' });
+    expect(healthSummary(checks)).toMatchObject({
+      level: 'good',
+      title: 'Everything looks good',
+      detail:
+        'No warnings from the battery pack, 12V battery, tires, brake fluid, washer fluid and software.',
+    });
   });
 
   it('flags what the vehicle warns about', () => {
@@ -58,13 +63,25 @@ describe('healthChecks', () => {
   });
 
   it('waits for readings before judging', () => {
+    expect(healthChecks(undefined)).toHaveLength(6);
     expect(healthSummary(healthChecks(undefined))).toMatchObject({ level: 'unknown' });
     expect(
       healthSummary(healthChecks(state({ twelveVoltBatteryHealth: 'NORMAL_OPERATION' }))),
-    ).toMatchObject({
-      level: 'good',
-      detail: 'No warnings in what the vehicle has reported so far.',
+    ).toMatchObject({ level: 'good', detail: 'No warnings from the 12V battery.' });
+  });
+
+  it('leaves out checks the vehicle never reports (no legacy feed)', () => {
+    // As an R1S on Parallax alone: no thermal event, brake or washer fluid.
+    const parallaxOnly = state({
+      twelveVoltBatteryHealth: 'NORMAL_OPERATION',
+      tirePressureStatusFrontLeft: 'OK',
+      otaCurrentVersion: '2026.36.0',
     });
+    const checks = healthChecks(parallaxOnly);
+    expect(checks.map((c) => c.label)).toEqual(['12V battery', 'Tires', 'Software']);
+    expect(healthSummary(checks).detail).toBe(
+      'No warnings from the 12V battery, tires and software.',
+    );
   });
 });
 

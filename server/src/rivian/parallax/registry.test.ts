@@ -31,34 +31,30 @@ describe('Parallax registry', () => {
       new Set([
         'vehicle.power.state',
         'dynamics.vehicle.gear',
+        'dynamics.vehicle.odometer',
         'body.closures.states',
         'body.locks.states',
         'comfort.cabin.cabin_temperatures',
         'comfort.cabin.cabin_preconditioning_status',
         'comfort.cabin.defrost_defog_status',
+        'dynamics.vehicle.range',
+        'energy.low_voltage.battery_state',
+        'ota.deployment.state',
       ]),
     );
-    expect(parallaxGroupTopics('core')).toHaveLength(15);
+    expect(parallaxGroupTopics('core')).toHaveLength(13);
     expect(new Set(parallaxGroupTopics('probe'))).toEqual(
       new Set([
-        'dynamics.vehicle.range',
+        'charging.session.trip_target',
+        'charging.session.notification',
         'comfort.cabin.pet_mode_status',
-        'energy.low_voltage.battery_state',
         'ota.ota_state.vehicle_ota_state',
-        'ota.deployment.state',
         'ota.user_schedule.ota_config',
       ]),
     );
-    // Every topic is subscribed somewhere on an R2.
-    const subscribed = PARALLAX_GROUPS.flatMap((g) => parallaxGroupTopics(g.id, 'R2'));
+    // Every topic is subscribed in some group.
+    const subscribed = PARALLAX_GROUPS.flatMap((g) => parallaxGroupTopics(g.id));
     expect(subscribed).toHaveLength(PARALLAX_RVMS.length);
-  });
-
-  it('subscribes the odometer on an R2 only', () => {
-    expect(parallaxGroupTopics('vehicleState', 'R2')).toContain('dynamics.vehicle.odometer');
-    for (const model of ['R1S', 'R1T', null, undefined]) {
-      expect(parallaxGroupTopics('vehicleState', model)).not.toContain('dynamics.vehicle.odometer');
-    }
   });
 
   it('subscribes unverified topics apart from the working groups', () => {

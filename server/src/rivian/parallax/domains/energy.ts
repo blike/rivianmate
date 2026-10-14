@@ -346,8 +346,8 @@ const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION' };
  */
 export const lowVoltageBattery = defineRvm({
   rvm: RVM_LOW_VOLTAGE_BATTERY,
-  group: 'core',
-  maturity: 'probe',
+  group: 'vehicleState',
+  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) =>
       put('twelveVoltBatteryHealth', TWELVE_VOLT_HEALTH[fieldsOrEmpty(payload)?.int(1) ?? 0]),

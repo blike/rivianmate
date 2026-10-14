@@ -22,19 +22,23 @@ export interface GnssReading {
  * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
  * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
  * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
- * 6 speed (float, m/s, preserved for VehicleState consumers). No .proto; field numbers from a
- * live capture against a real R2 (2026-09-29/30), not community docs.
+ * 4 speed (float, m/s, as VehicleState consumers expect; proto3 leaves it
+ * out at a standstill, so a fix without it is 0). Speed matched legacy
+ * gnssSpeed from 0 to 22 m/s on an R1S (2026-10-13); 6, read as speed
+ * before, stays 0.1–4.9 parked or moving. No .proto; other field numbers
+ * from a live capture against a real R2 (2026-09-29/30), not community docs.
  */
 export function decodeGnss(payloadBase64: string): GnssReading | null {
   const m = decodePayload(payloadBase64);
   if (!m) return null;
   const bearing = m.float(5);
+  const latitude = m.double(1);
   return {
-    latitude: m.double(1),
+    latitude,
     longitude: m.double(2),
     altitude: m.double(3),
     bearing: bearing != null ? ((bearing % 360) + 360) % 360 : null,
-    speedMps: m.float(6),
+    speedMps: m.float(4) ?? (latitude != null ? 0 : null),
   };
 }
 
@@ -95,7 +99,7 @@ export const gnss = defineRvm({
     '2': 'Longitude',
     '3': 'Altitude (m)',
     '5': 'Heading (°, −180 to 180)',
-    '6': 'Speed (m/s)',
+    '4': 'Speed (m/s; left out when stopped)',
   },
 });
 
@@ -141,14 +145,13 @@ export const gear = defineRvm({
 
 /**
  * `dynamics.vehicle.odometer`: 1 odometer (whole km), as legacy
- * vehicleMileage in metres. Coarser than legacy's metres, so it's read on
- * an R2 only, which doesn't report legacy mileage.
+ * vehicleMileage in metres. Coarser than legacy's metres, so legacy's is
+ * used wherever it has one (LEGACY_PREFERRED_FIELDS); an R2 has none.
  */
 export const odometer = defineRvm({
   rvm: RVM_ODOMETER,
   group: 'vehicleState',
   maturity: 'partial',
-  r2Only: true,
   decode: (payload) =>
     readings((put) => {
       const km = fieldsOrEmpty(payload)?.int(1);
@@ -166,8 +169,8 @@ export const odometer = defineRvm({
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
-  group: 'dynamics',
-  maturity: 'probe',
+  group: 'vehicleState',
+  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);

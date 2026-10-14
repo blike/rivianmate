@@ -17,8 +17,8 @@ export const RVM_OTA_CONFIG = 'ota.user_schedule.ota_config';
  */
 export const otaDeployment = defineRvm({
   rvm: RVM_OTA_DEPLOYMENT,
-  group: 'core',
-  maturity: 'probe',
+  group: 'vehicleState',
+  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
       for (const deployment of decodePayload(payload)?.repeated(1) ?? []) {

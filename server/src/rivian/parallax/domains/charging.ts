@@ -2,6 +2,7 @@
  * `charging.*`: the session the vehicle is running. Most of these are
  * logged in full while their formats are worked out.
  */
+import type { ChargingSchedule } from '../../types.js';
 import { defineRvm } from '../define.js';
 import { decodePayload } from '../wire.js';
 
@@ -24,7 +25,8 @@ export interface ChargingStatus {
  * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
  * Seen on a home L2 charger: plug 2 while plugged in; display 5 scheduled,
  * 2 ready, 3 charging (matching chargerState); EVSE type 1. Display 4
- * matched charging_complete on October 2, 2026 at 19:01:41 UTC.
+ * matched charging_complete on October 2, 2026 at 19:01:41 UTC. Display
+ * 1 is sent while unplugged, as legacy says charging_ready; it isn't read.
  */
 export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
   const m = decodePayload(payloadBase64);
@@ -89,7 +91,7 @@ export function chargerStatusFromStatus(status: ChargingStatus): string | null {
 export const chargingStatus = defineRvm({
   rvm: RVM_CHARGING_STATUS,
   group: 'core',
-  maturity: 'confirmed',
+  maturity: 'partial',
   decode: decodeChargingStatus,
   toState(status, timeStamp) {
     const value = chargerStatusFromStatus(status);
@@ -131,22 +133,90 @@ export const socSlider = defineRvm({
 export const tripTarget = defineRvm({
   rvm: RVM_TRIP_TARGET,
   group: 'core',
-  maturity: 'partial',
+  maturity: 'probe',
   store: 'log',
 });
 
 export const chargingNotification = defineRvm({
   rvm: RVM_CHARGING_NOTIFICATION,
   group: 'core',
-  maturity: 'partial',
+  maturity: 'probe',
   store: 'log',
 });
+
+/** A charging window, in the vehicle's local time. */
+export interface ChargingWindow {
+  /** 1 Sunday … 7 Saturday. */
+  startDay: number;
+  startMinute: number;
+  endDay: number;
+  endMinute: number;
+  amps: number | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const WEEK = 7 * 24 * 60;
+
+/**
+ * `charging.schedule.time_window`: the next charging window, sent again as
+ * each one ends. 2 is the window: 1 start minute (proto3 leaves out
+ * midnight), 2 end minute, 3 length in minutes, 4 amps, 5 location {1 lat,
+ * 2 long}, 6/7 start and end day (1 Sunday … 7 Saturday). From an R1S whose
+ * schedule (0:00–6:00 weekdays, 0:00–14:00 weekends) it matched for two
+ * weeks (2026-10-13); a 1:30–6:00 window then came as 1 90, 2 360, 3 270.
+ * 1 was always 1.
+ */
+export function decodeChargingWindow(payloadBase64: string): ChargingWindow | null {
+  const window = decodePayload(payloadBase64)?.message(2);
+  const startDay = window?.int(6);
+  if (!window || startDay == null || startDay < 1 || startDay > 7) return null;
+  const endDay = window.int(7) ?? startDay;
+  const location = window.message(5);
+  return {
+    startDay,
+    startMinute: window.int(1) ?? 0,
+    endDay: endDay >= 1 && endDay <= 7 ? endDay : startDay,
+    endMinute: window.int(2) ?? 0,
+    amps: window.int(4),
+    latitude: location?.double(1) ?? null,
+    longitude: location?.double(2) ?? null,
+  };
+}
+
+/** A window as a one-day schedule, for where legacy's schedules aren't available. */
+export function chargingWindowSchedule(w: ChargingWindow): ChargingSchedule | null {
+  const minutes =
+    (((w.endDay - w.startDay + 7) % 7) * 24 * 60 + w.endMinute - w.startMinute + WEEK) % WEEK;
+  if (minutes === 0) return null;
+  return {
+    enabled: true,
+    startTime: w.startMinute,
+    duration: minutes,
+    amperage: w.amps,
+    weekDays: [DAY_NAMES[w.startDay - 1]!],
+    location: { latitude: w.latitude, longitude: w.longitude },
+  };
+}
 
 export const chargingTimeWindow = defineRvm({
   rvm: RVM_CHARGING_TIME_WINDOW,
   group: 'core',
   maturity: 'partial',
+  decode: decodeChargingWindow,
   store: 'log',
+  fieldNames: {
+    '1': 'Unknown (1 so far)',
+    '2.1': 'Window: start minute',
+    '2.2': 'Window: end minute',
+    '2.3': 'Window: length (minutes)',
+    '2.4': 'Window: amps',
+    '2.5.1': 'Window: latitude',
+    '2.5.2': 'Window: longitude',
+    '2.6': 'Window: start day (1 Sunday … 7 Saturday)',
+    '2.7': 'Window: end day',
+  },
 });
 
 export const CHARGING_RVMS = [

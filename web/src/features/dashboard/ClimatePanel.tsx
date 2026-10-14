@@ -1,6 +1,7 @@
 import type { VehicleState } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { Row } from '../../components/Panel';
+import { showLegacyOnly } from '../../lib/fieldSources';
 import { nv, sv, titleCase } from '../../lib/state';
 import { preconditioningLabel } from '../../lib/vehicleStatus';
 
@@ -17,7 +18,9 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
       />
       <Row label="Preconditioning" value={preconditioningLabel(s)} />
       <Row label="Defrost" value={titleCase(sv(s, 'defrostDefogStatus'))} />
-      <Row label="Pet mode" value={titleCase(sv(s, 'petModeStatus'))} />
+      {showLegacyOnly(s, 'petModeStatus') && (
+        <Row label="Pet mode" value={titleCase(sv(s, 'petModeStatus'))} />
+      )}
     </dl>
   );
 }
