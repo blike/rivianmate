@@ -41,11 +41,15 @@ export function destination(d: DriveDto): string | null {
   return d.destination?.name ? `Navigating to ${d.destination.name}` : null;
 }
 
-/** "Home → Office", or "From Home" for a drive under way with no destination. */
+/**
+ * "Home → Office"; for a drive under way, "Navigating to Office", or
+ * "From Home" with no destination.
+ */
 export function driveTitle(d: DriveDto): string {
   const from = d.start ? placeName(d.start) : '—';
   const to = destination(d);
-  return to == null ? `From ${from}` : `${from} → ${to}`;
+  if (to == null) return `From ${from}`;
+  return d.endedAt ? `${from} → ${to}` : to;
 }
 
 /** Axis labels for whole minutes into a drive: "25 min", or "1h 30m" style for drives of two hours or more. */

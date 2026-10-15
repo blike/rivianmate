@@ -4,6 +4,7 @@ import { api, type WallboxDto } from '../../api/client';
 import { useChargingSessions, useLiveCharging, useVehicleState } from '../../api/hooks';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
+import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
 import { CurveChart } from './CurveChart';
 import { EnergySplit } from './EnergySplit';
@@ -35,7 +36,7 @@ export function ChargingPage(props: { vehicleId: string }) {
   });
   const saveCost = (id: number) => (cost: string | null) => costMutation.mutate({ id, cost });
 
-  const isLive = live?.vehicleChargerState?.value === 'charging_active';
+  const isLive = isChargingLive(live);
   // The live session arrives over SSE just after the page loads; if the
   // vehicle state already says it's charging, hold its place meanwhile.
   const liveExpected =
@@ -43,6 +44,7 @@ export function ChargingPage(props: { vehicleId: string }) {
 
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const session = sessions?.find((s) => s.id === selectedSessionId) ?? sessions?.[0];
+  const showingOpen = session != null && !session.endedAt && session.id === sessions?.[0]?.id;
 
   const {
     data: curve,
@@ -73,8 +75,6 @@ export function ChargingPage(props: { vehicleId: string }) {
 
   return (
     <div className="space-y-4">
-      {(isLive || liveExpected) && <LiveCard live={live} loading={!isLive} state={state} />}
-
       {sessions && sessions.length > 1 && (
         <SessionPicker
           sessions={sessions}
@@ -84,7 +84,11 @@ export function ChargingPage(props: { vehicleId: string }) {
       )}
       <div className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}>
         <LoadingScope loading={sessionsPending}>
-          <SessionCard session={session} onSaveCost={session ? saveCost(session.id) : undefined} />
+          <SessionCard
+            session={session}
+            live={showingOpen ? liveCharge(isLive ? live : null, state) : null}
+            onSaveCost={session ? saveCost(session.id) : undefined}
+          />
         </LoadingScope>
       </div>
 
@@ -96,9 +100,19 @@ export function ChargingPage(props: { vehicleId: string }) {
           <CurveChart
             curve={curve}
             loading={sessionsPending || (session != null && curvePending)}
+            notStarted={
+              session != null &&
+              !session.endedAt &&
+              session.chargingStartedAt == null &&
+              session.chargingSince == null
+            }
           />
-          {session?.packKwh != null && session.thermalKwh != null && (
-            <EnergySplit packKwh={session.packKwh} thermalKwh={session.thermalKwh} />
+          {session && (
+            <EnergySplit
+              packKwh={session.packKwh}
+              thermalKwh={session.thermalKwh}
+              inProgress={!session.endedAt}
+            />
           )}
         </Panel>
 

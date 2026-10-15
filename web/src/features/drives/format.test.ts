@@ -31,6 +31,18 @@ describe('driveTitle', () => {
   it('titles a drive under way with no destination by where it started', () => {
     expect(driveTitle(drive({ endedAt: null, start: place('Work', 2) }))).toBe('From Work');
   });
+
+  it('titles a drive navigating somewhere by where it’s headed', () => {
+    expect(
+      driveTitle(
+        drive({
+          endedAt: null,
+          start: place('Work', 2),
+          destination: { name: 'El Camino Creek', lat: 1, lon: 1 },
+        }),
+      ),
+    ).toBe('Navigating to El Camino Creek');
+  });
 });
 
 describe('driveFacts', () => {

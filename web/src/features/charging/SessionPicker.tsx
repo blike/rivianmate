@@ -27,6 +27,7 @@ export function SessionPicker(props: {
           detail: sessionFacts(s),
           value: s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : undefined,
           live: !s.endedAt,
+          liveLabel: s.chargingSince ? 'Charging' : 'Plugged in',
         })),
       })),
     [props.sessions],

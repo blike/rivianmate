@@ -1,6 +1,8 @@
 import type { ChargingSessionDto } from '../../api/client';
 import { useUnits } from '../../api/hooks';
+import { InProgressTag } from '../../components/InProgressTag';
 import { PlaceIcon } from '../../components/PlaceIcon';
+import { SocTrack } from '../../components/SocTrack';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
 import {
@@ -11,44 +13,56 @@ import {
   socRange,
 } from '../../lib/charging';
 import { clock, longDay } from '../../lib/format';
+import type { LiveCharge } from '../../lib/liveCharge';
+import { averagePowerKw, sessionEnergy } from '../../lib/sessionEnergy';
 import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
 import { CostEditor } from './CostEditor';
+import { energyTile, powerTile } from './liveTiles';
 import { chargeStart } from './sessions';
 
-/** The chosen session: where and when up front, then its figures. */
+/**
+ * The chosen session: where and when, its battery as a bar, then its
+ * figures. The session plugged in now keeps the same layout, live.
+ */
 export function SessionCard(props: {
   session: ChargingSessionDto | undefined;
+  /** The charge under way, when this is its session. */
+  live?: LiveCharge | null;
   onSaveCost?: (cost: string | null) => void;
 }) {
   const u = useUnits();
   const loading = useLoading();
   const s = props.session;
+  const live = s && !s.endedAt ? (props.live ?? null) : null;
   const chargingSeconds = s ? chargingSecondsNow(s) : null;
   const cost = s ? sessionCost(s) : null;
-  const energy = s?.energyKwh ?? null;
+  const e = sessionEnergy(s, live?.energyKwh ?? null);
+  const energy = e?.kwh ?? null;
+  const average = s?.avgPowerKw ?? averagePowerKw(energy, chargingSeconds);
+  const energyFigure = energyTile(energy, live?.rangeAddedKm ?? s?.rangeAddedKm ?? null, u);
 
   const tiles: StatTile[] = [
-    {
-      label: 'Energy added',
-      value: energy != null ? `${fmt(energy, 1)} kWh` : '—',
-      sub: s?.rangeAddedKm != null ? `${u.formatDistance(s.rangeAddedKm)} of range` : undefined,
-    },
-    {
-      label: 'Battery',
-      value: s ? socRange(s.startSoc, s.endSoc) : '—',
-      sub:
-        s?.startSoc != null && s.endSoc != null ? `+${fmt(s.endSoc - s.startSoc, 1)}%` : undefined,
-    },
+    e?.estimated
+      ? { ...energyFigure, value: `≈ ${energyFigure.value}`, sub: 'Estimated from battery gained' }
+      : energyFigure,
     {
       label: 'Time charging',
       value: chargingSeconds != null ? fmtSeconds(chargingSeconds) : '—',
       sub: s ? `Plugged in ${fmtDuration(s.startedAt, s.endedAt)}` : undefined,
     },
-    {
-      label: 'Power',
-      value: s?.maxPowerKw != null ? `${fmt(s.maxPowerKw, 1)} kW peak` : '—',
-      sub: s?.avgPowerKw != null ? `${fmt(s.avgPowerKw, 1)} kW average` : undefined,
-    },
+    live?.powerKw != null
+      ? powerTile(live, u)
+      : s?.maxPowerKw != null
+        ? {
+            label: 'Power',
+            value: `${fmt(s.maxPowerKw, 1)} kW peak`,
+            sub: average != null ? `${fmt(average, 1)} kW average` : undefined,
+          }
+        : {
+            label: 'Power',
+            value: average != null ? `${e?.estimated ? '≈ ' : ''}${fmt(average, 1)} kW` : '—',
+            sub: average != null ? 'Average while charging' : undefined,
+          },
     {
       label: 'Cost',
       value:
@@ -72,13 +86,7 @@ export function SessionCard(props: {
             <Skeleton className="w-[14em]" />
           ) : (
             <>
-              {!s.endedAt && (
-                <span
-                  className={`font-medium uppercase tracking-wide ${s.chargingSince ? 'text-(--status-good)' : 'text-(--text-secondary)'}`}
-                >
-                  {s.chargingSince ? 'Charging' : 'Plugged in'}
-                </span>
-              )}
+              {!s.endedAt && <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} />}
               <TimeRange session={s} />
               {s.source === 'rivian' && <SourceBadge />}
             </>
@@ -99,9 +107,53 @@ export function SessionCard(props: {
             </>
           )}
         </h2>
+        <BatteryRow session={s} live={live} />
       </div>
-      <StatTiles tiles={tiles} columns="sm:grid-cols-3 lg:grid-cols-5" />
+      <StatTiles tiles={tiles} columns="grid-cols-2 lg:grid-cols-4" />
     </section>
+  );
+}
+
+/** The battery over the session, with the charge limit while plugged in. */
+function BatteryRow(props: { session: ChargingSessionDto | undefined; live: LiveCharge | null }) {
+  const loading = useLoading();
+  const s = props.session;
+  const live = props.live;
+  const end = live?.soc ?? s?.endSoc ?? null;
+  const known = s != null && (s.startSoc != null || end != null);
+  const atLimit = live?.soc != null && live.limit != null && live.soc >= live.limit - 0.5;
+  const right = live
+    ? live.finish
+      ? `Done around ${live.finish}${live.secondsLeft ? ` · ${fmtSeconds(live.secondsLeft)} left` : ''}`
+      : s?.chargingSince
+        ? 'Charging'
+        : atLimit
+          ? s?.chargingEndedAt
+            ? `Completed at ${clock(s.chargingEndedAt)}`
+            : 'Completed'
+          : 'Not charging'
+    : s?.startSoc != null && end != null
+      ? `+${fmt(end - s.startSoc, 1)}%`
+      : '';
+  return (
+    <div className="mt-4">
+      <SocTrack soc={end} limit={live?.limit ?? null} start={s?.startSoc} />
+      <div className="mt-2 flex justify-between gap-3 text-sm tabular-nums">
+        {loading || !s ? (
+          <Skeleton className="w-[10em]" />
+        ) : (
+          <>
+            <span className="truncate">
+              {known ? socRange(s.startSoc, end) : 'Battery level not recorded'}
+              {live?.limit != null && (
+                <span className="text-(--text-muted)"> of {fmt(live.limit, 0)}% limit</span>
+              )}
+            </span>
+            <span className="shrink-0 text-(--text-secondary)">{right}</span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

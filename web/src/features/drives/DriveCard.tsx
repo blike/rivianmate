@@ -71,7 +71,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
             <>
               <span>
                 {longDay(d.startedAt)} · {clock(d.startedAt)}
-                {d.endedAt && ` – ${clock(d.endedAt)}`}
+                {d.endedAt ? ` – ${clock(d.endedAt)}` : ' – now'}
               </span>
               {live && <InProgressTag />}
             </>

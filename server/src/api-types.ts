@@ -232,6 +232,11 @@ export interface ChargingSessionDto {
   location: { id: number; name: string; isHome: boolean } | null;
   /** Energy × the location's rate, when the session has no cost of its own. */
   estimatedCost: string | null;
+  /**
+   * Until Rivian reports `energyKwh` (often only after unplugging), the
+   * energy the battery gained, from its levels and the pack's capacity.
+   */
+  estimatedEnergyKwh: number | null;
   /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
   source: 'live' | 'rivian' | 'live+rivian';
   vendor: string | null;

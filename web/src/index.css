@@ -374,20 +374,24 @@ body {
   }
 }
 
-.skeleton {
-  display: inline-block;
-  width: 4em;
-  height: 0.9em;
-  vertical-align: middle;
-  border-radius: 0.25rem;
-  background: var(--surface-2);
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
-}
+/* In the components layer, so a placeholder's own utilities (width, height) win. */
+@layer components {
+  .skeleton {
+    display: inline-block;
+    width: 4em;
+    max-width: 100%;
+    height: 0.9em;
+    vertical-align: middle;
+    border-radius: 0.25rem;
+    background: var(--surface-2);
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
 
-.skeleton-block {
-  display: block;
-  width: 100%;
-  border-radius: 0.5rem;
+  .skeleton-block {
+    display: block;
+    width: 100%;
+    border-radius: 0.5rem;
+  }
 }
 
 @keyframes skeleton-pulse {

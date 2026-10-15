@@ -1,4 +1,4 @@
-import { and, between, desc, eq } from 'drizzle-orm';
+import { and, between, desc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
@@ -44,12 +44,13 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .orderBy(desc(chargingSessions.startedAt))
         .limit(200);
       const places = await placeContext(ctx);
+      const capacityKwh = await packCapacityKwh(ctx, request.params.id);
       const oldest = rows.at(-1);
       const spans = oldest
         ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date())
         : [];
       return rows.map((row) =>
-        toSessionDto(row, places, chargingWindow(spans, row.startedAt, row.endedAt)),
+        toSessionDto(row, places, chargingWindow(spans, row.startedAt, row.endedAt), capacityKwh),
       );
     },
   );
@@ -105,7 +106,12 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .where(eq(chargingSessions.id, Number(request.params.sessionId)))
         .returning();
       if (!updated[0]) return reply.code(404).send({ error: 'Not found' });
-      return toSessionDto(updated[0], await placeContext(ctx));
+      return toSessionDto(
+        updated[0],
+        await placeContext(ctx),
+        null,
+        await packCapacityKwh(ctx, updated[0].vehicleId),
+      );
     },
   );
 
@@ -205,17 +211,48 @@ async function socCurveFromState(
   ).map((r) => ({ ts: new Date(r.at).toISOString(), powerKw: null, soc: r.soc }));
 }
 
+/** The latest pack capacity recorded for the vehicle (kWh). */
+async function packCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
+  const rows = await ctx.db.execute<{ kwh: number | null }>(sql`
+    SELECT (data->'batteryCapacity'->>'value')::float8 AS kwh
+    FROM vehicle_state_snapshots
+    WHERE vehicle_id = ${vehicleId} AND data ? 'batteryCapacity'
+    ORDER BY ts DESC LIMIT 1
+  `);
+  return rows[0]?.kwh ?? null;
+}
+
+/**
+ * Energy the battery gained over a session, from its battery levels and
+ * the pack's capacity: what reached the pack, so a little under what the
+ * charger delivered.
+ */
+export function socEnergyKwh(
+  row: { startSoc: number | null; endSoc: number | null },
+  capacityKwh: number | null,
+): number | null {
+  if (row.startSoc == null || row.endSoc == null || capacityKwh == null) return null;
+  const kwh = ((row.endSoc - row.startSoc) / 100) * capacityKwh;
+  return kwh > 0 ? kwh : null;
+}
+
 function toSessionDto(
   row: typeof chargingSessions.$inferSelect,
   places: PlaceContext,
   charging: { from: Date; to: Date } | null = null,
+  capacityKwh: number | null = null,
 ): ChargingSessionDto {
   const place = sessionPlace(row, places.locations, places.wallboxes);
   const { location, isHome } = place;
   // Estimates use today's rates, so changing one reprices past estimates;
-  // a cost recorded or entered for the session always wins.
+  // a cost recorded or entered for the session always wins. Until Rivian
+  // reports the energy (often only after unplugging), it's estimated from
+  // the battery gained.
+  const estimatedEnergyKwh = row.energyKwh == null ? socEnergyKwh(row, capacityKwh) : null;
   const estimatedCost =
-    row.cost == null ? estimateCost(row.energyKwh, sessionRate(place, places.locations)) : null;
+    row.cost == null
+      ? estimateCost(row.energyKwh ?? estimatedEnergyKwh, sessionRate(place, places.locations))
+      : null;
   return {
     id: row.id,
     vehicleId: row.vehicleId,
@@ -247,5 +284,6 @@ function toSessionDto(
     isHome,
     location: location && { id: location.id, name: location.name, isHome: location.isHome },
     estimatedCost,
+    estimatedEnergyKwh,
   };
 }

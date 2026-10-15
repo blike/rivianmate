@@ -11,6 +11,11 @@ import { smoothByTime, smoothingWindowMinutes } from './smoothing';
 export function CurveChart(props: {
   curve: Parameters<typeof chargingCurveWindow>[0] | undefined;
   loading: boolean;
+  /**
+   * Plugged in but not charging yet: battery level while it waits isn't a
+   * charging curve, so none is drawn until charging starts.
+   */
+  notStarted?: boolean;
 }) {
   // Start elapsed time at the first recorded power reading, not plug-in.
   const curveWindow = useMemo(() => chargingCurveWindow(props.curve ?? []), [props.curve]);
@@ -83,8 +88,12 @@ export function CurveChart(props: {
       <ContentFrame
         height={260}
         loading={props.loading}
-        empty={data.length <= 1}
-        emptyText="No charging data for this session: Rivian didn't provide a power curve, and RivianMate wasn't recording while it charged."
+        empty={props.notStarted || data.length <= 1}
+        emptyText={
+          props.notStarted
+            ? 'Charging hasn’t started yet. The curve begins when it does.'
+            : "No charging data for this session: Rivian didn't provide a power curve, and RivianMate wasn't recording while it charged."
+        }
       >
         {hasPower ? (
           <TrendChart
@@ -145,7 +154,7 @@ export function CurveChart(props: {
           />
         )}
       </ContentFrame>
-      {!props.loading && !hasPower && data.length > 1 && (
+      {!props.loading && !props.notStarted && !hasPower && data.length > 1 && (
         <p className="mt-2 text-xs text-(--text-muted)">
           Rivian didn’t provide power for this session, so this is battery level only.
         </p>

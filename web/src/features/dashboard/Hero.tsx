@@ -154,14 +154,19 @@ export function Hero(props: {
               <div>
                 <div className="text-xs uppercase tracking-wide text-(--text-muted)">Battery</div>
                 <div className="mt-1 flex items-baseline font-semibold tabular-nums leading-none tracking-tight">
-                  {loading ? (
-                    <Skeleton className="h-14 w-[2.4em] text-5xl" />
-                  ) : (
-                    <>
-                      <span className="text-6xl sm:text-7xl">{fmt(battery, 0)}</span>
-                      <span className="ml-1 text-2xl text-(--text-secondary)">%</span>
-                    </>
-                  )}
+                  {/* While loading, a placeholder the size of two digits at the same
+                      size, so the range beside it doesn't move when the level arrives. */}
+                  <span className="relative text-6xl sm:text-7xl">
+                    {loading ? (
+                      <>
+                        <span className="invisible">00</span>
+                        <Skeleton className="absolute inset-0 h-full w-full" />
+                      </>
+                    ) : (
+                      fmt(battery, 0)
+                    )}
+                  </span>
+                  <span className="ml-1 text-2xl text-(--text-secondary)">%</span>
                 </div>
               </div>
               <div className="pb-1">
