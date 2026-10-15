@@ -1,4 +1,4 @@
-import { fieldNamesOf } from './registry.js';
+import { rvmDef } from './registry.js';
 import { f32, type ParallaxMessage, type ProtoField, readProtoFields } from './wire.js';
 
 export interface RawField {
@@ -17,7 +17,9 @@ export interface RawField {
  */
 export function describeParallax(message: ParallaxMessage): RawField[] {
   if (!message.payload) return [];
-  const names = fieldNamesOf(message.rvm);
+  const def = rvmDef(message.rvm);
+  const names = def?.fieldNames ?? {};
+  const entries = def?.entryLabels;
   const nameOf = (segments: string[]) =>
     Object.entries(names).find(([key]) => {
       const parts = key.split('.');
@@ -34,8 +36,21 @@ export function describeParallax(message: ParallaxMessage): RawField[] {
       );
     });
 
+  // "Closure: state" in the front left door's entry reads "Driver door: state".
+  const relabel = (name: string | null, label: string | null) => {
+    if (!name || !label) return name;
+    const colon = name.indexOf(': ');
+    return `${label}: ${colon < 0 ? name : name.slice(colon + 2)}`;
+  };
+
   const rows: RawField[] = [];
-  const walk = (fields: ProtoField[], path: string, segments: string[], depth: number) => {
+  const walk = (
+    fields: ProtoField[],
+    path: string,
+    segments: string[],
+    depth: number,
+    label: string | null = null,
+  ) => {
     const counts = new Map<number, number>();
     for (const f of fields) counts.set(f.field, (counts.get(f.field) ?? 0) + 1);
     const seen = new Map<number, number>();
@@ -46,11 +61,23 @@ export function describeParallax(message: ParallaxMessage): RawField[] {
       const at = [...segments, String(f.field)];
       const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
       if (f.wire === 0) {
-        rows.push({ path: here, name: nameOf(at), value: Number(BigInt.asIntN(64, f.value)) });
+        rows.push({
+          path: here,
+          name: relabel(nameOf(at), label),
+          value: Number(BigInt.asIntN(64, f.value)),
+        });
       } else if (f.wire === 1) {
-        rows.push({ path: here, name: nameOf(at), value: view(f.value).getFloat64(0, true) });
+        rows.push({
+          path: here,
+          name: relabel(nameOf(at), label),
+          value: view(f.value).getFloat64(0, true),
+        });
       } else if (f.wire === 5) {
-        rows.push({ path: here, name: nameOf(at), value: f32(view(f.value).getFloat32(0, true))! });
+        rows.push({
+          path: here,
+          name: relabel(nameOf(at), label),
+          value: f32(view(f.value).getFloat32(0, true))!,
+        });
       } else {
         const text = Buffer.from(f.value).toString('utf8');
         // Valid UTF-8 without control characters reads as text (addresses can be non-ASCII).
@@ -60,11 +87,15 @@ export function describeParallax(message: ParallaxMessage): RawField[] {
         });
         const nested = depth < 8 && f.value.length > 0 ? readProtoFields(f.value) : null;
         // A message whose bytes happen to be printable stays a message if names sit below it.
-        if (nested && (!printable || namedBelow(at))) walk(nested, here, at, depth + 1);
+        const entryLabel =
+          nested && depth === 0 && f.field === entries?.field
+            ? (entries.labels[entryKey(nested, entries.key) ?? -1] ?? null)
+            : label;
+        if (nested && (!printable || namedBelow(at))) walk(nested, here, at, depth + 1, entryLabel);
         else
           rows.push({
             path: here,
-            name: nameOf(at),
+            name: relabel(nameOf(at), label),
             value: printable ? text : `bytes ${Buffer.from(f.value).toString('base64')}`,
           });
       }
@@ -74,4 +105,10 @@ export function describeParallax(message: ParallaxMessage): RawField[] {
   if (fields) walk(fields, '', [], 0);
   else rows.push({ path: '', name: null, value: `undecodable ${message.payload}` });
   return rows;
+}
+
+/** The integer in a field of an entry, as its label key. */
+function entryKey(fields: ProtoField[], key: number): number | null {
+  const f = fields.find((x) => x.field === key);
+  return f?.wire === 0 ? Number(BigInt.asIntN(64, f.value)) : null;
 }

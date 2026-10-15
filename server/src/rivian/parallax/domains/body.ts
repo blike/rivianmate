@@ -11,8 +11,11 @@ export const RVM_LOCKS = 'body.locks.states';
  * `body.closures.states` positions, as the Rivian app numbers them, from
  * community captures. 10 is the charge port; 16 is the R2's rear drop
  * glass, which has no legacy field, so it's named here in legacy's style;
- * 10000 is a stateless marker that ends every R2 frame. An R2 reports 1–5, 7 and 12–15, all closed so far, so which
- * position is which door isn't confirmed on it yet.
+ * 10000 ends every frame, stateless on an R2. On an R1S it has a state:
+ * "any window open", 2 when all four windows are closed (198 of 198) and 1
+ * when any is open (116 of 117), with 5 following the windows' 5
+ * (2026-10-13); it isn't read. An R2 reports 1–5, 7 and 12–15, all closed
+ * so far, so which position is which door isn't confirmed on it yet.
  */
 const CLOSURE_FIELDS: Record<number, string> = {
   1: 'doorFrontLeftClosed',
@@ -32,6 +35,27 @@ const CLOSURE_FIELDS: Record<number, string> = {
   16: 'windowRearGlassClosed',
 };
 const CLOSURE_CHARGE_PORT = 10;
+
+/** What each position is, as the dashboard names it, for the feed viewer. */
+const POSITION_LABELS: Record<number, string> = {
+  1: 'Driver door',
+  2: 'Passenger door',
+  3: 'Rear left door',
+  4: 'Rear right door',
+  5: 'Frunk',
+  6: 'Tailgate',
+  7: 'Liftgate',
+  8: 'Gear tunnel L',
+  9: 'Gear tunnel R',
+  10: 'Charge port',
+  11: 'Tonneau',
+  12: 'Window FL',
+  13: 'Window FR',
+  14: 'Window RL',
+  15: 'Window RR',
+  16: 'Rear glass',
+  10000: 'Any window (R1S)',
+};
 
 /** `body.locks.states` positions: the closures' numbering, for those that lock. */
 const LOCK_FIELDS: Record<number, string> = {
@@ -92,6 +116,7 @@ export const closures = defineRvm({
     }),
   toState: stampReadings,
   stateKeys: [...Object.values(CLOSURE_FIELDS), 'chargePortState'],
+  entryLabels: { field: 1, key: 1, labels: POSITION_LABELS },
   fieldNames: {
     '1.1': 'Closure: position',
     '1.2': 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
@@ -115,6 +140,7 @@ export const locks = defineRvm({
     }),
   toState: stampReadings,
   stateKeys: Object.values(LOCK_FIELDS),
+  entryLabels: { field: 1, key: 1, labels: POSITION_LABELS },
   fieldNames: {
     '1.1': 'Lock: position',
     '1.2': 'Lock: state (1 locked, 2 unlocked; 3 partly unlocked, not read)',

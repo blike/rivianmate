@@ -683,6 +683,46 @@ describe('describeParallax', () => {
     ]);
     expect(describeParallax({ rvm: 'x', payload: '', timestamp: null })).toEqual([]);
   });
+
+  it('names each closure entry after what its position is', () => {
+    const entry = (position: number, state: number) =>
+      message(1, [...int(1, position), ...int(2, state)]);
+    const payload = b64([...entry(1, 2), ...entry(5, 1), ...entry(99, 2)]);
+    expect(describeParallax({ rvm: RVM_CLOSURES, payload, timestamp: null })).toEqual([
+      { path: '1[0].1', name: 'Driver door: position', value: 1 },
+      {
+        path: '1[0].2',
+        name: 'Driver door: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+        value: 2,
+      },
+      { path: '1[1].1', name: 'Frunk: position', value: 5 },
+      {
+        path: '1[1].2',
+        name: 'Frunk: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+        value: 1,
+      },
+      // An unknown position keeps the general name.
+      { path: '1[2].1', name: 'Closure: position', value: 99 },
+      {
+        path: '1[2].2',
+        name: 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+        value: 2,
+      },
+    ]);
+  });
+
+  it('names each tire after its position', () => {
+    const payload = b64(message(2, [...int(1, 3), ...int(2, 1), ...double(3, 3.1)]));
+    expect(
+      describeParallax({ rvm: 'dynamics.tires.state', payload, timestamp: null }).map(
+        (f) => f.name,
+      ),
+    ).toEqual([
+      'Rear left: position (1–4 = FL, FR, RL, RR)',
+      'Rear left: status (1 = OK)',
+      'Rear left: pressure (bar)',
+    ]);
+  });
 });
 
 describe('vehicleStateFromParallax', () => {
