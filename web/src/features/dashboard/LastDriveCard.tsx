@@ -1,8 +1,10 @@
 import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
+import { InProgressTag } from '../../components/InProgressTag';
 import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { relativeTime } from '../../lib/freshness';
+import { type Navigation, arrivalFacts } from '../../lib/navigation';
 import { fmt, fmtDuration } from '../../lib/state';
 import { ActivityCard, ActivityStats } from './ActivityCard';
 import { DriveIcon } from './ActivityIcons';
@@ -11,6 +13,8 @@ export function LastDriveCard(props: {
   drive: DriveDto | undefined;
   now: number;
   speedMps: number | null;
+  /** The vehicle's active navigation, if any. */
+  navigation?: Navigation | null;
 }) {
   const loading = useLoading();
   const u = useUnits();
@@ -23,19 +27,28 @@ export function LastDriveCard(props: {
   const from = d?.start?.label ?? (locating ? 'Locating start…' : 'Unknown');
   // A drive under way has an end only if navigation set one.
   const to = live ? (d?.destination?.name ?? null) : (d?.end?.label ?? 'Unknown');
-  const stats = [
-    { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
-    { label: 'Duration', value: d ? fmtDuration(d.startedAt, d.endedAt, props.now) : '—' },
-    ...(live
-      ? [
-          {
-            label: 'Speed',
-            value: props.speedMps != null ? u.formatSpeed(Math.max(0, props.speedMps) * 3.6) : '—',
-          },
-        ]
-      : []),
-    { label: 'Battery', value: used == null ? '—' : used < 0.05 ? '0%' : `−${fmt(used, 1)}%` },
-  ];
+  // Navigating, a drive under way shows where it's headed instead of where it's been.
+  const arrival = live && props.navigation ? arrivalFacts(props.navigation, u) : null;
+  const stats = arrival
+    ? [
+        { label: 'To go', value: arrival.distanceLeft ?? '—' },
+        { label: 'Arrives', value: arrival.eta ?? '—' },
+        { label: 'Battery on arrival', value: arrival.battery ?? '—' },
+      ]
+    : [
+        { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
+        { label: 'Duration', value: d ? fmtDuration(d.startedAt, d.endedAt, props.now) : '—' },
+        ...(live
+          ? [
+              {
+                label: 'Speed',
+                value:
+                  props.speedMps != null ? u.formatSpeed(Math.max(0, props.speedMps) * 3.6) : '—',
+              },
+            ]
+          : []),
+        { label: 'Battery', value: used == null ? '—' : used < 0.05 ? '0%' : `−${fmt(used, 1)}%` },
+      ];
 
   if (!loading && !d) {
     return (
@@ -55,7 +68,7 @@ export function LastDriveCard(props: {
         loading || !d ? (
           <Skeleton className="w-[4em]" />
         ) : live ? (
-          'In progress'
+          <InProgressTag />
         ) : (
           relativeTime(new Date(d.endedAt!), props.now)
         )

@@ -15,7 +15,10 @@ export interface NetworkState {
 /**
  * `vehicle.network.state`: 4 Wi-Fi {3 SSID, 8 RSSI dBm, 10 frequency MHz},
  * 5 cellular {1 carrier, 2 technology}. A Wi-Fi block without an SSID
- * means not connected.
+ * means not connected. Also in the Wi-Fi block, not read: 1 state (2
+ * connected), 12 (4 connected, 1 not) and 13 (2 connected, 1 not), each
+ * matching the SSID in all 283 messages, and 11 channel width (MHz),
+ * always 80 at 5240 MHz and 20 at 2427 MHz (R1S, 2026-10-13).
  */
 export function decodeNetwork(payloadBase64: string): NetworkState | null {
   const m = decodePayload(payloadBase64);
@@ -58,9 +61,13 @@ export const network = defineRvm({
   decode: decodeNetwork,
   store: 'latest',
   fieldNames: {
+    '4.1': 'Wi-Fi state (2 connected)',
     '4.3': 'Wi-Fi SSID',
     '4.8': 'Wi-Fi signal (dBm)',
     '4.10': 'Wi-Fi frequency (MHz)',
+    '4.11': 'Wi-Fi channel width (MHz)',
+    '4.12': 'Wi-Fi connected (4 connected, 1 not)',
+    '4.13': 'Wi-Fi connected (2 connected, 1 not)',
     '5.1': 'Cellular carrier',
     '5.2': 'Cellular technology',
   },

@@ -151,8 +151,3 @@ export function vehicleStateFromParallax(
     timeStamp,
   );
 }
-
-/** What the decoders read each field path as, for the feed viewer. */
-export function fieldNamesOf(rvm: string): Readonly<Record<string, string>> {
-  return rvmDef(rvm)?.fieldNames ?? {};
-}

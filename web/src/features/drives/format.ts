@@ -25,7 +25,8 @@ export function driveFacts(d: DriveDto, u: UnitFormatter): string {
   return [
     fmtDuration(d.startedAt, d.endedAt),
     used != null && batteryChange(used),
-    d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
+    // Efficiency swings early in a drive, so it waits for the end.
+    d.endedAt != null && d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
   ]
     .filter(Boolean)
     .join(' · ');

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenCrypto } from '../crypto.js';
 import { createDb, runMigrations } from '../db/client.js';
-import { appSettings } from '../db/schema.js';
+import { appSettings, savedLocations } from '../db/schema.js';
 import type { VehicleState } from '../rivian/types.js';
 import { DEFAULT_EVENTS, NotificationService, NotificationSettingsError } from './notifications.js';
 
@@ -35,7 +35,7 @@ describe.skipIf(!url)('NotificationService with Postgres', () => {
     await handle.sql.end();
   });
   beforeEach(async () => {
-    await handle.sql`TRUNCATE app_settings, wallboxes RESTART IDENTITY CASCADE`;
+    await handle.sql`TRUNCATE app_settings, wallboxes, saved_locations RESTART IDENTITY CASCADE`;
   });
 
   const service = (state: { current: VehicleState }, now: () => number = Date.now) => {
@@ -123,15 +123,9 @@ describe.skipIf(!url)('NotificationService with Postgres', () => {
   });
 
   it('stays quiet about an unlocked vehicle at home when its GPS fix drops out', async () => {
-    await handle.db.insert(appSettings).values({
-      key: 'home_charging',
-      value: JSON.stringify({
-        ratePerKwh: null,
-        currency: 'USD',
-        homeLat: 33.07,
-        homeLon: -117.25,
-      }),
-    });
+    await handle.db
+      .insert(savedLocations)
+      .values({ name: 'Home', lat: 33.07, lon: -117.25, isHome: true });
     const fix = (latitude: number, longitude: number) => ({
       gnssLocation: { latitude, longitude, timeStamp: 't' },
     });

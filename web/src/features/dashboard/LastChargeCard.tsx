@@ -1,5 +1,6 @@
 import type { ChargingSessionDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
+import { InProgressTag } from '../../components/InProgressTag';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { chargerLabel, chargingSecondsNow, formatMoney } from '../../lib/charging';
 import { relativeTime } from '../../lib/freshness';
@@ -33,7 +34,7 @@ export function LastChargeCard(props: { session: ChargingSessionDto | undefined;
         loading || !s ? (
           <Skeleton className="w-[4em]" />
         ) : live ? (
-          'In progress'
+          <InProgressTag label={s.chargingSince != null ? 'Charging' : 'Plugged in'} />
         ) : (
           relativeTime(new Date(s.endedAt!), props.now)
         )

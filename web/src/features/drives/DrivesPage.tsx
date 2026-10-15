@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useDrive, useDrives, useUnits } from '../../api/hooks';
+import { useDrive, useDrives, useInsights, useUnits } from '../../api/hooks';
 import {
   ContentFrame,
   LoadingScope,
@@ -40,6 +40,18 @@ export function DrivesPage(props: { vehicleId: string }) {
     [detail],
   );
   const lastPoint = trail.at(-1);
+
+  // The drive under way shows where navigation is taking it, until it ends.
+  const { data: insights } = useInsights(props.vehicleId);
+  const navigation = insights?.navigation;
+  const underWay = detail != null && !detail.endedAt && detail.id === drives?.[0]?.id;
+  const plan =
+    underWay && navigation
+      ? {
+          route: navigation.route,
+          destination: [navigation.destination.lat, navigation.destination.lon] as [number, number],
+        }
+      : null;
 
   const profile = useMemo(
     () =>
@@ -95,6 +107,7 @@ export function DrivesPage(props: { vehicleId: string }) {
                   height="100%"
                   follow={false}
                   highlight={hoverPosition}
+                  plan={plan}
                 />
               </div>
             ) : (

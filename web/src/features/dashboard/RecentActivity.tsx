@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useChargingSessions, useDrives, useVehicleState } from '../../api/hooks';
+import { useChargingSessions, useDrives, useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
 import { nv } from '../../lib/state';
 import { LastChargeCard } from './LastChargeCard';
@@ -11,6 +11,7 @@ export function RecentActivity(props: { vehicleId: string }) {
   const { data: drives, isPending: drivesPending } = useDrives(props.vehicleId);
   const { data: state } = useVehicleState(props.vehicleId);
   const { data: sessions, isPending: sessionsPending } = useChargingSessions(props.vehicleId);
+  const { data: insights } = useInsights(props.vehicleId);
   // Keeps "2 h ago" and a live drive's duration current.
   const driving = drives?.[0] != null && !drives[0].endedAt;
   const [now, setNow] = useState(() => Date.now());
@@ -24,7 +25,12 @@ export function RecentActivity(props: { vehicleId: string }) {
       <SectionHeading>Recent activity</SectionHeading>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <LoadingScope loading={drivesPending}>
-          <LastDriveCard drive={drives?.[0]} now={now} speedMps={nv(state, 'gnssSpeed')} />
+          <LastDriveCard
+            drive={drives?.[0]}
+            now={now}
+            speedMps={nv(state, 'gnssSpeed')}
+            navigation={insights?.navigation}
+          />
         </LoadingScope>
         <LoadingScope loading={sessionsPending}>
           <LastChargeCard session={sessions?.[0]} now={now} />

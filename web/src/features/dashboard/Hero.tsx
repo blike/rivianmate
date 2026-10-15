@@ -1,5 +1,5 @@
 import type { VehicleDto, VehicleState } from '@server/api-types';
-import { useLiveCharging, useUnits } from '../../api/hooks';
+import { useInsights, useLiveCharging, useUnits } from '../../api/hooks';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
@@ -53,6 +53,14 @@ export function Hero(props: {
   const loc = location(state);
   const locBehind = locationIsBehind(state);
   const trail = useActiveDriveTrail(props.vehicleId, loc);
+  const { data: insights } = useInsights(props.vehicleId);
+  const navigation = insights?.navigation;
+  const plan = navigation
+    ? {
+        route: navigation.route,
+        destination: [navigation.destination.lat, navigation.destination.lon] as [number, number],
+      }
+    : null;
   const security = securitySummary(state, vehicle?.model);
   const chargePower = live(liveSession?.power);
   const chargeRate = live(liveSession?.kilometersChargedPerHour);
@@ -220,6 +228,7 @@ export function Hero(props: {
                   bearing={nv(state, 'gnssBearing')}
                   trail={trail}
                   stale={locBehind}
+                  plan={plan}
                   height="100%"
                 />
               </div>

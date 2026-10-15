@@ -8,6 +8,7 @@ import {
   PARALLAX_STORED_RVMS,
   type ParallaxMessage,
   type RvmDef,
+  type TripInfo,
   batteryState,
   coldWeather,
   decodeMessage,
@@ -125,9 +126,9 @@ export class ParallaxStore {
       connectivity: net ? { ...net.value, at: net.at } : null,
       navigation: trip
         ? {
-            ...trip.value,
-            etaAt:
-              progress?.value.etaMs != null ? new Date(progress.value.etaMs).toISOString() : null,
+            ...tripWithoutArrival(trip.value),
+            // Progress updates the ETA as the drive goes; the route's own is from planning.
+            etaAt: etaIso(progress?.value.etaMs ?? trip.value.arrivalAtMs),
             remainingKm: progress?.value.remainingKm ?? trip.value.totalDistanceKm,
             remainingS: progress?.value.remainingS ?? trip.value.totalDurationS,
             at: progress?.at ?? trip.at,
@@ -136,3 +137,6 @@ export class ParallaxStore {
     };
   }
 }
+
+const tripWithoutArrival = ({ arrivalAtMs: _, ...trip }: TripInfo) => trip;
+const etaIso = (ms: number | null) => (ms != null ? new Date(ms).toISOString() : null);

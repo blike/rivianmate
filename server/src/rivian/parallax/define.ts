@@ -41,6 +41,16 @@ export interface RvmDef<T = unknown> {
   readonly store?: 'latest' | 'log';
   /** What each field path is read as, for the feed viewer ("3.1" is field 1 in field 3). */
   readonly fieldNames?: Readonly<Record<string, string>>;
+  /**
+   * For the feed viewer: names each entry of a repeated field after a field
+   * inside it, e.g. a closure by its position. Within the entry, a name's
+   * "Closure:" prefix becomes the entry's label.
+   */
+  readonly entryLabels?: {
+    readonly field: number;
+    readonly key: number;
+    readonly labels: Readonly<Record<number, string>>;
+  };
 }
 
 export const defineRvm = <T>(def: RvmDef<T>): RvmDef<T> => def;

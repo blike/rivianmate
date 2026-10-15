@@ -31,6 +31,7 @@ import {
   decodeSocSlider,
   decodeTimeEstimation,
   decodeTires,
+  decodePolyline,
   decodeTripInfo,
   decodeTripProgress,
   describeParallax,
@@ -369,7 +370,66 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       totalDurationS: 2242,
       arrivalSoc: 63.259,
       arrivalRangeKm: 339.4403,
+      arrivalAtMs: null,
+      route: null,
     });
+  });
+
+  // As an R1S sent it on 2026-10-14: arrival inside the route, with its line.
+  const routed = (extra: number[]) =>
+    b64([
+      ...string(1, '-6169720410367716421'),
+      ...message(3, [
+        ...double(1, 24400),
+        ...double(2, 2114),
+        ...message(
+          3,
+          message(1, [
+            ...message(1, [...double(1, 33.0758654), ...double(2, -117.2598958)]),
+            ...string(4, 'El Camino Creek Elementary'),
+            ...double(7, 57.48),
+            ...double(8, 308577.3),
+            ...message(9, int(1, 1792020295)),
+          ]),
+        ),
+        ...double(6, 57.48),
+        ...double(7, 308577.3),
+        ...extra,
+      ]),
+      ...double(5, 63),
+      ...message(6, int(1, 1792020295)),
+    ]);
+  // Google's own example: (38.5, -120.2), (40.7, -120.95), (43.252, -126.453).
+  const line = '_p~iF~ps|U_ulLnnqC_mqNvxq`@';
+  const points = [
+    [38.5, -120.2],
+    [40.7, -120.95],
+    [43.252, -126.453],
+  ];
+
+  it('reads arrival and the planned route from the route, as the vehicle sends them now', () => {
+    expect(decodeTripInfo(routed(string(10, line)))).toEqual({
+      destination: { name: 'El Camino Creek Elementary', lat: 33.0758654, lon: -117.2598958 },
+      totalDistanceKm: 24.4,
+      totalDurationS: 2114,
+      arrivalSoc: 57.48,
+      arrivalRangeKm: 308.5773,
+      arrivalAtMs: 1792020295000,
+      route: points,
+    });
+  });
+
+  // Each leg's line is encoded on its own.
+  it("joins the legs' lines when the route has no line of its own", () => {
+    const legs = [...message(4, string(4, '_p~iF~ps|U')), ...message(4, string(4, '_flwFn`faV'))];
+    expect(decodeTripInfo(routed(legs))?.route).toEqual(points.slice(0, 2));
+    expect(decodeTripInfo(routed([]))?.route).toBeNull();
+  });
+
+  it('stops at a cut-off polyline', () => {
+    expect(decodePolyline(line)).toEqual(points);
+    expect(decodePolyline(line.slice(0, -2))).toEqual(points.slice(0, 2));
+    expect(decodePolyline('')).toEqual([]);
   });
 
   it('is null when not navigating', () => {
@@ -622,6 +682,46 @@ describe('describeParallax', () => {
       { path: '2.11', name: 'Window: length (minutes)', value: 1440 },
     ]);
     expect(describeParallax({ rvm: 'x', payload: '', timestamp: null })).toEqual([]);
+  });
+
+  it('names each closure entry after what its position is', () => {
+    const entry = (position: number, state: number) =>
+      message(1, [...int(1, position), ...int(2, state)]);
+    const payload = b64([...entry(1, 2), ...entry(5, 1), ...entry(99, 2)]);
+    expect(describeParallax({ rvm: RVM_CLOSURES, payload, timestamp: null })).toEqual([
+      { path: '1[0].1', name: 'Driver door: position', value: 1 },
+      {
+        path: '1[0].2',
+        name: 'Driver door: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+        value: 2,
+      },
+      { path: '1[1].1', name: 'Frunk: position', value: 5 },
+      {
+        path: '1[1].2',
+        name: 'Frunk: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+        value: 1,
+      },
+      // An unknown position keeps the general name.
+      { path: '1[2].1', name: 'Closure: position', value: 99 },
+      {
+        path: '1[2].2',
+        name: 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+        value: 2,
+      },
+    ]);
+  });
+
+  it('names each tire after its position', () => {
+    const payload = b64(message(2, [...int(1, 3), ...int(2, 1), ...double(3, 3.1)]));
+    expect(
+      describeParallax({ rvm: 'dynamics.tires.state', payload, timestamp: null }).map(
+        (f) => f.name,
+      ),
+    ).toEqual([
+      'Rear left: position (1–4 = FL, FR, RL, RR)',
+      'Rear left: status (1 = OK)',
+      'Rear left: pressure (bar)',
+    ]);
   });
 });
 

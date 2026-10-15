@@ -9,6 +9,8 @@ export const MAP_HEIGHT = '20rem';
 const ROUTE = 'route';
 const ROUTE_START = 'route-start';
 const ROUTE_HOVER = 'route-hover';
+const PLAN = 'plan';
+const PLAN_END = 'plan-end';
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** Puck with a heading arrow and a soft pulse; rotation is applied by MapLibre. */
@@ -26,6 +28,32 @@ function vehicleElement(): HTMLDivElement {
 
 /** History uses a uniform trail; individual routes retain direction and endpoints. */
 function addRouteLayers(map: MapLibreMap, history: boolean) {
+  // Navigation's planned route, dashed beneath the driven one.
+  map.addSource(PLAN, { type: 'geojson', data: EMPTY });
+  map.addSource(PLAN_END, { type: 'geojson', data: EMPTY });
+  map.addLayer({
+    id: 'plan-line',
+    type: 'line',
+    source: PLAN,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': MAP_THEME.accent,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 16, 4],
+      'line-opacity': 0.65,
+      'line-dasharray': [1.5, 2],
+    },
+  });
+  map.addLayer({
+    id: 'plan-end',
+    type: 'circle',
+    source: PLAN_END,
+    paint: {
+      'circle-radius': 6,
+      'circle-color': MAP_THEME.background,
+      'circle-stroke-color': MAP_THEME.accent,
+      'circle-stroke-width': 3,
+    },
+  });
   map.addSource(ROUTE, { type: 'geojson', data: EMPTY, lineMetrics: true });
   map.addSource(ROUTE_START, { type: 'geojson', data: EMPTY });
   map.addLayer({
@@ -114,6 +142,17 @@ function routeBounds(trail: [number, number][] | undefined): LngLatBoundsLike | 
   ];
 }
 
+/** A fixed route's frame: the driven trail, plus where navigation plans to go. */
+function framing(props: {
+  follow?: boolean;
+  trail?: [number, number][];
+  plan?: { route: [number, number][] | null; destination: [number, number] } | null;
+}): LngLatBoundsLike | null {
+  if (props.follow !== false) return null;
+  const plan = props.plan ? (props.plan.route ?? [props.plan.destination]) : [];
+  return routeBounds([...(props.trail ?? []), ...plan]);
+}
+
 export function VehicleMap(props: {
   lat: number;
   lon: number;
@@ -127,6 +166,8 @@ export function VehicleMap(props: {
   stale?: boolean;
   /** [lat, lon] to mark on the route, e.g. the point hovered on a chart. */
   highlight?: [number, number] | null;
+  /** Navigation's planned route and destination, as [lat, lon]. */
+  plan?: { route: [number, number][] | null; destination: [number, number] } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -149,9 +190,9 @@ export function VehicleMap(props: {
 
     void loadMaplibre().then((maplibre) => {
       if (cancelled) return;
-      const { lat, lon, trail, follow } = latest.current;
+      const { lat, lon } = latest.current;
       // A fixed route starts framed, rather than at the vehicle and then jumping out.
-      const bounds = follow === false ? routeBounds(trail) : null;
+      const bounds = framing(latest.current);
       map = new maplibre.Map({
         container,
         style: themedStyle(),
@@ -188,7 +229,7 @@ export function VehicleMap(props: {
       observer = new ResizeObserver(() => {
         if (!map) return;
         map.resize();
-        const route = latest.current.follow === false ? routeBounds(latest.current.trail) : null;
+        const route = framing(latest.current);
         if (route && !moved) map.fitBounds(route, { ...FIT, duration: 0 });
       });
       observer.observe(container);
@@ -254,7 +295,7 @@ export function VehicleMap(props: {
       : EMPTY;
     (map.getSource(ROUTE) as GeoJSONSource | undefined)?.setData(line);
     (map.getSource(ROUTE_START) as GeoJSONSource | undefined)?.setData(start);
-    const route = latest.current.follow === false ? routeBounds(latest.current.trail) : null;
+    const route = framing(latest.current);
     if (route) map.fitBounds(route, { ...FIT, duration: 0 });
     else if (latest.current.variant === 'history' && coords.length === 1)
       map.jumpTo({ center: coords[0]!, zoom: 14 });
@@ -280,6 +321,42 @@ export function VehicleMap(props: {
         : EMPTY,
     );
   }, [hoverLat, hoverLon, ready]);
+
+  // The planned route, redrawn when navigation recalculates it.
+  const plan = props.plan;
+  const planKey = plan
+    ? `${plan.destination}|${plan.route?.length}|${plan.route?.[0]}|${plan.route?.at(-1)}`
+    : '';
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const p = latest.current.plan;
+    const point = (at: [number, number]): FeatureCollection => ({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: toLngLat(at) } },
+      ],
+    });
+    (map.getSource(PLAN) as GeoJSONSource | undefined)?.setData(
+      p?.route && p.route.length > 1
+        ? {
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'LineString', coordinates: p.route.map(toLngLat) },
+              },
+            ],
+          }
+        : EMPTY,
+    );
+    (map.getSource(PLAN_END) as GeoJSONSource | undefined)?.setData(
+      p ? point(p.destination) : EMPTY,
+    );
+    const route = framing(latest.current);
+    if (route) map.fitBounds(route, { ...FIT, duration: 0 });
+  }, [planKey, ready]);
 
   return (
     <div

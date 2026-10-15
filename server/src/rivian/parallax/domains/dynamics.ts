@@ -25,8 +25,11 @@ export interface GnssReading {
  * 4 speed (float, m/s, as VehicleState consumers expect; proto3 leaves it
  * out at a standstill, so a fix without it is 0). Speed matched legacy
  * gnssSpeed from 0 to 22 m/s on an R1S (2026-10-13); 6, read as speed
- * before, stays 0.1–4.9 parked or moving. No .proto; other field numbers
- * from a live capture against a real R2 (2026-09-29/30), not community docs.
+ * before, stays 0.1–4.9 parked or moving. 10 is the fix time in GPS time
+ * (ms since 1980-01-06, no leap seconds): converted to Unix time it runs a
+ * median 17.8 s ahead of the message, GPS time's 18 leap seconds (R1S,
+ * 2026-10-13); it isn't read. No .proto; other field numbers from a live
+ * capture against a real R2 (2026-09-29/30), not community docs.
  */
 export function decodeGnss(payloadBase64: string): GnssReading | null {
   const m = decodePayload(payloadBase64);
@@ -58,8 +61,9 @@ export interface TireReading {
 /**
  * `dynamics.tires.state`: repeated field 2, each a nested message with
  * 1 position (1-4 → FL/FR/RL/RR), 2 status (1=OK, else Warning), 3 pressure
- * (double, bar). Field numbers from a live capture against a real R2
- * (2026-09-29), not community docs.
+ * (double, bar), 5 reading time (Unix ms; a median 0.8 s before the
+ * message on an R1S, 2026-10-13, not read). Field numbers from a live
+ * capture against a real R2 (2026-09-29), not community docs.
  */
 export function decodeTires(payloadBase64: string): TireReading[] {
   const readings: TireReading[] = [];
@@ -98,8 +102,9 @@ export const gnss = defineRvm({
     '1': 'Latitude',
     '2': 'Longitude',
     '3': 'Altitude (m)',
-    '5': 'Heading (°, −180 to 180)',
     '4': 'Speed (m/s; left out when stopped)',
+    '5': 'Heading (°, −180 to 180)',
+    '10': 'Fix time (GPS time, ms since 1980-01-06; 18 s ahead of UTC)',
   },
 });
 
@@ -124,10 +129,16 @@ export const tires = defineRvm({
     `tirePressure${p}`,
     `tirePressureStatus${p}`,
   ]),
+  entryLabels: {
+    field: 2,
+    key: 1,
+    labels: { 1: 'Front left', 2: 'Front right', 3: 'Rear left', 4: 'Rear right' },
+  },
   fieldNames: {
     '2.1': 'Tire: position (1–4 = FL, FR, RL, RR)',
     '2.2': 'Tire: status (1 = OK)',
     '2.3': 'Tire: pressure (bar)',
+    '2.5': 'Tire: reading time (Unix ms)',
   },
 });
 
@@ -180,7 +191,9 @@ export const range = defineRvm({
   toState: stampReadings,
   stateKeys: ['distanceToEmpty'],
   store: 'log',
-  fieldNames: { '1': 'Range (km)' },
+  fieldNames: {
+    '1': 'Range (km)',
+  },
 });
 
 export const DYNAMICS_RVMS = [gnss, tires, gear, odometer, range] as const;
