@@ -98,8 +98,8 @@ export const gnss = defineRvm({
     '1': 'Latitude',
     '2': 'Longitude',
     '3': 'Altitude (m)',
-    '5': 'Heading (°, −180 to 180)',
     '4': 'Speed (m/s; left out when stopped)',
+    '5': 'Heading (°, −180 to 180)',
   },
 });
 
@@ -180,7 +180,9 @@ export const range = defineRvm({
   toState: stampReadings,
   stateKeys: ['distanceToEmpty'],
   store: 'log',
-  fieldNames: { '1': 'Range (km)' },
+  fieldNames: {
+    '1': 'Range (km)',
+  },
 });
 
 export const DYNAMICS_RVMS = [gnss, tires, gear, odometer, range] as const;

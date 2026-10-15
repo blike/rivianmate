@@ -120,6 +120,26 @@ const LOOP_AT = LOOP.reduce<number[]>((acc, p, i) => {
 }, []);
 const LOOP_M = LOOP_AT[LOOP_AT.length - 1]!;
 
+/** [lat, lon] points in Google's encoded polyline format, as navigation sends routes. */
+function encodePolyline(points: [number, number][]): string {
+  let out = '';
+  let prev = [0, 0];
+  for (const point of points) {
+    const next = point.map((x) => Math.round(x * 1e5));
+    for (const [i, value] of next.entries()) {
+      let v = value - prev[i]!;
+      v = v < 0 ? ~(v << 1) : v << 1;
+      while (v >= 0x20) {
+        out += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+        v >>= 5;
+      }
+      out += String.fromCharCode(v + 63);
+    }
+    prev = next;
+  }
+  return out;
+}
+
 /** Position and heading a given distance along the loop. */
 function alongLoop(m: number): { lat: number; lon: number; heading: number } {
   let i = 1;
@@ -490,26 +510,32 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ]);
   }
 
-  /** Navigating to the Rivian service center for the length of the drive. */
+  /** Navigating home around the loop, laid out as the vehicle sends it. */
   private emitTripInfo(): void {
     const km = LOOP_M / 1000;
+    const seconds = PHASE_TICKS.driving * (TICK_MS / 1000);
+    const arrivalS = Math.round(Date.now() / 1000 + seconds);
     // Range is 4.4 km per %.
     const arrivalSoc = Math.max(5, this.battery - (km * KWH_PER_KM) / KWH_PER_PCT);
     this.emitParallax(RVM_TRIP_INFO, [
       ...string(1, 'mock-trip'),
       ...message(3, [
         ...double(1, km * 1000),
-        ...double(2, PHASE_TICKS.driving * (TICK_MS / 1000)),
+        ...double(2, seconds),
         ...message(
           3,
           message(1, [
             ...message(1, [...double(1, HOME.lat), ...double(2, HOME.lon)]),
             ...string(4, 'Home'),
+            ...message(9, int(1, arrivalS)),
           ]),
         ),
+        ...double(6, arrivalSoc),
+        ...double(7, arrivalSoc * 4.4 * 1000),
+        ...string(10, encodePolyline(LOOP)),
       ]),
-      ...double(6, arrivalSoc),
-      ...double(7, arrivalSoc * 4.4 * 1000),
+      ...double(5, this.battery),
+      ...message(6, int(1, arrivalS)),
     ]);
   }
 

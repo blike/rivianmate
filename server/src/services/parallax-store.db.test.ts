@@ -12,6 +12,8 @@ import {
   RVM_NETWORK,
   RVM_PARKED_ENERGY,
   RVM_TIME_ESTIMATION,
+  RVM_TRIP_INFO,
+  RVM_TRIP_PROGRESS,
   chargingTimeWindow,
 } from '../rivian/parallax/index.js';
 import { b64, double, float, int, message, string } from '../testing/protobuf.js';
@@ -108,6 +110,51 @@ describe.skipIf(!url)('ParallaxStore with Postgres', () => {
     expect(insights.coldWeather).toBeNull();
     const rows = await handle.db.select({ rvm: parallaxLatest.rvm }).from(parallaxLatest);
     expect(rows.map((r) => r.rvm).sort()).toEqual([RVM_PARKED_ENERGY, RVM_NETWORK]);
+  });
+
+  it("shows navigation's arrival and route, with progress's ETA once it comes", async () => {
+    const store = new ParallaxStore(handle.db);
+    const planned = 1792020295;
+    await store.ingest('v1', {
+      rvm: RVM_TRIP_INFO,
+      timestamp: at,
+      payload: b64([
+        ...message(3, [
+          ...double(1, 24400),
+          ...double(2, 2114),
+          ...message(
+            3,
+            message(1, [
+              ...message(1, [...double(1, 33.07587), ...double(2, -117.2599)]),
+              ...message(9, int(1, planned)),
+            ]),
+          ),
+          ...double(6, 57.48),
+          ...double(7, 308577),
+          ...string(10, '_p~iF~ps|U_ulLnnqC'),
+        ]),
+      ]),
+    });
+    expect((await store.insights('v1')).navigation).toMatchObject({
+      arrivalSoc: 57.48,
+      arrivalRangeKm: 308.577,
+      etaAt: new Date(planned * 1000).toISOString(),
+      route: [
+        [38.5, -120.2],
+        [40.7, -120.95],
+      ],
+    });
+    expect((await store.insights('v1')).navigation).not.toHaveProperty('arrivalAtMs');
+
+    await store.ingest('v1', {
+      rvm: RVM_TRIP_PROGRESS,
+      timestamp: at,
+      payload: b64([...message(1, int(1, planned + 60)), ...double(4, 20000)]),
+    });
+    expect((await store.insights('v1')).navigation).toMatchObject({
+      etaAt: new Date((planned + 60) * 1000).toISOString(),
+      remainingKm: 20,
+    });
   });
 
   it('logs each distinct payload of logged topics, but not other topics', async () => {

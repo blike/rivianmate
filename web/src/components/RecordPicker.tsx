@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { InProgressTag } from './InProgressTag';
 
 export interface PickerItem {
   id: number;
@@ -133,12 +134,12 @@ export function RecordPicker(props: {
           >
             <span className="min-w-0 flex-1">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-(--text-muted)">
-                {current ? `${current.day} · ${index + 1} of ${flat.length}` : props.label}
+                {current
+                  ? `${current.day} at ${current.time} · ${index + 1} of ${flat.length}`
+                  : props.label}
               </span>
               <span className="block truncate text-sm font-medium">
-                {current
-                  ? [current.time, current.title, current.value].filter(Boolean).join(' · ')
-                  : '—'}
+                {current ? [current.title, current.value].filter(Boolean).join(' · ') : '—'}
               </span>
             </span>
             <svg
@@ -211,11 +212,7 @@ export function RecordPicker(props: {
                         </span>
                         {(item.detail || item.live) && (
                           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
-                            {item.live && (
-                              <span className="text-(--status-good)">
-                                In progress{item.detail ? ' · ' : ''}
-                              </span>
-                            )}
+                            {item.live && <InProgressTag className="mr-1.5" />}
                             {item.detail}
                           </span>
                         )}

@@ -1,6 +1,7 @@
 import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import { driveTitle } from './format';
+import { DEFAULT_UNITS, unitFormatter } from '../../lib/units';
+import { driveFacts, driveTitle } from './format';
 
 const place = (label: string, locationId: number | null = null): DrivePlaceDto => ({
   label,
@@ -29,5 +30,26 @@ describe('driveTitle', () => {
 
   it('titles a drive under way with no destination by where it started', () => {
     expect(driveTitle(drive({ endedAt: null, start: place('Work', 2) }))).toBe('From Work');
+  });
+});
+
+describe('driveFacts', () => {
+  const u = unitFormatter(DEFAULT_UNITS);
+  const figures = {
+    startedAt: '2026-10-12T00:00:00Z',
+    startBattery: 80,
+    endBattery: 77,
+    distanceKm: 30,
+    energyKwh: 6,
+  };
+
+  it('gives duration, battery used and efficiency', () => {
+    expect(driveFacts(drive(figures), u).split(' · ')).toHaveLength(3);
+  });
+
+  it('leaves out efficiency until the drive ends', () => {
+    const facts = driveFacts(drive({ ...figures, endedAt: null }), u);
+    expect(facts).not.toContain('kWh');
+    expect(facts.split(' · ')).toHaveLength(2);
   });
 });

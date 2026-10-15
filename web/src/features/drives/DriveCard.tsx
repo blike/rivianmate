@@ -1,6 +1,6 @@
 import type { DriveDetailDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
-import { Dot } from '../../components/Dot';
+import { InProgressTag } from '../../components/InProgressTag';
 import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
@@ -73,12 +73,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
                 {longDay(d.startedAt)} · {clock(d.startedAt)}
                 {d.endedAt && ` – ${clock(d.endedAt)}`}
               </span>
-              {live && (
-                <span className="flex items-center gap-1.5 font-medium uppercase tracking-wide text-(--status-good)">
-                  <Dot color="var(--status-good)" pulse />
-                  In progress
-                </span>
-              )}
+              {live && <InProgressTag />}
             </>
           )}
         </div>

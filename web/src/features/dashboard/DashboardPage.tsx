@@ -11,7 +11,6 @@ import { ClimatePanel } from './ClimatePanel';
 import { ClosuresGrid } from './ClosuresGrid';
 import { ConnectivityPanel } from './ConnectivityPanel';
 import { Hero } from './Hero';
-import { NavigationCard } from './NavigationCard';
 import { RecentActivity } from './RecentActivity';
 import { SectionHeading } from './SectionHeading';
 import { TirePanel } from './TirePanel';
@@ -25,8 +24,6 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
       <LoadingScope loading={isPending}>
         <Hero vehicleId={props.vehicleId} vehicle={props.vehicle} state={state} />
       </LoadingScope>
-
-      {insights?.navigation && <NavigationCard navigation={insights.navigation} />}
 
       <RecentActivity vehicleId={props.vehicleId} />
 

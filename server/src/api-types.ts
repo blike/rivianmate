@@ -291,6 +291,8 @@ export interface VehicleInsightsDto {
     arrivalSoc: number | null;
     arrivalRangeKm: number | null;
     etaAt: string | null;
+    /** The planned route from where it was last calculated, as [lat, lon] points. */
+    route: [number, number][] | null;
     remainingKm: number | null;
     remainingS: number | null;
     at: string;

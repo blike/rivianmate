@@ -31,6 +31,7 @@ import {
   decodeSocSlider,
   decodeTimeEstimation,
   decodeTires,
+  decodePolyline,
   decodeTripInfo,
   decodeTripProgress,
   describeParallax,
@@ -369,7 +370,66 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       totalDurationS: 2242,
       arrivalSoc: 63.259,
       arrivalRangeKm: 339.4403,
+      arrivalAtMs: null,
+      route: null,
     });
+  });
+
+  // As an R1S sent it on 2026-10-14: arrival inside the route, with its line.
+  const routed = (extra: number[]) =>
+    b64([
+      ...string(1, '-6169720410367716421'),
+      ...message(3, [
+        ...double(1, 24400),
+        ...double(2, 2114),
+        ...message(
+          3,
+          message(1, [
+            ...message(1, [...double(1, 33.0758654), ...double(2, -117.2598958)]),
+            ...string(4, 'El Camino Creek Elementary'),
+            ...double(7, 57.48),
+            ...double(8, 308577.3),
+            ...message(9, int(1, 1792020295)),
+          ]),
+        ),
+        ...double(6, 57.48),
+        ...double(7, 308577.3),
+        ...extra,
+      ]),
+      ...double(5, 63),
+      ...message(6, int(1, 1792020295)),
+    ]);
+  // Google's own example: (38.5, -120.2), (40.7, -120.95), (43.252, -126.453).
+  const line = '_p~iF~ps|U_ulLnnqC_mqNvxq`@';
+  const points = [
+    [38.5, -120.2],
+    [40.7, -120.95],
+    [43.252, -126.453],
+  ];
+
+  it('reads arrival and the planned route from the route, as the vehicle sends them now', () => {
+    expect(decodeTripInfo(routed(string(10, line)))).toEqual({
+      destination: { name: 'El Camino Creek Elementary', lat: 33.0758654, lon: -117.2598958 },
+      totalDistanceKm: 24.4,
+      totalDurationS: 2114,
+      arrivalSoc: 57.48,
+      arrivalRangeKm: 308.5773,
+      arrivalAtMs: 1792020295000,
+      route: points,
+    });
+  });
+
+  // Each leg's line is encoded on its own.
+  it("joins the legs' lines when the route has no line of its own", () => {
+    const legs = [...message(4, string(4, '_p~iF~ps|U')), ...message(4, string(4, '_flwFn`faV'))];
+    expect(decodeTripInfo(routed(legs))?.route).toEqual(points.slice(0, 2));
+    expect(decodeTripInfo(routed([]))?.route).toBeNull();
+  });
+
+  it('stops at a cut-off polyline', () => {
+    expect(decodePolyline(line)).toEqual(points);
+    expect(decodePolyline(line.slice(0, -2))).toEqual(points.slice(0, 2));
+    expect(decodePolyline('')).toEqual([]);
   });
 
   it('is null when not navigating', () => {
