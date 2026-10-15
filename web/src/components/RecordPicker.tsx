@@ -12,6 +12,8 @@ export interface PickerItem {
   value?: string;
   /** Still under way. */
   live?: boolean;
+  /** What its in-progress tag says; "In progress" by default. */
+  liveLabel?: string;
 }
 
 export interface PickerGroup {
@@ -207,12 +209,14 @@ export function RecordPicker(props: {
                       )}
                       <span className="text-xs tabular-nums text-(--text-muted)">{item.time}</span>
                       <span className="min-w-0">
-                        <span className={`block truncate text-sm ${selected ? 'font-medium' : ''}`}>
-                          {item.title}
+                        <span
+                          className={`flex min-w-0 items-center gap-2 text-sm ${selected ? 'font-medium' : ''}`}
+                        >
+                          <span className="min-w-0 truncate">{item.title}</span>
+                          {item.live && <InProgressTag label={item.liveLabel} />}
                         </span>
-                        {(item.detail || item.live) && (
+                        {item.detail && (
                           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
-                            {item.live && <InProgressTag className="mr-1.5" />}
                             {item.detail}
                           </span>
                         )}

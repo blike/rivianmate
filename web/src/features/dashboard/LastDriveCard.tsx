@@ -2,53 +2,54 @@ import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { InProgressTag } from '../../components/InProgressTag';
 import { PlaceIcon } from '../../components/PlaceIcon';
-import { Skeleton, useLoading } from '../../components/LoadingState';
+import { LoadingScope, Skeleton, useLoading } from '../../components/LoadingState';
 import { relativeTime } from '../../lib/freshness';
-import { type Navigation, arrivalFacts } from '../../lib/navigation';
+import { type Navigation, arrivalFacts, routeProgress } from '../../lib/navigation';
 import { fmt, fmtDuration } from '../../lib/state';
-import { ActivityCard, ActivityStats } from './ActivityCard';
+import { batteryUsed } from '../drives/format';
+import { ActivityBar, ActivityCard, ActivityLine, ActivityStats } from './ActivityCard';
 import { DriveIcon } from './ActivityIcons';
 
+/** Battery left on the activity bar, and the part a drive used (red) or gained (green). */
+const BATTERY_LEFT = 'color-mix(in srgb, var(--text-secondary) 55%, var(--surface-2))';
+const BATTERY_USED = 'var(--status-critical)';
+const BATTERY_GAINED = 'var(--status-good)';
+
+/** The drive under way, or the last one. */
 export function LastDriveCard(props: {
   drive: DriveDto | undefined;
   now: number;
   speedMps: number | null;
   /** The vehicle's active navigation, if any. */
   navigation?: Navigation | null;
+  /** Whether navigation has loaded: a drive under way is laid out by it. */
+  navigationLoaded?: boolean;
+  /**
+   * Whether vehicle state says it's driving, so the card is titled right
+   * while drives load; undefined while state hasn't loaded either.
+   */
+  inGear?: boolean;
 }) {
   const loading = useLoading();
   const u = useUnits();
   const d = props.drive;
   const live = d != null && !d.endedAt;
-  const used =
-    d?.startBattery != null && d.endBattery != null ? d.startBattery - d.endBattery : null;
+  const pending = d == null && props.inGear === true;
+  const underWay = live || pending;
+  // Which line, bar and figures to show isn't settled until it's known
+  // whether a drive is under way and, if so, whether it's navigating.
+  const settled =
+    (d != null || props.inGear !== undefined) && (!underWay || props.navigationLoaded !== false);
   // The start is looked up as a drive begins; give it a couple of minutes.
   const locating = live && props.now - Date.parse(d.startedAt) < 2 * 60_000;
   const from = d?.start?.label ?? (locating ? 'Locating start…' : 'Unknown');
   // A drive under way has an end only if navigation set one.
   const to = live ? (d?.destination?.name ?? null) : (d?.end?.label ?? 'Unknown');
-  // Navigating, a drive under way shows where it's headed instead of where it's been.
-  const arrival = live && props.navigation ? arrivalFacts(props.navigation, u) : null;
-  const stats = arrival
-    ? [
-        { label: 'To go', value: arrival.distanceLeft ?? '—' },
-        { label: 'Arrives', value: arrival.eta ?? '—' },
-        { label: 'Battery on arrival', value: arrival.battery ?? '—' },
-      ]
-    : [
-        { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
-        { label: 'Duration', value: d ? fmtDuration(d.startedAt, d.endedAt, props.now) : '—' },
-        ...(live
-          ? [
-              {
-                label: 'Speed',
-                value:
-                  props.speedMps != null ? u.formatSpeed(Math.max(0, props.speedMps) * 3.6) : '—',
-              },
-            ]
-          : []),
-        { label: 'Battery', value: used == null ? '—' : used < 0.05 ? '0%' : `−${fmt(used, 1)}%` },
-      ];
+  const nav = underWay ? (props.navigation ?? null) : null;
+  const arrival = nav ? arrivalFacts(nav, u) : null;
+  const progress = nav && d ? routeProgress(d.distanceKm, nav.remainingKm) : null;
+  const duration = d ? fmtDuration(d.startedAt, d.endedAt, props.now) : '—';
+  const speed = props.speedMps != null ? u.formatSpeed(Math.max(0, props.speedMps) * 3.6) : '—';
 
   if (!loading && !d) {
     return (
@@ -63,9 +64,19 @@ export function LastDriveCard(props: {
   return (
     <ActivityCard
       to="/drives"
-      title={live ? 'Driving now' : 'Last drive'}
+      title={
+        loading && !d && props.inGear === undefined ? (
+          <Skeleton className="w-[6em]" />
+        ) : underWay ? (
+          'Driving now'
+        ) : (
+          'Last drive'
+        )
+      }
       when={
-        loading || !d ? (
+        pending ? (
+          <InProgressTag />
+        ) : loading || !d ? (
           <Skeleton className="w-[4em]" />
         ) : live ? (
           <InProgressTag />
@@ -75,30 +86,88 @@ export function LastDriveCard(props: {
       }
       icon={<DriveIcon />}
     >
-      {/* Places wrap onto their own lines, as on the Drives page, before truncating. */}
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-base font-medium">
-        {loading ? (
-          <Skeleton className="w-[14em]" />
-        ) : to == null ? (
-          <>
-            <span className="text-(--text-muted)">From</span>
-            <Place place={d?.start} fallback={from} />
-            <span className="ml-auto shrink-0 self-center rounded-full border border-(--border) px-2 py-0.5 text-xs font-normal text-(--text-muted)">
-              No destination
-            </span>
-          </>
+      <LoadingScope loading={loading || !settled}>
+        <ActivityLine note={live && to == null ? 'No destination' : undefined}>
+          {to == null ? (
+            <>
+              <span className="text-(--text-muted)">From </span>
+              <Place place={d?.start} fallback={from} />
+            </>
+          ) : (
+            <>
+              <Place place={d?.start} fallback={from} />
+              <span className="mx-2 text-(--accent)" aria-label="to">
+                →
+              </span>
+              <Place place={live ? null : d?.end} fallback={to} />
+            </>
+          )}
+        </ActivityLine>
+
+        {nav ? (
+          <ActivityBar
+            label={progress != null ? `${Math.round(progress * 100)}% of the way` : undefined}
+            segments={
+              progress != null ? [{ from: 0, to: progress * 100, color: 'var(--accent)' }] : []
+            }
+            dot={progress != null ? { at: progress * 100, color: 'var(--accent)' } : null}
+            left={`${u.formatDistance(d?.distanceKm, 1)} driven`}
+            right={arrival?.distanceLeft ? `${arrival.distanceLeft} to go` : undefined}
+          />
         ) : (
-          <>
-            <Place place={d?.start} fallback={from} />
-            <span className="shrink-0 text-(--accent)" aria-label="to">
-              →
-            </span>
-            <Place place={live ? null : d?.end} fallback={to} />
-          </>
+          <BatteryBar drive={d} live={underWay} />
         )}
-      </div>
-      <ActivityStats items={stats} />
+
+        <ActivityStats
+          items={
+            nav
+              ? [
+                  { label: 'Arrives', value: arrival?.eta ?? '—' },
+                  { label: 'Time left', value: arrival?.timeLeft ?? '—' },
+                  { label: 'Arrival battery', value: arrival?.battery ?? '—' },
+                ]
+              : [
+                  { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
+                  { label: 'Duration', value: duration },
+                  underWay
+                    ? { label: 'Speed', value: speed }
+                    : {
+                        label: 'Efficiency',
+                        value: u.formatEfficiency(d?.distanceKm, d?.energyKwh),
+                      },
+                ]
+          }
+        />
+      </LoadingScope>
     </ActivityCard>
+  );
+}
+
+/** The battery the drive started with, and what it's used of it. */
+function BatteryBar(props: { drive: DriveDto | undefined; live: boolean }) {
+  const d = props.drive;
+  const start = d?.startBattery ?? null;
+  const end = d?.endBattery ?? null;
+  if (start == null || end == null) {
+    return <ActivityBar segments={[]} left="Battery not recorded" />;
+  }
+  const used = batteryUsed({ startBattery: start, endBattery: end });
+  return (
+    <ActivityBar
+      label={`Battery ${fmt(start, 0)}% to ${fmt(end, 0)}%`}
+      segments={[
+        { from: 0, to: Math.min(start, end), color: BATTERY_LEFT },
+        end < start
+          ? { from: end, to: start, color: BATTERY_USED }
+          : { from: start, to: end, color: BATTERY_GAINED },
+      ]}
+      left={`Battery ${fmt(start, 1)}% → ${fmt(end, 1)}%`}
+      right={
+        used == null
+          ? 'No change'
+          : `${used > 0 ? 'Used' : 'Gained'} ${fmt(Math.abs(used), 1)}%${props.live ? ' so far' : ''}`
+      }
+    />
   );
 }
 
@@ -106,7 +175,7 @@ export function LastDriveCard(props: {
 function Place(props: { place: DrivePlaceDto | null | undefined; fallback: string }) {
   const p = props.place;
   return (
-    <span className="min-w-0 truncate" title={p?.address ?? p?.label ?? props.fallback}>
+    <span title={p?.address ?? p?.label ?? props.fallback}>
       {p && <PlaceIcon isHome={p.isHome} saved={p.locationId != null} />}
       {p?.label ?? props.fallback}
     </span>

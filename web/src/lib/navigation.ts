@@ -23,3 +23,14 @@ export function arrivalFacts(n: Navigation, u: ReturnType<typeof useUnits>) {
     range: n.arrivalRangeKm != null ? u.formatDistance(n.arrivalRangeKm) : null,
   };
 }
+
+/**
+ * How far along the route a drive under way is, 0–1: the distance driven
+ * against that plus what navigation has left. Rivian recalculates the route
+ * from where the vehicle is, so the route's own total can't be used.
+ */
+export function routeProgress(drivenKm: number | null, remainingKm: number | null): number | null {
+  if (drivenKm == null || remainingKm == null || drivenKm < 0 || remainingKm < 0) return null;
+  const total = drivenKm + remainingKm;
+  return total > 0 ? drivenKm / total : null;
+}
