@@ -1,5 +1,90 @@
 # Changelog
 
+## v0.7.0 — 2026-10-17
+
+RivianMate `v0.7.0` brings **improved R2 support**, **saved locations** with their own charging
+rates, **navigation** on the dashboard, and improved drive and charge cards.
+
+### New features
+
+#### R2 support
+
+- Drives, doors, windows, locks, cabin climate and live charging, read from Parallax. #39 #45
+- The dashboard shows an R2's battery, range, charge limit, odometer and software version. #42 #43
+- Schedules show the next charging window, and Health checks the 12V battery and pack. #42 #43 #45
+- Pages show only what the vehicle reports. #43 #48
+
+#### Saved locations
+
+- **Settings → Locations** replaces Settings → Charging: any number of named places, each with its
+  own charging rate (0 for free), a "Counts as home" switch, and an area set on a map. #40
+- Drives and charges at a saved place take its name, such as "Home → Work". #40
+- Sessions without a cost of their own are priced at their location's rate. #40
+- "Only when not at home" alerts are held at every location marked as home. #40
+
+#### Navigation
+
+- The dashboard map draws the planned route as a dashed line, with a ring at the destination. #46
+- While navigating, the drive card shows distance to go, arrival time and battery on arrival. #46
+- The drive under way on the Drives page shows its planned route. #46
+
+### Improvements
+
+- The dashboard's drive and charge cards keep one layout in every state and while loading. Charging
+  shows the battery toward its limit and when it will finish, and a plugged-in vehicle shows when
+  its schedule starts. #47
+- Live and past charges share one card on the Charging page. Energy and cost are estimated from the
+  battery gained until Rivian reports them. #47
+- Live drives and charges are tagged **In progress**, **Charging** or **Plugged in**. #46
+- Software updates follow every stage Rivian reports, including waiting for a connection and
+  preparing. #38
+- Charging schedules refresh when the vehicle's next charging window changes, not only every 6
+  hours. #45
+- The charging curve runs to where charging stopped. #48
+- The feed viewer names more fields, and a legacy feed that only ever sends nulls shows as "No
+  data". #45 #46
+- The currency setting moves to **General → Units**. #40
+
+### Fixes
+
+- GPS speed is read from the right field. #43
+- "Only when not at home" alerts are no longer sent at home when the vehicle's GPS fix drops out.
+  #38
+- An installed update no longer shows as still installing at 99%. #38
+- Charging status reads connecting and stopped correctly. #45
+- Sessions from plugging in and out without charging are removed. #45
+- The charging curve is no longer drawn as steps from leftover points. #48
+- Navigation's arrival battery and range now show. #46
+- The dashboard shows a shut charge port as "Closed" and the 12V battery as "Normal". #42 #48
+
+### Migrations
+
+This release includes one database migration, which runs automatically on startup:
+
+- `0016_saved_locations`: adds saved locations, carrying over your home location and rate as
+  **Home**
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and database volume, then run
+`docker compose pull && docker compose up -d`.
+
+### API
+
+`/api/settings/home-charging` is now `/api/settings/charging`, which holds only the currency.
+Locations are managed under `/api/locations`. #40
+
+### Updates
+
+- Parallax decoding is split into a registry with one definition per topic. #41 #42
+- The README is rewritten with new screenshots, taken with a new drive-home demo scene for mock
+  mode. #49
+
+### Thanks
+
+@leetosc
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.6.0...v0.7.0](https://github.com/blike/rivianmate/compare/v0.6.0...v0.7.0)
+
 ## v0.6.0 — 2026-10-11
 
 RivianMate `v0.6.0` is here with **redesigned pages**, **notifications**, saved **software release
