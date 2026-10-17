@@ -157,6 +157,9 @@ automatically loads these values when starting the application.
 | `APP_PORT`          | No          | Port used to access the web interface. Defaults to `4000`.                                                                                                         |
 | `APP_PASSWORD`      | No          | Preconfigures the application password on first startup, bypassing the password setup screen. Must be at least 12 characters and not a common password or pattern. |
 | `DATABASE_URL`      | No          | PostgreSQL connection string. Configured automatically by Docker Compose; override when using an external database.                                                |
+| `LOG_LEVEL`         | No          | How much to log: `error`, `warn`, `info` (default) or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                   |
+| `LOG_FORMAT`        | No          | `pretty` (default) for readable `docker logs` output, or `json` for one object per line to feed a log collector.                                                   |
+| `TZ`                | No          | Time zone for times mentioned in log messages, such as `America/Los_Angeles`. Defaults to `UTC`. Dates in the app always follow your browser.                      |
 
 Additional preferences are configured directly in the web interface under **Settings**, including:
 
@@ -164,6 +167,12 @@ Additional preferences are configured directly in the web interface under **Sett
 - Saved locations and electricity rates
 - Vehicle management
 - Notification preferences
+
+Logs go to the container's output (`docker compose logs rivianmate`; add `-t` for timestamps). They
+never include tokens, passwords, your email or vehicle locations.
+
+When reporting a bug, set `LOG_LEVEL=debug`, reproduce the problem, and attach the output of
+`docker compose logs rivianmate`.
 
 ### Notifications
 

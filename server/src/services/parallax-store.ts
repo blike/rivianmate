@@ -1,6 +1,7 @@
 import { and, eq, lt } from 'drizzle-orm';
 import type { VehicleInsightsDto } from '../api-types.js';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { parallaxLatest, parallaxMessages } from '../db/schema.js';
 import {
   type Decoded,
@@ -37,7 +38,7 @@ export class ParallaxStore {
 
   constructor(
     private readonly db: Db,
-    private readonly log: (msg: string) => void = () => {},
+    private readonly log: Logger = silentLogger,
   ) {}
 
   async ingest(
@@ -73,7 +74,7 @@ export class ParallaxStore {
         this.lastPayload.set(cacheKey, message.payload);
       }
     } catch (err) {
-      this.log(`parallax store failed for ${message.rvm}: ${String(err)}`);
+      this.log.error({ err, rvm: message.rvm }, 'storing message failed');
     }
   }
 

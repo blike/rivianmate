@@ -1,5 +1,6 @@
 /** Integration test against a real Postgres; skipped unless TEST_DATABASE_URL is set. */
 import { fileURLToPath } from 'node:url';
+import { silentLogger } from '../logger.js';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenCrypto } from '../crypto.js';
@@ -45,7 +46,7 @@ describe.skipIf(!url)('NotificationService with Postgres', () => {
       crypto,
       () => [vehicle],
       () => state.current,
-      () => {},
+      silentLogger,
       fetchImpl as unknown as typeof fetch,
       now,
     );

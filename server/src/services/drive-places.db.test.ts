@@ -3,6 +3,7 @@
  * TEST_DATABASE_URL points at a disposable database (tables are truncated).
  */
 import { eq } from 'drizzle-orm';
+import { silentLogger } from '../logger.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -53,7 +54,7 @@ describe.skipIf(!url)('DrivePlaces with Postgres', () => {
     const first = await drive(33, 34);
     const second = await drive(34, 33); // the same two spots, reversed
     const ongoing = await drive(35, 36, false);
-    const places = new DrivePlaces(handle.db, geocode, () => {}, 0);
+    const places = new DrivePlaces(handle.db, geocode, silentLogger, 0);
     await places.start();
     await places.idle();
 
@@ -72,7 +73,7 @@ describe.skipIf(!url)('DrivePlaces with Postgres', () => {
       return { place: `Place ${lat}`, address: `Full ${lat}` };
     };
     const id = await drive(33, 34, false);
-    const places = new DrivePlaces(handle.db, geocode, () => {}, 0);
+    const places = new DrivePlaces(handle.db, geocode, silentLogger, 0);
     places.enqueue(id);
     await places.idle();
     let r = await row(id);
@@ -96,7 +97,7 @@ describe.skipIf(!url)('DrivePlaces with Postgres', () => {
       async () => {
         throw new Error('Nominatim HTTP 503');
       },
-      () => {},
+      silentLogger,
       0,
     );
     places.enqueue(id);

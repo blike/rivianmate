@@ -10,6 +10,7 @@ import type {
 } from '../api-types.js';
 import type { TokenCrypto } from '../crypto.js';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { appSettings, wallboxes } from '../db/schema.js';
 import type { VehicleState } from '../rivian/types.js';
 import { loadLocations } from '../routes/locations.js';
@@ -155,7 +156,7 @@ export class NotificationService {
     private readonly crypto: TokenCrypto,
     private readonly vehicles: () => readonly MonitoredVehicle[],
     private readonly getState: (vehicleId: string) => VehicleState | undefined,
-    private readonly log: (msg: string) => void = () => {},
+    private readonly log: Logger = silentLogger,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
   ) {}
@@ -177,7 +178,7 @@ export class NotificationService {
   check(vehicleId: string): Promise<void> {
     const task = (this.queues.get(vehicleId) ?? Promise.resolve())
       .then(() => this.evaluate(vehicleId))
-      .catch((err) => this.log(`notification check failed: ${(err as Error).message}`));
+      .catch((err: unknown) => this.log.error({ err }, 'notification check failed'));
     this.queues.set(vehicleId, task);
     return task;
   }
@@ -257,6 +258,7 @@ export class NotificationService {
           await sendAlert(d.kind, d.url, alert, this.fetchImpl);
           return { ...result, ok: true, error: null };
         } catch (err) {
+          this.log.debug({ err, kind: d.kind }, 'test alert failed');
           return { ...result, ok: false, error: (err as Error).message };
         }
       }),
@@ -305,8 +307,9 @@ export class NotificationService {
   private async deliver(settings: ResolvedSettings, alert: Alert): Promise<void> {
     await Promise.all(
       settings.destinations.map((d) =>
-        sendAlert(d.kind, d.url, alert, this.fetchImpl).catch((err: unknown) =>
-          this.log(`${label(d)} alert "${alert.title}" failed: ${(err as Error).message}`),
+        sendAlert(d.kind, d.url, alert, this.fetchImpl).then(
+          () => this.log.info(`${label(d)} alert "${alert.title}" sent`),
+          (err: unknown) => this.log.warn({ err }, `${label(d)} alert "${alert.title}" failed`),
         ),
       ),
     );
@@ -324,8 +327,9 @@ export class NotificationService {
       try {
         state = { ...emptyRuleState(), ...(JSON.parse(rows[0].value) as Partial<RuleState>) };
         this.savedStates.set(vehicleId, rows[0].value);
-      } catch {
+      } catch (err) {
         // Start over from a fresh baseline.
+        this.log.warn({ err, vehicleId }, 'stored alert state is unreadable; starting over');
       }
     }
     this.ruleStates.set(vehicleId, state);
@@ -364,8 +368,12 @@ export class NotificationService {
       const destinations = stored.destinations.flatMap((d): Destination[] => {
         try {
           return [{ id: d.id, kind: d.kind, name: d.name, url: this.crypto.decrypt(d.urlEnc) }];
-        } catch {
+        } catch (err) {
           // APP_SECRET changed: the URL has to be entered again.
+          this.log.warn(
+            { err, kind: d.kind },
+            'alert destination could not be decrypted; enter it again',
+          );
           return [];
         }
       });
@@ -376,14 +384,15 @@ export class NotificationService {
         appUrl: normalizeAppUrl(stored.appUrl),
         events,
       };
-    } catch {
+    } catch (err) {
+      this.log.error({ err }, 'notification settings are unreadable; alerts are off');
       return fallback;
     }
   }
 
   private homeSpots(): Promise<Spot[]> {
     if (!this.home || this.now() - this.home.at > HOME_CACHE_MS) {
-      const ctx = { db: this.db };
+      const ctx = { db: this.db, log: this.log };
       this.home = {
         at: this.now(),
         spots: (async () => {

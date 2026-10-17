@@ -1,5 +1,6 @@
 import type { FeedLatestData, StreamDiagnostics } from '../rivian/subscription.js';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { vehicles as vehiclesTable } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import type { VehicleStateStream } from '../rivian/subscription.js';
@@ -22,7 +23,6 @@ import {
   RivianUnauthenticatedError,
   TimeStampedValue,
   VehicleState,
-  describeRivianError,
   isGraphqlValidationError,
 } from '../rivian/types.js';
 import { ChargeHistoryImporter } from './charge-history.js';
@@ -111,6 +111,7 @@ export class VehicleMonitor {
   private connection?: RivianConnection;
   private vehicles: MonitoredVehicle[] = [];
   private states = new Map<string, VehicleState>();
+  private readonly log: Logger;
   private snapshotWriter: SnapshotWriter;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
@@ -143,20 +144,22 @@ export class VehicleMonitor {
     private readonly tokenStore: TokenStore,
     private readonly bus: LiveBus,
     private readonly createConnection: (tokens: RivianTokens) => RivianConnection,
-    private readonly log: (msg: string) => void = console.log,
+    /** Each service gets its own named child of this. */
+    private readonly logger: Logger = silentLogger,
     /** Fills in drives' start and end places; absent when lookups are off. */
     private readonly drivePlaces?: DrivePlaces,
   ) {
+    this.log = logger.child({ component: 'monitor' });
     this.snapshotWriter = new SnapshotWriter(db);
-    this.parallaxStore = new ParallaxStore(db, log);
-    this.otaNotes = new OtaNotesStore(db, log);
+    this.parallaxStore = new ParallaxStore(db, logger.child({ component: 'parallax' }));
+    this.otaNotes = new OtaNotesStore(db, logger.child({ component: 'ota' }));
     this.driveDetector = new DriveDetector(db, (vehicleId, driveId) => {
       this.snapshotWriter.setCurrentDrive(vehicleId, driveId);
       // Name the start while the drive is under way.
       if (driveId != null) this.drivePlaces?.enqueue(driveId);
     });
     this.driveDetector.onDriveEnded = (driveId) => this.drivePlaces?.enqueue(driveId);
-    this.driveDetector.log = log;
+    this.driveDetector.log = logger.child({ component: 'drive' });
   }
 
   get isRunning(): boolean {
@@ -277,7 +280,9 @@ export class VehicleMonitor {
     }
 
     await this.driveDetector.closeDanglingDrives(this.vehicles.map((v) => v.id));
-    void this.drivePlaces?.start().catch((err: Error) => this.log(`drive places: ${err.message}`));
+    void this.drivePlaces
+      ?.start()
+      .catch((err: unknown) => this.log.error({ err }, 'drive place lookups failed to start'));
 
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
@@ -289,7 +294,7 @@ export class VehicleMonitor {
         this.states.set(vehicle.id, state);
         this.noteLegacyPreferred(vehicle.id, state);
       } catch (err) {
-        this.log(`initial state poll failed for ${vehicle.vin}: ${describeRivianError(err)}`);
+        this.log.warn({ err, vehicleId: vehicle.id }, 'initial state poll failed');
         this.states.set(vehicle.id, {});
       }
       if (superseded()) return;
@@ -300,7 +305,12 @@ export class VehicleMonitor {
       void this.otaNotes.capture(vehicle.id, this.states.get(vehicle.id) ?? {});
     }
 
-    const chargingMonitor = new ChargingMonitor(this.db, connection.api, this.bus, this.log);
+    const chargingMonitor = new ChargingMonitor(
+      this.db,
+      connection.api,
+      this.bus,
+      this.logger.child({ component: 'charging' }),
+    );
     this.chargingMonitor = chargingMonitor;
     chargingMonitor.onAuthFailure = () => void this.handleAuthFailure();
     chargingMonitor.onAuthOk = () => this.handleAuthOk();
@@ -308,7 +318,7 @@ export class VehicleMonitor {
       this.db,
       connection.api,
       () => this.vehicles.map((v) => v.id),
-      this.log,
+      this.logger.child({ component: 'charge-history' }),
     );
     chargeHistory.onAuthFailure = () => void this.handleAuthFailure();
     this.chargeHistory = chargeHistory;
@@ -321,7 +331,7 @@ export class VehicleMonitor {
     stream.onConnectionChange = (connected) => this.handleStreamConnection(connected);
     // Each Parallax message is decoded once and handed to everything that
     // uses it; topics carrying legacy fields merge into vehicle state.
-    const parallax = new ParallaxRouter(this.log)
+    const parallax = new ParallaxRouter(this.logger.child({ component: 'parallax' }))
       .on((vehicleId, decoded, message) =>
         chargingMonitor.ingestParallax(vehicleId, message, decoded),
       )
@@ -379,7 +389,7 @@ export class VehicleMonitor {
       () => void this.refreshChargingSchedules(),
       SCHEDULE_REFRESH_MS,
     );
-    this.log(`monitoring ${this.vehicles.length} vehicle(s)`);
+    this.log.info(`monitoring ${this.vehicles.length} vehicle(s)`);
   }
 
   async stop(): Promise<void> {
@@ -473,7 +483,7 @@ export class VehicleMonitor {
       await this.driveDetector.onState(vehicleId, cached);
       await this.snapshotWriter.onState(vehicleId, cached);
     } catch (err) {
-      this.log(`persistence error: ${(err as Error).message}`);
+      this.log.error({ err, vehicleId }, 'saving vehicle state failed');
     }
   }
 
@@ -553,14 +563,14 @@ export class VehicleMonitor {
     } catch (err) {
       if (isGraphqlValidationError(err)) {
         this.chargingScheduleUnsupported = true;
-        this.log(`charging schedule query not supported: ${describeRivianError(err)}`);
+        this.log.warn({ err }, 'charging schedule query not supported; disabling');
         return 'stop';
       }
       if (err instanceof RivianUnauthenticatedError) {
         await this.handleAuthFailure();
         return 'stop';
       }
-      this.log(`charging schedule fetch failed: ${describeRivianError(err)}`);
+      this.log.warn({ err, vehicleId }, 'charging schedule fetch failed');
       return 'failed';
     }
   }
@@ -581,18 +591,18 @@ export class VehicleMonitor {
       await this.handleUnauthenticated();
       return;
     }
-    this.log(
+    this.log.warn(
       `Rivian rejected credentials (${this.authFailures}/${AUTH_FAILURE_THRESHOLD}); rotating session`,
     );
     try {
       await this.connection?.api.refreshSession();
     } catch (err) {
-      this.log(`session rotation failed: ${(err as Error).message}`);
+      this.log.error({ err }, 'session rotation failed');
     }
   }
 
   private async handleUnauthenticated(): Promise<void> {
-    this.log('Rivian session unauthenticated; stopping until re-login');
+    this.log.error('Rivian session unauthenticated; stopping until you sign in again');
     await this.stop();
     await this.tokenStore.setAuthState('unauthenticated');
   }
@@ -606,7 +616,7 @@ export class VehicleMonitor {
     }
     if (!this.running || this.wsDownTimer) return;
     this.wsDownTimer = setTimeout(() => {
-      this.log('websocket down >5min; falling back to slow polling');
+      this.log.warn('live stream down for 5 minutes; falling back to slow polling');
       this.scheduleFallbackPoll();
     }, WS_DOWN_POLL_AFTER_MS);
   }
@@ -640,7 +650,7 @@ export class VehicleMonitor {
           await this.handleAuthFailure();
           return;
         }
-        this.log(`fallback poll failed: ${describeRivianError(err)}`);
+        this.log.warn({ err }, 'fallback poll failed');
       }
     }
   }
@@ -659,9 +669,7 @@ export class VehicleMonitor {
       return await api.getVehicleState(vehicleId);
     } catch (err) {
       if (!isGraphqlValidationError(err)) throw err;
-      this.log(
-        `Rivian rejected the full state query (${describeRivianError(err)}); using core fields`,
-      );
+      this.log.warn({ err }, 'Rivian rejected the full state query; using core fields');
       this.coreStateQuery = true;
       return api.getVehicleState(vehicleId, CORE_VEHICLE_STATE_PROPERTIES);
     }

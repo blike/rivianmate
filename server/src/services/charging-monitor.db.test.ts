@@ -3,6 +3,7 @@
  * TEST_DATABASE_URL points at a disposable database (tables are truncated).
  */
 import { fileURLToPath } from 'node:url';
+import { silentLogger } from '../logger.js';
 import { dirname, join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -30,13 +31,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
   let clock = NOW;
 
   const monitor = (bus = new LiveBus()) => {
-    const m = new ChargingMonitor(
-      handle.db,
-      api,
-      bus,
-      () => {},
-      () => clock,
-    );
+    const m = new ChargingMonitor(handle.db, api, bus, silentLogger, () => clock);
     m.setVehicles(['v1']);
     return m;
   };

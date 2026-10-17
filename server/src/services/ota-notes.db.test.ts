@@ -1,5 +1,6 @@
 /** Integration test against a real Postgres; skipped unless TEST_DATABASE_URL is set. */
 import { fileURLToPath } from 'node:url';
+import { silentLogger } from '../logger.js';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
@@ -44,7 +45,7 @@ describe.skipIf(!url)('OtaNotesStore with Postgres', () => {
     const fetchImpl = vi.fn(
       async (input: string | URL | Request) => new Response(`%PDF-1.7 ${String(input)}`),
     );
-    const store = new OtaNotesStore(handle.db, () => {}, fetchImpl as unknown as typeof fetch);
+    const store = new OtaNotesStore(handle.db, silentLogger, fetchImpl as unknown as typeof fetch);
     store.connect({ getOtaUpdateDetails } as unknown as RivianApi);
     return { store, getOtaUpdateDetails, fetchImpl };
   };

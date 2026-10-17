@@ -12,6 +12,9 @@ const envSchema = z.object({
   MOCK_SCENE: z.enum(['drive-home']).optional(),
   APP_PASSWORD: z.string().optional(),
   NODE_ENV: z.string().default('development'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  /** pretty: readable lines for `docker logs`; json: one object per line for log collectors. */
+  LOG_FORMAT: z.enum(['pretty', 'json']).default('pretty'),
 });
 
 export type Config = z.infer<typeof envSchema> & {

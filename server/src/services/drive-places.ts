@@ -1,5 +1,6 @@
 import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { drives, geocodeCache } from '../db/schema.js';
 
 export interface Place {
@@ -135,7 +136,7 @@ export class DrivePlaces {
   constructor(
     private readonly db: Db,
     private readonly geocode: ReverseGeocode,
-    private readonly log: (msg: string) => void = () => {},
+    private readonly log: Logger = silentLogger,
     private readonly spacingMs = LOOKUP_SPACING_MS,
   ) {}
 
@@ -177,8 +178,8 @@ export class DrivePlaces {
           await this.fill(driveId);
         } catch (err) {
           // Leave the drive pending; the next start retries it.
-          this.log(`drive ${driveId} places: ${(err as Error).message}`);
-          if (this.queue.length) this.log('pausing place lookups until the next restart');
+          this.log.warn({ err, driveId }, 'place lookup failed');
+          if (this.queue.length) this.log.warn('pausing place lookups until the next restart');
           this.queue = [];
         }
       }

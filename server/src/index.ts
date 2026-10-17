@@ -7,6 +7,7 @@ import type { AppContext, RivianFactory } from './context.js';
 import { TokenCrypto, hashPassword } from './crypto.js';
 import { createDb, runMigrations } from './db/client.js';
 import { appSettings } from './db/schema.js';
+import { type Logger, createLogger } from './logger.js';
 import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
 import { RivianGovernor } from './rivian/governor.js';
@@ -30,21 +31,26 @@ function resolveWebDist(): string | undefined {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
+let log: Logger | undefined;
+
 async function main(): Promise<void> {
   const config = loadConfig();
+  const logger = createLogger(config);
+  const appLog = logger.child({ component: 'app' });
+  log = appLog;
 
   const migrationsFolder = join(here, '..', 'drizzle');
   await runMigrations(config.DATABASE_URL, migrationsFolder);
 
   const { db } = createDb(config.DATABASE_URL);
   const crypto = new TokenCrypto(config.APP_SECRET);
-  const tokenStore = new TokenStore(db, crypto);
+  const tokenStore = new TokenStore(db, crypto, logger.child({ component: 'monitor' }));
   const bus = new LiveBus();
 
   const governor = new RivianGovernor();
   const rivianFactory: RivianFactory = config.MOCK_RIVIAN
     ? mockFactory(config.MOCK_SCENE)
-    : realFactory(governor);
+    : realFactory(governor, logger);
 
   const userAgent = `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`;
   const monitor = new VehicleMonitor(
@@ -52,12 +58,12 @@ async function main(): Promise<void> {
     tokenStore,
     bus,
     (tokens) => rivianFactory.createConnection(tokens),
-    (msg) => console.log(`[monitor] ${msg}`),
+    logger,
     new DrivePlaces(
       db,
       // Mock drives are in made-up places; don't look them up.
       config.MOCK_RIVIAN ? mockGeocode : nominatimGeocoder(userAgent),
-      (msg) => console.log(`[places] ${msg}`),
+      logger.child({ component: 'places' }),
     ),
   );
 
@@ -66,7 +72,7 @@ async function main(): Promise<void> {
     crypto,
     () => monitor.getVehicles(),
     (vehicleId) => monitor.getState(vehicleId),
-    (msg) => console.log(`[notify] ${msg}`),
+    logger.child({ component: 'notify' }),
   );
   notifications.start(bus);
 
@@ -75,6 +81,7 @@ async function main(): Promise<void> {
       ...config,
       WEB_DIST: resolveWebDist(),
     },
+    log: logger,
     db,
     crypto,
     tokenStore,
@@ -103,10 +110,19 @@ async function main(): Promise<void> {
 
   const app = await buildApp(ctx);
 
-  if (config.MOCK_RIVIAN) console.log('MOCK_RIVIAN enabled (OTP is 000000)');
+  if (config.MOCK_RIVIAN) appLog.warn('MOCK_RIVIAN enabled (OTP is 000000)');
 
   // Listen first: the API and healthcheck must not wait on Rivian.
-  await app.listen({ port: config.PORT, host: '0.0.0.0' });
+  // Fastify logs a line per network interface (loopback, Docker network...),
+  // none of which is the address you'd browse to; one line is enough.
+  const httpLevel = app.log.level;
+  app.log.level = 'warn';
+  try {
+    await app.listen({ port: config.PORT, host: '0.0.0.0' });
+  } finally {
+    app.log.level = httpLevel;
+  }
+  appLog.info(`listening on port ${config.PORT}`);
 
   // A network blip at boot (e.g. container networking not up yet) must not
   // leave tracking off until the next restart: retry with backoff.
@@ -116,11 +132,11 @@ async function main(): Promise<void> {
       .startIfConfigured()
       .then((result) => {
         if (result === 'started') {
-          console.log('Rivian monitor started from stored credentials');
+          appLog.info('Rivian monitor started from stored credentials');
         } else if (result === 'needs_login') {
-          console.log('Rivian session expired; sign in again from the web UI');
+          appLog.warn('Rivian session expired; sign in again from the web UI');
         } else {
-          console.log(
+          appLog.warn(
             'No usable Rivian account stored (not connected yet, or APP_SECRET changed); connect from the web UI',
           );
         }
@@ -128,8 +144,9 @@ async function main(): Promise<void> {
       .catch((err) => {
         if (monitor.isRunning) return; // connected meanwhile (e.g. from the web UI)
         const delay = Math.min(START_RETRY_MAX_MS, START_RETRY_BASE_MS * 2 ** attempt);
-        console.error(
-          `Failed to start Rivian monitor: ${(err as Error).message}; retrying in ${Math.round(delay / 1000)}s`,
+        appLog.error(
+          { err },
+          `failed to start Rivian monitor; retrying in ${Math.round(delay / 1000)}s`,
         );
         startRetry = setTimeout(() => startMonitor(attempt + 1), delay);
       });
@@ -137,6 +154,7 @@ async function main(): Promise<void> {
   startMonitor();
 
   const shutdown = async () => {
+    appLog.info('shutting down');
     clearTimeout(startRetry);
     notifications.stop();
     await monitor.stop();
@@ -147,7 +165,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown());
 }
 
-function realFactory(governor: RivianGovernor): RivianFactory {
+function realFactory(governor: RivianGovernor, logger: Logger): RivianFactory {
   return {
     createApi: (tokens) => new RivianClient({ tokens, governor }),
     createConnection: (tokens, existing?: RivianApi) => {
@@ -158,7 +176,7 @@ function realFactory(governor: RivianGovernor): RivianFactory {
           appSession: api.appSession,
         }),
         governor,
-        log: (msg) => console.log(`[ws] ${msg}`),
+        log: logger.child({ component: 'ws' }),
       });
       return { api, stream };
     },
@@ -174,7 +192,9 @@ function mockFactory(scene?: MockScene): RivianFactory {
   };
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((err: unknown) => {
+  // The logger doesn't exist yet if the environment itself is invalid.
+  if (log) log.fatal({ err }, 'startup failed');
+  else console.error(err);
   process.exit(1);
 });
