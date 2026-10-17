@@ -9,6 +9,9 @@ services:
     environment:
       DATABASE_URL: postgres://rivianmate:${POSTGRES_PASSWORD:-rivianmate}@postgres:5432/rivianmate
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET to at least 32 random characters}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-pretty}
+      TZ: ${TZ:-UTC}
     ports:
       - '${APP_PORT:-4000}:4000'
 

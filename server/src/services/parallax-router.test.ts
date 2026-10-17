@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { Logger } from '../logger.js';
 import {
   type Decoded,
   RVM_GEAR,
@@ -45,9 +46,9 @@ describe('ParallaxRouter', () => {
   });
 
   it('keeps going when a handler throws or rejects', async () => {
-    const log = vi.fn();
+    const error = vi.fn();
     const state = vi.fn();
-    new ParallaxRouter(log)
+    new ParallaxRouter({ error } as unknown as Logger)
       .on(() => {
         throw new Error('boom');
       })
@@ -56,7 +57,7 @@ describe('ParallaxRouter', () => {
       .dispatch('v1', { rvm: RVM_GEAR, payload: b64(int(1, 1)), timestamp: null });
     await Promise.resolve();
     expect(state).toHaveBeenCalledOnce();
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('boom'));
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('later'));
+    const messages = error.mock.calls.map(([fields]) => (fields as { err: Error }).err.message);
+    expect(messages).toEqual(['boom', 'later']);
   });
 });

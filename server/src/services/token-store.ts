@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { TokenCrypto } from '../crypto.js';
 import type { Db } from '../db/client.js';
 import { rivianAccount } from '../db/schema.js';
+import { type Logger, silentLogger } from '../logger.js';
 import type { RivianTokens } from '../rivian/types.js';
 
 export type RivianAuthState = 'ok' | 'unauthenticated';
@@ -17,6 +18,7 @@ export class TokenStore {
   constructor(
     private readonly db: Db,
     private readonly crypto: TokenCrypto,
+    private readonly log: Logger = silentLogger,
   ) {}
 
   async load(): Promise<StoredAccount | null> {
@@ -33,8 +35,9 @@ export class TokenStore {
           userSessionToken: this.crypto.decrypt(row.userSessionTokenEnc),
         },
       };
-    } catch {
+    } catch (err) {
       // APP_SECRET changed: stored tokens are unrecoverable.
+      this.log.warn({ err }, 'stored Rivian tokens could not be decrypted (APP_SECRET changed?)');
       return null;
     }
   }

@@ -1,3 +1,4 @@
+import { type Logger, silentLogger } from '../logger.js';
 import {
   type Decoded,
   type ParallaxMessage,
@@ -28,7 +29,7 @@ export class ParallaxRouter {
   private readonly topicHandlers = new Map<string, TopicHandler[]>();
   private readonly stateHandlers: StateHandler[] = [];
 
-  constructor(private readonly log: (msg: string) => void = () => {}) {}
+  constructor(private readonly log: Logger = silentLogger) {}
 
   /** Every message, with its decoded value when the topic has a definition. */
   on(handler: MessageHandler): this {
@@ -58,7 +59,7 @@ export class ParallaxRouter {
     try {
       decoded = decodeMessage(message);
     } catch (err) {
-      this.log(`parallax decode failed for ${message.rvm}: ${String(err)}`);
+      this.log.error({ err, rvm: message.rvm, vehicleId }, 'parallax decode failed');
     }
     for (const handler of this.messageHandlers) {
       this.run(message.rvm, () => handler(vehicleId, decoded, message));
@@ -73,7 +74,7 @@ export class ParallaxRouter {
     try {
       delta = stateFromDecoded(decoded, timeStamp);
     } catch (err) {
-      this.log(`parallax state failed for ${message.rvm}: ${String(err)}`);
+      this.log.error({ err, rvm: message.rvm, vehicleId }, 'parallax state failed');
     }
     if (!delta) return;
     for (const handler of this.stateHandlers) {
@@ -82,7 +83,7 @@ export class ParallaxRouter {
   }
 
   private run(rvm: string, fn: () => unknown): void {
-    const fail = (err: unknown) => this.log(`parallax handler failed for ${rvm}: ${String(err)}`);
+    const fail = (err: unknown) => this.log.error({ err, rvm }, 'parallax handler failed');
     try {
       const result = fn();
       if (result instanceof Promise) result.catch(fail);

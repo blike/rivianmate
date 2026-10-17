@@ -13,19 +13,23 @@ const HOME_CHARGING_KEY = 'home_charging';
 /** Earlier versions kept the home location and rate here too; they're ignored now. */
 const chargingSchema = z.object({ currency: z.string().regex(/^[A-Z]{3}$/) });
 
-async function readHomeCharging(ctx: Pick<AppContext, 'db'>): Promise<Record<string, unknown>> {
+/** Settings readers log unreadable stored values when given a logger. */
+type SettingsContext = Pick<AppContext, 'db'> & Partial<Pick<AppContext, 'log'>>;
+
+async function readHomeCharging(ctx: SettingsContext): Promise<Record<string, unknown>> {
   const rows = await ctx.db
     .select()
     .from(appSettings)
     .where(eq(appSettings.key, HOME_CHARGING_KEY));
   try {
     return rows[0] ? (JSON.parse(rows[0].value) as Record<string, unknown>) : {};
-  } catch {
+  } catch (err) {
+    ctx.log?.warn({ err }, 'stored charging settings are unreadable; using defaults');
     return {};
   }
 }
 
-export async function getChargingSettings(ctx: Pick<AppContext, 'db'>): Promise<ChargingSettings> {
+export async function getChargingSettings(ctx: SettingsContext): Promise<ChargingSettings> {
   const parsed = chargingSchema.safeParse(await readHomeCharging(ctx));
   return parsed.success ? parsed.data : DEFAULT_CHARGING;
 }
@@ -37,12 +41,13 @@ const unitsSchema = z.object({
   temperature: z.enum(['F', 'C']),
 });
 
-export async function getUnitPreferences(ctx: Pick<AppContext, 'db'>): Promise<UnitPreferences> {
+export async function getUnitPreferences(ctx: SettingsContext): Promise<UnitPreferences> {
   const rows = await ctx.db.select().from(appSettings).where(eq(appSettings.key, UNITS_KEY));
   if (!rows[0]) return DEFAULT_UNITS;
   try {
     return unitsSchema.parse(JSON.parse(rows[0].value));
-  } catch {
+  } catch (err) {
+    ctx.log?.warn({ err }, 'stored unit preferences are unreadable; using defaults');
     return DEFAULT_UNITS;
   }
 }

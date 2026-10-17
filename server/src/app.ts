@@ -1,6 +1,12 @@
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, {
+  type FastifyBaseLogger,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+  LogController,
+} from 'fastify';
 import { existsSync } from 'node:fs';
 import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
@@ -16,10 +22,40 @@ import { vehicleRoutes } from './routes/vehicles.js';
 
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
 const ASSET_PATH_PATTERN = /\/[^/]+\.[^/]+$/;
+/** Requests slower than this are worth seeing at the default log level. */
+const SLOW_REQUEST_MS = 1000;
+
+/**
+ * The UI polls constantly, so a line per request buries everything else: only
+ * failures and slow requests are logged by default, the rest at debug.
+ */
+class QuietRequestLog extends LogController {
+  override incomingRequest(): void {}
+
+  override requestCompleted(
+    error: Error | null | undefined,
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): void {
+    const ms = Math.round(reply.elapsedTime);
+    const status = reply.statusCode;
+    const level =
+      error || status >= 500 ? 'warn' : status >= 400 || ms > SLOW_REQUEST_MS ? 'info' : 'debug';
+    reply.log[level](
+      { status, ms, ...(error ? { err: error } : {}) },
+      `${request.method} ${request.url.split('?')[0]}`,
+    );
+  }
+}
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: ctx.config.NODE_ENV === 'production' ? 'info' : 'debug' },
+    // Typed as Fastify's logger so routes keep the default instance type.
+    loggerInstance: ctx.log.child({ component: 'http' }) as FastifyBaseLogger,
+    logController: new QuietRequestLog(),
+    // Live streams never finish on their own; without this, close() waits on
+    // an open browser tab until Docker gives up and kills the process.
+    forceCloseConnections: true,
   });
 
   await app.register(fastifyCookie);
@@ -32,14 +68,14 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     }
   });
 
-  app.setErrorHandler((err, _request, reply) => {
+  app.setErrorHandler((err, request, reply) => {
     if (err instanceof ZodError) {
       return reply.code(400).send({
         error: 'Invalid request',
         details: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
       });
     }
-    app.log.error(err);
+    request.log.error({ err }, 'request failed');
     return reply.code(500).send({ error: 'Internal error' });
   });
 

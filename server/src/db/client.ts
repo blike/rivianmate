@@ -12,7 +12,8 @@ export function createDb(databaseUrl: string) {
 }
 
 export async function runMigrations(databaseUrl: string, migrationsFolder: string) {
-  const sql = postgres(databaseUrl, { max: 1 });
+  // Postgres NOTICEs ("already exists, skipping") on every boot are noise.
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
   try {
     await migrate(drizzle(sql), { migrationsFolder });
   } finally {

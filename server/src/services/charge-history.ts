@@ -1,5 +1,6 @@
 import { and, asc, between, eq, gte, isNotNull, isNull, min } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { chargingSessions, vehicleStateSnapshots } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import { deriveChargingStats } from './charging-time.js';
@@ -7,7 +8,6 @@ import {
   type ChargeSessionSummary,
   RivianUnauthenticatedError,
   type VehicleState,
-  describeRivianError,
   isGraphqlValidationError,
 } from '../rivian/types.js';
 
@@ -97,7 +97,7 @@ export class ChargeHistoryImporter {
     private readonly db: Db,
     private readonly api: RivianApi,
     private readonly vehicleIds: () => string[],
-    private readonly log: (msg: string) => void = () => {},
+    private readonly log: Logger = silentLogger,
   ) {}
 
   start(): void {
@@ -148,17 +148,17 @@ export class ChargeHistoryImporter {
         linked += result.linked;
       }
       if (inserted || linked) {
-        this.log(`charge history: ${inserted} imported, ${linked} linked`);
+        this.log.info(`${inserted} imported, ${linked} linked`);
       }
       return { inserted, linked };
     } catch (err) {
       if (isGraphqlValidationError(err)) {
         this.unsupported = true;
-        this.log(`charge history query not supported: ${describeRivianError(err)}`);
+        this.log.warn({ err }, 'charge history query not supported; disabling');
       } else if (err instanceof RivianUnauthenticatedError) {
         this.onAuthFailure?.();
       } else {
-        this.log(`charge history sync failed: ${describeRivianError(err)}`);
+        this.log.warn({ err }, 'charge history sync failed');
       }
       return null;
     }
@@ -224,10 +224,10 @@ export class ChargeHistoryImporter {
             .where(eq(chargingSessions.id, session.id));
           filled += 1;
         }
-        if (filled) this.log(`charge history: filled charging time for ${filled} sessions`);
+        if (filled) this.log.info(`filled charging time for ${filled} sessions`);
       }
     } catch (err) {
-      this.log(`charging time backfill failed: ${(err as Error).message}`);
+      this.log.warn({ err }, 'charging time backfill failed');
     }
   }
 

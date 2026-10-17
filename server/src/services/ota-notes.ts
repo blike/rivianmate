@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { otaReleaseNotes } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import {
@@ -77,7 +78,7 @@ export class OtaNotesStore {
 
   constructor(
     private readonly db: Db,
-    private readonly log: (msg: string) => void = () => {},
+    private readonly log: Logger = silentLogger,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
@@ -134,7 +135,7 @@ export class OtaNotesStore {
       for (const { version, url } of notesToDownload(details, stored)) {
         const pdf = await downloadPdf(url, this.fetchImpl);
         if (!pdf) {
-          this.log(`OTA release notes for ${version} weren't a PDF; skipping`);
+          this.log.warn(`release notes for ${version} weren't a PDF; skipping`);
           continue;
         }
         await this.db
@@ -145,12 +146,12 @@ export class OtaNotesStore {
     } catch (err) {
       if (isGraphqlValidationError(err)) {
         this.unsupported = true;
-        this.log('OTA release notes query not supported; disabling');
+        this.log.warn({ err }, 'release notes query not supported; disabling');
         return;
       }
       // Try again on the next state change or request.
       this.checked.delete(vehicleId);
-      this.log(`OTA release notes fetch failed: ${(err as Error).message}`);
+      this.log.warn({ err }, 'release notes fetch failed');
     }
   }
 }

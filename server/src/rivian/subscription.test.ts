@@ -2,6 +2,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
+import type { Logger } from '../logger.js';
 import { RivianGovernor } from './governor.js';
 import {
   CLOSE_CONNECTION_TTL_EXPIRED,
@@ -96,6 +97,7 @@ describe('RivianSubscriptionManager', () => {
       initialBackoffMs?: number;
       heartbeatIntervalMs?: number;
       governor?: RivianGovernor;
+      log?: Logger;
     } = {},
   ) {
     return new RivianSubscriptionManager({
@@ -108,6 +110,7 @@ describe('RivianSubscriptionManager', () => {
       initialBackoffMs: overrides.initialBackoffMs ?? 50,
       ttlRenewDelayMs: 10,
       heartbeatIntervalMs: overrides.heartbeatIntervalMs,
+      log: overrides.log,
     });
   }
 
@@ -361,6 +364,22 @@ describe('RivianSubscriptionManager', () => {
       () => server.conns[1] !== undefined && server.subscribes(server.conns[1]).length === 1,
     );
     expect(server.subscribes(server.conns[1]!)[0]!.id).toBe('vehicleState:VIN1');
+  });
+
+  it("logs connecting at info, but Rivian's scheduled renewals only at debug", async () => {
+    const log = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    manager = createManager({ log: log as unknown as Logger });
+    manager.subscribe('VIN1', () => {});
+    manager.start();
+    const subscribed = (i: number) => () =>
+      server.conns[i] !== undefined && server.subscribes(server.conns[i]).length === 1;
+    await server.until(subscribed(0));
+    expect(log.info).toHaveBeenCalledWith('connected');
+    log.info.mockClear();
+    server.conns[0]!.socket.close(CLOSE_CONNECTION_TTL_EXPIRED, 'Connection TTL expired');
+    await server.until(subscribed(1));
+    expect(log.debug).toHaveBeenCalledWith('connected');
+    expect(log.info).not.toHaveBeenCalled();
   });
 
   it("counts lost connections as drops, but not Rivian's scheduled renewals", async () => {

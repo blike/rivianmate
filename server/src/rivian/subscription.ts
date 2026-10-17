@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import WebSocket from 'ws';
+import { type Logger, silentLogger } from '../logger.js';
 import { mapChargingSession } from './charging-session.js';
 import { mapDepartureSchedules } from './departures.js';
 import { RivianGovernor, parseRetryAfter } from './governor.js';
@@ -94,7 +95,7 @@ export interface SubscriptionManagerOptions {
   };
   governor: RivianGovernor;
   url?: string;
-  log?: (msg: string) => void;
+  log?: Logger;
   initialBackoffMs?: number;
   maxBackoffMs?: number;
   /** Delay before renewing after Rivian's scheduled TTL close. */
@@ -284,6 +285,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private everConnected = false;
   private lastMessageAt: number | null = null;
   private reconnectAttempt = 0;
+  /** Reconnecting after Rivian's scheduled TTL close, which isn't worth a line at info. */
+  private renewing = false;
   private reconnectTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
   private awaitingPong = false;
@@ -291,7 +294,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private pongSeen = false;
 
   private readonly url: string;
-  private readonly log: (msg: string) => void;
+  private readonly log: Logger;
   private readonly initialBackoffMs: number;
   private readonly maxBackoffMs: number;
   private readonly ttlRenewDelayMs: number;
@@ -303,7 +306,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
 
   constructor(private readonly options: SubscriptionManagerOptions) {
     this.url = options.url ?? GRAPHQL_WEBSOCKET;
-    this.log = options.log ?? (() => {});
+    this.log = options.log ?? silentLogger;
     this.initialBackoffMs = options.initialBackoffMs ?? 10_000;
     this.maxBackoffMs = options.maxBackoffMs ?? 15 * 60_000;
     this.ttlRenewDelayMs = options.ttlRenewDelayMs ?? 2_000;
@@ -509,14 +512,14 @@ export class RivianSubscriptionManager implements VehicleStateStream {
 
     const cooldown = this.options.governor.cooldownRemainingMs();
     if (cooldown > 0) {
-      this.log(`rate-limit cooldown active; connecting in ${Math.round(cooldown / 1000)}s`);
+      this.log.info(`rate-limit cooldown active; connecting in ${Math.round(cooldown / 1000)}s`);
       this.scheduleReconnect(cooldown);
       return;
     }
 
     const { userSessionToken, appSession } = this.options.getCredentials();
     if (!userSessionToken) {
-      this.log('no user session token; not connecting');
+      this.log.warn('no user session token; not connecting');
       return;
     }
 
@@ -578,6 +581,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       try {
         msg = JSON.parse(raw.toString());
       } catch {
+        this.log.debug({ bytes: raw.toString().length }, 'ignored a message that is not JSON');
         return;
       }
       this.lastMessageAt = Date.now();
@@ -621,6 +625,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
           sub.topicsOnConnection?.clear();
           sub.errored = false;
         }
+        this.log[this.renewing ? 'debug' : 'info']('connected');
+        this.renewing = false;
         this.setConnected(true);
         this.onAuthenticated?.();
         this.startHeartbeat(ws);
@@ -709,7 +715,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       // keeps its vehicle-state data; schedules show as unavailable).
       if (msg.type === 'error') {
         this.unsupported.add(sub.id);
-        this.log(
+        this.log.warn(
           `${sub.group ? `parallax ${sub.group}` : sub.kind} subscription rejected: ${summarize(errors)}`,
         );
       }
@@ -719,12 +725,14 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     const rejected = rejectedFields(errors);
     for (const field of rejected) this.disabledFields.add(field);
     if (rejected.length) {
-      this.log(`vehicle state subscription rejected fields: ${rejected.join(', ')}`);
+      this.log.warn(`vehicle state subscription rejected fields: ${rejected.join(', ')}`);
     } else if (!this.gotVehicleData && !this.coreFieldsOnly) {
       // Ended before any data and without naming a field: most likely a
       // schema mismatch somewhere in the selection. Fall back to core fields.
       this.coreFieldsOnly = true;
-      this.log('vehicle state subscription ended without data; retrying with core fields only');
+      this.log.warn(
+        'vehicle state subscription ended without data; retrying with core fields only',
+      );
     }
     return {
       kind: 'error',
@@ -777,27 +785,33 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     this.sentIds.clear();
     this.stopHeartbeat();
     this.setConnected(false);
+    this.renewing = false;
     if (!this.started) return;
 
     switch (reason.kind) {
       case 'ttl':
         // Scheduled renewal by Rivian: not an error, don't escalate backoff.
-        this.log('connection TTL expired; renewing');
+        this.log.debug('connection TTL expired; renewing');
+        this.renewing = true;
         this.reconnectAttempt = 0;
         this.scheduleReconnect(this.ttlRenewDelayMs);
         return;
       case 'auth':
-        this.log('credentials rejected');
+        this.log.error('credentials rejected');
         this.options.governor.count('wsAuthFailures');
         this.onAuthFailure?.();
         break;
       case 'rateLimited': {
         const cooldown = this.options.governor.noteRateLimited(reason.retryAfterMs);
-        this.log(`rate limited; pausing ${Math.round(cooldown / 1000)}s`);
+        this.log.warn(`rate limited; pausing ${Math.round(cooldown / 1000)}s`);
         break;
       }
       case 'error':
-        this.log(reason.message);
+        this.log.warn(
+          wasConnected
+            ? `connection dropped: ${reason.message}`
+            : `connection failed: ${reason.message}`,
+        );
         // A failed attempt to connect isn't a lost connection.
         if (wasConnected) this.options.governor.count('wsDrops');
         break;
@@ -815,7 +829,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   private scheduleReconnect(delayMs: number): void {
     if (!this.started || this.reconnectTimer) return;
     const delay = Math.max(delayMs, this.options.governor.cooldownRemainingMs());
-    this.log(`reconnecting in ${Math.round(delay / 1000)}s`);
+    this.log.debug(`reconnecting in ${Math.round(delay / 1000)}s`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.connect();
@@ -832,7 +846,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       // Without a prior pong we can't tell "dead" from "doesn't answer pings";
       // keep pinging (it still keeps NAT paths open) but don't drop the socket.
       if (this.awaitingPong && this.pongSeen) {
-        this.log('heartbeat missed; dropping socket');
+        this.log.warn('heartbeat missed; dropping socket');
         ws.terminate();
         return;
       }

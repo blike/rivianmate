@@ -1,5 +1,6 @@
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { drives, locationPoints, vehicleStateSnapshots } from '../db/schema.js';
 import type { TripInfo } from '../rivian/parallax/index.js';
 import type { VehicleState } from '../rivian/types.js';
@@ -80,7 +81,7 @@ export class DriveDetector {
   private queues = new Map<string, Promise<void>>();
   /** A drive was closed (e.g. to look up its places). */
   onDriveEnded?: (driveId: number) => void;
-  log?: (msg: string) => void;
+  log: Logger = silentLogger;
 
   constructor(
     private readonly db: Db,
@@ -180,7 +181,7 @@ export class DriveDetector {
           });
         } else {
           pv.adopted = false;
-          this.log?.(`[drive] #${pv.driveId} is still going; resumed`);
+          this.log.info({ driveId: pv.driveId }, 'still going; resumed');
         }
       }
     }
@@ -286,7 +287,10 @@ export class DriveDetector {
     pv.lastMovingReadings = last.readings;
     pv.adopted = true;
     this.onDriveChange(vehicleId, latest.id);
-    this.log?.(`[drive] picked up #${latest.id} left open; last moving reading ${iso(last.at)}`);
+    this.log.info(
+      { driveId: latest.id },
+      `picked up a drive left open; last moving reading ${clock(last.at)}`,
+    );
   }
 
   private async startDrive(
@@ -319,7 +323,7 @@ export class DriveDetector {
     pv.gpsLagging = false;
     this.onDriveChange(vehicleId, pv.driveId);
     const late = this.now() - startedAt > RESUME_WINDOW_MS ? ' (delivered late)' : '';
-    this.log?.(`[drive] started #${pv.driveId} at ${iso(startedAt)}${late}`);
+    this.log.info({ driveId: pv.driveId }, `started at ${clock(startedAt)}${late}`);
   }
 
   /** Moves the drive's start earlier, to a moving reading that arrived after it started. */
@@ -333,7 +337,7 @@ export class DriveDetector {
       .update(drives)
       .set({ startedAt: new Date(at), startMileageM: pv.startMileageM })
       .where(eq(drives.id, pv.driveId!));
-    this.log?.(`[drive] #${pv.driveId} started earlier than first heard: ${iso(at)}`);
+    this.log.debug({ driveId: pv.driveId }, `started earlier than first heard: ${clock(at)}`);
   }
 
   /**
@@ -387,9 +391,7 @@ export class DriveDetector {
         distanceKm,
       })
       .where(and(eq(drives.id, driveId), isNull(drives.endedAt)));
-    this.log?.(
-      `[drive] ended #${driveId} at ${iso(endedAt)}${end ? ' (last moving reading)' : ''}`,
-    );
+    this.log.info({ driveId }, `ended at ${clock(endedAt)}${end ? ' (last moving reading)' : ''}`);
     this.onDriveEnded?.(driveId);
   }
 
@@ -416,7 +418,7 @@ export class DriveDetector {
         elevationLossM: elevation?.lossM ?? null,
       })
       .where(and(eq(drives.id, drive.id), isNull(drives.endedAt)));
-    this.log?.(`[drive] closed #${drive.id} at its last moving reading, ${iso(last.at)}`);
+    this.log.info({ driveId: drive.id }, `closed at its last moving reading, ${clock(last.at)}`);
     this.onDriveEnded?.(drive.id);
   }
 
@@ -464,10 +466,11 @@ export class DriveDetector {
     const lagging = movingAt - gpsAt > GPS_LAG_MS;
     if (lagging === pv.gpsLagging) return;
     pv.gpsLagging = lagging;
-    this.log?.(
+    this.log.info(
+      { driveId: pv.driveId },
       lagging
-        ? `[drive] #${pv.driveId}: GPS from Rivian is ${Math.round((movingAt - gpsAt) / 60_000)} min behind`
-        : `[drive] #${pv.driveId}: GPS caught up`,
+        ? `GPS from Rivian is ${Math.round((movingAt - gpsAt) / 60_000)} min behind`
+        : 'GPS caught up',
     );
   }
 
@@ -556,8 +559,13 @@ function readingsOf(state: VehicleState): Readings {
   };
 }
 
-function iso(ms: number): string {
-  return new Date(ms).toISOString();
+/** Local time for log lines, like their timestamps; with the date if not today. */
+function clock(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
 }
 
 function destinationColumns(destination: Destination) {

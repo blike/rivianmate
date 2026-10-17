@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { type Logger, silentLogger } from '../logger.js';
 import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import {
@@ -122,7 +123,7 @@ export class ChargingMonitor {
     private readonly db: Db,
     private readonly api: RivianApi,
     private readonly bus: LiveBus,
-    private readonly log: (msg: string) => void = () => {},
+    private readonly log: Logger = silentLogger,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -535,18 +536,21 @@ export class ChargingMonitor {
 
   private handleError(err: unknown, what: string): void {
     if (err instanceof RivianUnauthenticatedError) {
-      this.log(`${what}: credentials rejected`);
+      this.log.warn(`${what}: credentials rejected`);
       this.onAuthFailure?.();
       return;
     }
-    const kind = err instanceof RivianRateLimitError ? 'rate limited' : 'failed';
-    this.log(`${what} ${kind}: ${(err as Error).message}`);
+    if (err instanceof RivianRateLimitError) {
+      this.log.warn(`${what} rate limited`);
+      return;
+    }
+    this.log.warn({ err }, `${what} failed`);
   }
 
   private enqueue(vehicleId: string, task: () => Promise<void>): Promise<void> {
     const prev = this.chains.get(vehicleId) ?? Promise.resolve();
     const next = prev.then(task).catch((err: unknown) => {
-      this.log(`charging persistence error: ${(err as Error).message}`);
+      this.log.error({ err }, 'charging persistence error');
     });
     this.chains.set(vehicleId, next);
     return next;
@@ -635,7 +639,7 @@ export class ChargingMonitor {
     };
     this.openSessions.set(vehicleId, open);
     this.liveState(vehicleId).forgetSessionReadings(init.startedAt);
-    this.log(`charging session started for ${vehicleId}`);
+    this.log.info({ vehicleId }, 'charging session started');
     return open;
   }
 
@@ -663,9 +667,9 @@ export class ChargingMonitor {
     // A finished charge has no forecast.
     await this.replaceForecast(open.id, []);
     if (await this.discardIfEmpty(open.id)) {
-      this.log(`charging session discarded for ${vehicleId}: nothing was charged`);
+      this.log.info({ vehicleId }, 'charging session discarded: nothing was charged');
     } else {
-      this.log(`charging session ended for ${vehicleId}`);
+      this.log.info({ vehicleId }, 'charging session ended');
     }
     this.onSessionEnded?.(vehicleId);
   }
@@ -904,7 +908,7 @@ export class ChargingMonitor {
       chargingSeconds: leftover.chargingSeconds ?? 0,
       chargingSince: leftover.chargingSince?.getTime() ?? null,
     });
-    this.log(`charging session resumed for ${vehicleId}`);
+    this.log.info({ vehicleId }, 'charging session resumed');
   }
 
   private async closeSession(session: ResumableSession): Promise<void> {

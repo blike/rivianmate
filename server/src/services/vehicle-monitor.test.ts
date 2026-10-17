@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { silentLogger } from '../logger.js';
 import type { Db } from '../db/client.js';
 import { RivianApiError, RivianUnauthenticatedError } from '../rivian/types.js';
 import { LiveBus } from './live-bus.js';
@@ -20,7 +21,7 @@ function setup(error: Error) {
     store as unknown as TokenStore,
     new LiveBus(),
     () => connection,
-    vi.fn(),
+    silentLogger,
   );
   return { monitor, store, stream, connection };
 }
