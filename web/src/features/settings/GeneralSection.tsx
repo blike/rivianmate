@@ -31,10 +31,7 @@ export function GeneralSection(props: {
             description={<Skeleton className="w-[5em]" />}
           />
         ) : !vehicles?.length ? (
-          <SettingRow
-            label="No vehicles yet"
-            description="Vehicles on your Rivian account appear here once connected."
-          />
+          <SettingRow label="No vehicles yet" description="Vehicles appear here once connected." />
         ) : (
           vehicles.map((v) => {
             const mode = props.parallaxModes?.[v.id];

@@ -5,6 +5,7 @@ import { api, type WallboxDto } from '../../api/client';
 import { useChargingSessions, useLiveCharging, useVehicleState } from '../../api/hooks';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
+import { lastChargedTo } from '../../lib/charging';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
 import { CurveChart } from './CurveChart';
@@ -91,6 +92,7 @@ export function ChargingPage(props: { vehicleId: string }) {
           <SessionCard
             session={session}
             live={showingOpen ? liveCharge(isLive ? live : null, state) : null}
+            lastChargedTo={lastChargedTo(sessions)}
             // A TeslaMate session's id is TeslaMate's, so its cost isn't RivianMate's to edit.
             onSaveCost={session && !teslamate ? saveCost(session.id) : undefined}
           />

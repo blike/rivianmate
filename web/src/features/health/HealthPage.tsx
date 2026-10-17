@@ -24,17 +24,15 @@ export function HealthPage(props: { vehicleId: string }) {
     queryFn: () => api.batteryHealth(props.vehicleId),
     refetchInterval: 60_000,
   });
-  // TeslaMate doesn't log the car's warnings or parked energy use.
+  // TeslaMate doesn't log parked energy use.
   const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   return (
     <div className="space-y-4">
-      {!teslamate && (
-        // Battery health decides the pack's verdict, so everything waits for it.
-        <LoadingScope loading={statePending || batteryPending}>
-          <Overview state={state} battery={battery} batteryPending={batteryPending} />
-        </LoadingScope>
-      )}
+      {/* Battery health decides the pack's verdict, so everything waits for it. */}
+      <LoadingScope loading={statePending || batteryPending}>
+        <Overview state={state} battery={battery} batteryPending={batteryPending} />
+      </LoadingScope>
 
       {(batteryError || insightsError) && (
         <p role="alert" className="text-sm text-(--status-critical)">

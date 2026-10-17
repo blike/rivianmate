@@ -96,6 +96,21 @@ describe('healthChecks', () => {
       'No warnings from the 12V battery, tires and software.',
     );
   });
+
+  it('checks a TeslaMate vehicle on its pack and software only', () => {
+    // TeslaMate logs tire pressures but no warnings, and no pending updates.
+    const tesla = state({
+      batteryLevel: 62,
+      tirePressureFrontLeft: 2.9,
+      otaCurrentVersion: '2026.20.3',
+    });
+    const checks = healthChecks(tesla, 92);
+    expect(checks.map((c) => [c.label, c.value])).toEqual([
+      ['Battery pack', 'Normal'],
+      ['Software', '2026.20.3'],
+    ]);
+    expect(healthSummary(checks).detail).toBe('No warnings from the battery pack and software.');
+  });
 });
 
 describe('battery pack', () => {

@@ -98,6 +98,8 @@ describe('buildVehicleState', () => {
     expect(state.tirePressureRearLeft?.value).toBe(2.8);
     expect(state.climateOn?.value).toBe('false');
     expect(state.defrostDefogStatus?.value).toBe('off');
+    // TeslaMate logs no heading, so the map shows a Tesla without a direction.
+    expect(state.gnssBearing).toBeUndefined();
     expect(state.otaCurrentVersion?.value).toBe('2024.26.7');
     expect(state.cloudConnection).toEqual({ lastSync: '2026-10-10T12:00:00.000Z', isOnline: true });
   });
