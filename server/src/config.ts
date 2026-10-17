@@ -8,6 +8,8 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === '1' || v === 'true'),
+  /** With MOCK_RIVIAN, a demo scene to start in (see MockScene). */
+  MOCK_SCENE: z.enum(['drive-home']).optional(),
   APP_PASSWORD: z.string().optional(),
   NODE_ENV: z.string().default('development'),
 });
