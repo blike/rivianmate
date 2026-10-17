@@ -244,15 +244,8 @@ export class ChargingMonitor {
       // replaces the last one's.
       if (open) await this.replaceForecast(target.id, forecast);
       const inWindow = recorded.filter((b) => b.startMs >= target.from && b.startMs <= target.to);
-      const rows = inWindow
-        .filter((b) => b.powerKw != null || b.soc != null)
-        .map((b) => ({
-          sessionId: target.id,
-          source: 'graph' as const,
-          ts: new Date(b.startMs),
-          powerKw: b.powerKw,
-          soc: b.soc,
-        }));
+      const { points, last } = graphPoints(inWindow, sentAt);
+      const rows = points.map((p) => ({ sessionId: target.id, source: 'graph' as const, ...p }));
       if (rows.length === 0) return;
       // The latest bar that carries power, timed by its end (or its start
       // while it's still running). The breakdown's live power is fresher.
@@ -262,27 +255,34 @@ export class ChargingMonitor {
           ['powerKw', latest.powerKw],
         ]);
       }
-      await this.db
-        .insert(chargingCurvePoints)
-        .values(rows)
-        .onConflictDoUpdate({
-          target: [
-            chargingCurvePoints.sessionId,
-            chargingCurvePoints.source,
-            chargingCurvePoints.ts,
-          ],
-          set: {
-            powerKw: sql`COALESCE(excluded.power_kw, ${chargingCurvePoints.powerKw})`,
-            soc: sql`COALESCE(excluded.soc, ${chargingCurvePoints.soc})`,
-          },
-        });
-      await this.db
-        .update(chargingSessions)
-        .set({
-          maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND source = 'graph')`,
-          avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND source = 'graph' AND power_kw > 0)`,
-        })
-        .where(eq(chargingSessions.id, target.id));
+      // The message is the record from its first bar on: Rivian re-buckets
+      // the graph as a charge grows (1, then 16, then 32 minute bars), and
+      // points from the old bars would be left between the new ones.
+      const from = new Date(inWindow[0]!.startMs);
+      const lastAt = last?.ts ?? null;
+      await this.db.transaction(async (tx) => {
+        await tx
+          .delete(chargingCurvePoints)
+          .where(
+            and(
+              eq(chargingCurvePoints.sessionId, target.id),
+              eq(chargingCurvePoints.source, 'graph'),
+              gte(chargingCurvePoints.ts, from),
+            ),
+          );
+        await tx.insert(chargingCurvePoints).values(rows);
+        // Per bar: the closing point repeats the last bar's power.
+        const bars = sql`session_id = ${target.id} AND source = 'graph'${
+          lastAt ? sql` AND ts <> ${lastAt.toISOString()}::timestamptz` : sql``
+        }`;
+        await tx
+          .update(chargingSessions)
+          .set({
+            maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE ${bars})`,
+            avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE ${bars} AND power_kw > 0)`,
+          })
+          .where(eq(chargingSessions.id, target.id));
+      });
     });
   }
 
@@ -970,6 +970,46 @@ export function isActiveSession(session: LiveSessionData | null): boolean {
     return ACTIVE_CHARGER_STATES.has(state.toLowerCase());
   }
   return session.startTime != null;
+}
+
+interface GraphPoint {
+  ts: Date;
+  powerKw: number | null;
+  soc: number | null;
+}
+
+/**
+ * A graph's bars as curve points, one at each bar boundary. A bar's power
+ * is its average over the bar, so it's put at the bar's start; its SoC is
+ * the battery level at its end (a running bar's is the level now), so a
+ * point carries the previous bar's. The closing point, at the last bar's
+ * end (or `sentAt` while it runs), carries that bar's SoC, and its power so
+ * the curve reaches it; it's returned as `last` too, as it repeats a bar.
+ */
+export function graphPoints(
+  bars: readonly ChargingGraphBar[],
+  sentAt: number,
+): { points: GraphPoint[]; last: GraphPoint | null } {
+  const points: GraphPoint[] = [];
+  bars.forEach((bar, i) => {
+    const soc = bars[i - 1]?.soc ?? null;
+    if (bar.powerKw != null || soc != null)
+      points.push({ ts: new Date(bar.startMs), powerKw: bar.powerKw, soc });
+  });
+  const bar = bars.at(-1);
+  if (!bar || (bar.soc == null && bar.powerKw == null)) return { points, last: null };
+  const endMs = bar.endMs != null && bar.endMs <= sentAt ? bar.endMs : sentAt;
+  if (endMs < bar.startMs) return { points, last: null };
+  // Sent as the bar starts: its level is the level then, on its own point.
+  if (endMs === bar.startMs) {
+    const start = points.at(-1);
+    if (start?.ts.getTime() === endMs) start.soc = bar.soc;
+    else points.push({ ts: new Date(endMs), powerKw: bar.powerKw, soc: bar.soc });
+    return { points, last: null };
+  }
+  const last = { ts: new Date(endMs), powerKw: bar.powerKw, soc: bar.soc };
+  points.push(last);
+  return { points, last };
 }
 
 /**
