@@ -15,7 +15,7 @@ import {
   RVM_CHARGING_GRAPH,
   RVM_SOC_SLIDER,
   RVM_TIME_ESTIMATION,
-} from '../rivian/parallax.js';
+} from '../rivian/parallax/index.js';
 import { b64, chargingGraph, float, graphBar, int, message, string } from '../testing/protobuf.js';
 import { ChargingMonitor } from './charging-monitor.js';
 import { LiveBus } from './live-bus.js';
@@ -120,6 +120,22 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect([rows[0]!.startSoc, rows[0]!.endSoc]).toEqual([40, 71]);
   });
 
+  it('discards a plug-in that never charged', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
+    await note(m, '2026-10-01T00:31:00Z', UNPLUGGED, 'charging_ready', 40);
+    await note(m, '2026-10-01T00:32:00Z', PLUGGED, 'charging_scheduled', 40);
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T08:00:00Z', UNPLUGGED, 'charging_ready', 50);
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:32:00.000Z');
+    expect(rows[0]!.chargingSeconds).toBe(3600);
+  });
+
   it('continues a plug-in across a restart, keeping its charging time', async () => {
     const before = monitor();
     await before.start();
@@ -152,6 +168,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
         graphBar(30, 50, t0 - 2 * 86_400_000, t0 - 2 * 86_400_000 + 60_000), // days old: dropped
       ),
     });
+    clock = t0 + 5 * 60_000;
     await m.ingestParallax('v1', graph(9));
     await m.ingestParallax('v1', graph(10.5)); // the growing bar is re-sent
     await m.ingestParallax('v1', {
@@ -167,12 +184,56 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
       .from(chargingCurvePoints)
       .where(eq(chargingCurvePoints.sessionId, session!.id))
       .orderBy(chargingCurvePoints.ts);
-    expect(points.map((p) => [p.powerKw, p.soc])).toEqual([
-      [11, 40],
-      [10.5, 41],
+    // Each bar's power at its start, with the level at its end on the next point.
+    expect(points.map((p) => [p.ts.getTime() - t0, p.powerKw, p.soc])).toEqual([
+      [0, 11, null],
+      [60_000, 10.5, 40],
+      [120_000, 10.5, 41],
     ]);
     expect(session!.maxPowerKw).toBe(11);
+    // Per bar: the closing point doesn't count the last bar twice.
     expect(session!.avgPowerKw).toBeCloseTo(10.75);
+  });
+
+  it('replaces the curve when Rivian re-buckets the graph into longer bars', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 43);
+    const t0 = Date.parse('2026-10-01T07:00:00Z');
+    const MIN = 60_000;
+    const sendGraph = (...bars: number[][]) =>
+      m.ingestParallax('v1', {
+        rvm: RVM_CHARGING_GRAPH,
+        timestamp: null,
+        payload: chargingGraph(...bars),
+      });
+    clock = t0 + 64 * MIN;
+    await sendGraph(
+      graphBar(45, 7.3, t0, t0 + 16 * MIN),
+      graphBar(47, 7.3, t0 + 16 * MIN, t0 + 32 * MIN),
+      graphBar(48, 7.3, t0 + 32 * MIN, t0 + 48 * MIN),
+      graphBar(50, 7.3, t0 + 48 * MIN, t0 + 64 * MIN),
+    );
+    clock = t0 + 65 * MIN;
+    await sendGraph(
+      graphBar(47, 7.3, t0, t0 + 32 * MIN),
+      graphBar(50, 7.4, t0 + 32 * MIN, t0 + 64 * MIN),
+    );
+    m.stop();
+
+    const [session] = await sessions();
+    const points = await handle.db
+      .select()
+      .from(chargingCurvePoints)
+      .where(eq(chargingCurvePoints.sessionId, session!.id))
+      .orderBy(chargingCurvePoints.ts);
+    // Only the 32-minute bars' points: none left over from the 16-minute ones.
+    expect(points.map((p) => [(p.ts.getTime() - t0) / MIN, p.powerKw, p.soc])).toEqual([
+      [0, 7.3, null],
+      [32, 7.4, 47],
+      [64, 7.4, 50],
+    ]);
+    expect(session!.avgPowerKw).toBeCloseTo(7.35);
   });
 
   it("fills a finished session's curve from the graph Rivian sends on subscribe", async () => {
@@ -203,7 +264,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
       .from(chargingCurvePoints)
       .where(eq(chargingCurvePoints.sessionId, done!.id))
       .orderBy(chargingCurvePoints.ts);
-    expect(points.map((p) => p.soc)).toEqual([40, 43, 70]);
+    expect(points.map((p) => p.soc)).toEqual([null, 40, 43, 70]);
     const [row] = await sessions();
     expect(row!.maxPowerKw).toBeCloseTo(7.4);
   });
@@ -492,9 +553,11 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
       [...int(1, 70), ...int(3, t + 14 * min), ...int(4, t + 17 * min), ...int(6, 3)],
     );
     await m.ingest('v1', null); // drains the queue
+    // Each bar's level is the one at its end.
     expect(await sources()).toEqual([
-      ['graph', 0, 54],
-      ['graph', 3, 57],
+      ['graph', 0, null],
+      ['graph', 3, 54],
+      ['graph', 6, 57],
       ['forecast', 10, 63],
       ['forecast', 14, 70],
     ]);
@@ -513,7 +576,8 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
 
     await note(m, '2026-10-01T11:20:00Z', UNPLUGGED, 'charging_complete', 72);
     expect((await sources()).filter(([s]) => s === 'forecast')).toEqual([]);
-    expect((await sources()).filter(([s]) => s === 'graph')).toHaveLength(3);
+    // Three bars and the point closing the last.
+    expect((await sources()).filter(([s]) => s === 'graph')).toHaveLength(4);
     m.stop();
   });
 

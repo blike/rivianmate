@@ -1,6 +1,13 @@
 import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import { capacityOfRated, capacityTrend, healthChecks, healthSummary, tireTrend } from './health';
+import {
+  capacityOfRated,
+  capacityTrend,
+  healthChecks,
+  healthSummary,
+  packOfRated,
+  tireTrend,
+} from './health';
 
 const v = (value: string | number) => ({ timeStamp: 't', value });
 const state = (fields: Record<string, string | number>) =>
@@ -18,11 +25,11 @@ const healthy = {
   otaCurrentVersion: '2026.36.0',
   otaAvailableVersion: '0.0.0',
 };
-const withBrakes = (s: VehicleState) => ({ ...s, brakeFluidLow: null }) as unknown as VehicleState;
 
 describe('healthChecks', () => {
   it('reads a healthy vehicle as all good', () => {
-    const checks = healthChecks(withBrakes(state(healthy)));
+    // Brake fluid is sent empty while it's fine, so it's absent here.
+    const checks = healthChecks(state(healthy));
     expect(checks.map((c) => [c.label, c.level, c.value])).toEqual([
       ['Battery pack', 'good', 'Normal'],
       ['12V battery', 'good', 'Normal'],
@@ -31,7 +38,12 @@ describe('healthChecks', () => {
       ['Washer fluid', 'good', 'Normal'],
       ['Software', 'good', 'Up to date'],
     ]);
-    expect(healthSummary(checks)).toMatchObject({ level: 'good', title: 'Everything looks good' });
+    expect(healthSummary(checks)).toMatchObject({
+      level: 'good',
+      title: 'Everything looks good',
+      detail:
+        'No warnings from the battery pack, 12V battery, tires, brake fluid, washer fluid and software.',
+    });
   });
 
   it('flags what the vehicle warns about', () => {
@@ -57,14 +69,74 @@ describe('healthChecks', () => {
     expect(failed).toMatchObject({ level: 'attention', value: 'Install failed' });
   });
 
+  it("shows the installed version where the vehicle doesn't report updates", () => {
+    // As an R2: Parallax sends only the installed version.
+    const software = healthChecks(state({ otaCurrentVersion: '2026.36.0' })).at(-1);
+    expect(software).toMatchObject({ level: 'good', value: '2026.36.0' });
+  });
+
   it('waits for readings before judging', () => {
+    expect(healthChecks(undefined)).toHaveLength(6);
     expect(healthSummary(healthChecks(undefined))).toMatchObject({ level: 'unknown' });
     expect(
       healthSummary(healthChecks(state({ twelveVoltBatteryHealth: 'NORMAL_OPERATION' }))),
-    ).toMatchObject({
-      level: 'good',
-      detail: 'No warnings in what the vehicle has reported so far.',
+    ).toMatchObject({ level: 'good', detail: 'No warnings from the 12V battery.' });
+  });
+
+  it('leaves out checks the vehicle never reports (no legacy feed)', () => {
+    // As an R1S on Parallax alone: no thermal event, brake or washer fluid.
+    const parallaxOnly = state({
+      twelveVoltBatteryHealth: 'NORMAL_OPERATION',
+      tirePressureStatusFrontLeft: 'OK',
+      otaCurrentVersion: '2026.36.0',
     });
+    const checks = healthChecks(parallaxOnly);
+    expect(checks.map((c) => c.label)).toEqual(['12V battery', 'Tires', 'Software']);
+    expect(healthSummary(checks).detail).toBe(
+      'No warnings from the 12V battery, tires and software.',
+    );
+  });
+});
+
+describe('battery pack', () => {
+  const packCheck = (fields: Record<string, string | number>, ofRated: number | null) =>
+    healthChecks(state(fields), ofRated).find((c) => c.key === 'pack');
+
+  it('judges usable capacity against rated, normal from 70%', () => {
+    expect(packCheck(healthy, 95)).toMatchObject({ level: 'good', value: 'Normal' });
+    expect(packCheck(healthy, 70)).toMatchObject({ level: 'good', value: 'Normal' });
+    expect(packCheck(healthy, 68.6)).toMatchObject({ level: 'attention', value: '69% of rated' });
+  });
+
+  it('flags a thermal event whatever the capacity', () => {
+    const hot = { ...healthy, batteryHvThermalEvent: 'on' };
+    expect(packCheck(hot, 95)).toMatchObject({ level: 'attention', value: 'Thermal event' });
+  });
+
+  it('shows for a vehicle without the thermal reading (an R2) once capacity is known', () => {
+    const r2 = { twelveVoltBatteryHealth: 'NORMAL_OPERATION' };
+    expect(packCheck(r2, null)).toBeUndefined();
+    // Kept in place while battery health loads, so the tiles don't shift.
+    expect(healthChecks(state(r2), null, true).map((c) => c.key)).toEqual(['pack', '12v']);
+    expect(packCheck(r2, 92)).toMatchObject({ level: 'good', value: 'Normal' });
+  });
+
+  it('takes the latest capacity, or the last reported one, against rated', () => {
+    const rated = { kwh: 110, at: 't' };
+    expect(
+      packOfRated({ latest: { kwh: 104.5, at: 't' }, reported: [], ratedCapacity: rated }),
+    ).toBeCloseTo(95);
+    expect(
+      packOfRated({
+        latest: null,
+        reported: [{ day: 'd', at: 't', kwh: 99 }],
+        ratedCapacity: rated,
+      }),
+    ).toBeCloseTo(90);
+    expect(
+      packOfRated({ latest: { kwh: 104.5, at: 't' }, reported: [], ratedCapacity: null }),
+    ).toBeNull();
+    expect(packOfRated(undefined)).toBeNull();
   });
 });
 

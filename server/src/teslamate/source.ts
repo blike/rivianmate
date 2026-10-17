@@ -17,7 +17,6 @@ import type {
 } from '../api-types.js';
 import type { VehicleState } from '../rivian/types.js';
 import { type DrainSnapshot, phantomDrain } from '../services/health.js';
-import type { HomeChargingSettings, Spot } from '../services/home-charging.js';
 import type { LiveBus } from '../services/live-bus.js';
 import { teslamateCarId } from './ids.js';
 import {
@@ -27,6 +26,7 @@ import {
   type GeofenceRow,
   type RangeKind,
   buildVehicleState,
+  type Places,
   capacityHistory,
   liveChargingSession,
   softwareVersion,
@@ -35,11 +35,6 @@ import {
   toVehicleDto,
 } from './mapping.js';
 import * as q from './queries.js';
-
-export interface HomeContext {
-  settings: HomeChargingSettings;
-  spots: readonly Spot[];
-}
 
 /** Polls TeslaMate this often while a car is driving or charging… */
 const ACTIVE_POLL_MS = 5_000;
@@ -80,6 +75,7 @@ export const EMPTY_INSIGHTS: VehicleInsightsDto = {
 
 export const NO_SCHEDULES: SchedulesDto = {
   charging: null,
+  chargingFromParallax: false,
   departures: null,
   departuresUnavailable: true,
   chargingUpdatedAt: null,
@@ -355,7 +351,7 @@ export class TeslaMateSource {
     return this.cars.find((c) => c.row.id === carId) ?? null;
   }
 
-  async drives(vehicleId: string, home: HomeContext): Promise<DriveDto[]> {
+  async drives(vehicleId: string, places: Places): Promise<DriveDto[]> {
     const car = this.need(vehicleId);
     if (!car) return [];
     const sql = this.db();
@@ -366,18 +362,14 @@ export class TeslaMateSource {
       toDriveDto(row, {
         range: this.range,
         efficiency: car.row.efficiency,
-        homeSpots: home.spots,
+        places,
         progress: row === open ? progress : null,
         geofences: this.geofences,
       }),
     );
   }
 
-  async drive(
-    vehicleId: string,
-    driveId: number,
-    home: HomeContext,
-  ): Promise<DriveDetailDto | null> {
+  async drive(vehicleId: string, driveId: number, places: Places): Promise<DriveDetailDto | null> {
     const car = this.need(vehicleId);
     if (!car || !Number.isSafeInteger(driveId)) return null;
     const sql = this.db();
@@ -395,7 +387,7 @@ export class TeslaMateSource {
       ...toDriveDto(row, {
         range: this.range,
         efficiency: car.row.efficiency,
-        homeSpots: home.spots,
+        places,
         progress,
         geofences: this.geofences,
       }),
@@ -421,11 +413,11 @@ export class TeslaMateSource {
     return { ...edges, latestFull, maxSpeed };
   }
 
-  async chargingSessions(vehicleId: string, home: HomeContext): Promise<ChargingSessionDto[]> {
+  async chargingSessions(vehicleId: string, places: Places): Promise<ChargingSessionDto[]> {
     const car = this.need(vehicleId);
     if (!car) return [];
     const rows = await q.chargingProcesses(this.db(), car.row.id, MAX_LIST);
-    return rows.map((row) => toSessionDto(row, { vehicleId, range: this.range, home }));
+    return rows.map((row) => toSessionDto(row, { vehicleId, range: this.range, places }));
   }
 
   async chargingCurve(vehicleId: string, sessionId: number): Promise<ChargingCurvePointDto[]> {

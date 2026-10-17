@@ -10,13 +10,17 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LiveBus } from '../services/live-bus.js';
 import type { LiveSessionData } from '../rivian/types.js';
-import { DEFAULT_HOME_CHARGING } from '../services/home-charging.js';
 import { TeslaMateSource, connectReadOnly } from './source.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const here = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = 'teslamate_test';
-const home = { settings: { ...DEFAULT_HOME_CHARGING, ratePerKwh: 0.2 }, spots: [] };
+// Home's rate, with Home elsewhere: the Home geofence alone makes a charge home charging.
+const home = {
+  settings: { currency: 'USD' },
+  locations: [{ id: 1, name: 'Home', lat: 0, lon: 0, radiusM: 150, isHome: true, ratePerKwh: 0.2 }],
+  wallboxes: [],
+};
 
 /** `minutes` ago in TeslaMate's UTC timestamps. */
 const ago = (minutes: number) => `(now() AT TIME ZONE 'UTC') - interval '${minutes} minutes'`;

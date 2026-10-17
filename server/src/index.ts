@@ -10,10 +10,10 @@ import { appSettings } from './db/schema.js';
 import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
 import { RivianGovernor } from './rivian/governor.js';
-import { MockRivian, mockGeocode } from './rivian/mock.js';
+import { type MockScene, MockRivian, mockGeocode } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
 import { getPasswordHash } from './routes/auth.js';
-import { DrivePlaces, nominatimGeocoder } from './services/drive-places.js';
+import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { TokenStore } from './services/token-store.js';
@@ -44,8 +44,11 @@ async function main(): Promise<void> {
   const bus = new LiveBus();
 
   const governor = new RivianGovernor();
-  const rivianFactory: RivianFactory = config.MOCK_RIVIAN ? mockFactory() : realFactory(governor);
+  const rivianFactory: RivianFactory = config.MOCK_RIVIAN
+    ? mockFactory(config.MOCK_SCENE)
+    : realFactory(governor);
 
+  const userAgent = `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`;
   const monitor = new VehicleMonitor(
     db,
     tokenStore,
@@ -55,11 +58,7 @@ async function main(): Promise<void> {
     new DrivePlaces(
       db,
       // Mock drives are in made-up places; don't look them up.
-      config.MOCK_RIVIAN
-        ? mockGeocode
-        : nominatimGeocoder(
-            `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`,
-          ),
+      config.MOCK_RIVIAN ? mockGeocode : nominatimGeocoder(userAgent),
       (msg) => console.log(`[places] ${msg}`),
     ),
   );
@@ -89,6 +88,8 @@ async function main(): Promise<void> {
     rivianFactory,
     teslamate,
     governor,
+    // Searches are typed by the user, so they run in mock mode too.
+    searchPlaces: nominatimSearch(userAgent),
     pendingConnect: null,
   };
 
@@ -175,8 +176,8 @@ function realFactory(governor: RivianGovernor): RivianFactory {
 }
 
 /** The mock is a single object acting as both API and state stream. */
-function mockFactory(): RivianFactory {
-  const mock = new MockRivian();
+function mockFactory(scene?: MockScene): RivianFactory {
+  const mock = new MockRivian({ scene });
   return {
     createApi: () => mock,
     createConnection: () => ({ api: mock, stream: mock }),

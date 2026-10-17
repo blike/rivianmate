@@ -1,113 +1,181 @@
-# <img src="web/public/icon.svg" alt="" width="40" height="40" align="absmiddle"> RivianMate
+<h1>
+  <img src="web/public/icon.svg" alt="RivianMate" width="40" height="40" align="absmiddle">
+  RivianMate
+</h1>
+
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)](https://github.com/blike/rivianmate/actions/workflows/docker-publish.yml)
+[![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)](https://github.com/blike/rivianmate/releases/latest)
+[![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)](https://hub.docker.com/r/mitchvitale/rivianmate)
+[![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)](https://hub.docker.com/r/mitchvitale/rivianmate)
 
 **A self-hosted data logger and dashboard for your Rivian.**
 
 Drives, charging, battery health, and live vehicle state, recorded in your own database and shown on
 a dashboard you can open from anywhere.
 
-<p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
-  <a href="https://github.com/blike/rivianmate/releases/latest"><img src="https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen" alt="Latest version"></a>
-  <a href="https://hub.docker.com/r/mitchvitale/rivianmate"><img src="https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size" alt="Docker image size"></a>
-  <a href="https://hub.docker.com/r/mitchvitale/rivianmate"><img src="https://img.shields.io/docker/pulls/mitchvitale/rivianmate" alt="Docker pulls"></a>
-  <a href="https://github.com/blike/rivianmate/actions/workflows/docker-publish.yml"><img src="https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build" alt="Build status"></a>
-</p>
-
 [Features](#features) · [Screenshots](#screenshots) · [Quick start](#quick-start) ·
 [Configuration](#configuration) · [Contributing](#contributing)
 
 ## Why RivianMate
 
-- **Your data, your server.** One Docker Compose file runs the app and its database. There's no
-  cloud service, account or analytics behind it.
-- **Read-only and gentle.** RivianMate never sends commands to the vehicle, and it keeps its Rivian
-  traffic low so your phone app keeps working.
-- **Built for Rivian.** Doors, gates, the gear tunnel and tonneau, Gear Guard, drive modes, the
-  Rivian Adventure Network and the Rivian Wall Charger are all understood, not just battery and
-  location.
+- **Self-hosted and private.** Run RivianMate on your own infrastructure using Docker Compose. Your
+  vehicle data stays on your server, with no third-party cloud services or telemetry.
+- **Read-only integration.** RivianMate monitors vehicle data without sending commands to your
+  Rivian. API usage is designed to minimize unnecessary requests and avoid interfering with the
+  official Rivian app.
+- **R1 and R2 support.** Compatible with Rivian R1T, R1S, and R2 vehicles.
 
 ## Features
 
-- **Live dashboard.** Battery, range, charge limit, closures, tire pressures, climate, software, and
-  active navigation with arrival time and battery on arrival. The vehicle follows the map as it
-  drives, and updates are pushed to the browser as they arrive.
-- **Drives.** Detected automatically, with the route on a map, a speed and elevation chart,
-  efficiency, energy used, and start and end addresses.
-- **Charging.** Every session with its power curve, energy, range added, peak power and cost. Past
-  sessions are imported from your Rivian account, and home sessions are priced from your electricity
-  rate.
-- **Battery and vehicle health.** Battery capacity over time, energy used while parked, per-tire
-  pressure trends that make slow leaks stand out, and a timeline of every software version the
-  vehicle has run.
-- **History.** Distance, efficiency, energy and cost from the last 24 hours to 90 days, with drives
-  and charging marked on the battery chart.
-- **Notifications.** Alerts for doors or windows left open, unlocked, charging complete, low
-  battery, tire pressure and software updates, sent to Discord or Apprise.
-- **Works on your phone.** Every page fits a phone screen.
+### Real-Time Vehicle Monitoring
+
+- Live dashboard displaying battery level, estimated range, charge limits, vehicle closures, tire
+  pressures, climate, and software information.
+- Interactive vehicle map with live location tracking and active navigation details, including
+  estimated arrival time and battery level at destination.
+- Real-time updates pushed directly to the browser as new vehicle data becomes available.
+
+### Drive Tracking & Analytics
+
+- Automatic trip detection and logging.
+- Interactive route maps with speed and elevation profiles.
+- Detailed trip statistics, including distance, duration, efficiency, and energy consumption.
+- Start and destination address identification.
+
+### Charging History & Analytics
+
+- Automatic charging session tracking with detailed power curves, energy delivered, range added,
+  peak charging power, and estimated costs.
+- Historical charging sessions imported from your Rivian account.
+- Configurable electricity rates for home charging cost calculations.
+
+### Battery & Vehicle Health
+
+- Long-term battery capacity monitoring.
+- Parked energy consumption tracking.
+- Individual tire pressure trends to help identify gradual pressure loss.
+- Software update history with a timeline of installed vehicle versions.
+
+### Historical Data & Statistics
+
+- Interactive charts for distance traveled, energy consumption, efficiency, and charging costs.
+- Historical views ranging from 24 hours to 90 days.
+- Battery level charts annotated with driving and charging events.
+
+### Notifications
+
+- Configurable alerts for open doors or windows, unlocked vehicles, completed charging sessions, low
+  battery levels, tire pressure, and software updates.
+- Notification delivery through Discord or Apprise.
+
+### Mobile-Friendly Interface
+
+- Responsive web interface optimized for desktop, tablet, and mobile devices.
+- Full access to dashboards, trip history, charging sessions, and analytics from any screen size.
 
 ## Screenshots
 
 <p>
-  <img src="docs/screenshots/dashboard-desktop.png" alt="The dashboard on a desktop, with the vehicle parked" width="73%">
-  <img src="docs/screenshots/dashboard-mobile.png" alt="The dashboard on a phone, while charging" width="23%">
+  <img src="docs/screenshots/dashboard-desktop.png" alt="The dashboard on a desktop, partway through a drive home" width="73%">
+  <img src="docs/screenshots/dashboard-mobile.png" alt="The dashboard on a phone, on the same drive home" width="23%">
 </p>
 
 Shown in demo mode with a simulated R1S. Map data © OpenStreetMap contributors and OpenMapTiles.
 
-## Quick start
+## Quick Start
 
-You need a machine that's always on (a home server, NAS, or small VPS) with Docker and Docker
-Compose.
+RivianMate runs with Docker Compose and includes everything needed to get started, including a
+PostgreSQL database.
 
-1. **Get the compose file and environment template.**
+### Prerequisites
 
-```sh
- mkdir rivianmate && cd rivianmate
- curl -O https://raw.githubusercontent.com/blike/rivianmate/main/docker-compose.yml
- curl -o .env https://raw.githubusercontent.com/blike/rivianmate/main/.env.example
+- [Docker](https://docs.docker.com/get-docker/) with Docker Compose
+- A machine capable of running Docker, such as a home server, NAS, or VPS
+- A Rivian account with a supported vehicle (R1T, R1S, or R2)
+
+### Installation
+
+**1. Download the configuration files**
+
+```
+mkdir rivianmate && cd rivianmate
+
+curl -LO https://raw.githubusercontent.com/blike/rivianmate/main/docker-compose.yml
+curl -Lo .env https://raw.githubusercontent.com/blike/rivianmate/main/.env.example
 ```
 
-2. **Set your secrets** in `.env`:
+**2. Configure environment variables**
 
-```sh
- APP_SECRET=$(openssl rand -hex 32)       # paste the output into .env
- POSTGRES_PASSWORD=<a strong password>
+Generate a secure application secret:
+
+```
+openssl rand -hex 32
 ```
 
-3. **Start it.**
+Edit `.env` and set the following values:
 
-```sh
- docker compose up -d
+```
+APP_SECRET=your-generated-secret
+POSTGRES_PASSWORD=your-secure-database-password
 ```
 
-4. **Open** `http://<your-server>:4000`**.** Create an app password, then sign in with your Rivian
-   account and the verification code Rivian sends you. Your vehicles appear within a few seconds.
+Keep your `APP_SECRET` safe. It is used to encrypt stored Rivian authentication tokens and must
+remain unchanged across restarts and updates.
 
-You only sign in to Rivian once: tokens are stored encrypted and tracking resumes after restarts.
-For access away from home, put RivianMate behind a reverse proxy with HTTPS (Caddy, Traefik, nginx)
-or a private network such as Tailscale. Don't expose port 4000 directly to the internet.
+**3. Start RivianMate**
+
+```
+docker compose up -d
+```
+
+**4. Complete initial setup**
+
+Open `http://localhost:4000` or `http://<your-server-ip>:4000` in your browser.
+
+Follow the setup wizard to create an application password, sign in to your Rivian account, and enter
+the verification code provided by Rivian.
+
+Once connected, RivianMate will begin collecting vehicle data automatically.
+
+Rivian authentication tokens are stored encrypted, allowing data collection to resume after restarts
+without requiring you to sign in again.
+
+> **Remote access:** For access outside your local network, use a reverse proxy with HTTPS (such as
+> Caddy, Traefik, or nginx) or a private network like [Tailscale](https://tailscale.com/). Do not
+> expose port 4000 directly to the public internet.
 
 ## Configuration
 
-Everything is set through environment variables, which Docker Compose reads from `.env`.
+RivianMate is configured using environment variables defined in the `.env` file. Docker Compose
+automatically loads these values when starting the application.
 
-| Variable            | Required    | Description                                                                                                                                                                                                     |
-| ------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_SECRET`        | **yes**     | At least 32 random characters (`openssl rand -hex 32`). Encrypts stored Rivian tokens and signs sessions. Keep it unchanged: a new secret makes stored tokens unreadable and you'll have to reconnect to Rivian |
-| `POSTGRES_PASSWORD` | recommended | Password for the bundled Postgres database (defaults to `rivianmate`)                                                                                                                                           |
-| `APP_PORT`          | no          | Host port for the web app (default `4000`)                                                                                                                                                                      |
-| `APP_PASSWORD`      | no          | Sets the app password on first start instead of using the setup screen. At least 12 characters, and not a common password or pattern                                                                            |
-| `DATABASE_URL`      | no          | Postgres connection string. Compose sets it for the bundled database; set it only to use an external Postgres                                                                                                   |
+| Variable            | Required    | Description                                                                                                                                                        |
+| ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `APP_SECRET`        | Yes         | Secret used to encrypt Rivian tokens and sign sessions. Generate with `openssl rand -hex 32`. Must remain consistent across restarts and updates.                  |
+| `POSTGRES_PASSWORD` | Recommended | Password for the bundled PostgreSQL database. Defaults to `rivianmate`.                                                                                            |
+| `APP_PORT`          | No          | Port used to access the web interface. Defaults to `4000`.                                                                                                         |
+| `APP_PASSWORD`      | No          | Preconfigures the application password on first startup, bypassing the password setup screen. Must be at least 12 characters and not a common password or pattern. |
+| `DATABASE_URL`      | No          | PostgreSQL connection string. Configured automatically by Docker Compose; override when using an external database.                                                |
 
-Units, your home location and electricity rate, notifications, and vehicles are set in the app under
-**Settings**.
+Additional preferences are configured directly in the web interface under **Settings**, including:
+
+- Units and currency
+- Saved locations and electricity rates
+- Vehicle management
+- Notification preferences
 
 ### Notifications
 
-RivianMate can send alerts to [Discord](https://discord.com) webhooks and to
-[Apprise API](https://github.com/caronc/apprise-api) servers, which forward to Pushover, ntfy,
-Telegram, Slack, email and [many more](https://github.com/caronc/apprise/wiki). Set them up in
-**Settings → Notifications**.
+RivianMate supports configurable vehicle alerts through:
+
+- **[Discord](https://discord.com/)** — Send notifications directly to a Discord channel using
+  webhooks.
+- **[Apprise API](https://github.com/caronc/apprise-api)** — Integrate with Pushover, ntfy,
+  Telegram, Slack, email, and
+  [many other notification services](https://github.com/caronc/apprise/wiki).
+
+Configure notification providers and alert preferences under **Settings → Notifications**.
 
 ### TeslaMate
 
@@ -128,78 +196,183 @@ only cover Rivian vehicles.
 
 ## Updating
 
-```sh
-docker compose pull && docker compose up -d
+To update RivianMate to the latest version, run the following commands from your installation
+directory:
+
+```
+docker compose pull
+docker compose up -d
 ```
 
-Database migrations run automatically at startup. Back up Postgres before updating, and keep the
-same `APP_SECRET`. See [CHANGELOG.md](CHANGELOG.md) for what changed.
+Database migrations are applied automatically when the application starts.
 
-Images are published to Docker Hub as
-`[mitchvitale/rivianmate](https://hub.docker.com/r/mitchvitale/rivianmate)`:
+Before updating, back up your PostgreSQL database and retain your existing `.env` file, especially
+`APP_SECRET`. Changing this secret will invalidate encrypted Rivian tokens and require
+reauthentication.
 
-| Tag         | Tracks                                               |
-| ----------- | ---------------------------------------------------- |
-| `latest`    | The newest stable release (the default)              |
-| `0` / `0.5` | The newest release in that major or minor line       |
-| `0.5.0`     | Exactly that release                                 |
-| `edge`      | Every commit on `main`, including unreleased changes |
+See the [Changelog](CHANGELOG.md) for release notes and changes.
 
-## Privacy and security
+### Docker Images
 
-- Your Rivian password goes to Rivian once, at sign-in, and is never stored. The resulting tokens
-  are encrypted (AES-256-GCM) with `APP_SECRET`.
-- The web app is protected by an app password, hashed with scrypt.
-- All data stays in your Postgres database, which isn't published outside the Docker network. The
-  only other outbound requests are map tiles from [OpenFreeMap](https://openfreemap.org) and address
-  lookups for drive start and end points from OpenStreetMap's [Nominatim](https://nominatim.org),
-  plus read-only queries to your TeslaMate database if you add one.
+Prebuilt images are available on [Docker Hub](https://hub.docker.com/r/mitchvitale/rivianmate) under
+`mitchvitale/rivianmate`.
 
-Found a vulnerability? Please report it privately as described in [SECURITY.md](SECURITY.md).
+| Tag         | Description                                                        |
+| ----------- | ------------------------------------------------------------------ |
+| `latest`    | Latest stable release (default)                                    |
+| `0` / `0.6` | Latest release within the specified major or minor version         |
+| `0.6.0`     | Specific release version                                           |
+| `edge`      | Latest development build from `main`, including unreleased changes |
+
+For most installations, the `latest` tag is recommended. Use a version-specific tag if you prefer to
+control when upgrades occur.
+
+## Privacy & Security
+
+RivianMate is designed to keep your vehicle data under your control.
+
+- **Local data storage.** Vehicle data and history are stored in your own PostgreSQL database.
+- **Encrypted authentication.** Your Rivian password is used during authentication and is never
+  stored. Authentication tokens are encrypted using AES-256-GCM with your `APP_SECRET`.
+- **Application authentication.** Access to the web interface is protected by a password hashed
+  using scrypt.
+- **Read-only vehicle access.** RivianMate retrieves vehicle data without sending commands to the
+  vehicle.
+- **Isolated database.** The bundled PostgreSQL database is accessible only within the Docker
+  network and is not exposed publicly.
+- **No application telemetry.** RivianMate does not send your vehicle data to a RivianMate-operated
+  analytics or cloud service.
+
+The application makes external requests for vehicle data and authentication, map tiles through
+[OpenFreeMap](https://openfreemap.org/), and address lookups through OpenStreetMap's
+[Nominatim](https://nominatim.org/), plus read-only queries to your TeslaMate database if you add
+one.
+
+For more information, including how to responsibly disclose security vulnerabilities, see the
+[Security Policy](SECURITY.md).
 
 ## Development
 
-RivianMate is TypeScript end to end: a Fastify server with Drizzle and Postgres, and a React, Vite
-and Tailwind web app with MapLibre maps. You need Node 22+, pnpm 10 and Docker.
+RivianMate is built with TypeScript across the frontend and backend.
 
-```sh
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
-pnpm install
-cp .env.example .env        # set APP_SECRET, uncomment DATABASE_URL and MOCK_RIVIAN
-pnpm dev                    # API server on http://localhost:4000
-pnpm dev:web                # web app on http://localhost:5173
+**Technology Stack**
+
+- **Frontend:** React, Vite, Tailwind CSS, MapLibre
+- **Backend:** Node.js, Fastify
+- **Database:** PostgreSQL, Drizzle ORM
+- **Deployment:** Docker, Docker Compose
+
+### Local Development
+
+To run RivianMate locally, you'll need Node.js 22+, pnpm 10+, and Docker.
+
+**1. Clone the repository**
+
+```
+git clone https://github.com/blike/rivianmate.git
+cd rivianmate
 ```
 
-With `MOCK_RIVIAN=1` you don't need a Rivian account: any email and password work, the verification
-code is `000000`, and a simulated R1S drives, parks and charges so every page fills in.
+**2. Start PostgreSQL**
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers the checks to run, database migrations and code style.
-[RELEASING.md](RELEASING.md) covers releases.
+```
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+```
+
+**3. Install dependencies and configure the environment**
+
+```
+pnpm install
+cp .env.example .env
+```
+
+Edit `.env` to configure `APP_SECRET`, enable `DATABASE_URL`, and optionally enable `MOCK_RIVIAN`
+for development without a vehicle.
+
+**4. Start the development servers**
+
+```
+pnpm dev
+```
+
+In a separate terminal:
+
+```
+pnpm dev:web
+```
+
+The development servers are available at:
+
+| Service       | URL                                             |
+| ------------- | ----------------------------------------------- |
+| API           | [http://localhost:4000](http://localhost:4000/) |
+| Web interface | [http://localhost:5173](http://localhost:5173/) |
+
+### Mock Vehicle Mode
+
+RivianMate includes a simulated vehicle for development and testing without a Rivian account.
+
+Enable the following in `.env`:
+
+```
+MOCK_RIVIAN=1
+```
+
+With mock mode enabled:
+
+- Sign in using any email and password.
+- Enter `000000` when prompted for a verification code.
+- A simulated R1S generates driving, parking, and charging activity.
+- Vehicle dashboards, charts, and historical data populate automatically.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines, testing, database migrations, and
+code conventions.
 
 ## Contributing
 
-Bug reports, fixes and features are welcome. For anything larger than a small fix, please open an
-issue first so we can agree on the approach. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening
-a pull request.
+Contributions are welcome! Whether you're reporting a bug, suggesting a feature, improving
+documentation, or submitting code, your help is appreciated.
 
-## Use of AI
+- **Bug reports and feature requests:** Open a
+  [GitHub issue](https://github.com/blike/rivianmate/issues).
+- **Code contributions:** Fork the repository and submit a pull request.
+- **Larger changes:** Please open an issue to discuss your proposal before beginning significant
+  work.
 
-RivianMate is written with the help of AI coding assistants. They speed up the work, but they don't
-replace understanding it: every change is read, tested and understood by a maintainer before it's
-merged, and the maintainer answers for it like any other code. Design decisions, and the rules the
-project holds to, are made by people.
+Before submitting a pull request, review the [Contributing Guidelines](CONTRIBUTING.md).
 
-Contributions written with AI help are welcome on the same terms. You're responsible for what you
-submit: understand it, test it, and be ready to explain it in review.
+### AI-Assisted Contributions
+
+RivianMate is developed with assistance from AI coding tools. All contributions, whether AI-assisted
+or manually written, are held to the same standards for code quality, correctness, and
+maintainability.
+
+Contributors are expected to understand, test, and take responsibility for the code they submit.
+AI-generated changes should be reviewed and validated before submission.
+
+Project maintainers review contributions and remain responsible for changes merged into the project.
+
+For information about the release process, see [RELEASING.md](RELEASING.md).
 
 ## License
 
 Copyright © 2026 Mitch Vitale and contributors.
 
-RivianMate is free software: you can redistribute it and modify it under the terms of the
-[GNU General Public License, version 3](LICENSE). It comes with no warranty.
+RivianMate is free and open-source software licensed under the **GNU General Public License v3.0
+(GPL-3.0)**.
+
+You are free to use, modify, and redistribute the software under the terms of this license. See
+[LICENSE](LICENSE) for the complete license text.
+
+The software is provided without warranty.
 
 ## Disclaimer
 
-RivianMate is unofficial and is not affiliated with or endorsed by Rivian. It relies on a private
-API that may change without notice. Use it at your own risk.
+RivianMate is an independent, community-developed project and is not affiliated with, sponsored by,
+or endorsed by Rivian Automotive, Inc. or any other vehicle manufacturer, software project, or
+third-party service.
+
+RivianMate relies on unofficial Rivian APIs that may change or become unavailable without notice.
+Functionality and compatibility are not guaranteed.
+
+Use at your own risk.

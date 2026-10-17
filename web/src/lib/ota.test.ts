@@ -1,12 +1,28 @@
 import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import { installTimeLabel, lastInstallFailed, softwareUpdate, typicalUpdateGapDays } from './ota';
+import {
+  installTimeLabel,
+  lastInstallFailed,
+  reportsUpdates,
+  softwareUpdate,
+  typicalUpdateGapDays,
+} from './ota';
 
 const v = (value: string | number) => ({ timeStamp: 't', value });
 const state = (fields: Record<string, string | number>) =>
   Object.fromEntries(Object.entries(fields).map(([k, x]) => [k, v(x)])) as unknown as VehicleState;
 
 const base = { otaCurrentVersion: '2026.31.0', otaAvailableVersion: '2026.36.0' };
+
+describe('reportsUpdates', () => {
+  it('is true only for a vehicle that says when an update is offered', () => {
+    expect(reportsUpdates(state(base))).toBe(true);
+    expect(reportsUpdates(state({ otaCurrentVersion: '2026.31.0', otaStatus: 'Idle' }))).toBe(true);
+    // As an R2: Parallax sends only the installed version.
+    expect(reportsUpdates(state({ otaCurrentVersion: '2026.31.0' }))).toBe(false);
+    expect(reportsUpdates(undefined)).toBe(false);
+  });
+});
 
 describe('softwareUpdate', () => {
   it('is null when up to date', () => {
@@ -59,6 +75,50 @@ describe('softwareUpdate', () => {
       phase: 'available',
       label: 'Update available',
     });
+  });
+
+  it('follows the statuses seen through a real update', () => {
+    const at = (otaStatus: string, extra: Record<string, string | number> = {}) =>
+      softwareUpdate(state({ ...base, otaStatus, ...extra }));
+    expect(at('Ready_To_Download')).toMatchObject({ phase: 'available' });
+    expect(at('Connection_Lost')).toMatchObject({
+      phase: 'waiting',
+      label: 'Waiting for connection',
+    });
+    expect(at('Downloading')).toMatchObject({ phase: 'downloading', progress: null });
+    expect(at('Preparing')).toMatchObject({ phase: 'preparing', label: 'Preparing' });
+    expect(at('Ready_To_Install')).toMatchObject({ phase: 'ready' });
+    expect(at('Awaiting_Install')).toMatchObject({
+      phase: 'installing',
+      label: 'Starting install',
+    });
+    expect(at('Ready_To_Install', { powerState: 'ota_update' })).toMatchObject({
+      phase: 'installing',
+    });
+    expect(at('Installing', { otaInstallProgress: 0 })).toMatchObject({
+      phase: 'installing',
+      label: 'Installing',
+    });
+  });
+
+  it('ignores a leftover status once nothing is pending', () => {
+    const done = { otaCurrentVersion: '2026.36.0', otaAvailableVersion: '0.0.0' };
+    expect(softwareUpdate(state({ ...done, otaStatus: 'Ready_To_Download' }))).toBeNull();
+    expect(softwareUpdate(state({ ...done, otaStatus: 'Connection_Lost' }))).toBeNull();
+  });
+
+  it('is done once the pending version is installed, despite a leftover status', () => {
+    expect(
+      softwareUpdate(
+        state({
+          otaCurrentVersion: '2026.36.0',
+          otaAvailableVersion: '2026.36.0',
+          otaStatus: 'Installing',
+          otaInstallProgress: 99,
+          powerState: 'sleep',
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('keeps showing an install when the pending version drops out', () => {

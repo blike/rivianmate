@@ -4,6 +4,7 @@ import {
   chargerLabel,
   lastChargedTo,
   chargingSecondsNow,
+  rateLabel,
   sessionCost,
   sessionTotals,
   socRange,
@@ -27,8 +28,8 @@ describe('chargingSecondsNow', () => {
 
 describe('socRange', () => {
   it('shows start → end, marking a missing side', () => {
-    expect(socRange(39.7, 70)).toBe('40→70%');
-    expect(socRange(39.7, null)).toBe('40→?%');
+    expect(socRange(39.7, 70)).toBe('39.7% → 70.0%');
+    expect(socRange(39.7, null)).toBe('39.7% → ?');
     expect(socRange(null, null)).toBe('—');
   });
 });
@@ -100,8 +101,17 @@ describe('sessionTotals', () => {
   });
 });
 
+describe('rateLabel', () => {
+  it('reads a rate, a free one, or none', () => {
+    expect(rateLabel(0.131, 'USD')).toBe('$0.131/kWh');
+    expect(rateLabel(0.15, 'EUR')).toBe('EUR 0.15/kWh');
+    expect(rateLabel(0, 'USD')).toBe('Free');
+    expect(rateLabel(null, 'USD')).toBe('No rate');
+  });
+});
+
 describe('chargerLabel', () => {
-  const base = { chargerType: null, isHome: false, vendor: null, chargerId: null };
+  const base = { chargerType: null, isHome: false, vendor: null, chargerId: null, location: null };
 
   it("names Rivian's chargers Rivian, however they were recorded", () => {
     expect(chargerLabel({ ...base, chargerType: 'rivian_charger' })).toBe('Rivian');
@@ -112,6 +122,12 @@ describe('chargerLabel', () => {
   it('names home and other networks', () => {
     expect(chargerLabel({ ...base, isHome: true })).toBe('Home');
     expect(chargerLabel({ ...base, vendor: 'ELECTRIFY AMERICA' })).toBe('Electrify America');
+  });
+
+  it("names a saved location's sessions after it, over the network", () => {
+    const work = { id: 2, name: 'Work', isHome: false };
+    expect(chargerLabel({ ...base, vendor: 'CHARGEPOINT', location: work })).toBe('Work');
+    expect(chargerLabel({ ...base, chargerType: 'rivian_charger', location: work })).toBe('Work');
   });
 });
 

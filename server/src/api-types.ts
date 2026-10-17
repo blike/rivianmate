@@ -10,6 +10,7 @@ import type {
   VehicleState,
 } from './rivian/types.js';
 import type { FeedLatestData } from './rivian/subscription.js';
+import type { SavedLocation } from './services/locations.js';
 import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
 export type { ChargingSchedule, DepartureSchedule, FeedLatestData, LiveSessionData, VehicleState };
@@ -17,6 +18,11 @@ export type { ChargingSchedule, DepartureSchedule, FeedLatestData, LiveSessionDa
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */
   charging: ChargingSchedule[] | null;
+  /**
+   * `charging` is only Parallax's next window, as legacy had no schedules
+   * (an R2): one day of the week, not the whole schedule.
+   */
+  chargingFromParallax: boolean;
   departures: DepartureSchedule[] | null;
   departuresUnavailable: boolean;
   chargingUpdatedAt: string | null;
@@ -52,7 +58,17 @@ export interface VehicleDto {
   source: 'rivian' | 'teslamate';
 }
 
-export type { HomeChargingSettings } from './services/home-charging.js';
+export type { ChargingSettings, SavedLocation } from './services/locations.js';
+
+/** A saved location as created or edited; the server assigns the id. */
+export type SavedLocationInput = Omit<SavedLocation, 'id'>;
+
+/** An address search result, for placing a location on the map. */
+export interface GeocodeResultDto {
+  label: string;
+  lat: number;
+  lon: number;
+}
 
 export interface UnitPreferences {
   distance: 'mi' | 'km';
@@ -120,17 +136,19 @@ export interface DriveDto {
   driveMode: string | null;
   /** Where navigation was headed, if the vehicle was navigating. */
   destination: { name: string | null; lat: number; lon: number } | null;
-  /** Where it started and ended: "Home", or an address once looked up. */
+  /** Where it started and ended: a saved location's name, or an address once looked up. */
   start: DrivePlaceDto | null;
   end: DrivePlaceDto | null;
 }
 
 export interface DrivePlaceDto {
-  /** "Home" or a short address, e.g. "306 West Willow Street, Normal". */
+  /** A saved location's name ("Work"), "Home", or a short address, e.g. "306 West Willow Street, Normal". */
   label: string;
   /** Full address, when looked up. */
   address: string | null;
   isHome: boolean;
+  /** The saved location, when the place is one. */
+  locationId: number | null;
 }
 
 export interface DriveDetailDto extends DriveDto {
@@ -212,10 +230,17 @@ export interface ChargingSessionDto {
   currency: string | null;
   lat: number | null;
   lon: number | null;
-  /** Charged at home (Rivian's flag, home wallbox, or near home). */
+  /** Charged at home (Rivian's flag, home wallbox, or a home location). */
   isHome: boolean;
-  /** Energy × home rate, when this home session has no cost of its own. */
+  /** The saved location the session was at, if any. */
+  location: { id: number; name: string; isHome: boolean } | null;
+  /** Energy × the location's rate, when the session has no cost of its own. */
   estimatedCost: string | null;
+  /**
+   * Until Rivian reports `energyKwh` (often only after unplugging), the
+   * energy the battery gained, from its levels and the pack's capacity.
+   */
+  estimatedEnergyKwh: number | null;
   /**
    * live = recorded by RivianMate; rivian = imported from Rivian's history;
    * teslamate = read from TeslaMate.
@@ -278,6 +303,8 @@ export interface VehicleInsightsDto {
     arrivalSoc: number | null;
     arrivalRangeKm: number | null;
     etaAt: string | null;
+    /** The planned route from where it was last calculated, as [lat, lon] points. */
+    route: [number, number][] | null;
     remainingKm: number | null;
     remainingS: number | null;
     at: string;

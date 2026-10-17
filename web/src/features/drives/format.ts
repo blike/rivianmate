@@ -1,4 +1,4 @@
-import type { DriveDto } from '@server/api-types';
+import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
 import type { UnitFormatter } from '../../lib/units';
 
@@ -15,22 +15,41 @@ export const batteryChange = (used: number) => `${used > 0 ? '−' : '+'}${fmt(M
 /** "2101 Ireland Grove Road, Bloomington" → "2101 Ireland Grove Road", for tight rows. */
 export const shortPlace = (label: string) => label.split(',')[0]!.trim();
 
+/** A saved location's name as given; an address shortened for tight rows. */
+export const placeName = (p: DrivePlaceDto) =>
+  p.locationId != null ? p.label : shortPlace(p.label);
+
 /** "38m · −6.3% · 1.84 mi/kWh" */
 export function driveFacts(d: DriveDto, u: UnitFormatter): string {
   const used = batteryUsed(d);
   return [
     fmtDuration(d.startedAt, d.endedAt),
     used != null && batteryChange(used),
-    d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
+    // Efficiency swings early in a drive, so it waits for the end.
+    d.endedAt != null && d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
   ]
     .filter(Boolean)
     .join(' · ');
 }
 
-/** Where a drive ended, or where it's headed while under way. */
-export function destination(d: DriveDto): string {
-  if (d.endedAt) return d.end ? shortPlace(d.end.label) : '—';
-  return d.destination?.name ? `Navigating to ${d.destination.name}` : '…';
+/**
+ * Where a drive ended, or where it's headed while under way; null for a
+ * drive under way with no destination, which is titled by its start alone.
+ */
+export function destination(d: DriveDto): string | null {
+  if (d.endedAt) return d.end ? placeName(d.end) : '—';
+  return d.destination?.name ? `Navigating to ${d.destination.name}` : null;
+}
+
+/**
+ * "Home → Office"; for a drive under way, "Navigating to Office", or
+ * "From Home" with no destination.
+ */
+export function driveTitle(d: DriveDto): string {
+  const from = d.start ? placeName(d.start) : '—';
+  const to = destination(d);
+  if (to == null) return `From ${from}`;
+  return d.endedAt ? `${from} → ${to}` : to;
 }
 
 /** Axis labels for whole minutes into a drive: "25 min", or "1h 30m" style for drives of two hours or more. */

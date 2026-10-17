@@ -59,9 +59,9 @@ export function averageSpeedKmh(
   return distanceKm / hours;
 }
 
-/** Range the vehicle's estimate dropped by; null if it rose or is unknown. */
+/** Range the vehicle's estimate dropped by; negative if it rose, null if unknown. */
 export function rangeUsedKm(startKm: number | null, endKm: number | null): number | null {
-  if (startKm == null || endKm == null || endKm > startKm) return null;
+  if (startKm == null || endKm == null) return null;
   return startKm - endKm;
 }
 

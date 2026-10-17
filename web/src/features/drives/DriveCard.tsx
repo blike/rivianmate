@@ -1,13 +1,12 @@
 import type { DriveDetailDto, DrivePlaceDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
-import { Dot } from '../../components/Dot';
-import { HomeIcon } from '../../components/HomeIcon';
+import { InProgressTag } from '../../components/InProgressTag';
+import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
 import { averageSpeedKmh, rangeUsedKm } from '../../lib/drives';
 import { clock, longDay } from '../../lib/format';
 import { fmt, fmtDuration, titleCase } from '../../lib/state';
-import { batteryUsed, batteryChange } from './format';
 
 /** The chosen drive: where it went up front, then its figures. */
 export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
@@ -15,14 +14,20 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   const loading = useLoading();
   const d = props.drive;
   const live = d != null && !d.endedAt;
-  const used = d ? batteryUsed(d) : null;
   const rangeUsed = d ? rangeUsedKm(d.startRangeKm, d.endRangeKm) : null;
   const avgSpeed = d ? averageSpeedKmh(d.distanceKm, d.startedAt, d.endedAt) : null;
   const to =
     d?.end?.label ?? (live && d?.destination?.name ? `Navigating to ${d.destination.name}` : null);
 
   const tiles: StatTile[] = [
-    { label: 'Distance', value: u.formatDistance(d?.distanceKm, 1) },
+    {
+      label: 'Distance',
+      value: u.formatDistance(d?.distanceKm, 1),
+      sub:
+        rangeUsed != null
+          ? `${rangeUsed < 0 ? 'Gained' : 'Used'} ${u.formatDistance(Math.abs(rangeUsed))} of range`
+          : undefined,
+    },
     {
       label: 'Duration',
       value: d ? fmtDuration(d.startedAt, d.endedAt) : '—',
@@ -31,7 +36,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
     {
       label: 'Efficiency',
       value: u.formatEfficiency(d?.distanceKm, d?.energyKwh),
-      sub: d?.energyKwh != null ? `${fmt(d.energyKwh, 1)} kWh used` : undefined,
+      sub: u.formatConsumption(d?.distanceKm, d?.energyKwh) ?? undefined,
     },
     {
       label: 'Battery',
@@ -39,10 +44,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
         d?.startBattery != null && d.endBattery != null
           ? `${fmt(d.startBattery, 1)}% → ${fmt(d.endBattery, 1)}%`
           : '—',
-      sub:
-        used != null
-          ? `${batteryChange(used)}${rangeUsed != null ? ` · ${u.formatDistance(rangeUsed)} of range` : ''}`
-          : undefined,
+      sub: d?.energyKwh != null ? `${fmt(d.energyKwh, 1)} kWh used` : undefined,
     },
     {
       label: 'Top speed',
@@ -69,14 +71,9 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
             <>
               <span>
                 {longDay(d.startedAt)} · {clock(d.startedAt)}
-                {d.endedAt && ` – ${clock(d.endedAt)}`}
+                {d.endedAt ? ` – ${clock(d.endedAt)}` : ' – now'}
               </span>
-              {live && (
-                <span className="flex items-center gap-1.5 font-medium uppercase tracking-wide text-(--status-good)">
-                  <Dot color="var(--status-good)" pulse />
-                  In progress
-                </span>
-              )}
+              {live && <InProgressTag />}
             </>
           )}
         </div>
@@ -85,14 +82,23 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
             <Skeleton className="w-[16em]" />
           ) : (
             <>
-              <Place place={d.start} />
-              <span aria-label="to" className="text-(--text-muted)">
-                →
-              </span>
-              {d.end ? (
-                <Place place={d.end} />
+              {live && to == null ? (
+                <>
+                  <span className="text-(--text-secondary)">From</span>
+                  <Place place={d.start} />
+                </>
               ) : (
-                <span className="text-(--text-secondary)">{to ?? (live ? '…' : '—')}</span>
+                <>
+                  <Place place={d.start} />
+                  <span aria-label="to" className="text-(--text-muted)">
+                    →
+                  </span>
+                  {d.end ? (
+                    <Place place={d.end} />
+                  ) : (
+                    <span className="text-(--text-secondary)">{to ?? '—'}</span>
+                  )}
+                </>
               )}
             </>
           )}
@@ -103,12 +109,12 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   );
 }
 
-/** "Home" or a short address, with the full address on hover. */
+/** A saved location's name or a short address, with the full address on hover. */
 function Place(props: { place: DrivePlaceDto | null }) {
   if (!props.place) return <span className="text-(--text-muted)">Unknown</span>;
   return (
     <span className="min-w-0 truncate" title={props.place.address ?? props.place.label}>
-      {props.place.isHome && <HomeIcon />}
+      <PlaceIcon isHome={props.place.isHome} saved={props.place.locationId != null} />
       {props.place.label}
     </span>
   );

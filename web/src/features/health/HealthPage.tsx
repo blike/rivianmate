@@ -30,8 +30,9 @@ export function HealthPage(props: { vehicleId: string }) {
   return (
     <div className="space-y-4">
       {!teslamate && (
-        <LoadingScope loading={statePending}>
-          <Overview state={state} />
+        // Battery health decides the pack's verdict, so everything waits for it.
+        <LoadingScope loading={statePending || batteryPending}>
+          <Overview state={state} battery={battery} batteryPending={batteryPending} />
         </LoadingScope>
       )}
 

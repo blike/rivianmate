@@ -1,16 +1,19 @@
-import { and, between, desc, eq } from 'drizzle-orm';
+import { and, between, desc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import {
-  type HomeChargingSettings,
+  type ChargingSettings,
+  type SavedLocation,
   type Spot,
-  estimateHomeCost,
-  homeSpots,
-  isHomeSession,
-} from '../services/home-charging.js';
-import { getHomeChargingSettings } from './settings.js';
+  estimateCost,
+  sessionPlace,
+  sessionRate,
+  wallboxSpots,
+} from '../services/locations.js';
+import { loadLocations } from './locations.js';
+import { getChargingSettings } from './settings.js';
 import {
   chargingCurvePoints,
   chargingSessions,
@@ -36,7 +39,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
     '/api/vehicles/:id/charging-sessions',
     async (request): Promise<ChargingSessionDto[]> => {
       if (isTeslaMateVehicle(request.params.id)) {
-        return ctx.teslamate.chargingSessions(request.params.id, await homeContext(ctx));
+        return ctx.teslamate.chargingSessions(request.params.id, await placeContext(ctx));
       }
       const rows = await ctx.db
         .select()
@@ -44,13 +47,14 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .where(eq(chargingSessions.vehicleId, request.params.id))
         .orderBy(desc(chargingSessions.startedAt))
         .limit(200);
-      const home = await homeContext(ctx);
+      const places = await placeContext(ctx);
+      const capacityKwh = await packCapacityKwh(ctx, request.params.id);
       const oldest = rows.at(-1);
       const spans = oldest
         ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date())
         : [];
       return rows.map((row) =>
-        toSessionDto(row, home, chargingWindow(spans, row.startedAt, row.endedAt)),
+        toSessionDto(row, places, chargingWindow(spans, row.startedAt, row.endedAt), capacityKwh),
       );
     },
   );
@@ -82,7 +86,12 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .where(eq(chargingSessions.id, Number(request.params.sessionId)))
         .returning();
       if (!updated[0]) return reply.code(404).send({ error: 'Not found' });
-      return toSessionDto(updated[0], await homeContext(ctx));
+      return toSessionDto(
+        updated[0],
+        await placeContext(ctx),
+        null,
+        await packCapacityKwh(ctx, updated[0].vehicleId),
+      );
     },
   );
 
@@ -128,13 +137,16 @@ async function rivianCurve(
   vehicleId?: string,
 ): Promise<ChargingCurvePointDto[]> {
   if (!Number.isSafeInteger(sessionId)) return [];
-  if (vehicleId != null) {
-    const [owner] = await ctx.db
-      .select({ vehicleId: chargingSessions.vehicleId })
-      .from(chargingSessions)
-      .where(eq(chargingSessions.id, sessionId));
-    if (owner?.vehicleId !== vehicleId) return [];
-  }
+  const [session] = await ctx.db
+    .select({
+      vehicleId: chargingSessions.vehicleId,
+      startedAt: chargingSessions.startedAt,
+      endedAt: chargingSessions.endedAt,
+      chargingSince: chargingSessions.chargingSince,
+    })
+    .from(chargingSessions)
+    .where(eq(chargingSessions.id, sessionId));
+  if (vehicleId != null && session?.vehicleId !== vehicleId) return [];
   const rows = await ctx.db
     .select()
     .from(chargingCurvePoints)
@@ -143,16 +155,23 @@ async function rivianCurve(
     .limit(20_000);
   // Nothing recorded can be from the future; such rows were forecast.
   const latest = Date.now() + CLOCK_SLACK_MS;
+  // Drawn over just the time it charged, from recorded charger status.
+  const window = session
+    ? chargingWindow(
+        await loadChargeSpans(
+          ctx.db,
+          session.vehicleId,
+          session.startedAt,
+          session.endedAt ?? new Date(),
+        ),
+        session.startedAt,
+        session.endedAt,
+      )
+    : null;
   const curve = curveForDisplay(
     rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
+    window,
   );
-  const [session] = await ctx.db
-    .select({
-      endedAt: chargingSessions.endedAt,
-      chargingSince: chargingSessions.chargingSince,
-    })
-    .from(chargingSessions)
-    .where(eq(chargingSessions.id, sessionId));
   // Only while it's actually charging: stopped but still plugged in, or
   // unplugged, there's nothing left to forecast.
   const charging = session != null && session.endedAt == null && session.chargingSince != null;
@@ -171,17 +190,21 @@ async function rivianCurve(
   return socCurveFromState(ctx, sessionId);
 }
 
-interface HomeContext {
-  settings: HomeChargingSettings;
-  spots: Spot[];
+export interface PlaceContext {
+  settings: ChargingSettings;
+  locations: SavedLocation[];
+  wallboxes: Spot[];
 }
 
-export async function homeContext(ctx: AppContext): Promise<HomeContext> {
-  const settings = await getHomeChargingSettings(ctx);
+export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
   const boxes = await ctx.db
     .select({ latitude: wallboxes.latitude, longitude: wallboxes.longitude })
     .from(wallboxes);
-  return { settings, spots: homeSpots(settings, boxes) };
+  return {
+    settings: await getChargingSettings(ctx),
+    locations: await loadLocations(ctx),
+    wallboxes: wallboxSpots(boxes),
+  };
 }
 
 /** Snapshot rows are stamped on write, which can trail the readings inside. */
@@ -228,16 +251,48 @@ async function socCurveFromState(
   ).map((r) => ({ ts: new Date(r.at).toISOString(), powerKw: null, soc: r.soc }));
 }
 
+/** The latest pack capacity recorded for the vehicle (kWh). */
+async function packCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
+  const rows = await ctx.db.execute<{ kwh: number | null }>(sql`
+    SELECT (data->'batteryCapacity'->>'value')::float8 AS kwh
+    FROM vehicle_state_snapshots
+    WHERE vehicle_id = ${vehicleId} AND data ? 'batteryCapacity'
+    ORDER BY ts DESC LIMIT 1
+  `);
+  return rows[0]?.kwh ?? null;
+}
+
+/**
+ * Energy the battery gained over a session, from its battery levels and
+ * the pack's capacity: what reached the pack, so a little under what the
+ * charger delivered.
+ */
+export function socEnergyKwh(
+  row: { startSoc: number | null; endSoc: number | null },
+  capacityKwh: number | null,
+): number | null {
+  if (row.startSoc == null || row.endSoc == null || capacityKwh == null) return null;
+  const kwh = ((row.endSoc - row.startSoc) / 100) * capacityKwh;
+  return kwh > 0 ? kwh : null;
+}
+
 function toSessionDto(
   row: typeof chargingSessions.$inferSelect,
-  home: HomeContext,
+  places: PlaceContext,
   charging: { from: Date; to: Date } | null = null,
+  capacityKwh: number | null = null,
 ): ChargingSessionDto {
-  const isHome = isHomeSession(row, home.spots);
-  // Estimates use today's rate, so changing the rate reprices past estimates;
-  // a cost recorded or entered for the session always takes precedence.
+  const place = sessionPlace(row, places.locations, places.wallboxes);
+  const { location, isHome } = place;
+  // Estimates use today's rates, so changing one reprices past estimates;
+  // a cost recorded or entered for the session always wins. Until Rivian
+  // reports the energy (often only after unplugging), it's estimated from
+  // the battery gained.
+  const estimatedEnergyKwh = row.energyKwh == null ? socEnergyKwh(row, capacityKwh) : null;
   const estimatedCost =
-    isHome && row.cost == null ? estimateHomeCost(row.energyKwh, home.settings.ratePerKwh) : null;
+    row.cost == null
+      ? estimateCost(row.energyKwh ?? estimatedEnergyKwh, sessionRate(place, places.locations))
+      : null;
   return {
     id: row.id,
     vehicleId: row.vehicleId,
@@ -258,8 +313,8 @@ function toSessionDto(
     avgPowerKw: row.avgPowerKw,
     maxPowerKw: row.maxPowerKw,
     cost: row.cost,
-    // Estimates are priced in the home rate's currency.
-    currency: row.currency ?? (estimatedCost != null ? home.settings.currency : null),
+    // Estimates are priced in the rates' currency.
+    currency: row.currency ?? (estimatedCost != null ? places.settings.currency : null),
     lat: row.lat,
     lon: row.lon,
     source: row.source,
@@ -267,6 +322,8 @@ function toSessionDto(
     city: row.city,
     isPublic: row.isPublic,
     isHome,
+    location: location && { id: location.id, name: location.name, isHome: location.isHome },
     estimatedCost,
+    estimatedEnergyKwh,
   };
 }

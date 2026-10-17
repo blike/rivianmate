@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockRivian } from './mock.js';
-import { decodeGnss, RVM_GNSS, type GnssReading } from './parallax.js';
+import { MockRivian, driveHomeSoFar } from './mock.js';
+import {
+  decodeGnss,
+  decodeTripInfo,
+  RVM_GNSS,
+  RVM_TRIP_INFO,
+  type GnssReading,
+  type TripInfo,
+} from './parallax/index.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -9,9 +16,14 @@ describe('mock dynamics GPS', () => {
     vi.useFakeTimers();
     const mock = new MockRivian();
     const readings: GnssReading[] = [];
-    mock.subscribeParallaxDynamics('mock', [RVM_GNSS], (_id, message) => {
-      if (message.rvm === RVM_GNSS) readings.push(decodeGnss(message.payload)!);
-    });
+    mock.subscribeParallax(
+      'mock',
+      [RVM_GNSS],
+      (_id, message) => {
+        if (message.rvm === RVM_GNSS) readings.push(decodeGnss(message.payload)!);
+      },
+      'dynamics',
+    );
     try {
       mock.start();
       const initial = readings.at(-1)!;
@@ -26,6 +38,70 @@ describe('mock dynamics GPS', () => {
       expect(readings.length).toBeGreaterThan(2);
       vi.advanceTimersByTime(180_000);
       expect(readings.at(-1)!.speedMps).toBe(0);
+    } finally {
+      mock.stop();
+    }
+  });
+});
+
+describe('mock navigation', () => {
+  it('sends a trip with its predicted arrival and route, as the vehicle lays them out', () => {
+    vi.useFakeTimers();
+    const mock = new MockRivian();
+    const trips: (TripInfo | null)[] = [];
+    mock.subscribeParallax(
+      'mock',
+      [RVM_TRIP_INFO],
+      (_id, message) => {
+        if (message.rvm === RVM_TRIP_INFO) trips.push(decodeTripInfo(message.payload));
+      },
+      'core',
+    );
+    try {
+      mock.start();
+      vi.advanceTimersByTime(40_000);
+      const trip = trips.find((t) => t != null)!;
+      expect(trip.arrivalSoc).toBeGreaterThan(5);
+      expect(trip.arrivalRangeKm).toBeCloseTo(trip.arrivalSoc! * 4.4, 3);
+      expect(trip.arrivalAtMs).toBeGreaterThan(Date.now());
+      expect(trip.route!.length).toBeGreaterThan(10);
+      expect(trip.route![0]).toEqual([trip.destination.lat, trip.destination.lon]);
+    } finally {
+      mock.stop();
+    }
+  });
+});
+
+describe('mock drive-home scene', () => {
+  it('starts navigating home where the drive recorded ahead of time leaves off', () => {
+    vi.useFakeTimers();
+    const so = driveHomeSoFar(Date.now());
+    const mock = new MockRivian({ scene: 'drive-home' });
+    const gnss: GnssReading[] = [];
+    const trips: (TripInfo | null)[] = [];
+    const listen = (group: 'core' | 'dynamics') =>
+      mock.subscribeParallax(
+        'mock',
+        [RVM_GNSS, RVM_TRIP_INFO],
+        (_id, message) => {
+          if (message.rvm === RVM_GNSS) gnss.push(decodeGnss(message.payload)!);
+          if (message.rvm === RVM_TRIP_INFO) trips.push(decodeTripInfo(message.payload));
+        },
+        group,
+      );
+    listen('core');
+    listen('dynamics');
+    try {
+      mock.start();
+      const last = so.points.at(-1)!;
+      expect(gnss[0]!.latitude).toBeCloseTo(last.lat, 6);
+      expect(gnss[0]!.longitude).toBeCloseTo(last.lon, 6);
+      expect(gnss[0]!.speedMps).toBeGreaterThan(20);
+      const trip = trips.find((t) => t != null)!;
+      expect(trip.destination).toMatchObject(so.destination);
+      // The whole route, as planned when the drive began 15 km back.
+      expect(trip.totalDistanceKm).toBeCloseTo(25.3, 1);
+      expect(so.points[0]!.ts.getTime()).toBeLessThan(Date.now() - 9 * 60_000);
     } finally {
       mock.stop();
     }

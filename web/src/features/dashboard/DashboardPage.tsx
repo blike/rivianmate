@@ -4,14 +4,14 @@ import { useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
 import { Panel, Row } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
+import { showLegacyOnly } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
-import { brakeFluidLabel } from '../../lib/vehicleStatus';
+import { brakeFluidLabel, chargePortLabel, twelveVoltLabel } from '../../lib/vehicleStatus';
 import { BatteryEnergyPanel } from './BatteryEnergyPanel';
 import { ClimatePanel } from './ClimatePanel';
 import { ClosuresGrid } from './ClosuresGrid';
 import { ConnectivityPanel } from './ConnectivityPanel';
 import { Hero } from './Hero';
-import { NavigationCard } from './NavigationCard';
 import { RecentActivity } from './RecentActivity';
 import { SectionHeading } from './SectionHeading';
 import { TeslaClimatePanel } from './TeslaClimatePanel';
@@ -26,8 +26,6 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
       <LoadingScope loading={isPending}>
         <Hero vehicleId={props.vehicleId} vehicle={props.vehicle} state={state} />
       </LoadingScope>
-
-      {insights?.navigation && <NavigationCard navigation={insights.navigation} />}
 
       <RecentActivity vehicleId={props.vehicleId} />
 
@@ -78,18 +76,33 @@ function RivianDetails(props: {
 
           <Panel title="Vehicle health">
             <dl className="space-y-1 text-sm">
-              <Row label="12V battery" value={titleCase(sv(state, 'twelveVoltBatteryHealth'))} />
-              <Row label="Brake fluid" value={brakeFluidLabel(state)} />
-              <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
-              <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
-              <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
-              <Row label="Charge port" value={titleCase(sv(state, 'chargePortState'))} />
+              <Row label="12V battery" value={twelveVoltLabel(state)} />
+              {showLegacyOnly(state, 'brakeFluidLow') && (
+                <Row label="Brake fluid" value={brakeFluidLabel(state)} />
+              )}
+              {showLegacyOnly(state, 'wiperFluidState') && (
+                <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
+              )}
+              {showLegacyOnly(state, 'driveMode') && (
+                <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
+              )}
+              {showLegacyOnly(state, 'gearGuardLocked') && (
+                <Row label="Gear guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
+              )}
+              <Row label="Charge port" value={chargePortLabel(state)} />
             </dl>
           </Panel>
 
           <LoadingScope loading={props.insightsLoading}>
             <Panel title="Battery & energy">
-              <BatteryEnergyPanel insights={insights} cellType={sv(state, 'batteryCellType')} />
+              <BatteryEnergyPanel
+                insights={insights}
+                cellType={
+                  showLegacyOnly(state, 'batteryCellType')
+                    ? sv(state, 'batteryCellType')
+                    : undefined
+                }
+              />
             </Panel>
 
             <Panel title="Connectivity">

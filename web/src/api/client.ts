@@ -22,7 +22,10 @@ import type {
   VersionResponse,
   VehicleState,
   WallboxDto,
-  HomeChargingSettings,
+  ChargingSettings,
+  GeocodeResultDto,
+  SavedLocation,
+  SavedLocationInput,
   NotificationSettingsDto,
   NotificationSettingsUpdate,
   NotificationTestResult,
@@ -32,7 +35,10 @@ import type {
 export type {
   FeedLatestData,
   TeslaMateSettingsDto,
-  HomeChargingSettings,
+  ChargingSettings,
+  GeocodeResultDto,
+  SavedLocation,
+  SavedLocationInput,
   BatteryHealthDto,
   ChargingCurvePointDto,
   RivianDiagnosticsResponse,
@@ -76,6 +82,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(message, response.status);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -109,12 +116,29 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
   version: () => request<VersionResponse>('/api/version'),
-  homeCharging: () => request<HomeChargingSettings>('/api/settings/home-charging'),
-  setHomeCharging: (settings: HomeChargingSettings) =>
-    request<HomeChargingSettings>('/api/settings/home-charging', {
+  chargingSettings: () => request<ChargingSettings>('/api/settings/charging'),
+  setChargingSettings: (settings: ChargingSettings) =>
+    request<ChargingSettings>('/api/settings/charging', {
       method: 'PUT',
       body: JSON.stringify(settings),
     }),
+  savedLocations: () => request<SavedLocation[]>('/api/locations'),
+  createLocation: (location: SavedLocationInput) =>
+    request<SavedLocation>('/api/locations', {
+      method: 'POST',
+      body: JSON.stringify(location),
+    }),
+  updateLocation: (id: number, location: SavedLocationInput) =>
+    request<SavedLocation>(`/api/locations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(location),
+    }),
+  deleteLocation: (id: number) => request<void>(`/api/locations/${id}`, { method: 'DELETE' }),
+  searchPlaces: (q: string, near: { lat: number; lon: number }, signal?: AbortSignal) =>
+    request<GeocodeResultDto[]>(
+      `/api/geocode/search?${new URLSearchParams({ q, lat: String(near.lat), lon: String(near.lon) })}`,
+      { signal },
+    ),
   notificationSettings: () => request<NotificationSettingsDto>('/api/settings/notifications'),
   setNotificationSettings: (settings: NotificationSettingsUpdate) =>
     request<NotificationSettingsDto>('/api/settings/notifications', {

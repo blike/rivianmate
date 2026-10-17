@@ -29,8 +29,61 @@ export function SchedulesPanel(props: { vehicleId: string; className?: string })
     refetchInterval: 5 * 60_000,
   });
   const charging = data?.charging?.filter((c) => c.enabled !== false);
+  // Only the next window, from Parallax, when Rivian doesn't send the schedules (an R2).
+  const nextOnly = data?.chargingFromParallax ?? false;
   const departures = data?.departures?.filter((d) => d.enabled !== false);
   const now = useMinuteClock();
+
+  const showDepartures = !data?.departuresUnavailable;
+
+  // Charging and departures side by side, without a schedule list or week.
+  // Legacy's schedules keep the layout below.
+  if (nextOnly) {
+    return (
+      <Panel title="Schedules" className={`@container ${props.className ?? ''}`}>
+        <div
+          className={`grid grid-cols-1 gap-x-8 gap-y-6 ${showDepartures ? '@2xl:grid-cols-2' : ''}`}
+        >
+          <div className="min-w-0 space-y-5">
+            {isPending ? (
+              <div className="space-y-2">
+                <Skeleton className="w-[10em]" />
+                <Skeleton className="block h-7 w-[14em]" />
+              </div>
+            ) : (
+              <NextWindow
+                schedules={charging ?? []}
+                now={now}
+                loaded={charging != null}
+                amps={charging?.[0]?.amperage}
+              />
+            )}
+          </div>
+
+          {/* Left out where Rivian doesn't provide them (no legacy feed, as on an R2). */}
+          {showDepartures && (
+            <div className="min-w-0 space-y-3">
+              {isPending ? (
+                <div className="space-y-2">
+                  <Skeleton className="w-[8em]" />
+                  <Skeleton className="block h-7 w-[12em]" />
+                </div>
+              ) : (
+                <NextDeparture departures={departures ?? []} now={now} />
+              )}
+              {!!departures?.length && (
+                <ul className="divide-y divide-(--border)">
+                  {departures.map((d) => (
+                    <DepartureRow key={d.id} departure={d} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel title="Schedules" className={`@container ${props.className ?? ''}`}>
@@ -69,21 +122,22 @@ export function SchedulesPanel(props: { vehicleId: string; className?: string })
             )}
           </Section>
 
-          <Section title="Departures">
-            {isPending ? (
-              <SkeletonBlock height="2.5rem" />
-            ) : data?.departuresUnavailable ? (
-              <Empty>Rivian doesn’t provide departure schedules for this vehicle.</Empty>
-            ) : !departures?.length ? (
-              <Empty>None set in the Rivian app.</Empty>
-            ) : (
-              <ul className="divide-y divide-(--border)">
-                {departures.map((d) => (
-                  <DepartureRow key={d.id} departure={d} />
-                ))}
-              </ul>
-            )}
-          </Section>
+          {/* Left out where Rivian doesn't provide them, as in the layout above. */}
+          {showDepartures && (
+            <Section title="Departures">
+              {isPending ? (
+                <SkeletonBlock height="2.5rem" />
+              ) : !departures?.length ? (
+                <Empty>None set in the Rivian app.</Empty>
+              ) : (
+                <ul className="divide-y divide-(--border)">
+                  {departures.map((d) => (
+                    <DepartureRow key={d.id} departure={d} />
+                  ))}
+                </ul>
+              )}
+            </Section>
+          )}
         </div>
 
         <div className="min-w-0">
@@ -113,7 +167,14 @@ const formatClock = (d: Date) => formatTimeOfDay(d.getHours() * 60 + d.getMinute
 const until = (d: Date, now: Date) => formatWait((d.getTime() - now.getTime()) / 1000);
 
 /** The window that's open now, or the next one, up front. */
-function NextWindow(props: { schedules: ChargingSchedule[]; now: Date; loaded: boolean }) {
+function NextWindow(props: {
+  schedules: ChargingSchedule[];
+  now: Date;
+  loaded: boolean;
+  /** Shown with the window when there's no schedule list to carry it. */
+  amps?: number | null;
+}) {
+  const amps = props.amps ? ` · ${props.amps} A` : '';
   const status = scheduleStatus(props.schedules, props.now);
   if (!status) {
     return (
@@ -146,9 +207,43 @@ function NextWindow(props: { schedules: ChargingSchedule[]; now: Date; loaded: b
       </div>
       <div className="mt-0.5 text-sm tabular-nums text-(--text-secondary)">
         {status.open
-          ? `${until(status.endsAt, props.now)} left`
-          : `In ${until(status.startsAt, props.now)} · until ${formatClock(status.endsAt)}`}
+          ? `${until(status.endsAt, props.now)} left${amps}`
+          : `In ${until(status.startsAt, props.now)} · until ${formatClock(status.endsAt)}${amps}`}
       </div>
+    </div>
+  );
+}
+
+/** The next departure up front, styled like NextWindow. */
+function NextDeparture(props: { departures: DepartureSchedule[]; now: Date }) {
+  // Each departure as a one-minute window, to find the next one.
+  const status = scheduleStatus(
+    props.departures.map((d) => ({
+      startTime: d.occurrence?.timeOfDayMinutes ?? null,
+      duration: 1,
+      weekDays: d.occurrence?.weekDays ?? null,
+    })),
+    props.now,
+  );
+  const next = status && !status.open ? status.startsAt : null;
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-(--text-muted)">
+        <Dot color="var(--text-muted)" />
+        Next departure
+      </div>
+      <div className="mt-1 text-xl font-semibold tracking-tight">
+        {status?.open
+          ? 'Now'
+          : next
+            ? `${capitalize(dayLabel(next, props.now))} at ${formatClock(next)}`
+            : 'None set'}
+      </div>
+      {!status?.open && (
+        <div className="mt-0.5 text-sm tabular-nums text-(--text-secondary)">
+          {next ? `In ${until(next, props.now)}` : 'Departures set in the Rivian app show here.'}
+        </div>
+      )}
     </div>
   );
 }

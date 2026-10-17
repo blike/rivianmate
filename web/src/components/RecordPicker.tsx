@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { InProgressTag } from './InProgressTag';
 
 export interface PickerItem {
   id: number;
@@ -11,6 +12,8 @@ export interface PickerItem {
   value?: string;
   /** Still under way. */
   live?: boolean;
+  /** What its in-progress tag says; "In progress" by default. */
+  liveLabel?: string;
 }
 
 export interface PickerGroup {
@@ -133,12 +136,12 @@ export function RecordPicker(props: {
           >
             <span className="min-w-0 flex-1">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-(--text-muted)">
-                {current ? `${current.day} · ${index + 1} of ${flat.length}` : props.label}
+                {current
+                  ? `${current.day} at ${current.time} · ${index + 1} of ${flat.length}`
+                  : props.label}
               </span>
               <span className="block truncate text-sm font-medium">
-                {current
-                  ? [current.time, current.title, current.value].filter(Boolean).join(' · ')
-                  : '—'}
+                {current ? [current.title, current.value].filter(Boolean).join(' · ') : '—'}
               </span>
             </span>
             <svg
@@ -206,16 +209,14 @@ export function RecordPicker(props: {
                       )}
                       <span className="text-xs tabular-nums text-(--text-muted)">{item.time}</span>
                       <span className="min-w-0">
-                        <span className={`block truncate text-sm ${selected ? 'font-medium' : ''}`}>
-                          {item.title}
+                        <span
+                          className={`flex min-w-0 items-center gap-2 text-sm ${selected ? 'font-medium' : ''}`}
+                        >
+                          <span className="min-w-0 truncate">{item.title}</span>
+                          {item.live && <InProgressTag label={item.liveLabel} />}
                         </span>
-                        {(item.detail || item.live) && (
+                        {item.detail && (
                           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
-                            {item.live && (
-                              <span className="text-(--status-good)">
-                                In progress{item.detail ? ' · ' : ''}
-                              </span>
-                            )}
                             {item.detail}
                           </span>
                         )}

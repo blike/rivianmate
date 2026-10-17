@@ -16,8 +16,8 @@ import { driveElevation, maxSpeeds, mileageDistanceKm } from '../services/drive-
 import { driveEnergyKwh } from '../services/drive-metrics.js';
 import type { VehicleState } from '../rivian/types.js';
 import { stateNumber } from '../services/state-utils.js';
-import { type Spot, nearbySpot } from '../services/home-charging.js';
-import { homeContext } from './charging.js';
+import { nearbySpot } from '../services/locations.js';
+import { type PlaceContext, placeContext } from './charging.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
@@ -158,7 +158,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/drives',
     async (request): Promise<DriveDto[]> => {
       if (isTeslaMateVehicle(request.params.id)) {
-        return ctx.teslamate.drives(request.params.id, await homeContext(ctx));
+        return ctx.teslamate.drives(request.params.id, await placeContext(ctx));
       }
       const rows = await ctx.db
         .select()
@@ -206,8 +206,10 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
         rows.map((r) => r.id),
       );
       const state = ctx.monitor.getState(request.params.id);
-      const { spots } = await homeContext(ctx);
-      return rows.map((row) => toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, spots));
+      const places = await placeContext(ctx);
+      return rows.map((row) =>
+        toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, places),
+      );
     },
   );
 
@@ -226,7 +228,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
       const { id } = request.params;
       const driveId = Number(request.params.driveId);
       const detail = isTeslaMateVehicle(id)
-        ? await ctx.teslamate.drive(id, driveId, await homeContext(ctx))
+        ? await ctx.teslamate.drive(id, driveId, await placeContext(ctx))
         : await rivianDriveDetail(ctx, driveId, id);
       if (!detail) return reply.code(404).send({ error: 'Not found' });
       return detail;
@@ -260,7 +262,7 @@ async function rivianDriveDetail(
     drive.elevationLossM = elevation?.lossM ?? null;
   }
   return {
-    ...toDriveDto(drive, fallback, speed, state, (await homeContext(ctx)).spots),
+    ...toDriveDto(drive, fallback, speed, state, await placeContext(ctx)),
     points: points.map(toLocationDto),
   };
 }
@@ -281,7 +283,7 @@ function toDriveDto(
   fallbackCapacityKwh: number | null,
   maxSpeedKmh: number | null,
   current: VehicleState | undefined,
-  homeSpots: readonly Spot[],
+  places: PlaceContext,
 ): DriveDto {
   // A drive in progress shows its figures so far, from the latest state.
   const live = row.endedAt == null && current ? current : null;
@@ -315,21 +317,28 @@ function toDriveDto(
       row.destinationLat != null && row.destinationLon != null
         ? { name: row.destinationName, lat: row.destinationLat, lon: row.destinationLon }
         : null,
-    start: drivePlace(row.startLat, row.startLon, row.startPlace, row.startAddress, homeSpots),
-    end: live ? null : drivePlace(row.endLat, row.endLon, row.endPlace, row.endAddress, homeSpots),
+    start: drivePlace(row.startLat, row.startLon, row.startPlace, row.startAddress, places),
+    end: live ? null : drivePlace(row.endLat, row.endLon, row.endPlace, row.endAddress, places),
   };
 }
 
-/** "Home" near a home spot, else the looked-up address; null until known. */
+/** A saved location's name, "Home" near a wallbox, else the looked-up address; null until known. */
 export function drivePlace(
   lat: number | null,
   lon: number | null,
   place: string | null,
   address: string | null,
-  homeSpots: readonly Spot[],
+  places: PlaceContext,
 ): DrivePlaceDto | null {
-  if (nearbySpot(lat, lon, homeSpots)) return { label: 'Home', address, isHome: true };
-  return place ? { label: place, address, isHome: false } : null;
+  const location = nearbySpot(lat, lon, places.locations);
+  if (location) {
+    const isHome = location.isHome || nearbySpot(lat, lon, places.wallboxes) !== null;
+    return { label: location.name, address, isHome, locationId: location.id };
+  }
+  if (nearbySpot(lat, lon, places.wallboxes)) {
+    return { label: 'Home', address, isHome: true, locationId: null };
+  }
+  return place ? { label: place, address, isHome: false, locationId: null } : null;
 }
 
 function toLocationDto(row: typeof locationPoints.$inferSelect): LocationPointDto {

@@ -7,14 +7,24 @@ import type { ChargingSessionDto, DriveDto, DrivePlaceDto, VehicleDto } from '..
 import type { LiveSessionData, TimeStampedValue, VehicleState } from '../rivian/types.js';
 import { elevationChange } from '../services/drive-metrics.js';
 import {
-  type HomeChargingSettings,
+  type ChargingSettings,
+  type SavedLocation,
   type Spot,
-  estimateHomeCost,
+  estimateCost,
   nearbySpot,
-} from '../services/home-charging.js';
+  sessionPlace,
+  sessionRate,
+} from '../services/locations.js';
 import { reportedCapacity } from '../services/reported-capacity.js';
 import { haversineKm } from '../services/state-utils.js';
 import { teslamateVehicleId } from './ids.js';
+
+/** Saved locations and wallboxes, for naming places and pricing charges as for a Rivian. */
+export interface Places {
+  settings: ChargingSettings;
+  locations: readonly SavedLocation[];
+  wallboxes: readonly Spot[];
+}
 
 /** TeslaMate's "preferred range" setting: which range estimate to show. */
 export type RangeKind = 'rated' | 'ideal';
@@ -380,20 +390,31 @@ export function geofenceAt(
   return best?.name ?? null;
 }
 
-/** "Home" for a geofence named Home or near home, else the geofence or address. */
+/**
+ * A saved location's name, as for a Rivian; else "Home" for a geofence named
+ * Home or near a wallbox; else the geofence or address.
+ */
 export function drivePlace(
   geofence: string | null,
   address: AddressRow | null,
   lat: number | null,
   lon: number | null,
-  homeSpots: readonly Spot[],
+  places: Pick<Places, 'locations' | 'wallboxes'>,
 ): DrivePlaceDto | null {
   const full = address?.display_name ?? null;
-  if (isHomeName(geofence) || nearbySpot(lat, lon, homeSpots)) {
-    return { label: 'Home', address: full, isHome: true };
+  const home = isHomeName(geofence) || nearbySpot(lat, lon, places.wallboxes) != null;
+  const location = nearbySpot(lat, lon, places.locations);
+  if (location) {
+    return {
+      label: location.name,
+      address: full,
+      isHome: location.isHome || home,
+      locationId: location.id,
+    };
   }
+  if (home) return { label: 'Home', address: full, isHome: true, locationId: null };
   const label = geofence || shortAddress(address);
-  return label ? { label, address: full, isHome: false } : null;
+  return label ? { label, address: full, isHome: false, locationId: null } : null;
 }
 
 export interface DriveRow {
@@ -454,7 +475,7 @@ export function toDriveDto(
   opts: {
     range: RangeKind;
     efficiency: number | null;
-    homeSpots: readonly Spot[];
+    places: Pick<Places, 'locations' | 'wallboxes'>;
     progress?: DriveProgress | null;
     geofences?: readonly GeofenceRow[];
   },
@@ -503,11 +524,11 @@ export function toDriveDto(
       row.start_address,
       startLat,
       startLon,
-      opts.homeSpots,
+      opts.places,
     ),
     end: live
       ? null
-      : drivePlace(row.end_geofence, row.end_address, row.end_lat, row.end_lon, opts.homeSpots),
+      : drivePlace(row.end_geofence, row.end_address, row.end_lat, row.end_lon, opts.places),
   };
 }
 
@@ -543,7 +564,7 @@ export function toSessionDto(
   opts: {
     vehicleId: string;
     range: RangeKind;
-    home: { settings: HomeChargingSettings; spots: readonly Spot[] };
+    places: Places;
   },
 ): ChargingSessionDto {
   const running = row.ended_at == null;
@@ -556,17 +577,28 @@ export function toSessionDto(
   const energyKwh = running ? row.latest_energy : row.charge_energy_added;
   const hours = (row.duration_min ?? 0) / 60;
   const supercharger = row.fast === true && /tesla/i.test(row.brand ?? '');
-  const isHome =
-    row.fast !== true &&
-    (isHomeName(row.geofence) || nearbySpot(row.lat, row.lon, opts.home.spots) != null);
+  // A geofence named Home counts as a home charger; DC fast charging never does.
+  const at = sessionPlace(
+    {
+      isPublic: row.fast === true ? true : null,
+      isHomeCharger: isHomeName(row.geofence) ? true : null,
+      chargerType: null,
+      lat: row.lat,
+      lon: row.lon,
+    },
+    opts.places.locations,
+    opts.places.wallboxes,
+  );
+  const { location, isHome } = at;
   const place =
     row.geofence ||
     (supercharger ? 'Tesla Supercharger' : null) ||
     shortAddress(row.address) ||
     (row.fast ? 'DC fast charger' : 'AC charger');
   const cost = row.cost != null ? row.cost.toFixed(2) : null;
+  // Priced at its location's rate, as a Rivian's are; TeslaMate's own cost wins.
   const estimatedCost =
-    isHome && cost == null ? estimateHomeCost(energyKwh, opts.home.settings.ratePerKwh) : null;
+    cost == null ? estimateCost(energyKwh, sessionRate(at, opts.places.locations)) : null;
   return {
     id: row.id,
     vehicleId: opts.vehicleId,
@@ -590,11 +622,14 @@ export function toSessionDto(
     maxPowerKw: row.max_power,
     cost,
     // TeslaMate doesn't record a currency; costs are in the owner's own.
-    currency: cost != null || estimatedCost != null ? opts.home.settings.currency : null,
+    currency: cost != null || estimatedCost != null ? opts.places.settings.currency : null,
     lat: row.lat,
     lon: row.lon,
     isHome,
+    location: location && { id: location.id, name: location.name, isHome: location.isHome },
     estimatedCost,
+    // TeslaMate records the energy added as it charges.
+    estimatedEnergyKwh: null,
     source: 'teslamate',
     vendor: null,
     city: row.address?.city ?? null,

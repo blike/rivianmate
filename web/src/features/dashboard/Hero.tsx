@@ -1,12 +1,12 @@
 import type { VehicleDto, VehicleState } from '@server/api-types';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
-import { useChargingSessions, useLiveCharging, useUnits } from '../../api/hooks';
+import { useChargingSessions, useInsights, useLiveCharging, useUnits } from '../../api/hooks';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
 import { chargeOutlook, lastChargedTo } from '../../lib/charging';
 import { locationIsBehind } from '../../lib/freshness';
-import { softwareUpdate } from '../../lib/ota';
+import { isActivePhase, softwareUpdate } from '../../lib/ota';
 import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
 import { type ActivityKind, securitySummary, vehicleActivity } from '../../lib/vehicleStatus';
 import { BatteryBar } from './BatteryBar';
@@ -54,6 +54,14 @@ export function Hero(props: {
   const loc = location(state);
   const locBehind = locationIsBehind(state);
   const trail = useActiveDriveTrail(props.vehicleId, loc);
+  const { data: insights } = useInsights(props.vehicleId);
+  const navigation = insights?.navigation;
+  const plan = navigation
+    ? {
+        route: navigation.route,
+        destination: [navigation.destination.lat, navigation.destination.lon] as [number, number],
+      }
+    : null;
   const security = securitySummary(state, vehicle?.model);
   // TeslaMate doesn't log doors or windows, so "all closed" would be a guess.
   const closuresKnown = !isTeslaMateVehicle(props.vehicleId);
@@ -137,10 +145,7 @@ export function Hero(props: {
                   </Chip>
                 )}
                 {ota && (
-                  <Chip
-                    dot="var(--accent)"
-                    pulse={ota.phase === 'downloading' || ota.phase === 'installing'}
-                  >
+                  <Chip dot="var(--accent)" pulse={isActivePhase(ota.phase)}>
                     {ota.label}
                     {ota.progress == null && ota.version && ` · ${ota.version}`}
                   </Chip>
@@ -159,14 +164,19 @@ export function Hero(props: {
               <div>
                 <div className="text-xs uppercase tracking-wide text-(--text-muted)">Battery</div>
                 <div className="mt-1 flex items-baseline font-semibold tabular-nums leading-none tracking-tight">
-                  {loading ? (
-                    <Skeleton className="h-14 w-[2.4em] text-5xl" />
-                  ) : (
-                    <>
-                      <span className="text-6xl sm:text-7xl">{fmt(battery, 0)}</span>
-                      <span className="ml-1 text-2xl text-(--text-secondary)">%</span>
-                    </>
-                  )}
+                  {/* While loading, a placeholder the size of two digits at the same
+                      size, so the range beside it doesn't move when the level arrives. */}
+                  <span className="relative text-6xl sm:text-7xl">
+                    {loading ? (
+                      <>
+                        <span className="invisible">00</span>
+                        <Skeleton className="absolute inset-0 h-full w-full" />
+                      </>
+                    ) : (
+                      fmt(battery, 0)
+                    )}
+                  </span>
+                  <span className="ml-1 text-2xl text-(--text-secondary)">%</span>
                 </div>
               </div>
               <div className="pb-1">
@@ -238,6 +248,7 @@ export function Hero(props: {
                   bearing={nv(state, 'gnssBearing')}
                   trail={trail}
                   stale={locBehind}
+                  plan={plan}
                   height="100%"
                 />
               </div>

@@ -11,7 +11,7 @@ import { Dot } from '../../components/Dot';
 import { Skeleton } from '../../components/LoadingState';
 import { relativeTime } from '../../lib/freshness';
 import { RivianConnectPage } from '../auth/RivianConnectPage';
-import { ConfirmDialog } from './ConfirmDialog';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { SettingRow, SettingsGroup, dangerButton, secondaryButton } from './SettingsControls';
 
 type Kind = 'rivian' | 'teslamate';
@@ -174,21 +174,23 @@ export function AccountsPanel() {
           <ConfirmDialog
             open={confirming === 'rivian'}
             title="Disconnect your Rivian account?"
-            message="Tracking stops and RivianMate forgets your Rivian sign-in. Your recorded history stays."
             confirmLabel="Disconnect"
             busy={disconnect.isPending}
             onCancel={() => setConfirming(null)}
             onConfirm={() => disconnect.mutate(undefined, { onSettled: () => setConfirming(null) })}
-          />
+          >
+            Tracking stops and RivianMate forgets your Rivian sign-in. Your recorded history stays.
+          </ConfirmDialog>
           <ConfirmDialog
             open={confirming === 'teslamate'}
             title="Remove TeslaMate?"
-            message="Its vehicles stop showing in RivianMate. Nothing in TeslaMate changes."
             confirmLabel="Remove"
             busy={remove.isPending}
             onCancel={() => setConfirming(null)}
             onConfirm={() => remove.mutate(undefined, { onSettled: () => setConfirming(null) })}
-          />
+          >
+            Its vehicles stop showing in RivianMate. Nothing in TeslaMate changes.
+          </ConfirmDialog>
         </>
       )}
     </SettingsGroup>

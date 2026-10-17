@@ -74,3 +74,35 @@ describe('per-vehicle Parallax diagnostics', () => {
     expect(monitor.diagnostics().parallaxMode).toBe('classic');
   });
 });
+
+describe('legacy-preferred fields', () => {
+  it('uses Parallax’s odometer only where legacy has none', async () => {
+    const { monitor } = setup(new Error('unused'));
+    monitor.getVehicles().push({
+      id: 'v1',
+      vin: 'VIN',
+      name: null,
+      make: null,
+      model: null,
+      modelYear: null,
+      supportedFeatures: [],
+    });
+    const delta = (
+      monitor as unknown as {
+        handleDelta(id: string, d: object, source: 'legacy' | 'parallax'): Promise<void>;
+      }
+    ).handleDelta.bind(monitor);
+    const at = (timeStamp: string, value: number) => ({ timeStamp, value });
+    const mileage = () => monitor.getState('v1')?.vehicleMileage;
+
+    // No legacy reading yet (an R2): Parallax's whole km stand in.
+    await delta('v1', { vehicleMileage: at('2026-10-13T12:00:00Z', 1_000_000) }, 'parallax');
+    expect(mileage()).toEqual(at('2026-10-13T12:00:00Z', 1_000_000));
+    // Legacy's metres replace it, though stamped earlier.
+    await delta('v1', { vehicleMileage: at('2026-10-13T11:59:00Z', 1_000_400) }, 'legacy');
+    expect(mileage()).toEqual(at('2026-10-13T11:59:00Z', 1_000_400));
+    // And Parallax no longer replaces legacy's.
+    await delta('v1', { vehicleMileage: at('2026-10-13T12:05:00Z', 1_001_000) }, 'parallax');
+    expect(mileage()).toEqual(at('2026-10-13T11:59:00Z', 1_000_400));
+  });
+});

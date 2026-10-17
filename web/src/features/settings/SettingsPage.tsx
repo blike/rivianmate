@@ -4,8 +4,8 @@ import { useRivianDiagnostics, useStatus, useVehicles } from '../../api/hooks';
 import { AboutSection } from './AboutSection';
 import { ApiConnectionsPanel } from './ApiConnectionsPanel';
 import { GeneralSection } from './GeneralSection';
-import { HomeChargingPanel } from './HomeChargingPanel';
-import { CarIcon, BoltIcon, BellIcon, PulseIcon, LockIcon, InfoIcon } from './NavIcons';
+import { LocationsPanel } from './LocationsPanel';
+import { CarIcon, PinIcon, BellIcon, PulseIcon, LockIcon, InfoIcon } from './NavIcons';
 import { NotificationsPanel } from './NotificationsPanel';
 import { SecuritySection } from './SecuritySection';
 
@@ -17,10 +17,10 @@ const sections = [
     icon: <CarIcon />,
   },
   {
-    id: 'charging',
-    label: 'Charging',
-    description: 'How home charging is priced and recognized.',
-    icon: <BoltIcon />,
+    id: 'locations',
+    label: 'Locations',
+    description: 'Places you park, and what charging costs there.',
+    icon: <PinIcon />,
   },
   {
     id: 'notifications',
@@ -50,7 +50,9 @@ const sections = [
 
 export function SettingsPage() {
   const [params] = useSearchParams();
-  const section = sections.find((item) => item.id === params.get('section')) ?? sections[0]!;
+  // Locations replaced the Charging section; old links still land there.
+  const requested = params.get('section') === 'charging' ? 'locations' : params.get('section');
+  const section = sections.find((item) => item.id === requested) ?? sections[0]!;
   const { data: status } = useStatus();
   const {
     data: diagnostics,
@@ -102,7 +104,7 @@ export function SettingsPage() {
         {section.id === 'general' && (
           <GeneralSection parallaxModes={diagnostics?.monitor.parallaxModes} />
         )}
-        {section.id === 'charging' && <HomeChargingPanel vehicleId={vehicles?.[0]?.id} />}
+        {section.id === 'locations' && <LocationsPanel vehicleId={vehicles?.[0]?.id} />}
         {section.id === 'notifications' && <NotificationsPanel />}
         {section.id === 'api' && (
           <ApiConnectionsPanel

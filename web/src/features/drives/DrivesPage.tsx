@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useDrive, useDrives, useUnits } from '../../api/hooks';
+import { useDrive, useDrives, useInsights, useUnits, useVehicleState } from '../../api/hooks';
 import {
   ContentFrame,
   LoadingScope,
@@ -11,6 +11,7 @@ import { TrendChart } from '../../components/TrendChart';
 import { VehicleMap } from '../../components/VehicleMap';
 import { driveProfile, minuteTicks, profilePosition } from '../../lib/drives';
 import { isPosition } from '../../lib/geo';
+import { location, nv } from '../../lib/state';
 import { DriveCard } from './DriveCard';
 import { DriveList } from './DriveList';
 import { DrivePicker } from './DrivePicker';
@@ -32,14 +33,32 @@ export function DrivesPage(props: { vehicleId: string }) {
   } = useDrive(props.vehicleId, driveId);
   const loading = drivesPending || (driveId != null && detailPending);
 
-  const trail = useMemo(
-    () =>
-      (detail?.points ?? [])
-        .filter((p) => isPosition(p.lat, p.lon))
-        .map((p) => [p.lat, p.lon] as [number, number]),
-    [detail],
-  );
+  // The drive under way shows where navigation is taking it, and the
+  // vehicle's latest fix and heading, until it ends.
+  const { data: insights } = useInsights(props.vehicleId);
+  const { data: state } = useVehicleState(props.vehicleId);
+  const navigation = insights?.navigation;
+  const underWay = detail != null && !detail.endedAt && detail.id === drives?.[0]?.id;
+  const live = underWay ? location(state) : null;
+  const liveLat = live?.lat;
+  const liveLon = live?.lon;
+
+  const trail = useMemo(() => {
+    const points = (detail?.points ?? [])
+      .filter((p) => isPosition(p.lat, p.lon))
+      .map((p) => [p.lat, p.lon] as [number, number]);
+    return liveLat != null && liveLon != null
+      ? [...points, [liveLat, liveLon] as [number, number]]
+      : points;
+  }, [detail, liveLat, liveLon]);
   const lastPoint = trail.at(-1);
+  const plan =
+    underWay && navigation
+      ? {
+          route: navigation.route,
+          destination: [navigation.destination.lat, navigation.destination.lon] as [number, number],
+        }
+      : null;
 
   const profile = useMemo(
     () =>
@@ -91,10 +110,12 @@ export function DrivesPage(props: { vehicleId: string }) {
                   key={detail.id}
                   lat={lastPoint[0]}
                   lon={lastPoint[1]}
+                  bearing={underWay ? nv(state, 'gnssBearing') : null}
                   trail={trail}
                   height="100%"
                   follow={false}
                   highlight={hoverPosition}
+                  plan={plan}
                 />
               </div>
             ) : (

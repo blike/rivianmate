@@ -4,6 +4,7 @@ import type { Db } from './db/client.js';
 import type { RivianApi } from './rivian/client.js';
 import type { RivianGovernor } from './rivian/governor.js';
 import type { RivianTokens } from './rivian/types.js';
+import type { PlaceSearch } from './services/drive-places.js';
 import type { LiveBus } from './services/live-bus.js';
 import type { NotificationService } from './services/notifications.js';
 import type { TokenStore } from './services/token-store.js';
@@ -37,6 +38,8 @@ export interface AppContext {
   teslamate: TeslaMateSource;
   /** Shared throttle/cooldown/counters for all Rivian traffic. */
   governor: RivianGovernor;
+  /** Address search for placing saved locations. */
+  searchPlaces: PlaceSearch;
   /** In-flight login awaiting OTP; single-user so one slot is enough. */
   pendingConnect: PendingConnect | null;
 }

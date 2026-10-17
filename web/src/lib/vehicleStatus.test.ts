@@ -2,8 +2,10 @@ import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
 import {
   brakeFluidLabel,
+  chargePortLabel,
   preconditioningLabel,
   securitySummary,
+  twelveVoltLabel,
   vehicleActivity,
 } from './vehicleStatus';
 
@@ -74,12 +76,27 @@ describe('securitySummary', () => {
 });
 
 describe('dashboard warning labels', () => {
-  it('distinguishes explicit brake-fluid nulls, missing data and low-fluid warnings', () => {
+  it('reads brake fluid as normal only from a vehicle with fluid sensors', () => {
     expect(brakeFluidLabel(undefined)).toBe('Unknown');
+    // As an R2: no legacy fluid readings at all.
     expect(brakeFluidLabel({})).toBe('Unknown');
-    expect(brakeFluidLabel({ brakeFluidLow: null } as unknown as VehicleState)).toBe('Normal');
+    // As an R1S: washer fluid reported, brake fluid empty while it's fine.
+    expect(brakeFluidLabel(state({ wiperFluidState: 'normal' }))).toBe('Normal');
     expect(brakeFluidLabel(state({ brakeFluidLow: 'false' }))).toBe('OK');
     expect(brakeFluidLabel(state({ brakeFluidLow: 'true' }))).toBe('Low');
+  });
+
+  it('reads 12V battery health as words', () => {
+    expect(twelveVoltLabel(state({ twelveVoltBatteryHealth: 'NORMAL_OPERATION' }))).toBe('Normal');
+    expect(twelveVoltLabel(state({ twelveVoltBatteryHealth: 'LOW_VOLTAGE' }))).toBe('Low Voltage');
+    expect(twelveVoltLabel(undefined)).toBe('—');
+  });
+
+  it('reads the charge port\'s "close" as Closed', () => {
+    expect(chargePortLabel(state({ chargePortState: 'close' }))).toBe('Closed');
+    expect(chargePortLabel(state({ chargePortState: 'open' }))).toBe('Open');
+    expect(chargePortLabel(state({ chargePortState: 'opening' }))).toBe('Opening');
+    expect(chargePortLabel(undefined)).toBe('—');
   });
 
   it('maps the observed inactive preconditioning enum without masking missing or active values', () => {

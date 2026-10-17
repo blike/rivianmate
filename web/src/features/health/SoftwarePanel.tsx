@@ -1,6 +1,6 @@
 import type { OtaTimelineDto } from '@server/api-types';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client';
 import { useVehicleState } from '../../api/hooks';
@@ -10,11 +10,14 @@ import { longDate, shortDate } from '../../lib/format';
 import {
   type SoftwareUpdate,
   installTimeLabel,
+  isActivePhase,
   lastInstallFailed,
   releaseNotesHref,
+  reportsUpdates,
   softwareUpdate,
   typicalUpdateGapDays,
 } from '../../lib/ota';
+import { sv } from '../../lib/state';
 
 const DAY_MS = 86_400_000;
 /** Earlier versions shown before the installed one; older ones are summarized. */
@@ -25,22 +28,28 @@ const days = (ms: number) => {
   return `${d} day${d === 1 ? '' : 's'}`;
 };
 
+/** How long a version has been installed: "today" until it's been a day. */
+const age = (ms: number) => (ms < DAY_MS ? 'today' : days(ms));
+
 type Version = OtaTimelineDto['versions'][number];
 
 /** Past versions, then what's installed, then what's next, along one track. */
 export function SoftwarePanel(props: { vehicleId: string }) {
   const { data: state, isPending: statePending } = useVehicleState(props.vehicleId);
+  // Keyed by the live version, so an install shows up without waiting for a refetch.
   const { data: ota, isPending: otaPending } = useQuery({
-    queryKey: ['ota', props.vehicleId],
+    queryKey: ['ota', props.vehicleId, sv(state, 'otaCurrentVersion')],
     queryFn: () => api.otaTimeline(props.vehicleId),
+    placeholderData: keepPreviousData,
     refetchInterval: 15 * 60_000,
   });
   // Day precision: the mount time is close enough.
   const [now] = useState(() => Date.now());
   const update = softwareUpdate(state);
   const failed = lastInstallFailed(state);
-  // TeslaMate logs installs but not pending updates or release notes.
-  const teslamate = isTeslaMateVehicle(props.vehicleId);
+  const reports = reportsUpdates(state);
+  // Release notes come from Rivian, so a TeslaMate vehicle has none.
+  const notes = !isTeslaMateVehicle(props.vehicleId);
 
   // Oldest first, so the track reads left to right into the future.
   const versions = [...(ota?.versions ?? [])].reverse();
@@ -90,11 +99,13 @@ export function SoftwarePanel(props: { vehicleId: string }) {
             <Stop
               kind="installed"
               grow={2}
-              next={update ? 'update' : undefined}
+              next={update ? 'update' : reports ? 'none' : undefined}
               progress={trackFill(update)}
             >
-              <Eyebrow color={update || failed ? 'var(--text-muted)' : 'var(--status-good)'}>
-                {update || failed || teslamate ? (
+              <Eyebrow
+                color={update || failed || !reports ? 'var(--text-muted)' : 'var(--status-good)'}
+              >
+                {update || failed || !reports ? (
                   'Installed'
                 ) : (
                   <>
@@ -107,19 +118,24 @@ export function SoftwarePanel(props: { vehicleId: string }) {
               </div>
               <div className="mt-0.5 text-sm text-(--text-secondary)">
                 {installed
-                  ? `${tracked ? 'Seen since' : 'Installed'} ${longDate(installed.firstSeen)} · ${days(now - Date.parse(installed.firstSeen))}`
+                  ? `${tracked ? 'Seen since' : 'Installed'} ${longDate(installed.firstSeen)} · ${age(now - Date.parse(installed.firstSeen))}`
                   : 'Waiting for the vehicle to report its version'}
               </div>
-              {current && !teslamate && <NotesLink vehicleId={props.vehicleId} version={current} />}
+              {current && notes && <NotesLink vehicleId={props.vehicleId} version={current} />}
             </Stop>
-            {update && (
-              <Stop
-                kind="update"
-                grow={2}
-                active={update.phase === 'downloading' || update.phase === 'installing'}
-              >
+            {update ? (
+              <Stop kind="update" grow={2} active={isActivePhase(update.phase)}>
                 <PendingDetails vehicleId={props.vehicleId} update={update} />
               </Stop>
+            ) : (
+              reports && (
+                <Stop kind="none" grow={1.2}>
+                  <div className="text-sm text-(--text-muted)">No update waiting</div>
+                  <div className="text-xs text-(--text-muted)">
+                    New versions appear here when offered.
+                  </div>
+                </Stop>
+              )
             )}
           </ol>
           {failed && (
@@ -140,11 +156,11 @@ export function SoftwarePanel(props: { vehicleId: string }) {
 /** How far the installed → update segment is filled: null while progress is unknown. */
 function trackFill(update: SoftwareUpdate | null): number | null {
   if (!update) return 0;
-  if (update.phase === 'downloading' || update.phase === 'installing') return update.progress;
+  if (isActivePhase(update.phase)) return update.progress;
   return 100;
 }
 
-type StopKind = 'past' | 'installed' | 'update';
+type StopKind = 'past' | 'installed' | 'update' | 'none';
 
 /**
  * One point on the track: a marker, the segment to the next point, and its
@@ -153,14 +169,16 @@ type StopKind = 'past' | 'installed' | 'update';
 function Stop(props: {
   kind: StopKind;
   grow: number;
-  /** For the installed stop: a pending update after it, which colors its segment. */
-  next?: 'update';
+  /** For the installed stop: what follows it, which colors its segment. */
+  next?: 'update' | 'none';
   progress?: number | null;
   active?: boolean;
   children: ReactNode;
 }) {
+  // An installed stop with nothing after it ends the track.
+  const last =
+    props.kind === 'update' || props.kind === 'none' || (props.kind === 'installed' && !props.next);
   const toUpdate = props.next === 'update';
-  const last = props.kind === 'update' || (props.kind === 'installed' && !toUpdate);
   const fill = props.progress;
 
   return (
@@ -177,10 +195,10 @@ function Stop(props: {
         >
           {toUpdate && (
             <span
-              className={`absolute left-0 top-0 rounded-full bg-(--accent) transition-all duration-700 max-sm:h-(--fill) max-sm:w-full sm:h-full sm:w-(--fill) ${
+              className={`ota-progress absolute left-0 top-0 rounded-full bg-(--accent) max-sm:h-(--ota-fill) max-sm:w-full sm:h-full sm:w-(--ota-fill) ${
                 fill == null ? 'ota-progress--indeterminate' : ''
               }`}
-              style={{ ['--fill' as string]: `${fill ?? 30}%` }}
+              style={{ ['--ota-fill' as string]: `${fill ?? 30}%` }}
             />
           )}
         </span>
@@ -214,6 +232,10 @@ function Marker(props: { kind: StopKind; active?: boolean }) {
           }`}
         />
       );
+    case 'none':
+      return (
+        <span aria-hidden className={`${base} border-2 border-dashed border-(--text-muted)`} />
+      );
   }
 }
 
@@ -223,12 +245,6 @@ function PendingDetails(props: { vehicleId: string; update: SoftwareUpdate }) {
     update.type && `${update.type} update`,
     update.installMinutes != null && `${installTimeLabel(update.installMinutes)} to install`,
   ].filter(Boolean);
-  const hint =
-    update.phase === 'ready'
-      ? 'Start or schedule the install from the touchscreen or the Rivian app.'
-      : update.phase === 'installing'
-        ? 'The vehicle can’t be driven until the install finishes.'
-        : null;
 
   return (
     <>
@@ -239,7 +255,6 @@ function PendingDetails(props: { vehicleId: string; update: SoftwareUpdate }) {
       {facts.length > 0 && (
         <div className="mt-0.5 text-sm text-(--text-secondary)">{facts.join(' · ')}</div>
       )}
-      {hint && <div className="mt-1 text-xs text-(--text-muted)">{hint}</div>}
       {update.version && <NotesLink vehicleId={props.vehicleId} version={update.version} />}
     </>
   );

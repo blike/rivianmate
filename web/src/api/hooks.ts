@@ -4,8 +4,10 @@ import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
-  type HomeChargingSettings,
   type TeslaMateSettingsDto,
+  type ChargingSettings,
+  type SavedLocation,
+  type SavedLocationInput,
   type UnitPreferences,
 } from './client';
 
@@ -125,18 +127,52 @@ export function useSetUnits() {
   });
 }
 
-export function useHomeCharging() {
-  return useQuery({ queryKey: ['homeCharging'], queryFn: api.homeCharging, staleTime: Infinity });
+export function useChargingSettings() {
+  return useQuery({
+    queryKey: ['chargingSettings'],
+    queryFn: api.chargingSettings,
+    staleTime: Infinity,
+  });
 }
 
-export function useSetHomeCharging() {
+export function useSetChargingSettings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (settings: HomeChargingSettings) => api.setHomeCharging(settings),
+    mutationFn: (settings: ChargingSettings) => api.setChargingSettings(settings),
     onSuccess: (settings) => {
-      queryClient.setQueryData(['homeCharging'], settings);
-      // Estimated costs on sessions depend on these settings.
+      queryClient.setQueryData(['chargingSettings'], settings);
+      // Estimated costs are shown in this currency.
       void queryClient.invalidateQueries({ queryKey: ['chargingSessions'] });
+    },
+  });
+}
+
+export function useLocations() {
+  return useQuery({
+    queryKey: ['savedLocations'],
+    queryFn: api.savedLocations,
+    staleTime: Infinity,
+  });
+}
+
+/** Saves (with an id) or adds a location, or deletes one. */
+export function useSaveLocation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (
+      change:
+        | { kind: 'save'; id: number | null; location: SavedLocationInput }
+        | { kind: 'delete'; id: number },
+    ): Promise<SavedLocation | void> =>
+      change.kind === 'delete'
+        ? api.deleteLocation(change.id)
+        : change.id == null
+          ? api.createLocation(change.location)
+          : api.updateLocation(change.id, change.location),
+    onSuccess: () => {
+      // Session prices and drive and session names come from locations.
+      for (const key of ['savedLocations', 'chargingSessions', 'drives', 'drive'])
+        void queryClient.invalidateQueries({ queryKey: [key] });
     },
   });
 }

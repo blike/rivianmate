@@ -4,7 +4,7 @@ import { useUnits } from '../../api/hooks';
 import { RecordPicker } from '../../components/RecordPicker';
 import { drivesByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
-import { shortPlace, driveFacts, destination } from './format';
+import { driveFacts, driveTitle } from './format';
 
 /** On narrow screens, a picker up top stands in for the list. */
 export function DrivePicker(props: {
@@ -22,7 +22,7 @@ export function DrivePicker(props: {
         items: day.drives.map((d) => ({
           id: d.id,
           time: clock(d.startedAt),
-          title: `${d.start ? shortPlace(d.start.label) : '—'} → ${destination(d)}`,
+          title: driveTitle(d),
           detail: driveFacts(d, u),
           value: u.formatDistance(d.distanceKm, 1),
           live: !d.endedAt,

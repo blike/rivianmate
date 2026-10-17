@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { ChargingSessionDto } from '../../api/client';
+import { InProgressTag } from '../../components/InProgressTag';
 import { chargerLabel } from '../../lib/charging';
 import { groupByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
@@ -69,15 +70,15 @@ function SessionItem(props: {
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm">
-            <span className={s.isHome ? 'font-medium' : ''}>{chargerLabel(s)}</span>
-            {s.city && !s.isHome && <span className="text-(--text-muted)"> · {s.city}</span>}
+            <span className={s.isHome || s.location ? 'font-medium' : ''}>{chargerLabel(s)}</span>
+            {s.city && !s.isHome && !s.location && (
+              <span className="text-(--text-muted)"> · {s.city}</span>
+            )}
+            {!s.endedAt && (
+              <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} className="ml-2" />
+            )}
           </span>
           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
-            {!s.endedAt && (
-              <span className={`mr-1.5 ${s.chargingSince ? 'text-(--status-good)' : ''}`}>
-                {s.chargingSince ? 'Charging' : 'Plugged in'} ·
-              </span>
-            )}
             {sessionFacts(s)}
           </span>
         </span>

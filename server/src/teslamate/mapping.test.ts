@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_HOME_CHARGING } from '../services/home-charging.js';
 import { isTeslaMateVehicle, teslamateCarId, teslamateVehicleId } from './ids.js';
 import {
   type CarSnapshot,
@@ -232,17 +231,34 @@ describe('places', () => {
     expect(shortAddress(null)).toBeNull();
   });
 
-  it('calls a Home geofence or the home spot home', () => {
-    expect(drivePlace('home', work, 1, 1, [])).toMatchObject({ label: 'Home', isHome: true });
-    expect(drivePlace(null, work, 37, -122, [{ lat: 37, lon: -122 }])).toMatchObject({
-      label: 'Home',
+  it('names saved locations, and calls a Home geofence or a wallbox home', () => {
+    const none = { locations: [], wallboxes: [] };
+    const gym = {
+      id: 2,
+      name: 'Gym',
+      lat: 1,
+      lon: 1,
+      radiusM: 150,
+      isHome: false,
+      ratePerKwh: null,
+    };
+    expect(drivePlace('home', work, 1, 1, none)).toMatchObject({ label: 'Home', isHome: true });
+    expect(
+      drivePlace(null, work, 37, -122, { locations: [], wallboxes: [{ lat: 37, lon: -122 }] }),
+    ).toMatchObject({ label: 'Home', isHome: true, locationId: null });
+    expect(drivePlace('Office', work, 1, 1, { locations: [gym], wallboxes: [] })).toEqual({
+      label: 'Gym',
+      address: work.display_name,
+      isHome: false,
+      locationId: 2,
     });
-    expect(drivePlace('Office', work, 1, 1, [])).toEqual({
+    expect(drivePlace('Office', work, 1, 1, none)).toEqual({
       label: 'Office',
       address: work.display_name,
       isHome: false,
+      locationId: null,
     });
-    expect(drivePlace(null, null, 1, 1, [])).toBeNull();
+    expect(drivePlace(null, null, 1, 1, none)).toBeNull();
   });
 
   it('finds the nearest geofence containing a point', () => {
@@ -291,14 +307,18 @@ describe('toSessionDto', () => {
     latest_ideal_range_km: null,
     latest_rated_range_km: null,
   };
-  const home = {
-    settings: { ...DEFAULT_HOME_CHARGING, ratePerKwh: 0.15, currency: 'CAD' },
-    spots: [{ lat: 37, lon: -122 }],
+  const places = {
+    settings: { currency: 'CAD' },
+    locations: [
+      { id: 1, name: 'Home', lat: 37, lon: -122, radiusM: 150, isHome: true, ratePerKwh: 0.15 },
+    ],
+    wallboxes: [],
   };
 
-  it('prices home sessions at the home rate', () => {
-    expect(toSessionDto(row, { vehicleId: 'tm-1', range: 'rated', home })).toMatchObject({
+  it('prices sessions at their saved location’s rate', () => {
+    expect(toSessionDto(row, { vehicleId: 'tm-1', range: 'rated', places })).toMatchObject({
       isHome: true,
+      location: { id: 1, name: 'Home', isHome: true },
       chargerId: 'AC charger',
       cost: null,
       estimatedCost: '3.00',
@@ -313,7 +333,7 @@ describe('toSessionDto', () => {
   it('names Superchargers and keeps TeslaMate’s cost', () => {
     const dto = toSessionDto(
       { ...row, fast: true, brand: 'Tesla', cost: 12.345, lat: 1, lon: 1 },
-      { vehicleId: 'tm-1', range: 'rated', home },
+      { vehicleId: 'tm-1', range: 'rated', places },
     );
     expect(dto).toMatchObject({
       isHome: false,
@@ -334,7 +354,7 @@ describe('toSessionDto', () => {
         latest_energy: 9,
         latest_rated_range_km: 270,
       },
-      { vehicleId: 'tm-1', range: 'rated', home },
+      { vehicleId: 'tm-1', range: 'rated', places },
     );
     expect(dto).toMatchObject({
       endedAt: null,

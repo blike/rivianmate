@@ -1,7 +1,8 @@
-import type { VehicleState } from '@server/api-types';
-import { lastInstallFailed, softwareUpdate } from '../../lib/ota';
+import type { BatteryHealthDto, VehicleState } from '@server/api-types';
+import { lastInstallFailed, reportsUpdates, softwareUpdate } from '../../lib/ota';
+import { reportsBrakeFluid } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
-import { brakeFluidLabel } from '../../lib/vehicleStatus';
+import { brakeFluidLabel, twelveVoltLabel } from '../../lib/vehicleStatus';
 
 /** good: nothing to do. info: worth knowing. attention: check it. */
 export type CheckLevel = 'good' | 'info' | 'attention' | 'unknown';
@@ -58,13 +59,12 @@ const unknown = (key: string, label: string): HealthCheck => ({
 function twelveVolt(state: VehicleState | undefined): HealthCheck {
   const value = sv(state, 'twelveVoltBatteryHealth');
   if (value == null || /^unknown$/i.test(value)) return unknown('12v', '12V battery');
-  // Observed: NORMAL_OPERATION.
-  const ok = /^(normal|normal_operation|ok)$/i.test(value);
+  const label = twelveVoltLabel(state);
   return {
     key: '12v',
     label: '12V battery',
-    level: ok ? 'good' : 'attention',
-    value: ok ? 'Normal' : titleCase(value.toLowerCase()),
+    level: label === 'Normal' ? 'good' : 'attention',
+    value: label,
   };
 }
 
@@ -110,17 +110,30 @@ function tires(state: VehicleState | undefined): HealthCheck {
   return { key: 'tires', label: 'Tires', level: 'good', value: 'Normal' };
 }
 
-function packThermal(state: VehicleState | undefined): HealthCheck {
-  const value = sv(state, 'batteryHvThermalEvent');
-  if (value == null) return unknown('pack', 'Battery pack');
+/** Usable capacity below this share of rated needs a look. */
+const PACK_MIN_OF_RATED = 70;
+
+/**
+ * The pack's usable capacity against its rated capacity, which an R2
+ * reports too, and any thermal event the vehicle reported (legacy only).
+ */
+function pack(state: VehicleState | undefined, ofRated: number | null): HealthCheck {
+  const thermal = sv(state, 'batteryHvThermalEvent');
   // Observed: off. Anything else is a thermal event the vehicle reported.
-  const ok = /^(off|none|false|normal)$/i.test(value);
-  return {
+  const thermalOk = thermal == null || /^(off|none|false|normal)$/i.test(thermal);
+  const check = (level: CheckLevel, value: string): HealthCheck => ({
     key: 'pack',
     label: 'Battery pack',
-    level: ok ? 'good' : 'attention',
-    value: ok ? 'Normal' : 'Thermal event',
-  };
+    level,
+    value,
+  });
+  if (!thermalOk) return check('attention', 'Thermal event');
+  if (ofRated != null) {
+    return ofRated >= PACK_MIN_OF_RATED
+      ? check('good', 'Normal')
+      : check('attention', `${Math.round(ofRated)}% of rated`);
+  }
+  return thermal == null ? unknown('pack', 'Battery pack') : check('good', 'Normal');
 }
 
 function software(state: VehicleState | undefined): HealthCheck {
@@ -128,21 +141,57 @@ function software(state: VehicleState | undefined): HealthCheck {
     return { key: 'software', label: 'Software', level: 'attention', value: 'Install failed' };
   const update = softwareUpdate(state);
   if (update) return { key: 'software', label: 'Software', level: 'info', value: update.label };
-  if (!sv(state, 'otaCurrentVersion')) return unknown('software', 'Software');
-  return { key: 'software', label: 'Software', level: 'good', value: 'Up to date' };
+  const version = sv(state, 'otaCurrentVersion');
+  if (!version) return unknown('software', 'Software');
+  // Without update reporting (an R2), nothing pending can't be told apart.
+  const value = reportsUpdates(state) ? 'Up to date' : version;
+  return { key: 'software', label: 'Software', level: 'good', value };
 }
 
-/** Everything the vehicle reports about its own condition, in display order. */
-export function healthChecks(state: VehicleState | undefined): HealthCheck[] {
-  return [
-    packThermal(state),
+/** The fields each check reads. Brake fluid has its own test (reportsBrakeFluid). */
+const CHECK_FIELDS: Record<string, readonly string[]> = {
+  pack: ['batteryHvThermalEvent'],
+  '12v': ['twelveVoltBatteryHealth'],
+  tires: TIRES.map((t) => t.status),
+  washer: ['wiperFluidState'],
+  software: ['otaCurrentVersion', 'otaAvailableVersion', 'otaCurrentStatus'],
+};
+
+/**
+ * Everything the vehicle reports about its own condition, in display order.
+ * A check whose fields the vehicle has never sent is left out: a vehicle
+ * without the legacy feed (an R2) has no fluid readings, and would
+ * otherwise show them as unknown for good. The battery pack shows with a
+ * capacity against rated (`packOfRated`) as well. Before any state arrives,
+ * every check is listed, as unknown.
+ */
+export function healthChecks(
+  state: VehicleState | undefined,
+  packOfRated: number | null = null,
+  /** Battery health is still loading: keep the pack's place, as it may show. */
+  packPending = false,
+): HealthCheck[] {
+  const checks = [
+    pack(state, packOfRated),
     twelveVolt(state),
     tires(state),
     brakeFluid(state),
     washerFluid(state),
     software(state),
   ];
+  if (!state) return checks;
+  return checks.filter(
+    (c) =>
+      (c.key === 'pack' && (packOfRated != null || packPending)) ||
+      (c.key === 'brake'
+        ? reportsBrakeFluid(state)
+        : CHECK_FIELDS[c.key]!.some((field) => field in state)),
+  );
 }
+
+/** "a, b and c". */
+const listOf = (items: string[]) =>
+  items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 
 export interface HealthSummary {
   level: CheckLevel;
@@ -177,7 +226,7 @@ export function healthSummary(checks: readonly HealthCheck[]): HealthSummary {
     detail:
       missing > 0
         ? 'No warnings in what the vehicle has reported so far.'
-        : 'No warnings from the battery, tires, fluids or software.',
+        : `No warnings from the ${listOf(checks.map((c) => c.label.replace(/^[A-Z](?=[a-z])/, (l) => l.toLowerCase())))}.`,
   };
 }
 
@@ -259,6 +308,12 @@ export function capacityTrend(
     changeKwh: readings.length > 1 ? last.kwh - first.kwh : null,
     since: readings.length > 1 ? first.at : null,
   };
+}
+
+/** The latest usable capacity as a percentage of rated, from battery health; null without both. */
+export function packOfRated(battery: BatteryHealthDto | undefined): number | null {
+  const latest = battery?.latest?.kwh ?? battery?.reported.at(-1)?.kwh;
+  return capacityOfRated(latest, battery?.ratedCapacity?.kwh);
 }
 
 /** Reported usable capacity as a percentage of the pack's rated capacity. */

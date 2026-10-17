@@ -30,8 +30,12 @@ import {
   RVM_TIRES,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
-} from './parallax.js';
-import { b64, double, float, int, message, string } from './protobuf-encode.js';
+  type ParallaxGroup,
+  groupOf,
+  rvmDef,
+} from './parallax/index.js';
+import { b64, double, float, int, message, string } from './parallax/encode.js';
+import { ROUTE_HOME } from './mock-route-home.js';
 
 /** Made-up addresses for mock drives (no real lookups in mock mode). */
 export const mockGeocode = async (lat: number, lon: number) => {
@@ -110,21 +114,57 @@ function bearingDeg(a: [number, number], b: [number, number]): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-/** Cumulative distance (m) at each loop vertex. */
-const LOOP_AT = LOOP.reduce<number[]>((acc, p, i) => {
-  acc.push(i === 0 ? 0 : acc[i - 1]! + distanceM(LOOP[i - 1]!, p));
-  return acc;
-}, []);
-const LOOP_M = LOOP_AT[LOOP_AT.length - 1]!;
+/** A drive's path, with the distance (m) at each vertex and how many ticks it takes. */
+interface MockRoute {
+  points: [number, number][];
+  at: number[];
+  lengthM: number;
+  driveTicks: number;
+}
 
-/** Position and heading a given distance along the loop. */
-function alongLoop(m: number): { lat: number; lon: number; heading: number } {
+function mockRoute(points: [number, number][], ticks: (lengthM: number) => number): MockRoute {
+  const at = points.reduce<number[]>((acc, p, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1]! + distanceM(points[i - 1]!, p));
+    return acc;
+  }, []);
+  const lengthM = at[at.length - 1]!;
+  return { points, at, lengthM, driveTicks: ticks(lengthM) };
+}
+
+/** Around the loop at ~40 km/h. */
+const LOOP_ROUTE = mockRoute(LOOP, () => 100);
+/** Home from Lexington at 90 km/h (25 m/s). */
+const HOME_ROUTE = mockRoute(ROUTE_HOME, (m) => Math.round(m / (25 * (TICK_MS / 1000))));
+
+/** [lat, lon] points in Google's encoded polyline format, as navigation sends routes. */
+function encodePolyline(points: [number, number][]): string {
+  let out = '';
+  let prev = [0, 0];
+  for (const point of points) {
+    const next = point.map((x) => Math.round(x * 1e5));
+    for (const [i, value] of next.entries()) {
+      let v = value - prev[i]!;
+      v = v < 0 ? ~(v << 1) : v << 1;
+      while (v >= 0x20) {
+        out += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+        v >>= 5;
+      }
+      out += String.fromCharCode(v + 63);
+    }
+    prev = next;
+  }
+  return out;
+}
+
+/** Position and heading a given distance along a route. */
+function alongRoute(route: MockRoute, m: number): { lat: number; lon: number; heading: number } {
+  const { points, at } = route;
   let i = 1;
-  while (i < LOOP.length - 1 && LOOP_AT[i]! < m) i++;
-  const a = LOOP[i - 1]!;
-  const b = LOOP[i]!;
-  const span = LOOP_AT[i]! - LOOP_AT[i - 1]!;
-  const f = span > 0 ? Math.min(1, Math.max(0, (m - LOOP_AT[i - 1]!) / span)) : 0;
+  while (i < points.length - 1 && at[i]! < m) i++;
+  const a = points[i - 1]!;
+  const b = points[i]!;
+  const span = at[i]! - at[i - 1]!;
+  const f = span > 0 ? Math.min(1, Math.max(0, (m - at[i - 1]!) / span)) : 0;
   return {
     lat: a[0] + (b[0] - a[0]) * f,
     lon: a[1] + (b[1] - a[1]) * f,
@@ -139,16 +179,58 @@ const KWH_PER_KM = 0.35;
 type Phase = 'parked' | 'driving' | 'arriving' | 'charging';
 
 /**
- * Ticks per phase: park 10 → drive 100 (the loop at ~40 km/h) → park 100 →
- * charge 60 → repeat. The stop after a drive (200 s) outlasts the drive
- * detector's 3-minute park grace, so mock drives actually complete.
+ * Ticks per phase: park 10 → drive (the route's ticks; 100 around the
+ * loop) → park 100 → charge 60 → repeat. The stop after a drive (200 s)
+ * outlasts the drive detector's 3-minute park grace, so mock drives
+ * actually complete.
  */
-const PHASE_TICKS: Record<Phase, number> = {
+const PHASE_TICKS: Record<Exclude<Phase, 'driving'>, number> = {
   parked: 10,
-  driving: 100,
   arriving: 100,
   charging: 60,
 };
+
+/** Rolling hills, so elevation features have something to show. */
+const altitudeAt = (tick: number) => Math.round(240 + 35 * Math.sin(tick / 8));
+
+/** Demo scenes the mock can start in instead of parked at home (MOCK_SCENE). */
+export type MockScene = 'drive-home';
+
+/** The drive-home scene: this far along the drive home, which began at this battery level. */
+const DRIVE_HOME = { fraction: 0.6, startBattery: 66 };
+const START_MILEAGE_M = 12_345_678;
+
+const usedPct = (m: number) => ((m / 1000) * KWH_PER_KM) / KWH_PER_PCT;
+
+/**
+ * The drive-home scene's drive up to where the mock picks it up, one
+ * reading per tick and the last at `endMs`, for recording it ahead of time
+ * (scripts/demo-scene.ts) so the scene needn't be driven first.
+ */
+export function driveHomeSoFar(endMs: number) {
+  const route = HOME_ROUTE;
+  const ticks = Math.round(DRIVE_HOME.fraction * route.driveTicks);
+  const stepM = route.lengthM / route.driveTicks;
+  const points = Array.from({ length: ticks + 1 }, (_, tick) => {
+    const at = alongRoute(route, tick * stepM);
+    return {
+      ts: new Date(endMs - (ticks - tick) * TICK_MS),
+      lat: at.lat,
+      lon: at.lon,
+      speedKmh: tick === 0 ? 0 : (stepM / (TICK_MS / 1000)) * 3.6,
+      bearing: Math.round(at.heading),
+      altitude: altitudeAt(tick),
+    };
+  });
+  return {
+    startedAt: points[0]!.ts,
+    startBattery: DRIVE_HOME.startBattery,
+    startMileageM: START_MILEAGE_M,
+    batteryCapacityKwh: 135,
+    destination: { name: 'Home', ...HOME },
+    points,
+  };
+}
 
 const PHASE_ORDER: Phase[] = ['parked', 'driving', 'arriving', 'charging'];
 
@@ -173,21 +255,36 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   private callback?: VehicleStateCallback;
   private chargingCallback?: ChargingSessionCallback;
-  private parallaxCallback?: ParallaxCallback;
-  private parallaxDynamicsCallback?: ParallaxCallback;
+  private parallaxCallbacks = new Map<ParallaxGroup, ParallaxCallback>();
   private subscribedId = MOCK_VEHICLE_ID;
   private timer?: NodeJS.Timeout;
   private phase: Phase = 'parked';
   private tickInPhase = 0;
+  private route = LOOP_ROUTE;
 
   private lat = HOME.lat;
   private lon = HOME.lon;
   private heading = 270;
   private battery = 79;
-  private mileageM = 12_345_678;
+  private mileageM = START_MILEAGE_M;
   private sessionEnergyKwh = 0;
   private sessionStart?: string;
   private sessionStartSoc = 0;
+
+  constructor(options: { scene?: MockScene } = {}) {
+    if (options.scene === 'drive-home') {
+      // Partway home, where driveHomeSoFar leaves off.
+      this.route = HOME_ROUTE;
+      this.phase = 'driving';
+      this.tickInPhase = Math.round(DRIVE_HOME.fraction * HOME_ROUTE.driveTicks);
+      const at = alongRoute(this.route, this.drivenM());
+      this.lat = at.lat;
+      this.lon = at.lon;
+      this.heading = at.heading;
+      this.battery = DRIVE_HOME.startBattery - usedPct(this.drivenM());
+      this.mileageM = START_MILEAGE_M + this.drivenM();
+    }
+  }
 
   get userSessionToken(): string | undefined {
     return this.tokens?.userSessionToken;
@@ -421,16 +518,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     _vehicleId: string,
     _rvms: readonly string[],
     callback: ParallaxCallback,
+    group: ParallaxGroup = 'core',
   ): void {
-    this.parallaxCallback = callback;
-  }
-
-  subscribeParallaxDynamics(
-    _vehicleId: string,
-    _rvms: readonly string[],
-    callback: ParallaxCallback,
-  ): void {
-    this.parallaxDynamicsCallback = callback;
+    this.parallaxCallbacks.set(group, callback);
   }
 
   start(): void {
@@ -466,9 +556,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ]);
     this.emitBatteryState();
     this.emitGnss();
+    if (this.phase === 'driving') this.emitTripInfo();
     const tire = (pos: number, bar: number) =>
       message(2, [...int(1, pos), ...int(2, 1), ...double(3, bar)]);
-    this.emitParallaxDynamics(RVM_TIRES, [
+    this.emitParallax(RVM_TIRES, [
       ...tire(1, 2.8),
       ...tire(2, 2.85),
       ...tire(3, 2.75),
@@ -476,60 +567,61 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ]);
   }
 
-  /** Parallax topics come in as base64 protobuf, as from Rivian. */
+  /** Parallax topics come in as base64 protobuf, as from Rivian, on their group's subscription. */
   private emitParallax(rvm: string, bytes: number[]): void {
-    this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
+    const def = rvmDef(rvm);
+    const callback = this.parallaxCallbacks.get(def ? groupOf(def) : 'core');
+    callback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
   }
 
   private emitGnss(): void {
     const driving = this.phase === 'driving';
-    this.emitParallaxDynamics(RVM_GNSS, [
+    this.emitParallax(RVM_GNSS, [
       ...double(1, this.lat),
       ...double(2, this.lon),
-      ...double(3, driving ? Math.round(240 + 35 * Math.sin(this.tickInPhase / 8)) : 240),
+      ...double(3, driving ? altitudeAt(this.tickInPhase) : 240),
+      // Speed is left out at a standstill, as the vehicle sends it.
+      ...(driving ? float(4, this.speedMps()) : []),
       ...float(5, this.heading > 180 ? this.heading - 360 : this.heading),
-      ...float(6, driving ? LOOP_M / PHASE_TICKS.driving / (TICK_MS / 1000) : 0),
     ]);
   }
 
-  /** The isolated GNSS/tires subscription, separate from the main Parallax one. */
-  private emitParallaxDynamics(rvm: string, bytes: number[]): void {
-    this.parallaxDynamicsCallback?.(this.subscribedId, {
-      rvm,
-      payload: b64(bytes),
-      timestamp: Date.now(),
-    });
-  }
-
-  /** Navigating to the Rivian service center for the length of the drive. */
+  /** Navigating home along the route, laid out as the vehicle sends it. */
   private emitTripInfo(): void {
-    const km = LOOP_M / 1000;
+    const km = this.route.lengthM / 1000;
+    const seconds = this.route.driveTicks * (TICK_MS / 1000);
+    const secondsLeft = (this.route.driveTicks - this.tickInPhase) * (TICK_MS / 1000);
+    const arrivalS = Math.round(Date.now() / 1000 + secondsLeft);
     // Range is 4.4 km per %.
-    const arrivalSoc = Math.max(5, this.battery - (km * KWH_PER_KM) / KWH_PER_PCT);
+    const arrivalSoc = Math.max(5, this.battery - usedPct(this.route.lengthM - this.drivenM()));
     this.emitParallax(RVM_TRIP_INFO, [
       ...string(1, 'mock-trip'),
       ...message(3, [
         ...double(1, km * 1000),
-        ...double(2, PHASE_TICKS.driving * (TICK_MS / 1000)),
+        ...double(2, seconds),
         ...message(
           3,
           message(1, [
             ...message(1, [...double(1, HOME.lat), ...double(2, HOME.lon)]),
             ...string(4, 'Home'),
+            ...message(9, int(1, arrivalS)),
           ]),
         ),
+        ...double(6, arrivalSoc),
+        ...double(7, arrivalSoc * 4.4 * 1000),
+        ...string(10, encodePolyline(this.route.points)),
       ]),
-      ...double(6, arrivalSoc),
-      ...double(7, arrivalSoc * 4.4 * 1000),
+      ...double(5, this.battery + usedPct(this.drivenM())),
+      ...message(6, int(1, arrivalS)),
     ]);
   }
 
   private emitTripProgress(): void {
-    const ticksLeft = PHASE_TICKS.driving - this.tickInPhase;
+    const ticksLeft = this.route.driveTicks - this.tickInPhase;
     const secondsLeft = ticksLeft * (TICK_MS / 1000);
     this.emitParallax(RVM_TRIP_PROGRESS, [
       ...message(1, int(1, Math.round(Date.now() / 1000 + secondsLeft))),
-      ...double(4, LOOP_M - this.loopM()),
+      ...double(4, this.route.lengthM - this.drivenM()),
       ...double(5, secondsLeft),
     ]);
   }
@@ -550,21 +642,22 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   private tick(): void {
     this.tickInPhase += 1;
-    if (this.tickInPhase >= PHASE_TICKS[this.phase]) {
+    const phaseTicks = this.phase === 'driving' ? this.route.driveTicks : PHASE_TICKS[this.phase];
+    if (this.tickInPhase >= phaseTicks) {
       const next = PHASE_ORDER[(PHASE_ORDER.indexOf(this.phase) + 1) % PHASE_ORDER.length]!;
       this.enterPhase(next);
       return;
     }
 
     if (this.phase === 'driving') {
-      // Around the loop at a steady ~40 km/h.
-      const stepM = LOOP_M / PHASE_TICKS.driving;
-      const at = alongLoop(this.loopM());
+      // Along the route at a steady speed.
+      const stepM = this.route.lengthM / this.route.driveTicks;
+      const at = alongRoute(this.route, this.drivenM());
       this.lat = at.lat;
       this.lon = at.lon;
       this.heading = at.heading;
       this.mileageM += stepM;
-      this.battery = Math.max(5, this.battery - ((stepM / 1000) * KWH_PER_KM) / KWH_PER_PCT);
+      this.battery = Math.max(5, this.battery - usedPct(stepM));
       this.emit({
         gnssLocation: {
           latitude: this.lat,
@@ -572,10 +665,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
           timeStamp: ts(),
           isAuthorized: true,
         },
-        gnssSpeed: v(Number((stepM / (TICK_MS / 1000)).toFixed(1))),
+        gnssSpeed: v(Number(this.speedMps().toFixed(1))),
         gnssBearing: v(Math.round(this.heading)),
-        // Rolling hills so elevation features have something to show.
-        gnssAltitude: v(Math.round(240 + 35 * Math.sin(this.tickInPhase / 8))),
+        gnssAltitude: v(altitudeAt(this.tickInPhase)),
         batteryLevel: v(Number(this.battery.toFixed(1))),
         distanceToEmpty: v(Math.round(this.battery * 4.4)),
         vehicleMileage: v(Math.round(this.mileageM)),
@@ -604,9 +696,13 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     if (this.tickInPhase % 5 === 0) this.emitBatteryState();
   }
 
-  /** Distance driven around the loop so far this drive. */
-  private loopM(): number {
-    return (LOOP_M * this.tickInPhase) / PHASE_TICKS.driving;
+  /** Distance driven along the route so far this drive. */
+  private drivenM(): number {
+    return (this.route.lengthM * this.tickInPhase) / this.route.driveTicks;
+  }
+
+  private speedMps(): number {
+    return this.route.lengthM / this.route.driveTicks / (TICK_MS / 1000);
   }
 
   private async pushCharging(): Promise<void> {
@@ -632,6 +728,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         break;
       case 'arriving':
       case 'parked':
+        // A scene's drive is done once; the loop takes over after it.
+        if (phase === 'parked') this.route = LOOP_ROUTE;
         this.emitParallax(RVM_TRIP_INFO, []); // navigation ended
         this.emit({
           gearStatus: v('park'),
@@ -672,7 +770,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         timeStamp: ts(),
         isAuthorized: true,
       },
-      gnssSpeed: v(driving ? 11 : 0),
+      gnssSpeed: v(driving ? Number(this.speedMps().toFixed(1)) : 0),
       gnssBearing: v(Math.round(this.heading)),
       gnssAltitude: v(240),
       batteryLevel: v(Number(this.battery.toFixed(1))),

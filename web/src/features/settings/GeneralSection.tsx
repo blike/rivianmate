@@ -1,8 +1,16 @@
 import { useState } from 'react';
-import { useSetUnits, useUnits, useVehicles } from '../../api/hooks';
+import {
+  useChargingSettings,
+  useSetChargingSettings,
+  useSetUnits,
+  useUnits,
+  useVehicles,
+} from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
 import { SegmentedControl, SettingRow, SettingsGroup, secondaryButton } from './SettingsControls';
 import { AccountsPanel } from './AccountsPanel';
+
+const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
 
 export function GeneralSection(props: {
   parallaxModes: Record<string, 'classic' | 'parallax'> | undefined;
@@ -11,6 +19,8 @@ export function GeneralSection(props: {
   const u = useUnits();
   const { units } = u;
   const setUnits = useSetUnits();
+  const { data: charging } = useChargingSettings();
+  const setCharging = useSetChargingSettings();
 
   return (
     <>
@@ -79,6 +89,21 @@ export function GeneralSection(props: {
             ]}
             onChange={(temperature) => setUnits.mutate({ ...units, temperature })}
           />
+        </SettingRow>
+        <SettingRow label="Currency" htmlFor="currency" description="For charging rates and costs.">
+          <select
+            id="currency"
+            value={charging?.currency ?? 'USD'}
+            disabled={!charging || setCharging.isPending}
+            onChange={(e) => setCharging.mutate({ currency: e.target.value })}
+            className="rounded-md border border-(--border) bg-(--surface-2) px-2 py-1.5 text-sm outline-none"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </SettingRow>
       </SettingsGroup>
 

@@ -1,14 +1,18 @@
-import type { VehicleState } from '@server/api-types';
+import type { BatteryHealthDto, VehicleState } from '@server/api-types';
 import { Dot } from '../../components/Dot';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { Skeleton, useLoading } from '../../components/LoadingState';
-import { type CheckLevel, healthChecks, healthSummary } from './health';
+import { type CheckLevel, healthChecks, healthSummary, packOfRated } from './health';
 import { LEVEL_COLOR } from './levels';
 
 /** The verdict up front, then each system the vehicle reports on. */
-export function Overview(props: { state: VehicleState | undefined }) {
+export function Overview(props: {
+  state: VehicleState | undefined;
+  battery: BatteryHealthDto | undefined;
+  batteryPending: boolean;
+}) {
   const loading = useLoading();
-  const checks = healthChecks(props.state);
+  const checks = healthChecks(props.state, packOfRated(props.battery), props.batteryPending);
   const summary = healthSummary(checks);
   const color = LEVEL_COLOR[summary.level];
 
@@ -32,9 +36,10 @@ export function Overview(props: { state: VehicleState | undefined }) {
         </div>
         <FreshnessBadge state={props.state} />
       </div>
-      <ul className="grid grid-cols-2 gap-px border-t border-(--border) bg-(--border) sm:grid-cols-3 lg:grid-cols-6">
+      {/* Tiles grow to fill each row, however many checks the vehicle reports. */}
+      <ul className="flex flex-wrap gap-px border-t border-(--border) bg-(--border)">
         {checks.map((c) => (
-          <li key={c.key} className="bg-(--surface-1) px-4 py-3">
+          <li key={c.key} className="min-w-0 flex-1 basis-36 bg-(--surface-1) px-4 py-3">
             <div className="text-xs text-(--text-muted)">{c.label}</div>
             <div className="mt-1 flex items-center gap-2 text-sm font-medium">
               {loading ? (

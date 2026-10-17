@@ -7,6 +7,7 @@ import type { AppContext } from './context.js';
 import { SESSION_COOKIE, authRoutes } from './routes/auth.js';
 import { chargingRoutes } from './routes/charging.js';
 import { historyRoutes } from './routes/history.js';
+import { locationRoutes } from './routes/locations.js';
 import { rivianRoutes } from './routes/rivian.js';
 import { healthRoutes } from './routes/health.js';
 import { notificationRoutes } from './routes/notifications.js';
@@ -49,6 +50,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await historyRoutes(app, ctx);
   await chargingRoutes(app, ctx);
   await settingsRoutes(app, ctx);
+  await locationRoutes(app, ctx);
   await healthRoutes(app, ctx);
   await notificationRoutes(app, ctx);
   await teslamateRoutes(app, ctx);

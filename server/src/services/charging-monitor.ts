@@ -5,21 +5,18 @@ import type { RivianApi } from '../rivian/client.js';
 import {
   type ChargeBreakdown,
   type ChargingGraphBar,
+  type Decoded,
   type ParallaxMessage,
-  RVM_BATTERY_STATE,
-  RVM_CHARGE_BREAKDOWN,
-  RVM_CHARGING_STATUS,
-  RVM_CHARGING_GRAPH,
-  RVM_SOC_SLIDER,
-  RVM_TIME_ESTIMATION,
-  decodeBatteryState,
-  decodeChargeBreakdown,
-  decodeChargingGraph,
-  decodeChargingStatus,
+  batteryState,
+  chargeBreakdown,
   chargerStateFromStatus,
-  decodeSocSlider,
-  decodeTimeEstimation,
-} from '../rivian/parallax.js';
+  chargingGraph,
+  chargingStatus,
+  decodeMessage,
+  isTopic,
+  socSlider,
+  timeEstimation,
+} from '../rivian/parallax/index.js';
 import {
   LiveSessionData,
   RivianRateLimitError,
@@ -28,7 +25,7 @@ import {
 } from '../rivian/types.js';
 import { isChargingState, stampedAt } from './charging-time.js';
 import { LiveChargeState, type LiveSource } from './live-charging.js';
-import { nearbySpot } from './home-charging.js';
+import { nearbySpot } from './locations.js';
 import type { LiveBus } from './live-bus.js';
 import { type ResumableSession, closeTime } from './session-resume.js';
 import { stateNumber, stateString } from './state-utils.js';
@@ -194,18 +191,22 @@ export class ChargingMonitor {
    * subscribe, so bars go to the open session, or else to the finished
    * session they fall within.
    */
-  ingestParallax(vehicleId: string, message: ParallaxMessage): Promise<void> {
+  ingestParallax(
+    vehicleId: string,
+    message: ParallaxMessage,
+    decoded: Decoded | null = decodeMessage(message),
+  ): Promise<void> {
     const at = parallaxTime(message.timestamp) ?? this.now();
-    if (message.rvm === RVM_TIME_ESTIMATION) {
+    if (isTopic(decoded, timeEstimation)) {
       // Empty once charging stops; null then means no estimate.
-      const minutes = decodeTimeEstimation(message.payload)?.minutesRemaining || null;
+      const minutes = decoded.value?.minutesRemaining || null;
       this.observe(vehicleId, 'parallax', at, [
         ['secondsLeft', minutes == null ? null : minutes * 60],
       ]);
       return Promise.resolve();
     }
-    if (message.rvm === RVM_BATTERY_STATE) {
-      const battery = decodeBatteryState(message.payload);
+    if (isTopic(decoded, batteryState)) {
+      const battery = decoded.value;
       if (battery?.soc != null) {
         this.observe(vehicleId, 'parallax', at, [
           ['soc', battery.soc],
@@ -214,24 +215,23 @@ export class ChargingMonitor {
       }
       return Promise.resolve();
     }
-    if (message.rvm === RVM_CHARGING_STATUS) {
-      const status = decodeChargingStatus(message.payload);
-      const state = status && chargerStateFromStatus(status);
+    if (isTopic(decoded, chargingStatus)) {
+      const state = decoded.value && chargerStateFromStatus(decoded.value);
       if (state) this.observe(vehicleId, 'parallax', at, [['chargerState', state]]);
       return Promise.resolve();
     }
-    if (message.rvm === RVM_SOC_SLIDER) {
-      const slider = decodeSocSlider(message.payload);
+    if (isTopic(decoded, socSlider)) {
+      const slider = decoded.value;
       if (slider) this.observe(vehicleId, 'parallax', at, [['socLimit', slider.limit]]);
       return Promise.resolve();
     }
-    if (message.rvm === RVM_CHARGE_BREAKDOWN) {
-      const breakdown = decodeChargeBreakdown(message.payload);
+    if (isTopic(decoded, chargeBreakdown)) {
+      const breakdown = decoded.value;
       if (!breakdown || breakdown.totalKwh <= 0) return Promise.resolve();
       return this.enqueue(vehicleId, () => this.applyBreakdown(vehicleId, breakdown, at));
     }
-    if (message.rvm !== RVM_CHARGING_GRAPH) return Promise.resolve();
-    const bars = decodeChargingGraph(message.payload);
+    if (!isTopic(decoded, chargingGraph)) return Promise.resolve();
+    const bars = decoded.value ?? [];
     if (bars.length === 0) return Promise.resolve();
     const sentAt = graphSentAt(message.timestamp, bars[0]!.startMs, this.now());
     const recorded = bars.filter((b) => b.startMs <= sentAt + GRAPH_CLOCK_SLACK_MS);
@@ -244,15 +244,8 @@ export class ChargingMonitor {
       // replaces the last one's.
       if (open) await this.replaceForecast(target.id, forecast);
       const inWindow = recorded.filter((b) => b.startMs >= target.from && b.startMs <= target.to);
-      const rows = inWindow
-        .filter((b) => b.powerKw != null || b.soc != null)
-        .map((b) => ({
-          sessionId: target.id,
-          source: 'graph' as const,
-          ts: new Date(b.startMs),
-          powerKw: b.powerKw,
-          soc: b.soc,
-        }));
+      const { points, last } = graphPoints(inWindow, sentAt);
+      const rows = points.map((p) => ({ sessionId: target.id, source: 'graph' as const, ...p }));
       if (rows.length === 0) return;
       // The latest bar that carries power, timed by its end (or its start
       // while it's still running). The breakdown's live power is fresher.
@@ -262,27 +255,34 @@ export class ChargingMonitor {
           ['powerKw', latest.powerKw],
         ]);
       }
-      await this.db
-        .insert(chargingCurvePoints)
-        .values(rows)
-        .onConflictDoUpdate({
-          target: [
-            chargingCurvePoints.sessionId,
-            chargingCurvePoints.source,
-            chargingCurvePoints.ts,
-          ],
-          set: {
-            powerKw: sql`COALESCE(excluded.power_kw, ${chargingCurvePoints.powerKw})`,
-            soc: sql`COALESCE(excluded.soc, ${chargingCurvePoints.soc})`,
-          },
-        });
-      await this.db
-        .update(chargingSessions)
-        .set({
-          maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND source = 'graph')`,
-          avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE session_id = ${target.id} AND source = 'graph' AND power_kw > 0)`,
-        })
-        .where(eq(chargingSessions.id, target.id));
+      // The message is the record from its first bar on: Rivian re-buckets
+      // the graph as a charge grows (1, then 16, then 32 minute bars), and
+      // points from the old bars would be left between the new ones.
+      const from = new Date(inWindow[0]!.startMs);
+      const lastAt = last?.ts ?? null;
+      await this.db.transaction(async (tx) => {
+        await tx
+          .delete(chargingCurvePoints)
+          .where(
+            and(
+              eq(chargingCurvePoints.sessionId, target.id),
+              eq(chargingCurvePoints.source, 'graph'),
+              gte(chargingCurvePoints.ts, from),
+            ),
+          );
+        await tx.insert(chargingCurvePoints).values(rows);
+        // Per bar: the closing point repeats the last bar's power.
+        const bars = sql`session_id = ${target.id} AND source = 'graph'${
+          lastAt ? sql` AND ts <> ${lastAt.toISOString()}::timestamptz` : sql``
+        }`;
+        await tx
+          .update(chargingSessions)
+          .set({
+            maxPowerKw: sql`(SELECT MAX(power_kw) FROM charging_curve_points WHERE ${bars})`,
+            avgPowerKw: sql`(SELECT AVG(power_kw) FROM charging_curve_points WHERE ${bars} AND power_kw > 0)`,
+          })
+          .where(eq(chargingSessions.id, target.id));
+      });
     });
   }
 
@@ -662,7 +662,11 @@ export class ChargingMonitor {
     this.liveState(vehicleId).forgetSessionReadings(endedAt);
     // A finished charge has no forecast.
     await this.replaceForecast(open.id, []);
-    this.log(`charging session ended for ${vehicleId}`);
+    if (await this.discardIfEmpty(open.id)) {
+      this.log(`charging session discarded for ${vehicleId}: nothing was charged`);
+    } else {
+      this.log(`charging session ended for ${vehicleId}`);
+    }
     this.onSessionEnded?.(vehicleId);
   }
 
@@ -919,6 +923,31 @@ export class ChargingMonitor {
           : {}),
       })
       .where(eq(chargingSessions.id, session.id));
+    await this.discardIfEmpty(session.id);
+  }
+
+  /**
+   * Deletes a closed session that never charged: plugged in and out, or a
+   * scheduled charge that never started. It has no charging time, no energy
+   * from either feed, no power on its curve, and nothing from Rivian's
+   * history or the owner. Its curve points go with it.
+   */
+  private async discardIfEmpty(id: number): Promise<boolean> {
+    const deleted = await this.db
+      .delete(chargingSessions)
+      .where(
+        and(
+          eq(chargingSessions.id, id),
+          sql`COALESCE(${chargingSessions.chargingSeconds}, 0) = 0`,
+          sql`COALESCE(${chargingSessions.energyKwh}, 0) = 0`,
+          sql`COALESCE(${chargingSessions.packKwh}, 0) = 0`,
+          isNull(chargingSessions.rivianTransactionId),
+          eq(chargingSessions.costEdited, false),
+          sql`NOT EXISTS (SELECT 1 FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id} AND p.power_kw > 0)`,
+        ),
+      )
+      .returning({ id: chargingSessions.id });
+    return deleted.length > 0;
   }
 }
 
@@ -941,6 +970,46 @@ export function isActiveSession(session: LiveSessionData | null): boolean {
     return ACTIVE_CHARGER_STATES.has(state.toLowerCase());
   }
   return session.startTime != null;
+}
+
+interface GraphPoint {
+  ts: Date;
+  powerKw: number | null;
+  soc: number | null;
+}
+
+/**
+ * A graph's bars as curve points, one at each bar boundary. A bar's power
+ * is its average over the bar, so it's put at the bar's start; its SoC is
+ * the battery level at its end (a running bar's is the level now), so a
+ * point carries the previous bar's. The closing point, at the last bar's
+ * end (or `sentAt` while it runs), carries that bar's SoC, and its power so
+ * the curve reaches it; it's returned as `last` too, as it repeats a bar.
+ */
+export function graphPoints(
+  bars: readonly ChargingGraphBar[],
+  sentAt: number,
+): { points: GraphPoint[]; last: GraphPoint | null } {
+  const points: GraphPoint[] = [];
+  bars.forEach((bar, i) => {
+    const soc = bars[i - 1]?.soc ?? null;
+    if (bar.powerKw != null || soc != null)
+      points.push({ ts: new Date(bar.startMs), powerKw: bar.powerKw, soc });
+  });
+  const bar = bars.at(-1);
+  if (!bar || (bar.soc == null && bar.powerKw == null)) return { points, last: null };
+  const endMs = bar.endMs != null && bar.endMs <= sentAt ? bar.endMs : sentAt;
+  if (endMs < bar.startMs) return { points, last: null };
+  // Sent as the bar starts: its level is the level then, on its own point.
+  if (endMs === bar.startMs) {
+    const start = points.at(-1);
+    if (start?.ts.getTime() === endMs) start.soc = bar.soc;
+    else points.push({ ts: new Date(endMs), powerKw: bar.powerKw, soc: bar.soc });
+    return { points, last: null };
+  }
+  const last = { ts: new Date(endMs), powerKw: bar.powerKw, soc: bar.soc };
+  points.push(last);
+  return { points, last };
 }
 
 /**

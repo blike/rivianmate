@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { haversineKm, isPosition, withCumulativeKm } from './geo';
+import { circlePolygon, haversineKm, isPosition, withCumulativeKm } from './geo';
 
 describe('geo', () => {
   it('measures one degree of latitude as ~111 km', () => {
@@ -27,5 +27,13 @@ describe('isPosition', () => {
   it('keeps real positions', () => {
     expect(isPosition(34.0026, -116.0522)).toBe(true);
     expect(isPosition(51.48, 0)).toBe(true);
+  });
+
+  it('draws a closed circle whose points sit at the radius', () => {
+    const ring = circlePolygon(33.07, -117.26, 150, 16);
+    expect(ring).toHaveLength(17);
+    expect(ring[0]).toEqual(ring[16]);
+    for (const [lon, lat] of ring)
+      expect(haversineKm(33.07, -117.26, lat, lon)).toBeCloseTo(0.15, 3);
   });
 });

@@ -1,5 +1,183 @@
 # Changelog
 
+## v0.7.0 — 2026-10-17
+
+RivianMate `v0.7.0` brings **improved R2 support**, **saved locations** with their own charging
+rates, **navigation** on the dashboard, and improved drive and charge cards.
+
+### New features
+
+#### R2 support
+
+- Drives, doors, windows, locks, cabin climate and live charging, read from Parallax. #39 #45
+- The dashboard shows an R2's battery, range, charge limit, odometer and software version. #42 #43
+- Schedules show the next charging window, and Health checks the 12V battery and pack. #42 #43 #45
+- Pages show only what the vehicle reports. #43 #48
+
+#### Saved locations
+
+- **Settings → Locations** replaces Settings → Charging: any number of named places, each with its
+  own charging rate (0 for free), a "Counts as home" switch, and an area set on a map. #40
+- Drives and charges at a saved place take its name, such as "Home → Work". #40
+- Sessions without a cost of their own are priced at their location's rate. #40
+- "Only when not at home" alerts are held at every location marked as home. #40
+
+#### Navigation
+
+- The dashboard map draws the planned route as a dashed line, with a ring at the destination. #46
+- While navigating, the drive card shows distance to go, arrival time and battery on arrival. #46
+- The drive under way on the Drives page shows its planned route. #46
+
+### Improvements
+
+- The dashboard's drive and charge cards keep one layout in every state and while loading. Charging
+  shows the battery toward its limit and when it will finish, and a plugged-in vehicle shows when
+  its schedule starts. #47
+- Live and past charges share one card on the Charging page. Energy and cost are estimated from the
+  battery gained until Rivian reports them. #47
+- Live drives and charges are tagged **In progress**, **Charging** or **Plugged in**. #46
+- Software updates follow every stage Rivian reports, including waiting for a connection and
+  preparing. #38
+- Charging schedules refresh when the vehicle's next charging window changes, not only every 6
+  hours. #45
+- The charging curve runs to where charging stopped. #48
+- The feed viewer names more fields, and a legacy feed that only ever sends nulls shows as "No
+  data". #45 #46
+- The currency setting moves to **General → Units**. #40
+
+### Fixes
+
+- GPS speed is read from the right field. #43
+- "Only when not at home" alerts are no longer sent at home when the vehicle's GPS fix drops out.
+  #38
+- An installed update no longer shows as still installing at 99%. #38
+- Charging status reads connecting and stopped correctly. #45
+- Sessions from plugging in and out without charging are removed. #45
+- The charging curve is no longer drawn as steps from leftover points. #48
+- Navigation's arrival battery and range now show. #46
+- The dashboard shows a shut charge port as "Closed" and the 12V battery as "Normal". #42 #48
+
+### Migrations
+
+This release includes one database migration, which runs automatically on startup:
+
+- `0016_saved_locations`: adds saved locations, carrying over your home location and rate as
+  **Home**
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and database volume, then run
+`docker compose pull && docker compose up -d`.
+
+### API
+
+`/api/settings/home-charging` is now `/api/settings/charging`, which holds only the currency.
+Locations are managed under `/api/locations`. #40
+
+### Updates
+
+- Parallax decoding is split into a registry with one definition per topic. #41 #42
+- The README is rewritten with new screenshots, taken with a new drive-home demo scene for mock
+  mode. #49
+
+### Thanks
+
+@leetosc
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.6.0...v0.7.0](https://github.com/blike/rivianmate/compare/v0.6.0...v0.7.0)
+
+## v0.6.0 — 2026-10-11
+
+RivianMate `v0.6.0` is here with **redesigned pages**, **notifications**, saved **software release
+notes**, and various fixes.
+
+### New features
+
+#### Redesigned pages
+
+- **History**: a summary of driving, efficiency and charging cost, distance by day, and a chart that
+  shades drives, charging and plugged-in time. Hovering the chart marks the spot on the map. #26
+- **Drives and Charging**: header cards with key figures, lists grouped by day with daily totals,
+  and a picker on narrow screens. #26 #27
+- **Navigation**: a new menu on phones. #27
+- **Schedules**: the next charging window first, and a week view of charging windows. #26
+- **Health**: an overview of checks, battery capacity as the vehicle reports it with a trend line,
+  and a tire diagram with slow-leak detection. #22 #26
+- **Settings**: grouped rows, an Imperial / Metric choice, and an example cost for the home rate.
+  #26
+
+#### Notifications
+
+- Get alerts for vehicle events in Discord, or through an
+  [Apprise](https://github.com/caronc/apprise) server in Pushover, ntfy, Telegram, Slack, email and
+  more. #23 #25
+- Door or window left open, and vehicle left unlocked, after a set time while parked
+- "Only when not at home" option for closure alerts
+- Tire pressure, low battery and charging complete
+- Software update available, installed and failed, with a link to the release notes
+- Off by default; turn on and add destinations under **Settings → Notifications**
+
+#### Software updates
+
+- Release notes for each version are saved, so they stay available after an update installs. #24
+- Live download and install progress on the dashboard and in Health. #24
+- Health shows installed versions as a timeline, with any pending update at the end. #24 #26
+
+#### API & Feeds
+
+- Status for each Rivian feed: receiving, waiting, unsupported or errored. #22
+- The latest data each feed received, down to the raw Parallax fields. #33
+
+### Improvements
+
+- Drive and charge battery levels show one decimal place. #31 #35
+- Drives show range used or gained, Wh per mile (or km) and kWh used. #35
+- A drive under way with no destination is titled "From Home" instead of "Home → …". #35
+- The dashboard's last drive card shows the home icon when applicable and wraps long addresses. #35
+- The Drives chart marks the hovered point on the route map, and its tooltip shows time into the
+  drive and time of day. #24
+- History's 7d, 30d and 90d ranges start at midnight, and every distance bar is labeled. #31
+- Clearer brake fluid and preconditioning labels on the dashboard. #21
+
+### Fixes
+
+- GPS location, speed and tire pressure are restored on vehicles where Rivian's older feed stopped
+  providing them. #14 #15
+- Rivian charging sessions no longer show a falsely low cost. Rivian's billed total replaces the
+  early estimate, and existing sessions are corrected on the next charge-history import. #26
+- Drives end when the vehicle parks, without a trailing stretch of near-zero speed, and parking
+  noise no longer starts a new drive. Drives already recorded are repaired. #29
+- The dashboard no longer shows "Asleep" while the vehicle is awake or driving. #32
+- Software release notes appear again. #24
+
+### Migrations
+
+This release includes three database migrations, which run automatically on startup:
+
+- `0013_ota_release_notes_pdf`: stores release-notes PDFs
+- `0014_session_cost_edited`: keeps charging costs entered by hand
+- `0015_drive_ends_at_park`: repairs drives that ended late
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and database volume, then run
+`docker compose pull && docker compose up -d`.
+
+### Configuration
+
+`MAP_STYLE_URL`, `MAP_TILES_URL`, `MAP_GLYPHS_URL` and `REVERSE_GEOCODING` are no longer used and
+can be removed from `.env`. Maps always use OpenFreeMap, and drive addresses are always looked up.
+
+### Updates
+
+- RivianMate is now licensed under GPL-3.0. #28
+- Added contributing and security guides, issue templates and a rewritten README. #28
+- Code formatting checked in CI with Prettier. #28
+
+### Thanks
+
+@edasque @s3rverro0m
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.5.0...v0.6.0](https://github.com/blike/rivianmate/compare/v0.5.0...v0.6.0)
+
 ## v0.5.0 — 2026-10-04
 
 - Redesigned dashboard with a themed MapLibre GL map, active navigation (distance, arrival time, and

@@ -22,6 +22,10 @@ export function vehicleBody(model: string | null | undefined): VehicleBody {
   return null;
 }
 
+export function isR2(model: string | null | undefined): boolean {
+  return model?.trim().toUpperCase().includes('R2') ?? false;
+}
+
 /** Rivian sends placeholders for absent parts; anything unrecognized is unknown. */
 export function closedValue(raw: string | null): boolean | null {
   switch (raw?.trim().toLowerCase()) {
@@ -56,6 +60,8 @@ interface ClosureDef {
   lockedKey?: string;
   /** Only shown for this body style (when the model is known). */
   body?: Exclude<VehicleBody, null>;
+  /** Only shown on an R2 (when the model is known). */
+  r2?: true;
 }
 
 const CLOSURES: ClosureDef[] = [
@@ -101,6 +107,7 @@ const WINDOWS: ClosureDef[] = [
   { label: 'Window FR', closedKey: 'windowFrontRightClosed' },
   { label: 'Window RL', closedKey: 'windowRearLeftClosed' },
   { label: 'Window RR', closedKey: 'windowRearRightClosed' },
+  { label: 'Rear glass', closedKey: 'windowRearGlassClosed', r2: true },
 ];
 
 export interface ClosureStatus {
@@ -110,13 +117,20 @@ export interface ClosureStatus {
   locked: boolean | null;
 }
 
-function forBody(defs: ClosureDef[], body: VehicleBody) {
-  return defs.filter((def) => !(def.body && body && def.body !== body));
+function forModel(defs: ClosureDef[], model: string | null | undefined) {
+  const body = vehicleBody(model);
+  return defs.filter(
+    (def) => !(def.body && body && def.body !== body) && !(def.r2 && model && !isR2(model)),
+  );
 }
 
-function resolve(defs: ClosureDef[], state: VehicleState | undefined, body: VehicleBody) {
+function resolve(
+  defs: ClosureDef[],
+  state: VehicleState | undefined,
+  model: string | null | undefined,
+) {
   const rows: ClosureStatus[] = [];
-  for (const def of forBody(defs, body)) {
+  for (const def of forModel(defs, model)) {
     const closed = closedValue(sv(state, def.closedKey));
     // Hide parts with no recognizable reading (absent on this vehicle or not reported).
     if (closed === null) continue;
@@ -131,18 +145,16 @@ function resolve(defs: ClosureDef[], state: VehicleState | undefined, body: Vehi
 }
 
 export function closureStatuses(state: VehicleState | undefined, model: string | null | undefined) {
-  const body = vehicleBody(model);
   return {
-    closures: resolve(CLOSURES, state, body),
-    windows: resolve(WINDOWS, state, body),
+    closures: resolve(CLOSURES, state, model),
+    windows: resolve(WINDOWS, state, model),
   };
 }
 
 /** Rows this body type can show, for laying out the panel before state loads. */
 export function closurePlaceholders(model: string | null | undefined) {
-  const body = vehicleBody(model);
   const rows = (defs: ClosureDef[]): ClosureStatus[] =>
-    forBody(defs, body).map((def) => ({
+    forModel(defs, model).map((def) => ({
       key: def.closedKey,
       label: def.label,
       closed: true,

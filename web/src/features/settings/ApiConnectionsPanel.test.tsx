@@ -21,6 +21,7 @@ const diagnostics: RivianDiagnosticsResponse = {
           id: 'v',
           vehicleId: 'v1',
           kind: 'vehicleState',
+          group: null,
           domain: null,
           topics: [],
           status: 'receiving',
@@ -30,6 +31,7 @@ const diagnostics: RivianDiagnosticsResponse = {
           id: 'p',
           vehicleId: 'v1',
           kind: 'parallax',
+          group: 'core',
           domain: 'energy',
           topics: ['energy.high_voltage.battery_state'],
           status: 'unsupported',
@@ -39,6 +41,7 @@ const diagnostics: RivianDiagnosticsResponse = {
           id: 'c',
           vehicleId: 'v1',
           kind: 'chargingSession',
+          group: null,
           domain: null,
           topics: [],
           status: 'waiting',
@@ -68,6 +71,34 @@ const diagnostics: RivianDiagnosticsResponse = {
 };
 
 describe('API connections', () => {
+  it('shows a feed of only empty readings (an R2) as no data, and names OTA', () => {
+    const feeds = diagnostics.monitor.subscriptions!.feeds;
+    const html = renderToStaticMarkup(
+      <ApiConnectionsPanel
+        diagnostics={{
+          ...diagnostics,
+          monitor: {
+            ...diagnostics.monitor,
+            subscriptions: {
+              ...diagnostics.monitor.subscriptions!,
+              feeds: [
+                { ...feeds[0]!, status: 'empty' },
+                { ...feeds[1]!, id: 'o', domain: 'ota', topics: ['ota.deployment.state'] },
+              ],
+            },
+          },
+        }}
+        loading={false}
+        error={false}
+        vehicles={[]}
+        mockMode={false}
+      />,
+    );
+    expect(html).toContain('No data');
+    expect(html).toContain('>OTA<');
+    expect(html).toContain('0 of 1 receiving');
+  });
+
   it('shows independent feed statuses and request, polling, and socket health', () => {
     const html = renderToStaticMarkup(
       <ApiConnectionsPanel
@@ -83,9 +114,9 @@ describe('API connections', () => {
       'Off · live stream connected',
       'connected',
       'Dropped connections',
-      'receiving',
-      'unsupported',
-      'waiting',
+      'Receiving',
+      'Unsupported',
+      'Waiting',
       'Last data:',
       'aria-label="Legacy feeds"',
       'aria-label="Parallax feeds"',

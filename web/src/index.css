@@ -162,6 +162,36 @@ body {
   animation: rm-pulse 2.4s ease-out infinite;
 }
 
+/* App-styled confirmation dialogs (components/ConfirmDialog). */
+.rm-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(2px);
+}
+
+/* The location picker's pin: fixed at the map's center, its tip on the spot. */
+.rm-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -22px 0 0 -11px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--accent);
+  border: 2px solid #121211;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+.rm-pin::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: #121211;
+}
+
 .rm-vehicle__puck {
   position: absolute;
   inset: 9px;
@@ -304,6 +334,21 @@ body {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+/*
+ * The fill is a width on wide screens and a height on phones. Animating the
+ * value rather than either dimension keeps a breakpoint change from sliding
+ * the bar from full to its progress.
+ */
+@property --ota-fill {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+.ota-progress {
+  transition: --ota-fill 700ms;
+}
+
 .ota-progress--indeterminate {
   animation: ota-indeterminate 1.6s ease-in-out infinite;
 }
@@ -318,7 +363,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .battery-bar__fill {
+  .battery-bar__fill,
+  .ota-progress {
     transition: none;
   }
   .battery-bar__fill--charging::after,
@@ -328,20 +374,24 @@ body {
   }
 }
 
-.skeleton {
-  display: inline-block;
-  width: 4em;
-  height: 0.9em;
-  vertical-align: middle;
-  border-radius: 0.25rem;
-  background: var(--surface-2);
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
-}
+/* In the components layer, so a placeholder's own utilities (width, height) win. */
+@layer components {
+  .skeleton {
+    display: inline-block;
+    width: 4em;
+    max-width: 100%;
+    height: 0.9em;
+    vertical-align: middle;
+    border-radius: 0.25rem;
+    background: var(--surface-2);
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
 
-.skeleton-block {
-  display: block;
-  width: 100%;
-  border-radius: 0.5rem;
+  .skeleton-block {
+    display: block;
+    width: 100%;
+    border-radius: 0.5rem;
+  }
 }
 
 @keyframes skeleton-pulse {
