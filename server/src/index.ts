@@ -10,7 +10,7 @@ import { appSettings } from './db/schema.js';
 import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
 import { RivianGovernor } from './rivian/governor.js';
-import { MockRivian, mockGeocode } from './rivian/mock.js';
+import { type MockScene, MockRivian, mockGeocode } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
 import { getPasswordHash } from './routes/auth.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
@@ -42,7 +42,9 @@ async function main(): Promise<void> {
   const bus = new LiveBus();
 
   const governor = new RivianGovernor();
-  const rivianFactory: RivianFactory = config.MOCK_RIVIAN ? mockFactory() : realFactory(governor);
+  const rivianFactory: RivianFactory = config.MOCK_RIVIAN
+    ? mockFactory(config.MOCK_SCENE)
+    : realFactory(governor);
 
   const userAgent = `RivianMate/${loadVersion().version ?? 'dev'} (self-hosted; https://github.com/blike/rivianmate)`;
   const monitor = new VehicleMonitor(
@@ -164,8 +166,8 @@ function realFactory(governor: RivianGovernor): RivianFactory {
 }
 
 /** The mock is a single object acting as both API and state stream. */
-function mockFactory(): RivianFactory {
-  const mock = new MockRivian();
+function mockFactory(scene?: MockScene): RivianFactory {
+  const mock = new MockRivian({ scene });
   return {
     createApi: () => mock,
     createConnection: () => ({ api: mock, stream: mock }),
