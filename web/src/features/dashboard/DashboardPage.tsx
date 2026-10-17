@@ -5,7 +5,7 @@ import { Panel, Row } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { showLegacyOnly } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
-import { brakeFluidLabel, chargePortLabel } from '../../lib/vehicleStatus';
+import { brakeFluidLabel, chargePortLabel, twelveVoltLabel } from '../../lib/vehicleStatus';
 import { BatteryEnergyPanel } from './BatteryEnergyPanel';
 import { ClimatePanel } from './ClimatePanel';
 import { ClosuresGrid } from './ClosuresGrid';
@@ -50,7 +50,7 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
 
             <Panel title="Vehicle health">
               <dl className="space-y-1 text-sm">
-                <Row label="12V battery" value={titleCase(sv(state, 'twelveVoltBatteryHealth'))} />
+                <Row label="12V battery" value={twelveVoltLabel(state)} />
                 {showLegacyOnly(state, 'brakeFluidLow') && (
                   <Row label="Brake fluid" value={brakeFluidLabel(state)} />
                 )}

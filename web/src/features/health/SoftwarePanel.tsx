@@ -12,6 +12,7 @@ import {
   isActivePhase,
   lastInstallFailed,
   releaseNotesHref,
+  reportsUpdates,
   softwareUpdate,
   typicalUpdateGapDays,
 } from '../../lib/ota';
@@ -45,6 +46,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
   const [now] = useState(() => Date.now());
   const update = softwareUpdate(state);
   const failed = lastInstallFailed(state);
+  const reports = reportsUpdates(state);
 
   // Oldest first, so the track reads left to right into the future.
   const versions = [...(ota?.versions ?? [])].reverse();
@@ -94,11 +96,13 @@ export function SoftwarePanel(props: { vehicleId: string }) {
             <Stop
               kind="installed"
               grow={2}
-              next={update ? 'update' : 'none'}
+              next={update ? 'update' : reports ? 'none' : undefined}
               progress={trackFill(update)}
             >
-              <Eyebrow color={update || failed ? 'var(--text-muted)' : 'var(--status-good)'}>
-                {update || failed ? (
+              <Eyebrow
+                color={update || failed || !reports ? 'var(--text-muted)' : 'var(--status-good)'}
+              >
+                {update || failed || !reports ? (
                   'Installed'
                 ) : (
                   <>
@@ -121,12 +125,14 @@ export function SoftwarePanel(props: { vehicleId: string }) {
                 <PendingDetails vehicleId={props.vehicleId} update={update} />
               </Stop>
             ) : (
-              <Stop kind="none" grow={1.2}>
-                <div className="text-sm text-(--text-muted)">No update waiting</div>
-                <div className="text-xs text-(--text-muted)">
-                  New versions appear here when offered.
-                </div>
-              </Stop>
+              reports && (
+                <Stop kind="none" grow={1.2}>
+                  <div className="text-sm text-(--text-muted)">No update waiting</div>
+                  <div className="text-xs text-(--text-muted)">
+                    New versions appear here when offered.
+                  </div>
+                </Stop>
+              )
             )}
           </ol>
           {failed && (
@@ -166,7 +172,9 @@ function Stop(props: {
   active?: boolean;
   children: ReactNode;
 }) {
-  const last = props.kind === 'update' || props.kind === 'none';
+  // An installed stop with nothing after it ends the track.
+  const last =
+    props.kind === 'update' || props.kind === 'none' || (props.kind === 'installed' && !props.next);
   const toUpdate = props.next === 'update';
   const fill = props.progress;
 

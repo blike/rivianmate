@@ -1,4 +1,5 @@
 /** Picking the one series a session's charging curve is drawn from. */
+import type { LiveSessionData } from '../rivian/types.js';
 
 export type CurveSource = 'graph' | 'push_chart' | 'push_live' | 'forecast' | 'legacy';
 
@@ -32,13 +33,20 @@ const SOC_DROP_TOLERANCE = 2;
 const SOC_WINDOW_MS = 15 * 60_000;
 
 /**
- * One source's points, in time order, without implausible SoC drops.
- * Sources are never interleaved: two series sampled at different moments
- * zig-zag when drawn as one line.
+ * One source's points, in time order, without implausible SoC drops, over
+ * the time it charged when that's known (see clipToCharging). Sources are
+ * never interleaved: two series sampled at different moments zig-zag when
+ * drawn as one line.
  */
-export function curveForDisplay(points: readonly CurvePoint[]): CurvePoint[] {
+export function curveForDisplay(
+  points: readonly CurvePoint[],
+  charging: { from: Date; to: Date } | null = null,
+): CurvePoint[] {
   const bySource = (source: CurveSource) =>
-    points.filter((p) => p.source === source).sort((a, b) => a.ts.getTime() - b.ts.getTime());
+    clipToCharging(
+      points.filter((p) => p.source === source).sort((a, b) => a.ts.getTime() - b.ts.getTime()),
+      charging,
+    );
   for (const source of SOURCE_ORDER) {
     const series = bySource(source);
     if (series.filter((p) => p.powerKw != null).length >= MIN_POWER_POINTS)
@@ -115,3 +123,80 @@ export function forecastForDisplay(
     .filter((p) => p.source === 'forecast' && p.soc != null && p.ts.getTime() > after)
     .sort((a, b) => a.ts.getTime() - b.ts.getTime());
 }
+
+/**
+ * The recorded curve over just the time it charged. Graph bars are up to 32
+ * minutes long, so a charge starts and stops partway through one: the
+ * point covering the start moves to it, and one is added where it stopped,
+ * with the level then (the next point's) and the power still flowing,
+ * which Rivian leaves off the last bar once charging stops.
+ */
+export function clipToCharging(
+  points: readonly CurvePoint[],
+  window: { from: Date; to: Date } | null,
+): CurvePoint[] {
+  if (!window || points.length === 0) return [...points];
+  const from = window.from.getTime();
+  const to = window.to.getTime();
+  const at = (p: CurvePoint) => p.ts.getTime();
+  const out: CurvePoint[] = [];
+  const opening = points.filter((p) => at(p) <= from).at(-1);
+  if (opening) out.push({ ...opening, ts: new Date(from) });
+  out.push(...points.filter((p) => at(p) > from && at(p) < to));
+  const closing = points.find((p) => at(p) >= to);
+  if (closing) {
+    const power = out.filter((p) => p.powerKw != null).at(-1)?.powerKw ?? null;
+    const last = out.at(-1);
+    if (last && last.powerKw == null && power != null)
+      out[out.length - 1] = { ...last, powerKw: power };
+    out.push({ ...closing, ts: new Date(to), powerKw: power });
+  }
+  return out;
+}
+
+/** Estimates further out than this are a stale or misread time left. */
+const MAX_ESTIMATE_MS = 48 * 3600_000;
+
+/**
+ * The app's own forecast, for a charge Rivian sends none for: a straight
+ * line from the battery level now to the charge limit, reached when the
+ * time left runs out. AC charging rises about evenly; a DC charge slows
+ * near the top, so this runs ahead of it there. Empty without all three
+ * readings, or once the level has reached the limit.
+ */
+export function estimatedForecast(
+  live: Pick<LiveSessionData, 'soc' | 'socLimit' | 'timeRemaining'> | null,
+): CurvePoint[] {
+  const soc = numeric(live?.soc?.value);
+  const limit = numeric(live?.socLimit?.value);
+  const secondsLeft = numeric(live?.timeRemaining?.value);
+  if (soc == null || limit == null || secondsLeft == null || limit <= soc || secondsLeft <= 0)
+    return [];
+  const fromMs = Date.parse(live!.soc!.updatedAt);
+  const untilMs = Date.parse(live!.timeRemaining!.updatedAt) + secondsLeft * 1000;
+  if (!Number.isFinite(fromMs) || !Number.isFinite(untilMs)) return [];
+  if (untilMs <= fromMs || untilMs - fromMs > MAX_ESTIMATE_MS) return [];
+  return [
+    { source: 'forecast', ts: new Date(fromMs), powerKw: null, soc },
+    { source: 'forecast', ts: new Date(untilMs), powerKw: null, soc: limit },
+  ];
+}
+
+/**
+ * The live session's battery level and power, as a point closing the
+ * recorded curve: the graph adds one only at each bar boundary (up to 32
+ * minutes apart), so the curve would otherwise stop short of the level
+ * shown with it. Null without a level, or when it's no newer than `last`.
+ */
+export function liveCurvePoint(
+  live: Pick<LiveSessionData, 'soc' | 'power'> | null,
+  last: CurvePoint | undefined,
+): CurvePoint | null {
+  const soc = numeric(live?.soc?.value);
+  const ts = live?.soc ? new Date(live.soc.updatedAt) : null;
+  if (soc == null || !ts || !Number.isFinite(ts.getTime())) return null;
+  if (last && ts.getTime() <= last.ts.getTime()) return null;
+  return { source: last?.source ?? 'graph', ts, powerKw: numeric(live?.power?.value), soc };
+}
+
+const numeric = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);

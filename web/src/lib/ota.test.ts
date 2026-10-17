@@ -1,12 +1,28 @@
 import type { VehicleState } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import { installTimeLabel, lastInstallFailed, softwareUpdate, typicalUpdateGapDays } from './ota';
+import {
+  installTimeLabel,
+  lastInstallFailed,
+  reportsUpdates,
+  softwareUpdate,
+  typicalUpdateGapDays,
+} from './ota';
 
 const v = (value: string | number) => ({ timeStamp: 't', value });
 const state = (fields: Record<string, string | number>) =>
   Object.fromEntries(Object.entries(fields).map(([k, x]) => [k, v(x)])) as unknown as VehicleState;
 
 const base = { otaCurrentVersion: '2026.31.0', otaAvailableVersion: '2026.36.0' };
+
+describe('reportsUpdates', () => {
+  it('is true only for a vehicle that says when an update is offered', () => {
+    expect(reportsUpdates(state(base))).toBe(true);
+    expect(reportsUpdates(state({ otaCurrentVersion: '2026.31.0', otaStatus: 'Idle' }))).toBe(true);
+    // As an R2: Parallax sends only the installed version.
+    expect(reportsUpdates(state({ otaCurrentVersion: '2026.31.0' }))).toBe(false);
+    expect(reportsUpdates(undefined)).toBe(false);
+  });
+});
 
 describe('softwareUpdate', () => {
   it('is null when up to date', () => {

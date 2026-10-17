@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   type CurvePoint,
   type CurveSource,
+  clipToCharging,
   curveForDisplay,
+  estimatedForecast,
+  liveCurvePoint,
   forecastForDisplay,
 } from './charging-curve.js';
 
@@ -123,5 +126,106 @@ describe('forecastForDisplay', () => {
 
   it('is never chosen as the recorded curve', () => {
     expect(curveForDisplay(rows).every((r) => r.source === 'graph')).toBe(true);
+  });
+});
+
+describe('estimatedForecast', () => {
+  const at = (iso: string, value: number | null) => ({ value, updatedAt: iso });
+  const live = {
+    soc: at('2026-10-16T08:00:00Z', 50),
+    socLimit: at('2026-10-16T02:00:00Z', 70),
+    timeRemaining: at('2026-10-16T08:00:30Z', 150 * 60),
+  };
+
+  it('runs from the level now to the limit when the time left runs out', () => {
+    expect(estimatedForecast(live).map((p) => [p.ts.toISOString(), p.soc])).toEqual([
+      ['2026-10-16T08:00:00.000Z', 50],
+      ['2026-10-16T10:30:30.000Z', 70],
+    ]);
+  });
+
+  it('has none without every reading, at the limit, or with an implausible time left', () => {
+    expect(estimatedForecast(null)).toEqual([]);
+    expect(estimatedForecast({ ...live, socLimit: null })).toEqual([]);
+    expect(estimatedForecast({ ...live, timeRemaining: at('2026-10-16T08:00:30Z', null) })).toEqual(
+      [],
+    );
+    expect(estimatedForecast({ ...live, soc: at('2026-10-16T08:00:00Z', 70) })).toEqual([]);
+    expect(
+      estimatedForecast({ ...live, timeRemaining: at('2026-10-16T08:00:30Z', 72 * 3600) }),
+    ).toEqual([]);
+  });
+});
+
+describe('liveCurvePoint', () => {
+  const last: CurvePoint = {
+    source: 'graph',
+    ts: new Date('2026-10-16T09:21:03Z'),
+    powerKw: 7.4,
+    soc: 56,
+  };
+  const live = {
+    soc: { value: 59.3, updatedAt: '2026-10-16T09:52:10Z' },
+    power: { value: 7.4, updatedAt: '2026-10-16T09:51:00Z' },
+  };
+
+  it('closes the recorded curve at the live level and power', () => {
+    expect(liveCurvePoint(live, last)).toEqual({
+      source: 'graph',
+      ts: new Date('2026-10-16T09:52:10Z'),
+      powerKw: 7.4,
+      soc: 59.3,
+    });
+  });
+
+  it('has none without a level, or when the curve is already as new', () => {
+    expect(liveCurvePoint(null, last)).toBeNull();
+    expect(liveCurvePoint({ ...live, soc: null }, last)).toBeNull();
+    expect(
+      liveCurvePoint({ ...live, soc: { value: 56, updatedAt: '2026-10-16T09:21:03Z' } }, last),
+    ).toBeNull();
+  });
+});
+
+describe('clipToCharging', () => {
+  // Pacific times from Oct 15–16, 2026: 32-minute bars, charging 23:59:59–04:39:40.
+  const at = (hhmm: string) => new Date(`2026-10-16T${hhmm}:00Z`);
+  const p = (hhmm: string, powerKw: number | null, soc: number): CurvePoint => ({
+    source: 'graph',
+    ts: at(hhmm),
+    powerKw,
+    soc,
+  });
+  const graph = [
+    p('06:09', null, 43),
+    p('06:41', 7.3, 43),
+    p('07:13', 7.3, 44),
+    p('10:57', 7.4, 66),
+    p('11:29', null, 69),
+    p('12:01', null, 70),
+  ];
+  const window = { from: new Date('2026-10-16T06:59:59Z'), to: new Date('2026-10-16T11:39:40Z') };
+
+  it('starts where charging started and ends where it stopped, at the level then', () => {
+    expect(
+      clipToCharging(graph, window).map((q) => [q.ts.toISOString(), q.powerKw, q.soc]),
+    ).toEqual([
+      ['2026-10-16T06:59:59.000Z', 7.3, 43],
+      ['2026-10-16T07:13:00.000Z', 7.3, 44],
+      ['2026-10-16T10:57:00.000Z', 7.4, 66],
+      // The last bar's power, which Rivian leaves off once charging stops.
+      ['2026-10-16T11:29:00.000Z', 7.4, 69],
+      ['2026-10-16T11:39:40.000Z', 7.4, 70],
+    ]);
+  });
+
+  it('leaves the curve as is without a charging window', () => {
+    expect(clipToCharging(graph, null)).toEqual(graph);
+  });
+
+  it('is applied before the display checks, so the end of the charge stays', () => {
+    expect(curveForDisplay(graph, window).map((q) => [q.ts.getTime(), q.soc])).toEqual(
+      clipToCharging(graph, window).map((q) => [q.ts.getTime(), q.soc]),
+    );
   });
 });

@@ -25,11 +25,11 @@ const healthy = {
   otaCurrentVersion: '2026.36.0',
   otaAvailableVersion: '0.0.0',
 };
-const withBrakes = (s: VehicleState) => ({ ...s, brakeFluidLow: null }) as unknown as VehicleState;
 
 describe('healthChecks', () => {
   it('reads a healthy vehicle as all good', () => {
-    const checks = healthChecks(withBrakes(state(healthy)));
+    // Brake fluid is sent empty while it's fine, so it's absent here.
+    const checks = healthChecks(state(healthy));
     expect(checks.map((c) => [c.label, c.level, c.value])).toEqual([
       ['Battery pack', 'good', 'Normal'],
       ['12V battery', 'good', 'Normal'],
@@ -67,6 +67,12 @@ describe('healthChecks', () => {
     expect(pending).toMatchObject({ level: 'info', value: 'Update available' });
     const failed = healthChecks(state({ ...healthy, otaCurrentStatus: 'Install_Failed' })).at(-1);
     expect(failed).toMatchObject({ level: 'attention', value: 'Install failed' });
+  });
+
+  it("shows the installed version where the vehicle doesn't report updates", () => {
+    // As an R2: Parallax sends only the installed version.
+    const software = healthChecks(state({ otaCurrentVersion: '2026.36.0' })).at(-1);
+    expect(software).toMatchObject({ level: 'good', value: '2026.36.0' });
   });
 
   it('waits for readings before judging', () => {

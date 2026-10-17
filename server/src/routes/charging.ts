@@ -67,16 +67,32 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .limit(20_000);
       // Nothing recorded can be from the future; such rows were forecast.
       const latest = Date.now() + CLOCK_SLACK_MS;
-      const curve = curveForDisplay(
-        rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
-      );
       const [session] = await ctx.db
         .select({
+          vehicleId: chargingSessions.vehicleId,
+          startedAt: chargingSessions.startedAt,
           endedAt: chargingSessions.endedAt,
           chargingSince: chargingSessions.chargingSince,
         })
         .from(chargingSessions)
         .where(eq(chargingSessions.id, sessionId));
+      // Drawn over just the time it charged, from recorded charger status.
+      const window = session
+        ? chargingWindow(
+            await loadChargeSpans(
+              ctx.db,
+              session.vehicleId,
+              session.startedAt,
+              session.endedAt ?? new Date(),
+            ),
+            session.startedAt,
+            session.endedAt,
+          )
+        : null;
+      const curve = curveForDisplay(
+        rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
+        window,
+      );
       // Only while it's actually charging: stopped but still plugged in, or
       // unplugged, there's nothing left to forecast.
       const charging = session != null && session.endedAt == null && session.chargingSince != null;
