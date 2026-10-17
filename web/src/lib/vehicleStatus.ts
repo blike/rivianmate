@@ -1,15 +1,23 @@
 import type { VehicleState } from '@server/api-types';
 import { closureStatuses } from './closures';
+import { reportsBrakeFluid } from './fieldSources';
 import { nv, sv, titleCase } from './state';
 
-/** Explicit null is an absent warning, not a measured fluid level. */
+/** No reading from a vehicle with the sensors is an absent warning, not a missing level. */
 export function brakeFluidLabel(state: VehicleState | undefined): string {
-  if (!state || !('brakeFluidLow' in state)) return 'Unknown';
-  if (state.brakeFluidLow === null) return 'Normal';
+  if (!state || !reportsBrakeFluid(state)) return 'Unknown';
+  if (state.brakeFluidLow == null) return 'Normal';
   const value = sv(state, 'brakeFluidLow');
   if (value === 'false') return 'OK';
   if (value === 'true') return 'Low';
   return value == null ? 'Unknown' : titleCase(value);
+}
+
+/** 12V battery health in words: NORMAL_OPERATION, as both feeds send it, is Normal. */
+export function twelveVoltLabel(state: VehicleState | undefined): string {
+  const value = sv(state, 'twelveVoltBatteryHealth');
+  if (value == null) return '—';
+  return /^(normal|normal_operation|ok)$/i.test(value) ? 'Normal' : titleCase(value.toLowerCase());
 }
 
 /** Rivian spells a shut charge port "close". */

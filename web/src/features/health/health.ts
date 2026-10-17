@@ -1,7 +1,8 @@
 import type { BatteryHealthDto, VehicleState } from '@server/api-types';
-import { lastInstallFailed, softwareUpdate } from '../../lib/ota';
+import { lastInstallFailed, reportsUpdates, softwareUpdate } from '../../lib/ota';
+import { reportsBrakeFluid } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
-import { brakeFluidLabel } from '../../lib/vehicleStatus';
+import { brakeFluidLabel, twelveVoltLabel } from '../../lib/vehicleStatus';
 
 /** good: nothing to do. info: worth knowing. attention: check it. */
 export type CheckLevel = 'good' | 'info' | 'attention' | 'unknown';
@@ -58,13 +59,12 @@ const unknown = (key: string, label: string): HealthCheck => ({
 function twelveVolt(state: VehicleState | undefined): HealthCheck {
   const value = sv(state, 'twelveVoltBatteryHealth');
   if (value == null || /^unknown$/i.test(value)) return unknown('12v', '12V battery');
-  // Observed: NORMAL_OPERATION.
-  const ok = /^(normal|normal_operation|ok)$/i.test(value);
+  const label = twelveVoltLabel(state);
   return {
     key: '12v',
     label: '12V battery',
-    level: ok ? 'good' : 'attention',
-    value: ok ? 'Normal' : titleCase(value.toLowerCase()),
+    level: label === 'Normal' ? 'good' : 'attention',
+    value: label,
   };
 }
 
@@ -141,16 +141,18 @@ function software(state: VehicleState | undefined): HealthCheck {
     return { key: 'software', label: 'Software', level: 'attention', value: 'Install failed' };
   const update = softwareUpdate(state);
   if (update) return { key: 'software', label: 'Software', level: 'info', value: update.label };
-  if (!sv(state, 'otaCurrentVersion')) return unknown('software', 'Software');
-  return { key: 'software', label: 'Software', level: 'good', value: 'Up to date' };
+  const version = sv(state, 'otaCurrentVersion');
+  if (!version) return unknown('software', 'Software');
+  // Without update reporting (an R2), nothing pending can't be told apart.
+  const value = reportsUpdates(state) ? 'Up to date' : version;
+  return { key: 'software', label: 'Software', level: 'good', value };
 }
 
-/** The fields each check reads. */
+/** The fields each check reads. Brake fluid has its own test (reportsBrakeFluid). */
 const CHECK_FIELDS: Record<string, readonly string[]> = {
   pack: ['batteryHvThermalEvent'],
   '12v': ['twelveVoltBatteryHealth'],
   tires: TIRES.map((t) => t.status),
-  brake: ['brakeFluidLow'],
   washer: ['wiperFluidState'],
   software: ['otaCurrentVersion', 'otaAvailableVersion', 'otaCurrentStatus'],
 };
@@ -181,7 +183,9 @@ export function healthChecks(
   return checks.filter(
     (c) =>
       (c.key === 'pack' && (packOfRated != null || packPending)) ||
-      CHECK_FIELDS[c.key]!.some((field) => field in state),
+      (c.key === 'brake'
+        ? reportsBrakeFluid(state)
+        : CHECK_FIELDS[c.key]!.some((field) => field in state)),
   );
 }
 

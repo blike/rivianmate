@@ -282,7 +282,10 @@ export class VehicleMonitor {
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
       try {
-        const state = normalizeReadings((await this.pollState(vehicle.id)) ?? {});
+        // Merged like the stream, so a field sent empty (every legacy field,
+        // on an R2) isn't kept as if the vehicle had reported it.
+        const state: VehicleState = {};
+        mergeVehicleState(state, normalizeReadings((await this.pollState(vehicle.id)) ?? {}));
         this.states.set(vehicle.id, state);
         this.noteLegacyPreferred(vehicle.id, state);
       } catch (err) {

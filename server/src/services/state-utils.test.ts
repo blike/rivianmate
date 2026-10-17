@@ -122,6 +122,16 @@ describe('mergeVehicleState', () => {
     expect((cached.batteryLevel as { value: unknown }).value).toBe(51);
   });
 
+  it('leaves out fields sent empty, as an R2 sends every legacy field', () => {
+    const state: VehicleState = {};
+    mergeVehicleState(state, {
+      cloudConnection: { lastSync: 't0', isOnline: true },
+      brakeFluidLow: null,
+      wiperFluidState: null,
+    } as unknown as VehicleState);
+    expect(Object.keys(state)).toEqual(['cloudConnection']);
+  });
+
   it('drops invalid sensor values, keeping the previous one', () => {
     const cached: VehicleState = {
       chargerStatus: { timeStamp: 't0', value: 'chrgr_sts_not_connected' },
