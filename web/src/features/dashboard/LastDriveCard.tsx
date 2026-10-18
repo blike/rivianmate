@@ -87,16 +87,16 @@ export function LastDriveCard(props: {
       icon={<DriveIcon />}
     >
       <LoadingScope loading={loading || !settled}>
-        <ActivityLine note={live && to == null ? 'No destination' : undefined}>
+        <ActivityLine wrap note={live && to == null ? 'No destination' : undefined}>
           {to == null ? (
             <>
-              <span className="text-(--text-muted)">From </span>
+              <span className="text-(--text-muted)">From</span>
               <Place place={d?.start} fallback={from} />
             </>
           ) : (
             <>
               <Place place={d?.start} fallback={from} />
-              <span className="mx-2 text-(--accent)" aria-label="to">
+              <span className="text-(--accent)" aria-label="to">
                 →
               </span>
               <Place place={live ? null : d?.end} fallback={to} />

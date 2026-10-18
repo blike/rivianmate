@@ -177,3 +177,92 @@ export function positionAt(
   }
   return [points[lo]!.lat, points[lo]!.lon];
 }
+
+export type VehicleActivity = 'driving' | 'charging' | 'updating' | 'awake' | 'asleep';
+
+export interface StateSegment {
+  state: VehicleActivity;
+  from: number;
+  to: number;
+}
+
+export interface StateRow {
+  /** Where the row's track starts and ends; segments are placed within it. */
+  from: number;
+  to: number;
+  segments: StateSegment[];
+}
+
+/**
+ * State spans laid out in rows: one per local day from the day `from` falls
+ * in (each a full day, so today's ends blank after now), or a single row
+ * over [from, to]. Segments are clipped to their row.
+ */
+export function stateRows(
+  spans: readonly { state: VehicleActivity; from: string; to: string }[],
+  from: number,
+  to: number,
+  byDay: boolean,
+): StateRow[] {
+  const rows: StateRow[] = [];
+  if (byDay) {
+    const day = new Date(from);
+    day.setHours(0, 0, 0, 0);
+    while (day.getTime() <= to) {
+      const start = day.getTime();
+      // setDate steps by calendar day, so DST days are 23 or 25 hours.
+      day.setDate(day.getDate() + 1);
+      rows.push({ from: start, to: day.getTime(), segments: [] });
+    }
+  } else {
+    rows.push({ from, to, segments: [] });
+  }
+  for (const s of spans) {
+    const start = Date.parse(s.from);
+    const end = Date.parse(s.to);
+    for (const row of rows) {
+      if (end <= row.from || start >= row.to) continue;
+      row.segments.push({
+        state: s.state,
+        from: Math.max(start, row.from),
+        to: Math.min(end, row.to),
+      });
+    }
+  }
+  return rows;
+}
+
+/** Milliseconds spent in each state. */
+export function stateTotals(
+  spans: readonly { state: VehicleActivity; from: string; to: string }[],
+): Map<VehicleActivity, number> {
+  const totals = new Map<VehicleActivity, number>();
+  for (const s of spans) {
+    const ms = Date.parse(s.to) - Date.parse(s.from);
+    if (ms > 0) totals.set(s.state, (totals.get(s.state) ?? 0) + ms);
+  }
+  return totals;
+}
+
+/**
+ * Location points grouped into one [lat, lon] line per drive, in time order.
+ * Points recorded while parked (no drive) aren't part of any line.
+ */
+export function tripLines(
+  points: readonly { lat: number; lon: number; driveId?: number | null }[],
+): [number, number][][] {
+  const trips: [number, number][][] = [];
+  let current: number | null = null;
+  for (const p of points) {
+    if (p.driveId == null) {
+      current = null;
+      continue;
+    }
+    if (p.driveId !== current) {
+      trips.push([]);
+      current = p.driveId;
+    }
+    trips.at(-1)!.push([p.lat, p.lon]);
+  }
+  return trips;
+}

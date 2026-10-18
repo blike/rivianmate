@@ -14,6 +14,7 @@ import type {
   OtaTimelineDto,
   PhantomDrainDto,
   SchedulesDto,
+  StateSpanDto,
   StatusResponse,
   TirePressurePointDto,
   UnitPreferences,
@@ -165,6 +166,10 @@ export const api = {
   chargeSpans: (id: string, from: Date, to: Date) =>
     request<ChargeSpanDto[]>(
       `/api/vehicles/${id}/charge-spans?from=${from.toISOString()}&to=${to.toISOString()}`,
+    ),
+  stateSpans: (id: string, from: Date, to: Date) =>
+    request<StateSpanDto[]>(
+      `/api/vehicles/${id}/state-spans?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
   locations: (id: string, from: Date, to: Date) =>
     request<LocationPointDto[]>(

@@ -88,6 +88,13 @@ export interface HistoryPoint {
   max: number | null;
 }
 
+/** What the vehicle was doing: the first that applies of updating, driving, charging, asleep, else awake. */
+export interface StateSpanDto {
+  state: 'driving' | 'charging' | 'updating' | 'awake' | 'asleep';
+  from: string;
+  to: string;
+}
+
 /** Plugged in, split into time spent charging and time just connected. */
 export interface ChargeSpanDto {
   kind: 'charging' | 'plugged';
@@ -104,6 +111,8 @@ export interface LocationPointDto {
   speedKmh: number | null;
   bearing: number | null;
   altitude: number | null;
+  /** The drive it was recorded on, where known; null while parked. */
+  driveId?: number | null;
 }
 
 /**
@@ -237,6 +246,8 @@ export interface ChargingSessionDto {
    * energy the battery gained, from its levels and the pack's capacity.
    */
   estimatedEnergyKwh: number | null;
+  /** The charge limit when it ended (or now, while it's under way), from recorded state. */
+  socLimit: number | null;
   /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
   source: 'live' | 'rivian' | 'live+rivian';
   vendor: string | null;

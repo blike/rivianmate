@@ -16,6 +16,8 @@ export function CurveChart(props: {
    * charging curve, so none is drawn until charging starts.
    */
   notStarted?: boolean;
+  /** The charge limit it was charging toward, marked on the battery axis. */
+  limit?: number | null;
 }) {
   // Start elapsed time at the first recorded power reading, not plug-in.
   const curveWindow = useMemo(() => chargingCurveWindow(props.curve ?? []), [props.curve]);
@@ -69,6 +71,17 @@ export function CurveChart(props: {
       </>
     );
   };
+  const limitLine = (right: boolean) =>
+    props.limit != null
+      ? [
+          {
+            y: props.limit,
+            label: `Limit ${fmt(props.limit, 0)}%`,
+            color: 'var(--text-secondary)',
+            right,
+          },
+        ]
+      : undefined;
   const forecastSeries = hasForecast
     ? [
         {
@@ -107,6 +120,7 @@ export function CurveChart(props: {
             leftUnit="kW"
             rightUnit="%"
             rightDomain={[0, 100]}
+            references={limitLine(true)}
             series={[
               {
                 key: 'power',
@@ -139,6 +153,7 @@ export function CurveChart(props: {
             tooltipLabel={tooltipTime}
             leftDomain={[0, 100]}
             leftUnit="%"
+            references={limitLine(false)}
             series={[
               {
                 key: 'soc',

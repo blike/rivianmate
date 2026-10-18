@@ -65,7 +65,8 @@ function addRouteLayers(map: MapLibreMap, history: boolean) {
       'line-color': MAP_THEME.accent,
       'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 16],
       'line-blur': ['interpolate', ['linear'], ['zoom'], 8, 4, 16, 10],
-      'line-opacity': 0.22,
+      // History is drawn faint, so a road builds up the more trips cover it.
+      'line-opacity': history ? 0.05 : 0.22,
     },
   });
   map.addLayer({
@@ -76,7 +77,7 @@ function addRouteLayers(map: MapLibreMap, history: boolean) {
     paint: {
       'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 16, 4.5],
       ...(history
-        ? { 'line-color': MAP_THEME.accent }
+        ? { 'line-color': MAP_THEME.accent, 'line-opacity': HISTORY_TRIP_OPACITY }
         : {
             'line-gradient': [
               'interpolate',
@@ -126,6 +127,16 @@ function addRouteLayers(map: MapLibreMap, history: boolean) {
   });
 }
 
+/**
+ * One trip's line in the history view. Trips are separate lines, so where
+ * they overlap the opacity compounds: about 0.3 for one trip, 0.75 for
+ * four, nearly solid past eight.
+ */
+const HISTORY_TRIP_OPACITY = 0.3;
+
+/** For a legend beside the map: one trip to many. */
+export const TRIPS_LEGEND = `linear-gradient(90deg, color-mix(in srgb, ${MAP_THEME.accent} 30%, transparent), ${MAP_THEME.accent})`;
+
 /** [lat, lon] pairs → GeoJSON [lon, lat]. */
 const toLngLat = (p: [number, number]): [number, number] => [p[1], p[0]];
 
@@ -146,11 +157,12 @@ function routeBounds(trail: [number, number][] | undefined): LngLatBoundsLike | 
 function framing(props: {
   follow?: boolean;
   trail?: [number, number][];
+  trips?: [number, number][][];
   plan?: { route: [number, number][] | null; destination: [number, number] } | null;
 }): LngLatBoundsLike | null {
   if (props.follow !== false) return null;
   const plan = props.plan ? (props.plan.route ?? [props.plan.destination]) : [];
-  return routeBounds([...(props.trail ?? []), ...plan]);
+  return routeBounds([...(props.trail ?? []), ...(props.trips ?? []).flat(), ...plan]);
 }
 
 export function VehicleMap(props: {
@@ -158,6 +170,8 @@ export function VehicleMap(props: {
   lon: number;
   bearing?: number | null;
   trail?: [number, number][];
+  /** Separate trips, as [lat, lon] lines; in place of `trail`. */
+  trips?: [number, number][][];
   height?: string;
   follow?: boolean;
   /** History is an overview: no endpoint markers or time-based fade. */
@@ -260,13 +274,27 @@ export function VehicleMap(props: {
 
   // Route data, framed to fit when it isn't following the vehicle.
   const trail = props.trail;
-  const trailKey = trail ? `${trail.length}|${trail[0]}|${trail.at(-1)}` : '';
+  const trips = props.trips;
+  const trailKey = trips
+    ? `trips|${trips.length}|${trips.reduce((n, t) => n + t.length, 0)}|${trips.at(-1)?.at(-1)}`
+    : trail
+      ? `${trail.length}|${trail[0]}|${trail.at(-1)}`
+      : '';
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const coords = (latest.current.trail ?? []).map(toLngLat);
-    const line: FeatureCollection =
-      coords.length > 1
+    const tripLines = latest.current.trips?.filter((t) => t.length > 1);
+    const line: FeatureCollection = tripLines
+      ? {
+          type: 'FeatureCollection',
+          features: tripLines.map((t) => ({
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'LineString', coordinates: t.map(toLngLat) },
+          })),
+        }
+      : coords.length > 1
         ? {
             type: 'FeatureCollection',
             features: [
