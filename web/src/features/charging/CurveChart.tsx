@@ -7,7 +7,10 @@ import { fmt, fmtSeconds } from '../../lib/state';
 import { chargingCurveWindow } from './chargingCurve';
 import { smoothByTime, smoothingWindowMinutes } from './smoothing';
 
-/** Power and battery level through the session, with the vehicle's forecast while it charges. */
+/**
+ * Power and battery level through the session, with the vehicle's forecast
+ * while it charges, or the app's estimate when the vehicle sends none.
+ */
 export function CurveChart(props: {
   curve: Parameters<typeof chargingCurveWindow>[0] | undefined;
   loading: boolean;
@@ -56,6 +59,7 @@ export function CurveChart(props: {
   }, [curveWindow]);
 
   const hasForecast = curveWindow.points.some((p) => p.projected);
+  const estimated = curveWindow.points.some((p) => p.projected && p.estimated);
   // Without power, the curve is battery level from recorded vehicle state.
   const hasPower = data.some((p) => p.power != null);
   const total = data.at(-1)?.minutes ?? 0;
@@ -86,7 +90,10 @@ export function CurveChart(props: {
     ? [
         {
           key: 'forecast',
-          label: 'Forecast',
+          label: estimated ? 'Estimate' : 'Forecast',
+          // Straight segments: a smoothed curve bows where the projection
+          // joins the recorded curve at a different slope.
+          interpolation: 'linear' as const,
           color: 'var(--accent)',
           mark: 'line' as const,
           dashed: true,

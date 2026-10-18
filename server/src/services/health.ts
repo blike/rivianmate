@@ -8,6 +8,47 @@ export interface DrainSnapshot {
   gear?: string | null;
 }
 
+/** One recorded moment of the fields drain reads: each value, and when it was stamped. */
+export interface DrainReading {
+  at: number;
+  batteryLevel: { value: number; at: number } | null;
+  mileage: { value: number; at: number } | null;
+  chargerStatus: string | null;
+  gear: string | null;
+}
+
+/**
+ * A battery level stamped before the latest mileage change, when the
+ * level's next change follows within this, is from before the movement:
+ * Rivian delivers a late drive's mileage and level stamped minutes apart.
+ */
+const SETTLE_MS = 30 * 60_000;
+
+/**
+ * Drain snapshots from recorded moments. A moment whose battery level is
+ * from before the latest movement, with the level after it still to come,
+ * has no usable level, so a drive delivered late isn't counted as drain.
+ */
+export function drainSnapshots(readings: readonly DrainReading[]): DrainSnapshot[] {
+  const levelChanges = [...new Set(readings.flatMap((r) => r.batteryLevel?.at ?? []))].sort(
+    (a, b) => a - b,
+  );
+  return readings.map((r) => {
+    let batteryLevel = r.batteryLevel?.value ?? null;
+    if (r.batteryLevel && r.mileage && r.batteryLevel.at < r.mileage.at) {
+      const next = levelChanges.find((t) => t > r.mileage!.at);
+      if (next !== undefined && next - r.mileage.at <= SETTLE_MS) batteryLevel = null;
+    }
+    return {
+      ts: new Date(r.at),
+      batteryLevel,
+      mileageM: r.mileage?.value ?? null,
+      chargerStatus: r.chargerStatus,
+      gear: r.gear,
+    };
+  });
+}
+
 export interface DrainDay {
   /** Day in the requested time zone, YYYY-MM-DD. */
   day: string;

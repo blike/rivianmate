@@ -1,4 +1,4 @@
-import { and, between, desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
@@ -14,19 +14,18 @@ import {
 } from '../services/locations.js';
 import { loadLocations } from './locations.js';
 import { getChargingSettings } from './settings.js';
+import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
 import {
-  chargingCurvePoints,
-  chargingSessions,
-  vehicleStateSnapshots,
-  wallboxReadings,
-  wallboxes,
-} from '../db/schema.js';
-import type { VehicleState } from '../rivian/types.js';
-import { curveForDisplay, forecastForDisplay } from '../services/charging-curve.js';
+  curveForDisplay,
+  estimatedForecast,
+  forecastForDisplay,
+  liveCurvePoint,
+} from '../services/charging-curve.js';
 
 /** Tolerance for Rivian's clock running ahead of the server's. */
 const CLOCK_SLACK_MS = 60_000;
-import { socReadingsBetween } from '../services/charging-time.js';
+import { isChargingState, socReadingsBetween } from '../services/charging-time.js';
+import { latestNumber, stateTimeline } from '../services/state-history.js';
 import { chargingWindow, loadChargeSpans } from '../services/charge-spans.js';
 
 const patchSchema = z.object({
@@ -103,15 +102,32 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
       // Only while it's actually charging: stopped but still plugged in, or
       // unplugged, there's nothing left to forecast.
       const charging = session != null && session.endedAt == null && session.chargingSince != null;
-      const forecast = forecastForDisplay(rows, curve, charging);
-      if (curve.length > 0) {
+      const live = session && charging ? ctx.bus.latestChargingSession(session.vehicleId) : null;
+      const liveCharging = live && isChargingState(String(live.vehicleChargerState?.value ?? ''));
+      // The curve reaches the level shown with it, not just the last graph bar.
+      const tail = liveCharging && curve.length > 0 ? liveCurvePoint(live, curve.at(-1)) : null;
+      const recorded = tail ? [...curve, tail] : curve;
+      const forecast = forecastForDisplay(rows, recorded, charging);
+      // Without Rivian's forecast, the app's own.
+      const estimated =
+        liveCharging && forecast.length === 0
+          ? forecastForDisplay(estimatedForecast(live), recorded, true)
+          : [];
+      if (recorded.length > 0) {
         return [
-          ...curve.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
+          ...recorded.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
           ...forecast.map((r) => ({
             ts: r.ts.toISOString(),
             powerKw: null,
             soc: r.soc,
             projected: true,
+          })),
+          ...estimated.map((r) => ({
+            ts: r.ts.toISOString(),
+            powerKw: null,
+            soc: r.soc,
+            projected: true,
+            estimated: true,
           })),
         ];
       }
@@ -191,9 +207,6 @@ export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
   };
 }
 
-/** Snapshot rows are stamped on write, which can trail the readings inside. */
-const SNAPSHOT_MARGIN_MS = 2 * 3600_000;
-
 /**
  * Without a recorded power curve, battery level over the session from the
  * vehicle states RivianMate recorded (empty if it wasn't recording then).
@@ -213,23 +226,15 @@ async function socCurveFromState(
   if (!session) return [];
   const start = session.startedAt.getTime();
   const end = session.endedAt?.getTime() ?? Date.now();
-  const states = await ctx.db
-    .select({ data: vehicleStateSnapshots.data })
-    .from(vehicleStateSnapshots)
-    .where(
-      and(
-        eq(vehicleStateSnapshots.vehicleId, session.vehicleId),
-        between(
-          vehicleStateSnapshots.ts,
-          new Date(start - SNAPSHOT_MARGIN_MS),
-          new Date(end + SNAPSHOT_MARGIN_MS),
-        ),
-      ),
-    )
-    .orderBy(vehicleStateSnapshots.ts)
-    .limit(5000);
+  const history = await stateTimeline(
+    ctx.db,
+    session.vehicleId,
+    ['batteryLevel'],
+    session.startedAt,
+    new Date(end),
+  );
   return socReadingsBetween(
-    states.map((s) => s.data as VehicleState),
+    history.map((h) => h.state),
     start,
     end,
   ).map((r) => ({ ts: new Date(r.at).toISOString(), powerKw: null, soc: r.soc }));
@@ -237,13 +242,7 @@ async function socCurveFromState(
 
 /** The latest pack capacity recorded for the vehicle (kWh). */
 async function packCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
-  const rows = await ctx.db.execute<{ kwh: number | null }>(sql`
-    SELECT (data->'batteryCapacity'->>'value')::float8 AS kwh
-    FROM vehicle_state_snapshots
-    WHERE vehicle_id = ${vehicleId} AND data ? 'batteryCapacity'
-    ORDER BY ts DESC LIMIT 1
-  `);
-  return rows[0]?.kwh ?? null;
+  return latestNumber(ctx.db, vehicleId, 'batteryCapacity');
 }
 
 /**
@@ -257,11 +256,12 @@ async function sessionLimits(
   if (sessions.length === 0) return new Map();
   const rows = await ctx.db.execute<{ id: number; soc_limit: number | null }>(sql`
     SELECT s.id, (
-      SELECT v.battery_limit FROM vehicle_state_snapshots v
-      WHERE v.vehicle_id = s.vehicle_id AND v.battery_limit IS NOT NULL
-        AND v.ts <= COALESCE(s.ended_at, now())
-      ORDER BY v.ts DESC LIMIT 1
-    )::float8 AS soc_limit
+      SELECT c.num FROM state_changes c
+      WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = s.vehicle_id)
+        AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit')
+        AND c.num IS NOT NULL AND c.at <= COALESCE(s.ended_at, now())
+      ORDER BY c.at DESC LIMIT 1
+    ) AS soc_limit
     FROM charging_sessions s
     WHERE s.id IN (${sql.join(
       sessions.map((s) => sql`${s.id}`),

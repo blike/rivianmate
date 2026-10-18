@@ -1,11 +1,12 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
-import { drives, locationPoints, vehicleStateSnapshots } from '../db/schema.js';
+import { drives, locationPoints } from '../db/schema.js';
 import type { TripInfo } from '../rivian/parallax/index.js';
 import type { VehicleState } from '../rivian/types.js';
 import { stampedAt } from './charging-time.js';
 import { elevationChange } from './drive-metrics.js';
+import { stateTimeline } from './state-history.js';
 import { stateLocation, stateNumber, stateString } from './state-utils.js';
 
 const PARK_GRACE_MS = 3 * 60_000;
@@ -19,6 +20,8 @@ const RESUME_WINDOW_MS = 15 * 60_000;
 const FRESH_SPEED_MS = 2 * 60_000;
 /** GPS this far behind the gear reading is reported as lagging. */
 const GPS_LAG_MS = 5 * 60_000;
+/** The recorded fields a drive's last moving reading is found from. */
+const MOVING_FIELDS = ['gearStatus', 'vehicleMileage', 'batteryLevel', 'distanceToEmpty'];
 
 type Destination = TripInfo['destination'];
 
@@ -424,32 +427,34 @@ export class DriveDetector {
 
   /**
    * A drive's latest moving reading as recorded: its last GPS point or the
-   * last state seen in drive/reverse, whichever is later (never before it
-   * started), with the readings then.
+   * last recorded state in drive/reverse, whichever is later (never before
+   * it started), with the readings then.
    */
   private async lastMovingReading(
     drive: typeof drives.$inferSelect,
   ): Promise<{ at: number; readings: Readings | null }> {
     const point = await this.lastPoint(drive.id);
-    const [snapshot] = await this.db
-      .select({ ts: vehicleStateSnapshots.ts, data: vehicleStateSnapshots.data })
-      .from(vehicleStateSnapshots)
-      .where(
-        and(
-          eq(vehicleStateSnapshots.vehicleId, drive.vehicleId),
-          gte(vehicleStateSnapshots.ts, drive.startedAt),
-          sql`${vehicleStateSnapshots.data}->'gearStatus'->>'value' IN ('drive', 'reverse')`,
-        ),
+    const history = await stateTimeline(
+      this.db,
+      drive.vehicleId,
+      MOVING_FIELDS,
+      drive.startedAt,
+      new Date(Math.max(this.now(), Date.now())),
+    );
+    const moving = history
+      .filter((entry) =>
+        ['drive', 'reverse'].includes(stateString(entry.state, 'gearStatus') ?? ''),
       )
-      .orderBy(desc(vehicleStateSnapshots.ts))
-      .limit(1);
+      .pop();
 
     let at = drive.startedAt.getTime();
     let readings: Readings | null = null;
-    if (snapshot) {
-      const state = snapshot.data as VehicleState;
-      at = Math.max(at, stampedAt(state, 'gearStatus', snapshot.ts.getTime()));
-      readings = readingsOf(state);
+    if (moving) {
+      // The last change recorded while in gear (a mileage reading, say), so
+      // the latest evidence of moving: the gear's own stamp is from when it
+      // went into gear.
+      at = Math.max(at, moving.at);
+      readings = readingsOf(moving.state);
     }
     if (point) {
       at = Math.max(at, point.ts.getTime());

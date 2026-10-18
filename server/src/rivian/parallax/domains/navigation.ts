@@ -126,7 +126,7 @@ export const tripInfo = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeTripInfo,
-  store: 'latest',
+  store: true,
   fieldNames: {
     '1': 'Update ID (new with each update)',
     '2.1.1': 'Origin latitude',
@@ -160,7 +160,7 @@ export const tripProgress = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeTripProgress,
-  store: 'latest',
+  store: true,
   fieldNames: {
     '1.1': 'ETA (s since epoch)',
     '2.1': 'ETA again (s since epoch; same as 1.1)',

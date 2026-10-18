@@ -30,7 +30,7 @@ export const otaDeployment = defineRvm({
     }),
   toState: stampReadings,
   stateKeys: ['otaCurrentVersion'],
-  store: 'log',
+  store: true,
   fieldNames: {
     '1.1': 'Deployment: state (1 installed)',
     '1.2.1': 'Deployment: version',
@@ -45,14 +45,14 @@ export const otaState = defineRvm({
   rvm: RVM_OTA_STATE,
   group: 'core',
   maturity: 'probe',
-  store: 'log',
+  store: true,
 });
 
 export const otaConfig = defineRvm({
   rvm: RVM_OTA_CONFIG,
   group: 'core',
   maturity: 'probe',
-  store: 'log',
+  store: true,
 });
 
 export const OTA_RVMS = [otaState, otaDeployment, otaConfig] as const;

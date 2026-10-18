@@ -27,8 +27,8 @@
  *   topic uses says which it means.
  * - Repeated fields are read with `Fields.repeated`, except the charging
  *   graph's bars, which are checked field by field from their raw bytes.
- * - A topic with `store: 'log'` and no decoder is logged for decoding;
- *   nothing reads it yet.
+ * - A topic with `store` and no decoder is kept for decoding; nothing reads
+ *   it yet. Every topic's payloads are archived whether or not it's stored.
  */
 export * from './wire.js';
 export * from './define.js';

@@ -237,7 +237,7 @@ export const chargingGraph = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeChargingGraph,
-  store: 'log',
+  store: true,
   fieldNames: {
     '1.1': 'Bar: SOC (%)',
     '1.2': 'Bar: power (kW)',
@@ -252,7 +252,7 @@ export const chargeBreakdown = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeChargeBreakdown,
-  store: 'log',
+  store: true,
   fieldNames: {
     '1': 'Total energy (kWh)',
     '2': 'Energy into the pack (kWh)',
@@ -273,7 +273,7 @@ export const coldWeather = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeColdWeather,
-  store: 'latest',
+  store: true,
   fieldNames: {
     '1': 'Usable SOC (%)',
     '2': 'SOC held back by cold (%)',
@@ -286,7 +286,7 @@ export const parkedEnergy = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeParkedEnergy,
-  store: 'latest',
+  store: true,
   fieldNames: {
     '*.1': 'Window: total energy (kWh)',
     '*.2': 'Window: climate (kWh)',
@@ -316,7 +316,7 @@ export const batteryState = defineRvm({
       timeStamp,
     ),
   stateKeys: ['batteryLevel', 'batteryCapacity'],
-  store: 'latest',
+  store: true,
   fieldNames: {
     '1.1': 'SOC (%)',
     '1.2': 'Pack capacity (kWh)',
@@ -331,7 +331,7 @@ export const batteryCharacteristics = defineRvm({
   group: 'core',
   maturity: 'partial',
   decode: decodeBatteryCharacteristics,
-  store: 'log',
+  store: true,
   fieldNames: {
     '5': 'Capacity estimate (kWh)',
     '6': 'Rated capacity (kWh)',
@@ -354,7 +354,7 @@ export const lowVoltageBattery = defineRvm({
     ),
   toState: stampReadings,
   stateKeys: ['twelveVoltBatteryHealth'],
-  store: 'log',
+  store: true,
   fieldNames: { '1': '12V battery health (1 normal)' },
 });
 

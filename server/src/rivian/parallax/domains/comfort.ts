@@ -78,7 +78,7 @@ export const petMode = defineRvm({
   rvm: RVM_PET_MODE,
   group: 'vehicleState',
   maturity: 'probe',
-  store: 'log',
+  store: true,
 });
 
 export const COMFORT_RVMS = [cabinTemperatures, preconditioning, defrost, petMode] as const;

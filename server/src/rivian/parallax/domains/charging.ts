@@ -112,7 +112,7 @@ export const chargingStatus = defineRvm({
     };
   },
   stateKeys: ['chargerStatus', 'chargerState'],
-  store: 'log',
+  store: true,
   fieldNames: {
     '1': 'Plug connection (enum)',
     '2': 'Display status (enum)',
@@ -125,7 +125,7 @@ export const timeEstimation = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeTimeEstimation,
-  store: 'log',
+  store: true,
   fieldNames: {
     '1': 'Hold time (s)',
     '2': 'Minutes remaining',
@@ -139,7 +139,7 @@ export const socSlider = defineRvm({
   decode: decodeSocSlider,
   toState: ({ limit }, timeStamp) => ({ batteryLimit: { timeStamp, value: limit } }),
   stateKeys: ['batteryLimit'],
-  store: 'log',
+  store: true,
   fieldNames: { '1': 'Charge limit (%)' },
 });
 
@@ -148,14 +148,14 @@ export const tripTarget = defineRvm({
   rvm: RVM_TRIP_TARGET,
   group: 'core',
   maturity: 'probe',
-  store: 'log',
+  store: true,
 });
 
 export const chargingNotification = defineRvm({
   rvm: RVM_CHARGING_NOTIFICATION,
   group: 'core',
   maturity: 'probe',
-  store: 'log',
+  store: true,
 });
 
 /** A charging window, in the vehicle's local time. */
@@ -219,7 +219,7 @@ export const chargingTimeWindow = defineRvm({
   group: 'core',
   maturity: 'partial',
   decode: decodeChargingWindow,
-  store: 'log',
+  store: true,
   fieldNames: {
     '1': 'Unknown (1 so far)',
     '2.1': 'Window: start minute',

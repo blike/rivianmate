@@ -200,6 +200,11 @@ export interface ChargingCurvePointDto {
   soc: number | null;
   /** The vehicle's forecast for a charge in progress, not a reading. */
   projected?: boolean;
+  /**
+   * With `projected`: the app's own estimate, from the time left and the
+   * charge limit, as Rivian sent no forecast.
+   */
+  estimated?: boolean;
 }
 
 export interface ChargingSessionDto {
