@@ -58,6 +58,14 @@ export function LockIcon() {
   );
 }
 
+export function LogIcon() {
+  return (
+    <NavIcon>
+      <path d="M3 2.5h10v11H3zM5.5 5.5h5M5.5 8h5M5.5 10.5h3" />
+    </NavIcon>
+  );
+}
+
 export function InfoIcon() {
   return (
     <NavIcon>

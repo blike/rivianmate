@@ -388,3 +388,24 @@ export interface NotificationTestResult {
   ok: boolean;
   error: string | null;
 }
+
+export type LogLevelName = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+
+/** One server log line, as shown in Settings → Logs. */
+export interface LogEntryDto {
+  /** Increases by one per line since startup. */
+  seq: number;
+  time: string;
+  level: LogLevelName;
+  component: string | null;
+  msg: string;
+  /** Everything else logged with the line (status, ms, err...). */
+  fields?: Record<string, unknown>;
+}
+
+/** First message on the log stream. */
+export interface LogBacklogDto {
+  /** The server's LOG_LEVEL: lines below it were never recorded. */
+  level: string;
+  entries: LogEntryDto[];
+}

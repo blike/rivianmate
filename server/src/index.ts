@@ -7,6 +7,7 @@ import type { AppContext, RivianFactory } from './context.js';
 import { TokenCrypto, hashPassword } from './crypto.js';
 import { createDb, runMigrations } from './db/client.js';
 import { appSettings } from './db/schema.js';
+import { LogBuffer } from './log-buffer.js';
 import { type Logger, createLogger } from './logger.js';
 import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
@@ -35,7 +36,8 @@ let log: Logger | undefined;
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const logger = createLogger(config);
+  const logs = new LogBuffer();
+  const logger = createLogger(config, process.stdout, logs);
   const appLog = logger.child({ component: 'app' });
   log = appLog;
 
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
       WEB_DIST: resolveWebDist(),
     },
     log: logger,
+    logs,
     db,
     crypto,
     tokenStore,
