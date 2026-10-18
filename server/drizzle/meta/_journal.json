@@ -120,6 +120,13 @@
       "when": 1791811400588,
       "tag": "0016_saved_locations",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792069980830,
+      "tag": "0017_history_stores",
+      "breakpoints": true
     }
   ]
 }

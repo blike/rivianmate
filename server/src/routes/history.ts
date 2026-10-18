@@ -22,27 +22,28 @@ import { type PlaceContext, placeContext } from './charging.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
 import { simplifyTrack } from '../services/simplify-track.js';
+import { bucketSeries, latestNumber, numericSeries } from '../services/state-history.js';
 
-const METRIC_COLUMNS: Record<string, string> = {
-  battery: 'battery_level',
-  range: 'range_km',
-  mileage: 'mileage_m',
+const METRIC_FIELDS: Record<string, string> = {
+  battery: 'batteryLevel',
+  range: 'distanceToEmpty',
+  mileage: 'vehicleMileage',
 };
 
 const historyQuerySchema = z.object({
   metric: z.enum(['battery', 'range', 'mileage']).default('battery'),
   from: z.coerce.date().default(() => new Date(Date.now() - 7 * 86400_000)),
   to: z.coerce.date().default(() => new Date()),
-  /** "raw": every snapshot, unaveraged. */
+  /** "raw": every recorded change, unaveraged. */
   bucket: z.enum(['raw', '5m', '15m', '1h', '6h', '1d']).default('1h'),
 });
 
-const BUCKET_INTERVALS: Record<string, string> = {
-  '5m': '5 minutes',
-  '15m': '15 minutes',
-  '1h': '1 hour',
-  '6h': '6 hours',
-  '1d': '1 day',
+const BUCKET_MS: Record<string, number> = {
+  '5m': 5 * 60_000,
+  '15m': 15 * 60_000,
+  '1h': 3600_000,
+  '6h': 6 * 3600_000,
+  '1d': 86400_000,
 };
 
 const MAX_LOCATIONS = 20_000;
@@ -72,45 +73,36 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/history',
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
-      const column = METRIC_COLUMNS[q.metric]!;
+      // Nothing is known past now; a value held then isn't carried into the future.
+      const to = new Date(Math.min(q.to.getTime(), Date.now()));
+      const { opening, changes } = await numericSeries(
+        ctx.db,
+        request.params.id,
+        METRIC_FIELDS[q.metric]!,
+        q.from,
+        to,
+      );
       if (q.bucket === 'raw') {
-        const raw = await ctx.db.execute<{ ts: string; value: number }>(sql`
-          SELECT ts, ${sql.raw(column)}::float8 AS value
-          FROM vehicle_state_snapshots
-          WHERE vehicle_id = ${request.params.id}
-            AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
-            AND ${sql.raw(column)} IS NOT NULL
-          ORDER BY ts
-        `);
-        return raw.map((r) => ({
-          bucket: new Date(r.ts).toISOString(),
-          avg: r.value,
-          min: r.value,
-          max: r.value,
+        // The value held as the range opens, then each change.
+        const points = opening ? [{ ...opening, at: q.from.getTime() }, ...changes] : changes;
+        return points.map((p) => ({
+          bucket: new Date(p.at).toISOString(),
+          avg: p.value,
+          min: p.value,
+          max: p.value,
         }));
       }
-      const interval = BUCKET_INTERVALS[q.bucket]!;
-      const rows = await ctx.db.execute<{
-        bucket: string;
-        avg: number | null;
-        min: number | null;
-        max: number | null;
-      }>(sql`
-        SELECT date_bin(${interval}::interval, ts, TIMESTAMPTZ '2020-01-01') AS bucket,
-               AVG(${sql.raw(column)})::float8 AS avg,
-               MIN(${sql.raw(column)})::float8 AS min,
-               MAX(${sql.raw(column)})::float8 AS max
-        FROM vehicle_state_snapshots
-        WHERE vehicle_id = ${request.params.id}
-          AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
-          AND ${sql.raw(column)} IS NOT NULL
-        GROUP BY bucket ORDER BY bucket
-      `);
-      return rows.map((r) => ({
-        bucket: new Date(r.bucket).toISOString(),
-        avg: r.avg,
-        min: r.min,
-        max: r.max,
+      return bucketSeries(
+        opening,
+        changes,
+        q.from.getTime(),
+        to.getTime(),
+        BUCKET_MS[q.bucket]!,
+      ).map((b) => ({
+        bucket: new Date(b.bucket).toISOString(),
+        avg: b.avg,
+        min: b.min,
+        max: b.max,
       }));
     },
   );
@@ -286,14 +278,8 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
 }
 
 /** Latest pack capacity seen for the vehicle (for drives without one). */
-async function latestCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
-  const rows = await ctx.db.execute<{ kwh: number | null }>(sql`
-    SELECT (data->'batteryCapacity'->>'value')::float8 AS kwh
-    FROM vehicle_state_snapshots
-    WHERE vehicle_id = ${vehicleId} AND data ? 'batteryCapacity'
-    ORDER BY ts DESC LIMIT 1
-  `);
-  return rows[0]?.kwh ?? null;
+function latestCapacityKwh(ctx: AppContext, vehicleId: string): Promise<number | null> {
+  return latestNumber(ctx.db, vehicleId, 'batteryCapacity');
 }
 
 function toDriveDto(

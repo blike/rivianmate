@@ -1,8 +1,12 @@
 /** What the vehicle was doing over time: driving, charging, awake or asleep. */
-import { sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import type { VehicleState } from '../rivian/types.js';
+import { stateTimeline } from './state-history.js';
+import { stateString } from './state-utils.js';
 
 export type VehicleActivity = 'driving' | 'charging' | 'updating' | 'awake' | 'asleep';
+
+const ACTIVITY_FIELDS = ['powerState', 'gearStatus', 'chargerStatus'];
 
 export interface ActivityChange {
   ts: Date;
@@ -34,12 +38,22 @@ export function stateSpans(changes: readonly ActivityChange[], from: Date, to: D
   return spans;
 }
 
+/** What the vehicle was doing given its state; null when power state isn't known. */
+export function activityOf(state: VehicleState): VehicleActivity | null {
+  const power = stateString(state, 'powerState');
+  if (power === 'ota_update') return 'updating';
+  const gear = stateString(state, 'gearStatus');
+  if (gear === 'drive' || gear === 'reverse') return 'driving';
+  if (stateString(state, 'chargerStatus') === 'chrgr_sts_connected_charging') return 'charging';
+  if (power === 'sleep' || power === 'standby') return 'asleep';
+  return power != null ? 'awake' : null;
+}
+
 /**
- * State spans for a vehicle over [from, to], from recorded snapshots. A
- * snapshot's state is the first that applies of: updating software, in
- * drive or reverse, charging, asleep (sleep or standby), else awake.
- * Reads only the changes, plus the last one before the window (looking back
- * up to 30 days) so it opens in the right state.
+ * State spans for a vehicle over [from, to], from recorded state history.
+ * At each change the state is the first that applies of: updating
+ * software, in drive or reverse, charging, asleep (sleep or standby), else
+ * awake. The state held at `from` opens the window.
  */
 export async function loadStateSpans(
   db: Db,
@@ -47,38 +61,12 @@ export async function loadStateSpans(
   from: Date,
   to: Date,
 ): Promise<StateSpan[]> {
-  const rows = await db.execute<{ ts: string; state: VehicleActivity }>(sql`
-    WITH states AS (
-      SELECT ts, id,
-             CASE
-               WHEN power_state = 'ota_update' THEN 'updating'
-               WHEN data->'gearStatus'->>'value' IN ('drive', 'reverse') THEN 'driving'
-               WHEN charger_status = 'chrgr_sts_connected_charging' THEN 'charging'
-               WHEN power_state IN ('sleep', 'standby') THEN 'asleep'
-               WHEN power_state IS NOT NULL THEN 'awake'
-             END AS state
-      FROM vehicle_state_snapshots
-      WHERE vehicle_id = ${vehicleId}
-        AND ts >= ${from.toISOString()}::timestamptz - interval '30 days'
-        AND ts <= ${to.toISOString()}::timestamptz
-    ),
-    changes AS (
-      SELECT ts, state, LAG(state) OVER (ORDER BY ts, id) AS prev
-      FROM states
-      WHERE state IS NOT NULL
-    )
-    SELECT ts, state FROM (
-      SELECT ts, state FROM changes
-      WHERE state IS DISTINCT FROM prev AND ts < ${from.toISOString()}::timestamptz
-      ORDER BY ts DESC LIMIT 1
-    ) opening
-    UNION ALL
-    SELECT ts, state FROM changes
-    WHERE state IS DISTINCT FROM prev AND ts >= ${from.toISOString()}::timestamptz
-    ORDER BY ts
-  `);
+  const entries = await stateTimeline(db, vehicleId, ACTIVITY_FIELDS, from, to);
   return stateSpans(
-    rows.map((r) => ({ ts: new Date(r.ts), state: r.state })),
+    entries.flatMap((e) => {
+      const state = activityOf(e.state);
+      return state ? [{ ts: new Date(e.at), state }] : [];
+    }),
     from,
     new Date(Math.min(to.getTime(), Date.now())),
   );

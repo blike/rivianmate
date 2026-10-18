@@ -24,6 +24,15 @@ export const LOGIN_WITH_OTP = `mutation LoginWithOTP($email: String!, $otpCode: 
 
 export const GET_USER_INFO = `query getUserInfo { currentUser { __typename id vehicles { id vin name roles state createdAt updatedAt vehicle { __typename id vin modelYear make model vehicleState { supportedFeatures { __typename name status } } } } } }`;
 
+/**
+ * Build date and factory configuration. Its own query, so a field Rivian
+ * drops or renames can't break getUserInfo and with it vehicle discovery.
+ */
+export const GET_VEHICLE_DETAILS = `query getVehicleDetails { currentUser { __typename vehicles { id vehicle { __typename actualGeneralAssemblyDate mobileConfiguration { trimOption { optionName } driveSystemOption { optionName } exteriorColorOption { optionName } interiorColorOption { optionName } wheelOption { optionName } tonneauOption { optionName } } } } } }`;
+
+/** Rendered images of each vehicle in its own paint and wheels, at every angle and resolution. Version 3 is the set the current app uses. */
+export const GET_VEHICLE_IMAGES = `query getVehicleImages($version: String) { getVehicleMobileImages(version: $version) { vehicleId url resolution size design placement } }`;
+
 /** Release-notes PDFs for the installed and pending software; the links are presigned and expire after an hour. */
 export const GET_OTA_UPDATE_DETAILS = `query getOTAUpdateDetails($vehicleId: String!) { getVehicle(id: $vehicleId) { availableOTAUpdateDetails { url version locale } currentOTAUpdateDetails { url version locale } } }`;
 

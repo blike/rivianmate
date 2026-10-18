@@ -102,14 +102,6 @@ export const PARALLAX_STORED_RVMS: ReadonlySet<string> = new Set(
   PARALLAX_RVMS.filter((def) => def.store).map((def) => def.rvm),
 );
 
-/**
- * Topics whose every distinct payload is logged, not just the latest, so
- * their fields can be decoded against how they change during a charge.
- */
-export const PARALLAX_LOGGED_RVMS: ReadonlySet<string> = new Set(
-  PARALLAX_RVMS.filter((def) => def.store === 'log').map((def) => def.rvm),
-);
-
 /** A message decoded by its topic's definition; `value` is null when unreadable. */
 export interface Decoded<T = unknown> {
   def: RvmDef<T>;

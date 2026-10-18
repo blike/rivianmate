@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capacityEstimates, phantomDrain } from './health.js';
+import { capacityEstimates, drainSnapshots, phantomDrain } from './health.js';
 
 const at = (h: number) => new Date(Date.UTC(2026, 8, 1, 0) + h * 3600_000);
 const snap = (h: number, battery: number, mileage = 1000, charger = 'chrgr_sts_not_connected') => ({
@@ -72,6 +72,39 @@ describe('phantomDrain', () => {
       'America/Los_Angeles',
     );
     expect(la.days.map((d) => d.day)).toEqual(['2026-09-01']);
+  });
+});
+
+describe('drainSnapshots', () => {
+  const t = (hhmm: string) => Date.parse(`2026-10-12T${hhmm}:00Z`);
+  const reading = (at: string, level: [number, string], mileage: [number, string]) => ({
+    at: t(at),
+    batteryLevel: { value: level[0], at: t(level[1]) },
+    mileage: { value: mileage[0], at: t(mileage[1]) },
+    chargerStatus: 'chrgr_sts_not_connected',
+    gear: 'park',
+  });
+
+  it("drops a level from before a late drive's mileage, until the level after it arrives", () => {
+    // Real: a drive delivered late, its mileage stamped 15:09 and level 15:12.
+    const rows = drainSnapshots([
+      reading('14:50', [63.1, '14:48'], [7_582_257, '14:46']),
+      reading('15:09', [63.1, '14:48'], [7_586_172, '15:09']),
+      reading('15:12', [61.8, '15:12'], [7_586_172, '15:09']),
+      reading('18:00', [61.8, '15:12'], [7_586_172, '15:09']), // a heartbeat
+      reading('21:30', [61.6, '21:30'], [7_586_172, '15:09']),
+    ]);
+    expect(rows.map((r) => r.batteryLevel)).toEqual([63.1, null, 61.8, 61.8, 61.6]);
+    expect(phantomDrain(rows).days[0]?.lossPct).toBeCloseTo(0.2);
+  });
+
+  it('keeps a level that held through parking when no new one followed soon', () => {
+    const rows = drainSnapshots([
+      reading('15:00', [70, '14:55'], [1000, '14:58']),
+      reading('16:00', [70, '14:55'], [1000, '14:58']),
+      reading('20:00', [69.5, '20:00'], [1000, '14:58']),
+    ]);
+    expect(rows.map((r) => r.batteryLevel)).toEqual([70, 70, 69.5]);
   });
 });
 

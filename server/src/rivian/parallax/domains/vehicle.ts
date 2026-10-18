@@ -59,7 +59,7 @@ export const network = defineRvm({
   group: 'core',
   maturity: 'confirmed',
   decode: decodeNetwork,
-  store: 'latest',
+  store: true,
   fieldNames: {
     '4.1': 'Wi-Fi state (2 connected)',
     '4.3': 'Wi-Fi SSID',

@@ -6,8 +6,7 @@ import {
   decodeBatteryState,
 } from '../rivian/parallax/index.js';
 import { stateNumber } from '../services/state-utils.js';
-import { and, asc, eq, gte } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
@@ -17,9 +16,18 @@ import type {
   TirePressurePointDto,
 } from '../api-types.js';
 import type { AppContext } from '../context.js';
-import { parallaxLatest, vehicleStateSnapshots } from '../db/schema.js';
+import { parallaxLatest } from '../db/schema.js';
 import { stateString } from '../services/state-utils.js';
-import { phantomDrain } from '../services/health.js';
+import { drainSnapshots, phantomDrain } from '../services/health.js';
+import { stampedAt } from '../services/charging-time.js';
+import type { VehicleState } from '../rivian/types.js';
+import {
+  END_OF_TIME,
+  bucketSeries,
+  changesBetween,
+  numericSeries,
+  stateTimeline,
+} from '../services/state-history.js';
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -36,12 +44,6 @@ function validTimeZone(tz: string | undefined): string {
   }
 }
 
-/** Numeric value of a state field in the snapshot JSON; NULL for placeholders. */
-function numericField(field: string) {
-  const path = sql.raw(`data->'${field}'->>'value'`);
-  return sql`CASE WHEN ${path} ~ '^-?[0-9]+([.][0-9]+)?$' THEN (${path})::float8 END`;
-}
-
 const TIRES = {
   frontLeft: 'tirePressureFrontLeft',
   frontRight: 'tirePressureFrontRight',
@@ -55,22 +57,27 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     async (request): Promise<PhantomDrainDto> => {
       const { days, tz } = drainQuery.parse(request.query);
       const since = new Date(Date.now() - days * 86_400_000);
-      const rows = await ctx.db
-        .select({
-          ts: vehicleStateSnapshots.ts,
-          batteryLevel: vehicleStateSnapshots.batteryLevel,
-          mileageM: vehicleStateSnapshots.mileageM,
-          chargerStatus: vehicleStateSnapshots.chargerStatus,
-          gear: sql<string | null>`${vehicleStateSnapshots.data}->'gearStatus'->>'value'`,
-        })
-        .from(vehicleStateSnapshots)
-        .where(
-          and(
-            eq(vehicleStateSnapshots.vehicleId, request.params.id),
-            gte(vehicleStateSnapshots.ts, since),
-          ),
-        )
-        .orderBy(asc(vehicleStateSnapshots.ts));
+      const history = await stateTimeline(
+        ctx.db,
+        request.params.id,
+        ['batteryLevel', 'vehicleMileage', 'chargerStatus', 'gearStatus'],
+        since,
+        new Date(),
+        { heartbeats: true },
+      );
+      const stamped = (state: VehicleState, field: string) => {
+        const value = stateNumber(state, field);
+        return value == null ? null : { value, at: stampedAt(state, field, Infinity) };
+      };
+      const rows = drainSnapshots(
+        history.map(({ at, state }) => ({
+          at,
+          batteryLevel: stamped(state, 'batteryLevel'),
+          mileage: stamped(state, 'vehicleMileage'),
+          chargerStatus: stateString(state, 'chargerStatus'),
+          gear: stateString(state, 'gearStatus'),
+        })),
+      );
       return phantomDrain(rows, validTimeZone(tz));
     },
   );
@@ -79,17 +86,22 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/ota',
     async (request): Promise<OtaTimelineDto> => {
       const vehicleId = request.params.id;
-      const history = await ctx.db.execute<{ version: string; first_seen: string }>(sql`
-        SELECT version, MIN(ts) AS first_seen
-        FROM (
-          SELECT ts, data->'otaCurrentVersion'->>'value' AS version
-          FROM vehicle_state_snapshots
-          WHERE vehicle_id = ${vehicleId} AND data ? 'otaCurrentVersion'
-        ) v
-        WHERE version IS NOT NULL AND version NOT IN ('', '0.0.0')
-        GROUP BY version
-        ORDER BY first_seen DESC
-      `);
+      const firstSeen = new Map<string, number>();
+      const changes = await changesBetween(
+        ctx.db,
+        vehicleId,
+        ['otaCurrentVersion'],
+        new Date(0),
+        END_OF_TIME,
+      );
+      for (const { value, at } of changes) {
+        const version = value == null ? '' : String(value);
+        if (version === '' || version === '0.0.0' || firstSeen.has(version)) continue;
+        firstSeen.set(version, at);
+      }
+      const history = [...firstSeen]
+        .sort(([, a], [, b]) => b - a)
+        .map(([version, at]) => ({ version, first_seen: at }));
       const withNotes = await ctx.monitor.releaseNotesVersions(vehicleId);
       const state = ctx.monitor.getState(vehicleId) ?? {};
       const current = stateString(state, 'otaCurrentVersion');
@@ -141,62 +153,52 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     async (request): Promise<TirePressurePointDto[]> => {
       const { days } = daysQuery.parse(request.query);
       const since = new Date(Date.now() - days * 86_400_000);
-      const bucket = days <= 7 ? '1 hour' : days <= 30 ? '6 hours' : '1 day';
-      const rows = await ctx.db.execute<{
-        bucket: string;
-        front_left: number | null;
-        front_right: number | null;
-        rear_left: number | null;
-        rear_right: number | null;
-      }>(sql`
-        SELECT date_bin(${bucket}::interval, ts, TIMESTAMPTZ '2020-01-01') AS bucket,
-               AVG(${numericField(TIRES.frontLeft)}) AS front_left,
-               AVG(${numericField(TIRES.frontRight)}) AS front_right,
-               AVG(${numericField(TIRES.rearLeft)}) AS rear_left,
-               AVG(${numericField(TIRES.rearRight)}) AS rear_right
-        FROM vehicle_state_snapshots
-        WHERE vehicle_id = ${request.params.id}
-          AND ts >= ${since.toISOString()}::timestamptz
-          AND data ?| array['tirePressureFrontLeft','tirePressureFrontRight','tirePressureRearLeft','tirePressureRearRight']
-        GROUP BY 1 ORDER BY 1
-      `);
+      const bucketMs = (days <= 7 ? 1 : days <= 30 ? 6 : 24) * 3600_000;
+      const now = new Date();
+      const byBucket = new Map<number, TirePressurePointDto>();
+      for (const [position, field] of Object.entries(TIRES) as [keyof typeof TIRES, string][]) {
+        const { opening, changes } = await numericSeries(
+          ctx.db,
+          request.params.id,
+          field,
+          since,
+          now,
+        );
+        for (const b of bucketSeries(opening, changes, since.getTime(), now.getTime(), bucketMs)) {
+          const point = byBucket.get(b.bucket) ?? {
+            ts: new Date(b.bucket).toISOString(),
+            frontLeft: null,
+            frontRight: null,
+            rearLeft: null,
+            rearRight: null,
+          };
+          point[position] = b.avg;
+          byBucket.set(b.bucket, point);
+        }
+      }
       // Values are in bar, as Rivian reports them.
-      return rows
-        .map((r) => ({
-          ts: new Date(r.bucket).toISOString(),
-          frontLeft: r.front_left,
-          frontRight: r.front_right,
-          rearLeft: r.rear_left,
-          rearRight: r.rear_right,
-        }))
-        .filter((r) => r.frontLeft ?? r.frontRight ?? r.rearLeft ?? r.rearRight);
+      return [...byBucket.entries()].sort(([a], [b]) => a - b).map(([, point]) => point);
     },
   );
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/health/battery',
     async (request): Promise<BatteryHealthDto> => {
-      const snapshots = await ctx.db.execute<{
-        at: string;
-        reported_at: string | null;
-        kwh: number;
-      }>(sql`
-        SELECT DISTINCT ON (date_trunc('day', ts AT TIME ZONE 'UTC'))
-               ts AS at, data->'batteryCapacity'->>'timeStamp' AS reported_at,
-               ${numericField('batteryCapacity')} AS kwh
-        FROM vehicle_state_snapshots
-        WHERE vehicle_id = ${request.params.id}
-          AND ${numericField('batteryCapacity')} > 0
-          AND ${numericField('batteryCapacity')} <= 500
-        ORDER BY date_trunc('day', ts AT TIME ZONE 'UTC'), ts DESC, id DESC
-      `);
-      const readings: CapacityReading[] = snapshots.map((r) => ({
-        at:
-          r.reported_at && Number.isFinite(Date.parse(r.reported_at))
-            ? r.reported_at
-            : new Date(r.at).toISOString(),
-        kwh: r.kwh,
-      }));
+      // The last reading of each (UTC) day.
+      const byDay = new Map<string, CapacityReading>();
+      const changes = await changesBetween(
+        ctx.db,
+        request.params.id,
+        ['batteryCapacity'],
+        new Date(0),
+        END_OF_TIME,
+      );
+      for (const { value, at } of changes) {
+        if (typeof value !== 'number' || value <= 0 || value > 500) continue;
+        const iso = new Date(at).toISOString();
+        byDay.set(iso.slice(0, 10), { at: iso, kwh: value });
+      }
+      const readings: CapacityReading[] = [...byDay.values()];
       const state = ctx.monitor.getState(request.params.id);
       const liveCapacity = stateNumber(state ?? {}, 'batteryCapacity');
       const liveRecord = state?.batteryCapacity;

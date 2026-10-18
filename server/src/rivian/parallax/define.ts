@@ -37,8 +37,11 @@ export interface RvmDef<T = unknown> {
   toState?(value: T, timeStamp: string): VehicleState;
   /** Every field toState can write; these merge newest-wins with legacy. */
   readonly stateKeys?: readonly string[];
-  /** `latest` keeps the newest payload; `log` also keeps every distinct one for 30 days. */
-  readonly store?: 'latest' | 'log';
+  /**
+   * Keeps the newest payload for quick reads. Every distinct payload of
+   * every topic is archived regardless (ParallaxArchive).
+   */
+  readonly store?: boolean;
   /** What each field path is read as, for the feed viewer ("3.1" is field 1 in field 3). */
   readonly fieldNames?: Readonly<Record<string, string>>;
   /**

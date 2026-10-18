@@ -1,6 +1,6 @@
 /** When the vehicle was plugged in, and which of that time it spent charging. */
-import { sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
+import { changesBetween, latestChanges } from './state-history.js';
 
 export interface ChargerStatusChange {
   ts: Date;
@@ -45,9 +45,9 @@ export function chargeSpans(
 }
 
 /**
- * Charge spans for a vehicle over [from, to], from recorded charger status.
- * Reads only the changes, plus the last one before the window (looking back
- * up to 30 days) so it opens in the right state.
+ * Charge spans for a vehicle over [from, to], from recorded charger status:
+ * its changes, plus the last one before the window so it opens in the
+ * right state.
  */
 export async function loadChargeSpans(
   db: Db,
@@ -55,28 +55,14 @@ export async function loadChargeSpans(
   from: Date,
   to: Date,
 ): Promise<ChargeSpan[]> {
-  const rows = await db.execute<{ ts: string; status: string }>(sql`
-    WITH changes AS (
-      SELECT ts, charger_status AS status,
-             LAG(charger_status) OVER (ORDER BY ts, id) AS prev
-      FROM vehicle_state_snapshots
-      WHERE vehicle_id = ${vehicleId}
-        AND charger_status IS NOT NULL
-        AND ts >= ${from.toISOString()}::timestamptz - interval '30 days'
-        AND ts <= ${to.toISOString()}::timestamptz
-    )
-    SELECT ts, status FROM (
-      SELECT ts, status FROM changes
-      WHERE status IS DISTINCT FROM prev AND ts < ${from.toISOString()}::timestamptz
-      ORDER BY ts DESC LIMIT 1
-    ) opening
-    UNION ALL
-    SELECT ts, status FROM changes
-    WHERE status IS DISTINCT FROM prev AND ts >= ${from.toISOString()}::timestamptz
-    ORDER BY ts
-  `);
+  const [opening, changes] = await Promise.all([
+    latestChanges(db, vehicleId, ['chargerStatus'], from),
+    changesBetween(db, vehicleId, ['chargerStatus'], from, to),
+  ]);
   return chargeSpans(
-    rows.map((r) => ({ ts: new Date(r.ts), status: r.status })),
+    [...opening, ...changes].flatMap((c) =>
+      typeof c.value === 'string' ? [{ ts: new Date(c.at), status: c.value }] : [],
+    ),
     from,
     new Date(Math.min(to.getTime(), Date.now())),
   );

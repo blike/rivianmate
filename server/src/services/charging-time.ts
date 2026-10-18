@@ -68,16 +68,21 @@ export interface DerivedChargingStats {
  * that RivianMate watched but didn't record live). Readings are placed by
  * Rivian's own timestamps. Charging time needs at least one charger reading
  * inside the session; a final charging stretch is only counted up to the
- * last reading, so a gap in recording never inflates it.
+ * last reading (or `seenAt` time), so a gap in recording never inflates it.
  */
 export function deriveChargingStats(
   states: readonly VehicleState[],
   start: number,
   end: number,
+  /** Other times state was received, which show values still held then. */
+  seenAt: readonly number[] = [],
 ): DerivedChargingStats {
   const { charger, socs } = readingsFrom(states);
   const inside = charger.filter((r) => r.at >= start && r.at <= end);
-  const lastSeen = Math.max(...[...charger, ...socs].map((r) => r.at).filter((t) => t <= end));
+  const lastSeen = Math.max(
+    ...[...charger, ...socs].map((r) => r.at).filter((t) => t <= end),
+    ...seenAt.filter((t) => t <= end),
+  );
   const chargingSeconds =
     inside.length > 0
       ? chargingSecondsBetween(

@@ -10,11 +10,13 @@ import {
   numeric,
   pgTable,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
   primaryKey,
 } from 'drizzle-orm/pg-core';
+import type { VehicleDetails, VehicleImageUrls } from '../rivian/types.js';
 
 export const appSettings = pgTable('app_settings', {
   key: text('key').primaryKey(),
@@ -37,35 +39,18 @@ export const rivianAccount = pgTable('rivian_account', {
 
 export const vehicles = pgTable('vehicles', {
   id: text('id').primaryKey(),
+  /** Short key for the vehicle in the high-volume history tables. */
+  seq: smallint('seq').generatedAlwaysAsIdentity().notNull().unique(),
   vin: text('vin').notNull().unique(),
   name: text('name'),
   make: text('make'),
   model: text('model'),
   modelYear: integer('model_year'),
   supportedFeatures: jsonb('supported_features').$type<string[]>(),
+  details: jsonb('details').$type<VehicleDetails>(),
+  images: jsonb('images').$type<VehicleImageUrls>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
-
-export const vehicleStateSnapshots = pgTable(
-  'vehicle_state_snapshots',
-  {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
-    vehicleId: text('vehicle_id')
-      .notNull()
-      .references(() => vehicles.id),
-    ts: timestamp('ts', { withTimezone: true }).notNull(),
-    isAnchor: boolean('is_anchor').notNull().default(false),
-    batteryLevel: real('battery_level'),
-    batteryLimit: real('battery_limit'),
-    rangeKm: real('range_km'),
-    mileageM: doublePrecision('mileage_m'),
-    powerState: text('power_state'),
-    chargerStatus: text('charger_status'),
-    cabinTemp: real('cabin_temp'),
-    data: jsonb('data').notNull(),
-  },
-  (t) => [index('snapshots_vehicle_ts_idx').on(t.vehicleId, t.ts)],
-);
 
 export const drives = pgTable(
   'drives',
@@ -111,7 +96,6 @@ export const drives = pgTable(
 export const locationPoints = pgTable(
   'location_points',
   {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
     vehicleId: text('vehicle_id')
       .notNull()
       .references(() => vehicles.id),
@@ -123,7 +107,10 @@ export const locationPoints = pgTable(
     altitude: real('altitude'),
     driveId: bigint('drive_id', { mode: 'number' }).references(() => drives.id),
   },
-  (t) => [uniqueIndex('locations_vehicle_ts_idx').on(t.vehicleId, t.ts)],
+  (t) => [
+    primaryKey({ columns: [t.vehicleId, t.ts] }),
+    index('location_points_drive_ts_idx').on(t.driveId, t.ts),
+  ],
 );
 
 export const wallboxes = pgTable('wallboxes', {
@@ -281,28 +268,6 @@ export const parallaxLatest = pgTable(
 );
 
 /**
- * Every distinct payload of the logged Parallax topics, kept for 30 days so
- * undocumented fields can be decoded against how they change.
- */
-export const parallaxMessages = pgTable(
-  'parallax_messages',
-  {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
-    vehicleId: text('vehicle_id')
-      .notNull()
-      .references(() => vehicles.id),
-    rvm: text('rvm').notNull(),
-    payload: text('payload').notNull(),
-    messageAt: timestamp('message_at', { withTimezone: true }),
-    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    index('parallax_messages_vehicle_rvm_idx').on(t.vehicleId, t.rvm, t.receivedAt),
-    index('parallax_messages_received_idx').on(t.receivedAt),
-  ],
-);
-
-/**
  * Reverse-geocoding results by rounded coordinates (~11 m), so a place is
  * looked up once. A null place means nothing was found there.
  */
@@ -329,3 +294,90 @@ export const savedLocations = pgTable('saved_locations', {
   ratePerKwh: real('rate_per_kwh'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Names of the vehicle state fields recorded in state_changes. */
+export const stateFields = pgTable('state_fields', {
+  id: smallint('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: text('name').notNull().unique(),
+});
+
+/**
+ * Vehicle state history: each change of a field's value, at Rivian's time
+ * for it, from whichever feed the app used. A field holds its value until
+ * its next row. Numbers go in `num`, anything else in `value`; neither
+ * means Rivian reported no value.
+ */
+export const stateChanges = pgTable(
+  'state_changes',
+  {
+    vehicleSeq: smallint('vehicle_seq')
+      .notNull()
+      .references(() => vehicles.seq),
+    fieldId: smallint('field_id')
+      .notNull()
+      .references(() => stateFields.id),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+    num: doublePrecision('num'),
+    value: text('value'),
+  },
+  (t) => [primaryKey({ columns: [t.vehicleSeq, t.fieldId, t.at] })],
+);
+
+/**
+ * When state was being received for a vehicle, at most every 15 minutes,
+ * so history can tell a value that held from a stretch nothing was heard.
+ */
+export const stateHeartbeats = pgTable(
+  'state_heartbeats',
+  {
+    vehicleSeq: smallint('vehicle_seq')
+      .notNull()
+      .references(() => vehicles.seq),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.vehicleSeq, t.at] })],
+);
+
+/** Names of the Parallax topics in the archive. */
+export const parallaxTopics = pgTable('parallax_topics', {
+  id: smallint('id').primaryKey().generatedAlwaysAsIdentity(),
+  rvm: text('rvm').notNull().unique(),
+});
+
+/**
+ * Every distinct Parallax payload of every topic, raw, kept for good so
+ * better decoding applies to all of it. Recent ones are a row each; older
+ * ones are packed into parallax_chunks.
+ */
+export const parallaxArchive = pgTable(
+  'parallax_archive',
+  {
+    vehicleSeq: smallint('vehicle_seq')
+      .notNull()
+      .references(() => vehicles.seq),
+    topicId: smallint('topic_id')
+      .notNull()
+      .references(() => parallaxTopics.id),
+    /** Rivian's message time, or when it arrived if it had none. Not unique: Rivian may stamp in seconds. */
+    at: timestamp('at', { withTimezone: true }).notNull(),
+    payload: bytea('payload').notNull(),
+  },
+  (t) => [index('parallax_archive_vehicle_topic_at_idx').on(t.vehicleSeq, t.topicId, t.at)],
+);
+
+/** One hour of a topic's archived payloads, compressed together (see parallax-archive.ts). */
+export const parallaxChunks = pgTable(
+  'parallax_chunks',
+  {
+    vehicleSeq: smallint('vehicle_seq')
+      .notNull()
+      .references(() => vehicles.seq),
+    topicId: smallint('topic_id')
+      .notNull()
+      .references(() => parallaxTopics.id),
+    hour: timestamp('hour', { withTimezone: true }).notNull(),
+    count: integer('count').notNull(),
+    data: bytea('data').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.vehicleSeq, t.topicId, t.hour] })],
+);

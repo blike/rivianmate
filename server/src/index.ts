@@ -20,6 +20,9 @@ import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { TokenStore } from './services/token-store.js';
 import { VehicleMonitor } from './services/vehicle-monitor.js';
+import { HistoryKeys } from './services/history-keys.js';
+import { HistoryMaintenance } from './services/history-maintenance.js';
+import { ParallaxArchive } from './services/parallax-archive.js';
 import { loadVersion } from './version.js';
 
 const START_RETRY_BASE_MS = 30_000;
@@ -45,6 +48,15 @@ async function main(): Promise<void> {
   await runMigrations(config.DATABASE_URL, migrationsFolder);
 
   const { db } = createDb(config.DATABASE_URL);
+  const historyLog = logger.child({ component: 'history' });
+  const historyKeys = new HistoryKeys(db);
+  const history = new HistoryMaintenance(
+    db,
+    historyKeys,
+    new ParallaxArchive(db, historyKeys, historyLog),
+    historyLog,
+  );
+  history.start();
   const crypto = new TokenCrypto(config.APP_SECRET);
   const tokenStore = new TokenStore(db, crypto, logger.child({ component: 'monitor' }));
   const bus = new LiveBus();
@@ -160,6 +172,7 @@ async function main(): Promise<void> {
     appLog.info('shutting down');
     clearTimeout(startRetry);
     notifications.stop();
+    history.stop();
     await monitor.stop();
     await app.close();
     process.exit(0);

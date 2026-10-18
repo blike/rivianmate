@@ -1,13 +1,13 @@
-import { and, asc, between, eq, gte, isNotNull, isNull, min } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
-import { chargingSessions, vehicleStateSnapshots } from '../db/schema.js';
+import { chargingSessions } from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import { deriveChargingStats } from './charging-time.js';
+import { firstRecordedAt, stateTimeline } from './state-history.js';
 import {
   type ChargeSessionSummary,
   RivianUnauthenticatedError,
-  type VehicleState,
   isGraphqlValidationError,
 } from '../rivian/types.js';
 
@@ -76,8 +76,6 @@ export function parseDate(value: string | null | undefined): Date | null {
 
 const DAILY_MS = 24 * 3600_000;
 const AFTER_SESSION_DELAY_MS = 15 * 60_000;
-/** Snapshot rows are stamped on write, which can trail the readings inside. */
-const SNAPSHOT_MARGIN_MS = 2 * 3600_000;
 
 /**
  * Imports Rivian's completed-session history: backfills sessions charged
@@ -173,11 +171,8 @@ export class ChargeHistoryImporter {
   private async fillFromStateHistory(): Promise<void> {
     try {
       for (const vehicleId of this.vehicleIds()) {
-        const [first] = await this.db
-          .select({ ts: min(vehicleStateSnapshots.ts) })
-          .from(vehicleStateSnapshots)
-          .where(eq(vehicleStateSnapshots.vehicleId, vehicleId));
-        if (!first?.ts) continue;
+        const first = await firstRecordedAt(this.db, vehicleId);
+        if (!first) continue;
         const sessions = await this.db
           .select()
           .from(chargingSessions)
@@ -186,32 +181,26 @@ export class ChargeHistoryImporter {
               eq(chargingSessions.vehicleId, vehicleId),
               isNull(chargingSessions.chargingSeconds),
               isNotNull(chargingSessions.endedAt),
-              gte(chargingSessions.endedAt, first.ts),
+              gte(chargingSessions.endedAt, first),
             ),
           );
         let filled = 0;
         for (const session of sessions) {
           const start = session.startedAt.getTime();
           const end = session.endedAt!.getTime();
-          const rows = await this.db
-            .select({ data: vehicleStateSnapshots.data })
-            .from(vehicleStateSnapshots)
-            .where(
-              and(
-                eq(vehicleStateSnapshots.vehicleId, vehicleId),
-                between(
-                  vehicleStateSnapshots.ts,
-                  new Date(start - SNAPSHOT_MARGIN_MS),
-                  new Date(end + SNAPSHOT_MARGIN_MS),
-                ),
-              ),
-            )
-            .orderBy(asc(vehicleStateSnapshots.ts))
-            .limit(5000);
+          const history = await stateTimeline(
+            this.db,
+            vehicleId,
+            ['chargerState', 'batteryLevel'],
+            session.startedAt,
+            session.endedAt!,
+            { heartbeats: true },
+          );
           const stats = deriveChargingStats(
-            rows.map((r) => r.data as VehicleState),
+            history.map((h) => h.state),
             start,
             end,
+            history.map((h) => h.at),
           );
           if (stats.chargingSeconds === null) continue;
           await this.db

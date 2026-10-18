@@ -7,11 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
-import { drives, locationPoints, vehicleStateSnapshots, vehicles } from '../db/schema.js';
+import { drives, locationPoints, vehicles } from '../db/schema.js';
 import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax/index.js';
 import type { VehicleState } from '../rivian/types.js';
+import { ensureLegacyHistoryTables } from '../testing/legacy-tables.js';
 import { b64, int } from '../testing/protobuf.js';
 import { DriveDetector } from './drive-detector.js';
+import { HistoryKeys } from './history-keys.js';
+import { StateHistoryRecorder } from './state-history.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -287,6 +290,36 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
     expect(all).toHaveLength(3); // and a new drive started
   });
 
+  it('closes an unwatched drive at the last reading recorded while it was in gear', async () => {
+    const [open] = await handle.db
+      .insert(drives)
+      .values({
+        vehicleId: 'v1',
+        startedAt: new Date('2026-10-01T16:00:00Z'),
+        startMileageM: 1_000_000,
+      })
+      .returning();
+    const recorder = new StateHistoryRecorder(handle.db, new HistoryKeys(handle.db), () => clock);
+    for (const [gear, stamp, km] of [
+      ['drive', '2026-10-01T16:00:00Z', 1000],
+      ['drive', '2026-10-01T16:20:00Z', 1012],
+      ['park', '2026-10-01T16:25:00Z', 1012],
+    ] as const) {
+      const s = state(gear, stamp, { km, soc: gear === 'park' ? 65 : 66 });
+      // Gear keeps its stamp from when it changed, as the monitor's cache does.
+      if (gear === 'drive') s.gearStatus = { value: 'drive', timeStamp: '2026-10-01T16:00:00Z' };
+      await recorder.record('v1', s, Object.keys(s));
+    }
+    await detector().closeDanglingDrives([]);
+
+    const [closed] = await rows();
+    expect(closed!.id).toBe(open!.id);
+    expect(closed!.endedAt?.toISOString()).toBe('2026-10-01T16:20:00.000Z');
+    expect([closed!.endMileageM, closed!.endBattery, closed!.distanceKm]).toEqual([
+      1_012_000, 66, 12,
+    ]);
+  });
+
   it('records drives Rivian delivers hours late at their own times', async () => {
     // Recorded on Oct 3–4, 2026: the vehicle lost signal mid-drive at 21:37Z,
     // was driven twice more without it, and Rivian delivered those readings
@@ -385,23 +418,24 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
           .values({ vehicleId: 'v1', startedAt: new Date(startedAt), endedAt: new Date(endedAt) })
           .returning()
       )[0]!;
+    // The migration ran before state history replaced snapshots.
+    await ensureLegacyHistoryTables(handle.sql);
+    await handle.sql`TRUNCATE vehicle_state_snapshots`;
     const snapshot = (ts: string, gear: string, gearAt: string) => ({
-      vehicleId: 'v1',
-      ts: new Date(ts),
-      data: { gearStatus: { value: gear, timeStamp: gearAt } },
+      vehicle_id: 'v1',
+      ts,
+      data: JSON.stringify({ gearStatus: { value: gear, timeStamp: gearAt } }),
     });
     // Held open by GPS noise until the vehicle slept, 5 minutes after it parked.
     const late = await drive('2026-10-01T15:00:00Z', '2026-10-01T15:25:00Z');
     // Ended when it parked.
     const exact = await drive('2026-10-01T16:00:00Z', '2026-10-01T16:20:00Z');
-    await handle.db
-      .insert(vehicleStateSnapshots)
-      .values([
-        snapshot('2026-10-01T15:00:05Z', 'drive', '2026-10-01T15:00:00Z'),
-        snapshot('2026-10-01T15:20:05Z', 'park', '2026-10-01T15:20:00Z'),
-        snapshot('2026-10-01T16:00:05Z', 'drive', '2026-10-01T16:00:00Z'),
-        snapshot('2026-10-01T16:20:05Z', 'park', '2026-10-01T16:20:00Z'),
-      ]);
+    await handle.sql`INSERT INTO vehicle_state_snapshots ${handle.sql([
+      snapshot('2026-10-01T15:00:05Z', 'drive', '2026-10-01T15:00:00Z'),
+      snapshot('2026-10-01T15:20:05Z', 'park', '2026-10-01T15:20:00Z'),
+      snapshot('2026-10-01T16:00:05Z', 'drive', '2026-10-01T16:00:00Z'),
+      snapshot('2026-10-01T16:20:05Z', 'park', '2026-10-01T16:20:00Z'),
+    ])}`;
     const point = (driveId: number, ts: string) => ({
       vehicleId: 'v1',
       driveId,

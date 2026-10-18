@@ -28,13 +28,16 @@ import {
 import { ChargeHistoryImporter } from './charge-history.js';
 import { ChargingMonitor } from './charging-monitor.js';
 import { DriveDetector } from './drive-detector.js';
+import { HistoryKeys } from './history-keys.js';
 import type { DrivePlaces } from './drive-places.js';
+import { LocationWriter } from './location-writer.js';
 import { OtaNotesStore } from './ota-notes.js';
+import { ParallaxArchive } from './parallax-archive.js';
 import { ParallaxRouter } from './parallax-router.js';
 import { ParallaxStore } from './parallax-store.js';
 import { ChargingScheduleRefresh } from './schedule-refresh.js';
 import type { LiveBus } from './live-bus.js';
-import { SnapshotWriter } from './snapshot-writer.js';
+import { StateHistoryRecorder } from './state-history.js';
 import { mergeVehicleState, normalizeReadings, stateLocation, stateString } from './state-utils.js';
 import type { TokenStore } from './token-store.js';
 
@@ -112,11 +115,13 @@ export class VehicleMonitor {
   private vehicles: MonitoredVehicle[] = [];
   private states = new Map<string, VehicleState>();
   private readonly log: Logger;
-  private snapshotWriter: SnapshotWriter;
+  private locationWriter: LocationWriter;
+  private stateHistory: StateHistoryRecorder;
   private driveDetector: DriveDetector;
   private chargingMonitor?: ChargingMonitor;
   private readonly otaNotes: OtaNotesStore;
   private readonly parallaxStore: ParallaxStore;
+  private readonly parallaxArchive: ParallaxArchive;
   private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
   /** Each vehicle's LEGACY_PREFERRED_FIELDS that legacy has reported. */
@@ -150,11 +155,14 @@ export class VehicleMonitor {
     private readonly drivePlaces?: DrivePlaces,
   ) {
     this.log = logger.child({ component: 'monitor' });
-    this.snapshotWriter = new SnapshotWriter(db);
+    const keys = new HistoryKeys(db);
+    this.locationWriter = new LocationWriter(db);
+    this.stateHistory = new StateHistoryRecorder(db, keys);
     this.parallaxStore = new ParallaxStore(db, logger.child({ component: 'parallax' }));
+    this.parallaxArchive = new ParallaxArchive(db, keys, logger.child({ component: 'parallax' }));
     this.otaNotes = new OtaNotesStore(db, logger.child({ component: 'ota' }));
     this.driveDetector = new DriveDetector(db, (vehicleId, driveId) => {
-      this.snapshotWriter.setCurrentDrive(vehicleId, driveId);
+      this.locationWriter.setCurrentDrive(vehicleId, driveId);
       // Name the start while the drive is under way.
       if (driveId != null) this.drivePlaces?.enqueue(driveId);
     });
@@ -251,6 +259,19 @@ export class VehicleMonitor {
         ?.filter((f) => f.status === 'AVAILABLE')
         .map((f) => f.name) ?? [];
 
+    // Nice to have: on a failure the vehicle still runs, and keeps what was stored last.
+    const [details, imageUrls] = await Promise.all([
+      connection.api.getVehicleDetails().catch((err: unknown) => {
+        this.log.warn({ err }, 'vehicle details fetch failed');
+        return null;
+      }),
+      connection.api.getVehicleImageUrls().catch((err: unknown) => {
+        this.log.warn({ err }, 'vehicle image fetch failed');
+        return null;
+      }),
+    ]);
+    if (superseded()) return;
+
     this.vehicles = info.vehicles.map((uv) => ({
       id: uv.id,
       vin: uv.vin,
@@ -272,10 +293,17 @@ export class VehicleMonitor {
           model: uv.vehicle?.model,
           modelYear: uv.vehicle?.modelYear,
           supportedFeatures: supportedFeaturesOf(uv),
+          details: details?.[uv.id],
+          images: imageUrls?.[uv.id],
         })
         .onConflictDoUpdate({
           target: vehiclesTable.id,
-          set: { name: uv.name, vin: uv.vin },
+          set: {
+            name: uv.name,
+            vin: uv.vin,
+            ...(details && { details: details[uv.id] ?? null }),
+            ...(imageUrls && { images: imageUrls[uv.id] ?? null }),
+          },
         });
     }
 
@@ -336,6 +364,7 @@ export class VehicleMonitor {
         chargingMonitor.ingestParallax(vehicleId, message, decoded),
       )
       .on((vehicleId, decoded, message) => this.parallaxStore.ingest(vehicleId, message, decoded))
+      .on((vehicleId, _decoded, message) => this.parallaxArchive.ingest(vehicleId, message))
       .onTopic(chargingTimeWindow, (vehicleId, window) =>
         this.scheduleRefresh.noteWindow(vehicleId, window),
       )
@@ -479,12 +508,18 @@ export class VehicleMonitor {
       this.chargingMonitor?.noteState(vehicleId, cached);
     }
 
+    // As of this delta: later ones change the cache while these run.
+    const state = { ...cached };
+    const history = this.stateHistory
+      .record(vehicleId, state, changed)
+      .catch((err: unknown) => this.log.error({ err, vehicleId }, 'saving state history failed'));
     try {
-      await this.driveDetector.onState(vehicleId, cached);
-      await this.snapshotWriter.onState(vehicleId, cached);
+      await this.driveDetector.onState(vehicleId, state);
+      await this.locationWriter.onState(vehicleId, state);
     } catch (err) {
       this.log.error({ err, vehicleId }, 'saving vehicle state failed');
     }
+    await history;
   }
 
   /** Latest Parallax readings (battery temperatures, parked energy, …). */

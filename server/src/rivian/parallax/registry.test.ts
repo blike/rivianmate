@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   PARALLAX_GROUPS,
-  PARALLAX_LOGGED_RVMS,
   PARALLAX_RVMS,
   PARALLAX_STATE_FIELDS,
   PARALLAX_STORED_RVMS,
@@ -121,13 +120,11 @@ describe('Parallax registry', () => {
     );
   });
 
-  it('keeps the insight topics and logs the charging ones', () => {
+  it('keeps the latest payload of the insight and charging topics', () => {
     expect(PARALLAX_STORED_RVMS.has('energy.high_voltage.battery_state')).toBe(true);
+    expect(PARALLAX_STORED_RVMS.has('charging.session.status')).toBe(true);
     expect(PARALLAX_STORED_RVMS.has('dynamics.vehicle.gnss')).toBe(false);
     expect(PARALLAX_STORED_RVMS.has('body.locks.states')).toBe(false);
-    expect(PARALLAX_LOGGED_RVMS.has('charging.session.status')).toBe(true);
-    expect(PARALLAX_LOGGED_RVMS.has('energy.high_voltage.battery_state')).toBe(false);
-    for (const rvm of PARALLAX_LOGGED_RVMS) expect(PARALLAX_STORED_RVMS.has(rvm)).toBe(true);
   });
 
   it("groups topics under Rivian's domains", () => {

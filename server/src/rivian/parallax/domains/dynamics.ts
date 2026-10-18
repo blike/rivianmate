@@ -14,7 +14,7 @@ export interface GnssReading {
   longitude: number | null;
   altitude: number | null;
   bearing: number | null;
-  /** m/s — matches what snapshot-writer.ts/drive-detector.ts/vehicleStatus.ts expect; don't convert to km/h here. */
+  /** m/s — matches what location-writer.ts/drive-detector.ts/vehicleStatus.ts expect; don't convert to km/h here. */
   speedMps: number | null;
 }
 
@@ -190,7 +190,7 @@ export const range = defineRvm({
     }),
   toState: stampReadings,
   stateKeys: ['distanceToEmpty'],
-  store: 'log',
+  store: true,
   fieldNames: {
     '1': 'Range (km)',
   },
