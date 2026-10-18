@@ -56,4 +56,6 @@ ALTER TABLE "state_heartbeats" ADD CONSTRAINT "state_heartbeats_vehicle_seq_vehi
 CREATE INDEX "parallax_archive_vehicle_topic_at_idx" ON "parallax_archive" USING btree ("vehicle_seq","topic_id","at");--> statement-breakpoint
 CREATE INDEX "location_points_drive_ts_idx" ON "location_points" USING btree ("drive_id","ts");
 --> statement-breakpoint
-ALTER TABLE "parallax_chunks" ALTER COLUMN "data" SET STORAGE EXTERNAL;
+ALTER TABLE "parallax_chunks" ALTER COLUMN "data" SET STORAGE EXTERNAL;--> statement-breakpoint
+ALTER TABLE "vehicles" ADD COLUMN IF NOT EXISTS "details" jsonb;--> statement-breakpoint
+ALTER TABLE "vehicles" ADD COLUMN IF NOT EXISTS "images" jsonb;

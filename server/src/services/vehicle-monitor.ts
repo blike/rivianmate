@@ -259,6 +259,19 @@ export class VehicleMonitor {
         ?.filter((f) => f.status === 'AVAILABLE')
         .map((f) => f.name) ?? [];
 
+    // Nice to have: on a failure the vehicle still runs, and keeps what was stored last.
+    const [details, imageUrls] = await Promise.all([
+      connection.api.getVehicleDetails().catch((err: unknown) => {
+        this.log.warn({ err }, 'vehicle details fetch failed');
+        return null;
+      }),
+      connection.api.getVehicleImageUrls().catch((err: unknown) => {
+        this.log.warn({ err }, 'vehicle image fetch failed');
+        return null;
+      }),
+    ]);
+    if (superseded()) return;
+
     this.vehicles = info.vehicles.map((uv) => ({
       id: uv.id,
       vin: uv.vin,
@@ -280,10 +293,17 @@ export class VehicleMonitor {
           model: uv.vehicle?.model,
           modelYear: uv.vehicle?.modelYear,
           supportedFeatures: supportedFeaturesOf(uv),
+          details: details?.[uv.id],
+          images: imageUrls?.[uv.id],
         })
         .onConflictDoUpdate({
           target: vehiclesTable.id,
-          set: { name: uv.name, vin: uv.vin },
+          set: {
+            name: uv.name,
+            vin: uv.vin,
+            ...(details && { details: details[uv.id] ?? null }),
+            ...(imageUrls && { images: imageUrls[uv.id] ?? null }),
+          },
         });
     }
 

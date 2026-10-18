@@ -57,6 +57,25 @@ export interface UserVehicle {
   } | null;
 }
 
+/** How the vehicle left the factory. Option names are Rivian's, e.g. "R1S Dual". */
+export interface VehicleDetails {
+  /** Local date the vehicle finished general assembly, YYYY-MM-DD. */
+  builtOn: string | null;
+  trim: string | null;
+  driveSystem: string | null;
+  exteriorColor: string | null;
+  interiorColor: string | null;
+  wheels: string | null;
+  tonneau: string | null;
+}
+
+/** The angles RivianMate shows of Rivian's vehicle renders. */
+export const VEHICLE_VIEWS = ['three-quarter', 'overhead'] as const;
+export type VehicleView = (typeof VEHICLE_VIEWS)[number];
+
+/** Render URLs by view. Rivian tokenizes them, so they stay on the server. */
+export type VehicleImageUrls = Partial<Record<VehicleView, string>>;
+
 export interface UserInfo {
   id: string;
   vehicles: UserVehicle[];

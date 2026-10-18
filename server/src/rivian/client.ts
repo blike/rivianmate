@@ -8,6 +8,8 @@ import {
   GET_OTA_UPDATE_DETAILS,
   GET_REGISTERED_WALLBOXES,
   GET_USER_INFO,
+  GET_VEHICLE_DETAILS,
+  GET_VEHICLE_IMAGES,
   GRAPHQL_CHARGING,
   GRAPHQL_GATEWAY,
   LOGIN,
@@ -30,7 +32,11 @@ import {
   RivianTokens,
   RivianUnauthenticatedError,
   UserInfo,
+  VEHICLE_VIEWS,
+  VehicleDetails,
+  VehicleImageUrls,
   VehicleState,
+  type VehicleView,
   Wallbox,
   mapGraphqlError,
 } from './types.js';
@@ -57,6 +63,10 @@ export interface RivianApi {
   login(email: string, password: string): Promise<LoginResult>;
   loginWithOtp(email: string, otpCode: string, otpToken?: string): Promise<RivianTokens>;
   getUserInfo(): Promise<UserInfo>;
+  /** Build and configuration details, keyed by vehicle id. */
+  getVehicleDetails(): Promise<Record<string, VehicleDetails>>;
+  /** Renders of each vehicle in its own paint and wheels, keyed by vehicle id. */
+  getVehicleImageUrls(): Promise<Record<string, VehicleImageUrls>>;
   /** `vehicleId` is the id from getUserInfo's vehicles[].id, not the VIN. */
   getVehicleState(vehicleId: string, properties?: readonly string[]): Promise<VehicleState>;
   getRegisteredWallboxes(): Promise<Wallbox[]>;
@@ -191,6 +201,79 @@ export class RivianClient implements RivianApi {
       variables: null,
     });
     return data.currentUser;
+  }
+
+  async getVehicleDetails(): Promise<Record<string, VehicleDetails>> {
+    type Option = { optionName: string | null } | null;
+    const data = await this.authenticatedRequest<{
+      currentUser: {
+        vehicles: {
+          id: string;
+          vehicle: {
+            actualGeneralAssemblyDate: string | null;
+            mobileConfiguration: Record<string, Option> | null;
+          } | null;
+        }[];
+      };
+    }>(GRAPHQL_GATEWAY, {
+      operationName: 'getVehicleDetails',
+      query: GET_VEHICLE_DETAILS,
+      variables: null,
+    });
+    return Object.fromEntries(
+      data.currentUser.vehicles.map(({ id, vehicle }) => {
+        const option = (key: string) => vehicle?.mobileConfiguration?.[key]?.optionName ?? null;
+        return [
+          id,
+          {
+            builtOn: vehicle?.actualGeneralAssemblyDate ?? null,
+            trim: option('trimOption'),
+            driveSystem: option('driveSystemOption'),
+            exteriorColor: option('exteriorColorOption'),
+            interiorColor: option('interiorColorOption'),
+            wheels: option('wheelOption'),
+            tonneau: option('tonneauOption'),
+          },
+        ];
+      }),
+    );
+  }
+
+  async getVehicleImageUrls(): Promise<Record<string, VehicleImageUrls>> {
+    type Image = {
+      vehicleId: string;
+      url: string;
+      resolution: string;
+      size: string;
+      design: string;
+      placement: string;
+    };
+    const data = await this.authenticatedRequest<{ getVehicleMobileImages: Image[] }>(
+      GRAPHQL_GATEWAY,
+      {
+        operationName: 'getVehicleImages',
+        query: GET_VEHICLE_IMAGES,
+        variables: { version: '3' },
+      },
+    );
+    // Large @2x renders are 750px across, enough for a card at any density.
+    // Dark designs are drawn for dark backgrounds, which the app always has.
+    const rank = (i: Image) =>
+      (i.design === 'dark' ? 2 : 0) + (i.size === 'large' && i.resolution === '@2x' ? 1 : 0);
+    const best: Record<string, Partial<Record<VehicleView, Image>>> = {};
+    for (const image of data.getVehicleMobileImages) {
+      const view = VEHICLE_VIEWS.find((v) => v === image.placement);
+      if (!view) continue;
+      const views = (best[image.vehicleId] ??= {});
+      const current = views[view];
+      if (!current || rank(image) > rank(current)) views[view] = image;
+    }
+    return Object.fromEntries(
+      Object.entries(best).map(([id, views]) => [
+        id,
+        Object.fromEntries(Object.entries(views).map(([view, i]) => [view, i.url])),
+      ]),
+    );
   }
 
   async getVehicleState(

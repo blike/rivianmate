@@ -16,6 +16,7 @@ import {
   uniqueIndex,
   primaryKey,
 } from 'drizzle-orm/pg-core';
+import type { VehicleDetails, VehicleImageUrls } from '../rivian/types.js';
 
 export const appSettings = pgTable('app_settings', {
   key: text('key').primaryKey(),
@@ -46,6 +47,8 @@ export const vehicles = pgTable('vehicles', {
   model: text('model'),
   modelYear: integer('model_year'),
   supportedFeatures: jsonb('supported_features').$type<string[]>(),
+  details: jsonb('details').$type<VehicleDetails>(),
+  images: jsonb('images').$type<VehicleImageUrls>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

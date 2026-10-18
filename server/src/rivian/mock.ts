@@ -16,6 +16,8 @@ import {
   RivianTokens,
   TimeStampedValue,
   UserInfo,
+  VehicleDetails,
+  VehicleImageUrls,
   VehicleState,
   Wallbox,
 } from './types.js';
@@ -336,6 +338,24 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         },
       ],
     };
+  }
+
+  async getVehicleDetails(): Promise<Record<string, VehicleDetails>> {
+    return {
+      [MOCK_VEHICLE_ID]: {
+        builtOn: '2023-03-14',
+        trim: 'R1S Adventure',
+        driveSystem: 'Quad-motor AWD',
+        exteriorColor: 'Forest Green paint',
+        interiorColor: 'Ocean Coast + Brown Ash Wood',
+        wheels: '21" Road Dark',
+        tonneau: null,
+      },
+    };
+  }
+
+  async getVehicleImageUrls(): Promise<Record<string, VehicleImageUrls>> {
+    return {};
   }
 
   async getVehicleState(_vin: string): Promise<VehicleState> {
