@@ -11,7 +11,6 @@ export const LEGACY_ONLY_FIELDS = [
   'brakeFluidLow',
   'driveMode',
   'gearGuardLocked',
-  'petModeStatus',
   'wiperFluidState',
 ] as const;
 
