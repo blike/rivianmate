@@ -8,8 +8,8 @@ import { Skeleton, SkeletonBlock } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
 import {
   dayLabel,
+  departureComfort,
   formatDuration,
-  formatSeatLevel,
   formatTimeOfDay,
   formatTimeRange,
   formatWait,
@@ -282,25 +282,29 @@ function DepartureRow(props: { departure: DepartureSchedule }) {
   const comfort = [
     d.comfortSettings?.cabinClimateSetTemp != null &&
       `Cabin ${u.formatTemperature(d.comfortSettings.cabinClimateSetTemp)}`,
-    d.comfortSettings?.seatFrontLeftHeat != null &&
-      `Driver seat ${formatSeatLevel(d.comfortSettings.seatFrontLeftHeat).toLowerCase()}`,
-  ].filter(Boolean);
+    ...departureComfort(d.comfortSettings?.surfaces ?? {}, d.comfortSettings?.defrost),
+  ].filter((c): c is string => !!c);
   return (
-    <li className="flex items-baseline justify-between gap-4 py-2">
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{d.name ?? 'Departure'}</span>
-        <span className="block text-xs text-(--text-muted)">
-          {formatWeekDays(d.occurrence?.weekDays)}
-        </span>
-      </span>
-      <span className="text-right">
-        <span className="block text-sm tabular-nums">
+    <li className="py-2">
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="min-w-0 truncate text-sm font-medium">{d.name ?? 'Departure'}</span>
+        <span className="text-sm tabular-nums">
           {formatTimeOfDay(d.occurrence?.timeOfDayMinutes)}
         </span>
-        {comfort.length > 0 && (
-          <span className="block text-xs text-(--text-muted)">{comfort.join(' · ')}</span>
-        )}
-      </span>
+      </div>
+      <div className="text-xs text-(--text-muted)">{formatWeekDays(d.occurrence?.weekDays)}</div>
+      {comfort.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {comfort.map((c) => (
+            <li
+              key={c}
+              className="rounded-full bg-(--surface-2) px-2 py-0.5 text-xs text-(--text-secondary)"
+            >
+              {c}
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }

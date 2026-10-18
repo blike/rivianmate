@@ -41,8 +41,23 @@ export const GET_CHARGING_SCHEDULE = `query GetChargingSchedule($vehicleId: Stri
 /** Parallax topics ("RVMs") as base64 protobuf; see parallax.ts. */
 export const PARALLAX_MESSAGES_SUBSCRIPTION = `subscription ParallaxMessages($vehicleId: String!, $rvms: [String!]) { parallaxMessages(vehicleId: $vehicleId, rvms: $rvms) { payload timestamp rvm } }`;
 
+/**
+ * A departure's seat and wheel fields (in `surfaceHeatVentLevels`). Rivian's
+ * schema has the same ones for every vehicle; those without a third row
+ * send it as null.
+ */
+export const DEPARTURE_SURFACES = [
+  'frontLeftSeat',
+  'frontRightSeat',
+  'rearLeftSeat',
+  'rearRightSeat',
+  'thirdRowLeftSeat',
+  'thirdRowRightSeat',
+  'steeringWheel',
+];
+
 /** Departure schedules are only exposed as a subscription. */
-export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSchedules($vehicleID: String!) { vehicleDepartureSchedules(vehicleId: $vehicleID) { id name isEnabled occurrence { __typename ... on RepeatsWeekly { days startsAtMin } } departureSettings { comfortSettings { surfaceHeatVentLevels { frontLeftSeat frontRightSeat } cabinTempCelsius frontDefogDefrost } } } }`;
+export const DEPARTURE_SCHEDULES_SUBSCRIPTION = `subscription vehicleDepartureSchedules($vehicleID: String!) { vehicleDepartureSchedules(vehicleId: $vehicleID) { id name isEnabled occurrence { __typename ... on RepeatsWeekly { days startsAtMin } } departureSettings { comfortSettings { surfaceHeatVentLevels { ${DEPARTURE_SURFACES.join(' ')} } cabinTempCelsius frontDefogDefrost } } } }`;
 
 /** Account-wide completed charging sessions (charging gateway). */
 export const GET_COMPLETED_SESSION_SUMMARIES = `query getCompletedSessionSummaries { getCompletedSessionSummaries { transactionId startInstant endInstant totalEnergyKwh rangeAddedKm vendor paidTotal chargerType currencyCode city vehicleId isPublic isHomeCharger } }`;

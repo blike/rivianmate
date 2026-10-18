@@ -107,8 +107,8 @@ export interface DepartureSchedule {
     timeOfDayMinutes: number | null;
   } | null;
   comfortSettings: {
-    seatFrontLeftHeat: string | number | null;
-    seatFrontRightHeat: string | number | null;
+    /** Heat or vent level per seat and the wheel, by Rivian's field (`frontLeftSeat`, `steeringWheel`…), as set. */
+    surfaces: Record<string, string>;
     cabinClimateSetTemp: number | null;
     defrost: boolean | string | null;
   } | null;

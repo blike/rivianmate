@@ -14,7 +14,12 @@ describe('mapDepartureSchedules', () => {
           departureSettings: {
             shouldOverrideChargeSchedule: false,
             comfortSettings: {
-              surfaceHeatVentLevels: { frontLeftSeat: 'Heat2', frontRightSeat: 'Off' },
+              surfaceHeatVentLevels: {
+                frontLeftSeat: 'Heat2',
+                frontRightSeat: 'Off',
+                thirdRowLeftSeat: null,
+                steeringWheel: 'On',
+              },
               cabinTempCelsius: 21.5,
               frontDefogDefrost: 'Defrost',
             },
@@ -33,8 +38,7 @@ describe('mapDepartureSchedules', () => {
           timeOfDayMinutes: 450,
         },
         comfortSettings: {
-          seatFrontLeftHeat: 'Heat2',
-          seatFrontRightHeat: 'Off',
+          surfaces: { frontLeftSeat: 'Heat2', frontRightSeat: 'Off', steeringWheel: 'On' },
           cabinClimateSetTemp: 21.5,
           defrost: 'Defrost',
         },
@@ -48,7 +52,16 @@ describe('mapDepartureSchedules', () => {
     expect(DEPARTURE_SCHEDULES_SUBSCRIPTION).toContain('isEnabled');
     // `occurrence` is a union (ScheduledOccurrence): fields need a fragment.
     expect(DEPARTURE_SCHEDULES_SUBSCRIPTION).toContain('... on RepeatsWeekly { days startsAtMin }');
-    for (const stale of [' enabled ', 'weekDays', 'timeOfDayMinutes', 'cabinClimateSetTemp']) {
+    expect(DEPARTURE_SCHEDULES_SUBSCRIPTION).toContain(
+      'surfaceHeatVentLevels { frontLeftSeat frontRightSeat rearLeftSeat rearRightSeat thirdRowLeftSeat thirdRowRightSeat steeringWheel }',
+    );
+    for (const stale of [
+      ' enabled ',
+      'weekDays',
+      'timeOfDayMinutes',
+      'cabinClimateSetTemp',
+      'rearCenterSeat',
+    ]) {
       expect(DEPARTURE_SCHEDULES_SUBSCRIPTION).not.toContain(stale);
     }
   });
