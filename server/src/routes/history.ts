@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -54,6 +54,13 @@ function trackToleranceM(from: Date, to: Date): number {
   const days = (to.getTime() - from.getTime()) / 86400_000;
   return days <= 7 ? 5 : days <= 31 ? 10 : 20;
 }
+
+/**
+ * A finished drive that moved less than this is the vehicle shifting in and
+ * out of gear in place (a gear check, nudging forward in the driveway), not a
+ * trip: it's kept but left out of the drive list and everything built on it.
+ */
+const MIN_DRIVE_KM = 0.1;
 
 const rangeQuerySchema = z.object({
   from: z.coerce.date().default(() => new Date(Date.now() - 86400_000)),
@@ -188,7 +195,17 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
       const rows = await ctx.db
         .select()
         .from(drives)
-        .where(eq(drives.vehicleId, request.params.id))
+        .where(
+          and(
+            eq(drives.vehicleId, request.params.id),
+            // A drive under way, or one with no distance, still shows.
+            or(
+              isNull(drives.endedAt),
+              isNull(drives.distanceKm),
+              gte(drives.distanceKm, MIN_DRIVE_KM),
+            ),
+          ),
+        )
         .orderBy(desc(drives.startedAt))
         .limit(200);
       // Drives recorded before elevation tracking: compute once and keep.

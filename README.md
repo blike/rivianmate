@@ -172,7 +172,7 @@ Logs go to the container's output (`docker compose logs rivianmate`; add `-t` fo
 never include tokens, passwords, your email or vehicle locations.
 
 When reporting a bug, set `LOG_LEVEL=debug`, reproduce the problem, and attach the output of
-`docker compose logs rivianmate`.
+`docker compose logs rivianmate` (or the file from **Settings → Logs → Download**).
 
 ### Notifications
 

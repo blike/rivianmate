@@ -1,6 +1,7 @@
-import { pino, stdSerializers, type Logger } from 'pino';
+import { multistream, pino, stdSerializers, type Logger } from 'pino';
 import pretty from 'pino-pretty';
 import type { Config } from './config.js';
+import type { LogBuffer } from './log-buffer.js';
 import { describeRivianError } from './rivian/types.js';
 
 export type { Logger };
@@ -44,6 +45,8 @@ export function createLogger(
   config: Pick<Config, 'LOG_LEVEL' | 'LOG_FORMAT'>,
   /** Where lines go; stdout by default. */
   destination: NodeJS.WritableStream = process.stdout,
+  /** Also keeps recent lines here, for the web UI. */
+  buffer?: LogBuffer,
 ): Logger {
   const options = {
     level: config.LOG_LEVEL,
@@ -51,19 +54,27 @@ export function createLogger(
     serializers: { err: serializeError },
     base: undefined,
   };
-  if (config.LOG_FORMAT === 'json') return pino(options, destination);
+  const out =
+    config.LOG_FORMAT === 'json'
+      ? destination
+      : pretty({
+          // Synchronous, so the last line before process.exit() isn't lost.
+          sync: true,
+          // No timestamp: Docker adds its own to every line (docker compose logs -t).
+          ignore: 'time,component',
+          // Fields on the message's line; errors still get their stack below it.
+          singleLine: true,
+          messageFormat,
+          destination,
+        });
+  if (!buffer) return pino(options, out);
+  // Each stream takes every line the logger emits; LOG_LEVEL does the filtering.
   return pino(
     options,
-    pretty({
-      // Synchronous, so the last line before process.exit() isn't lost.
-      sync: true,
-      // No timestamp: Docker adds its own to every line (docker compose logs -t).
-      ignore: 'time,component',
-      // Fields on the message's line; errors still get their stack below it.
-      singleLine: true,
-      messageFormat,
-      destination,
-    }),
+    multistream([
+      { level: 'trace', stream: out },
+      { level: 'trace', stream: buffer },
+    ]),
   );
 }
 

@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useRivianDiagnostics, useStatus, useVehicles } from '../../api/hooks';
 import { AboutSection } from './AboutSection';
 import { ApiConnectionsPanel } from './ApiConnectionsPanel';
 import { GeneralSection } from './GeneralSection';
 import { LocationsPanel } from './LocationsPanel';
-import { CarIcon, PinIcon, BellIcon, PulseIcon, LockIcon, InfoIcon } from './NavIcons';
+import { LogsSection } from './LogsSection';
+import { CarIcon, PinIcon, BellIcon, PulseIcon, LockIcon, LogIcon, InfoIcon } from './NavIcons';
 import { NotificationsPanel } from './NotificationsPanel';
 import { SecuritySection } from './SecuritySection';
 
@@ -41,6 +42,12 @@ const sections = [
     icon: <LockIcon />,
   },
   {
+    id: 'logs',
+    label: 'Logs',
+    description: 'Current logging level:',
+    icon: <LogIcon />,
+  },
+  {
     id: 'about',
     label: 'About',
     description: 'Version, build and project links.',
@@ -60,6 +67,7 @@ export function SettingsPage() {
     isError: diagnosticsError,
   } = useRivianDiagnostics(section.id === 'api');
   const { data: vehicles } = useVehicles();
+  const [logLevel, setLogLevel] = useState<string | null>(null);
   // On phones the nav is a scrolling strip; keep the open section in view.
   const activeLink = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
@@ -99,7 +107,10 @@ export function SettingsPage() {
       <section aria-label={section.label} className="min-w-0 max-w-3xl space-y-6">
         <header>
           <h2 className="text-xl font-semibold tracking-tight">{section.label}</h2>
-          <p className="mt-1 text-sm text-(--text-secondary)">{section.description}</p>
+          <p className="mt-1 text-sm text-(--text-secondary)">
+            {section.description}
+            {section.id === 'logs' && logLevel && <> {logLevel.toUpperCase()}</>}
+          </p>
         </header>
         {section.id === 'general' && (
           <GeneralSection
@@ -121,6 +132,7 @@ export function SettingsPage() {
           />
         )}
         {section.id === 'security' && <SecuritySection />}
+        {section.id === 'logs' && <LogsSection onServerLevel={setLogLevel} />}
         {section.id === 'about' && <AboutSection />}
       </section>
     </div>

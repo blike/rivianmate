@@ -1,6 +1,7 @@
 import type { Config } from './config.js';
 import type { TokenCrypto } from './crypto.js';
 import type { Db } from './db/client.js';
+import type { LogBuffer } from './log-buffer.js';
 import type { Logger } from './logger.js';
 import type { RivianApi } from './rivian/client.js';
 import type { RivianGovernor } from './rivian/governor.js';
@@ -28,6 +29,8 @@ export interface PendingConnect {
 export interface AppContext {
   config: Config;
   log: Logger;
+  /** Recent log lines, for Settings → Logs. */
+  logs: LogBuffer;
   db: Db;
   crypto: TokenCrypto;
   tokenStore: TokenStore;
