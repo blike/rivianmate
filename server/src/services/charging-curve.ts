@@ -199,4 +199,15 @@ export function liveCurvePoint(
   return { source: last?.source ?? 'graph', ts, powerKw: numeric(live?.power?.value), soc };
 }
 
+/**
+ * The curve with its first point at the battery level it charged from, when
+ * that point has none: Rivian's first graph bar often carries power but no
+ * SoC, which leaves the battery line starting a bar late.
+ */
+export function withOpeningSoc(curve: readonly CurvePoint[], soc: number | null): CurvePoint[] {
+  const first = curve[0];
+  if (!first || first.soc != null || soc == null) return [...curve];
+  return [{ ...first, soc }, ...curve.slice(1)];
+}
+
 const numeric = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);

@@ -20,6 +20,7 @@ import {
   estimatedForecast,
   forecastForDisplay,
   liveCurvePoint,
+  withOpeningSoc,
 } from '../services/charging-curve.js';
 
 /** Tolerance for Rivian's clock running ahead of the server's. */
@@ -79,6 +80,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
           startedAt: chargingSessions.startedAt,
           endedAt: chargingSessions.endedAt,
           chargingSince: chargingSessions.chargingSince,
+          startSoc: chargingSessions.startSoc,
         })
         .from(chargingSessions)
         .where(eq(chargingSessions.id, sessionId));
@@ -95,10 +97,15 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
             session.endedAt,
           )
         : null;
-      const curve = curveForDisplay(
+      const clipped = curveForDisplay(
         rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
         window,
       );
+      // Starts at the level the session shows it charging from.
+      const curve =
+        session && clipped[0] && clipped[0].soc == null
+          ? withOpeningSoc(clipped, await socAt(ctx, session, clipped[0].ts))
+          : clipped;
       // Only while it's actually charging: stopped but still plugged in, or
       // unplugged, there's nothing left to forecast.
       const charging = session != null && session.endedAt == null && session.chargingSince != null;
@@ -238,6 +245,30 @@ async function socCurveFromState(
     start,
     end,
   ).map((r) => ({ ts: new Date(r.at).toISOString(), powerKw: null, soc: r.soc }));
+}
+
+/**
+ * Battery level at a moment in a session: the last recorded reading at or
+ * before it, else the level the session started at.
+ */
+async function socAt(
+  ctx: AppContext,
+  session: { vehicleId: string; startedAt: Date; startSoc: number | null },
+  at: Date,
+): Promise<number | null> {
+  const history = await stateTimeline(
+    ctx.db,
+    session.vehicleId,
+    ['batteryLevel'],
+    session.startedAt,
+    at,
+  );
+  const reading = socReadingsBetween(
+    history.map((h) => h.state),
+    Number.NEGATIVE_INFINITY,
+    at.getTime(),
+  ).at(-1);
+  return reading?.soc ?? session.startSoc;
 }
 
 /** The latest pack capacity recorded for the vehicle (kWh). */
