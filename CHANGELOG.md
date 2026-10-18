@@ -1,5 +1,98 @@
 # Changelog
 
+## v0.8.0 — 2026-10-18
+
+RivianMate `v0.8.0` adds a **vehicle state history** and a **trip-frequency map** to the History
+page, a **live log view** in Settings, and **structured logging**. It also moves history to a **new
+storage format** that records each change rather than whole snapshots.
+
+> [!IMPORTANT]
+>
+> **Back up your database before updating.** This release converts your existing history to a new
+> format and then deletes the old tables. The conversion can't be undone, so the only way back to
+> v0.7.0 is restoring a backup taken beforehand. With the bundled `docker-compose.yml`:
+>
+> ```sh
+> docker compose exec -T postgres pg_dump -U rivianmate -Fc rivianmate > rivianmate-v0.7.0.dump
+> ```
+>
+> Keep your existing `APP_SECRET` too: stored Rivian tokens can't be read without it. See
+> [Migrations](#migrations) for details.
+
+### New features
+
+#### History
+
+- A **Vehicle state** panel shows when the vehicle was driving, charging, updating, awake or asleep:
+  one row per day for 7 and 30 days, or a single bar for 24 hours and 90 days. The legend totals the
+  time in each state, and hovering or tapping a segment shows its start, end and length. #52
+- The location map draws each drive as its own faint line, so roads you drive more often build up to
+  full color. #52
+
+#### Logs
+
+- **Settings → Logs** shows the server's recent log lines live, with level and text filters and a
+  download as a `.log` file. Lines are redacted the same way as the container output. #53
+- Logging has levels and redaction: tokens, passwords, emails and coordinates never appear in the
+  output. `LOG_LEVEL` (default `info`) sets how much is logged, and `LOG_FORMAT=json` gives one
+  object per line for a log collector. At `info`, the log reads as a timeline of startup, stream
+  connection, drives, charges and alerts. #51
+
+### Improvements
+
+- History is stored as each field's changes of value, with a heartbeat every 15 minutes while the
+  vehicle is reporting, instead of a full snapshot of every field at every update. Parallax messages
+  are archived compactly and rolled up by the hour. Existing history is converted in the background
+  after upgrading. #54
+- The charging curve marks the charge limit the session was charging toward. #52
+- Drives that moved less than 100 m, such as shifting in and out of gear in place, are left out of
+  the drive list, history totals and the dashboard. Nothing is deleted. #53
+- Errors that were silently ignored are now logged, such as unreadable notification settings or
+  stored tokens that can't be decrypted. #51
+- The location history API simplifies each drive's track rather than keeping every nth point, so
+  repeat trips line up on the map. #52
+
+### Fixes
+
+- Stopping the container no longer hangs for 10 seconds while a browser tab is open. Before, the
+  open live-update stream kept the server from shutting down until Docker killed it, leaving any
+  drive in progress open. #51
+- The dashboard's last drive card wraps a long route onto a second line instead of cutting it off.
+  #52
+
+### Migrations
+
+This release includes one database migration, which runs automatically on startup:
+
+- `0017_history_stores`: adds the new history and Parallax archive tables, a short vehicle number
+  for them, and columns for each vehicle's build details and renders
+
+After the migration, existing state snapshots and the Parallax log are converted into the new tables
+in the background, then the old tables are dropped. This can take a few minutes on a large database;
+history fills in as it runs. The conversion is one-way: to roll back to v0.7.0, restore the database
+backup as well as the image.
+
+**Back up Postgres before updating** (see the command at the top of these notes), preserve your
+existing `APP_SECRET` and database volume, then run `docker compose pull && docker compose up -d`.
+
+### API
+
+- New: `GET /api/vehicles/:id/state-spans` for the vehicle state panel. #52
+- New: `GET /api/logs/stream`, an authenticated event stream of log lines. #53
+- Location points include the `driveId` they were recorded on. #52
+- Charging sessions include `socLimit`, the charge limit when the session ended (or now, while it's
+  under way). #52
+
+### Updates
+
+- Vehicle discovery also fetches each vehicle's build date and factory configuration (trim, drive
+  system, colors, wheels) and its renders, for upcoming views. #54
+- `console` output is replaced by a logger with a child per component (`app`, `monitor`, `ws`,
+  `drive`, `charging`, `notify`, …). #51
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.7.0...v0.8.0](https://github.com/blike/rivianmate/compare/v0.7.0...v0.8.0)
+
 ## v0.7.0 — 2026-10-17
 
 RivianMate `v0.7.0` brings **improved R2 support**, **saved locations** with their own charging
