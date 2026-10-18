@@ -9,10 +9,8 @@ interface RawDepartureSchedule {
   occurrence?: { __typename?: string; days?: string[] | null; startsAtMin?: number | null } | null;
   departureSettings?: {
     comfortSettings?: {
-      surfaceHeatVentLevels?: {
-        frontLeftSeat?: string | null;
-        frontRightSeat?: string | null;
-      } | null;
+      /** One level per seat and the wheel, e.g. `{ frontLeftSeat: 'Heat3' }`. */
+      surfaceHeatVentLevels?: Record<string, string | null> | null;
       cabinTempCelsius?: number | null;
       frontDefogDefrost?: string | null;
     } | null;
@@ -39,8 +37,11 @@ export function mapDepartureSchedules(raw: unknown): DepartureSchedule[] {
           : null,
         comfortSettings: comfort
           ? {
-              seatFrontLeftHeat: comfort.surfaceHeatVentLevels?.frontLeftSeat ?? null,
-              seatFrontRightHeat: comfort.surfaceHeatVentLevels?.frontRightSeat ?? null,
+              surfaces: Object.fromEntries(
+                Object.entries(comfort.surfaceHeatVentLevels ?? {}).filter(
+                  (e): e is [string, string] => typeof e[1] === 'string' && e[0] !== '__typename',
+                ),
+              ),
               cabinClimateSetTemp: comfort.cabinTempCelsius ?? null,
               defrost: comfort.frontDefogDefrost ?? null,
             }

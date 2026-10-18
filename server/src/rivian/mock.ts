@@ -505,8 +505,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
           timeOfDayMinutes: 7 * 60 + 30,
         },
         comfortSettings: {
-          seatFrontLeftHeat: 'level_2',
-          seatFrontRightHeat: null,
+          surfaces: { frontLeftSeat: 'Heat2', frontRightSeat: 'Off', steeringWheel: 'On' },
           cabinClimateSetTemp: 21,
           defrost: false,
         },

@@ -35,6 +35,73 @@ export function formatSeatLevel(level: string | number | null | undefined): stri
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** Rivian's seat fields in a departure, row by row, and what to call each seat. */
+const SEAT_ROWS: { row: string; seats: [field: string, label: string][] }[] = [
+  {
+    row: 'Front',
+    seats: [
+      ['frontLeftSeat', 'Driver'],
+      ['frontRightSeat', 'Passenger'],
+    ],
+  },
+  {
+    row: 'Rear',
+    seats: [
+      ['rearLeftSeat', 'Rear left'],
+      ['rearRightSeat', 'Rear right'],
+    ],
+  },
+  {
+    row: 'Third row',
+    seats: [
+      ['thirdRowLeftSeat', 'Third row left'],
+      ['thirdRowRightSeat', 'Third row right'],
+    ],
+  },
+];
+
+const isOff = (level: string | undefined) =>
+  level == null || /^(off|none|unknown)$/i.test(level.trim());
+
+const level = (value: string) => formatSeatLevel(value).toLowerCase();
+
+/**
+ * A departure's seats, wheel and defrost as short tags, a row at a time:
+ * "All seats heat 3", or "Front heat 3", "Rear heat 2"; a row set unevenly
+ * names its seats ("Driver heat 3", "Passenger heat 1"). Seats off are left out.
+ */
+export function departureComfort(
+  surfaces: Record<string, string>,
+  defrost?: boolean | string | null,
+): string[] {
+  const rows = SEAT_ROWS.map(({ row, seats }) => {
+    const present = seats.filter(([field]) => field in surfaces);
+    const on = present.filter(([field]) => !isOff(surfaces[field]));
+    const levels = new Set(on.map(([field]) => level(surfaces[field]!)));
+    return { row, present, on, levels };
+  }).filter((r) => r.present.length > 0);
+
+  const parts: string[] = [];
+  const all = new Set(rows.flatMap((r) => [...r.levels]));
+  if (rows.length > 1 && all.size === 1 && rows.every((r) => r.on.length === r.present.length)) {
+    parts.push(`All seats ${[...all][0]}`);
+  } else {
+    for (const r of rows) {
+      if (!r.on.length) continue;
+      if (r.levels.size === 1 && r.on.length === r.present.length && r.present.length > 1) {
+        parts.push(`${r.row} ${[...r.levels][0]}`);
+      } else {
+        for (const [field, label] of r.on) parts.push(`${label} ${level(surfaces[field]!)}`);
+      }
+    }
+  }
+  // The wheel has one level, so its number says nothing.
+  const wheel = surfaces.steeringWheel;
+  if (!isOff(wheel)) parts.push(/vent|cool/i.test(wheel!) ? 'Wheel cool' : 'Wheel heat');
+  if (defrost === true || (typeof defrost === 'string' && !isOff(defrost))) parts.push('Defrost');
+  return parts;
+}
+
 /** Time until something: "45m", "9h 41m", or "2d 9h" past a day. */
 export function formatWait(seconds: number): string {
   const minutes = Math.max(0, Math.round(seconds / 60));

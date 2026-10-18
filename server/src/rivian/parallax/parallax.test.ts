@@ -5,6 +5,8 @@ import {
   RVM_CABIN_TEMPERATURES,
   RVM_CLOSURES,
   RVM_DEFROST,
+  RVM_PET_MODE,
+  RVM_SEAT_CONDITIONING,
   RVM_GEAR,
   RVM_LOCKS,
   RVM_LOW_VOLTAGE_BATTERY,
@@ -854,6 +856,44 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_DEFROST, int(1, 2))).toEqual({ defrostDefogStatus: v('On') });
     expect(read(RVM_DEFROST, int(1, 4))).toEqual({ defrostDefogStatus: v('Off') });
     expect(read(RVM_DEFROST, int(1, 3))).toBeNull();
+  });
+
+  it('reads pet mode (an empty message is off), spelled as legacy does', () => {
+    expect(read(RVM_PET_MODE, int(1, 1))).toEqual({ petModeStatus: v('On') });
+    expect(read(RVM_PET_MODE, [])).toEqual({ petModeStatus: v('Off') });
+    expect(read(RVM_PET_MODE, int(1, 2))).toEqual({ petModeStatus: v('Disabled') });
+    expect(read(RVM_PET_MODE, int(1, 3))).toBeNull();
+  });
+
+  it('reads seat and steering wheel heat and vents by entry, wherever they are', () => {
+    const entry = (kind: number, position: number, level?: number) =>
+      message(1, [...int(1, kind), ...int(2, position), ...(level ? int(3, level) : [])]);
+    // As an R1S sent it (2026-10-18), with levels set and the order shuffled.
+    expect(
+      read(RVM_SEAT_CONDITIONING, [
+        ...entry(5, 2, 3),
+        ...entry(1, 1, 1),
+        ...entry(5, 1, 2),
+        ...entry(7, 1),
+        ...entry(7, 2),
+        ...entry(8, 1),
+        ...entry(10, 1, 3),
+        ...entry(11, 1),
+        ...entry(13, 1, 1),
+      ]),
+    ).toEqual({
+      seatFrontLeftVent: v('Level_3'),
+      steeringWheelHeat: v('Level_1'),
+      seatFrontLeftHeat: v('Level_2'),
+      seatFrontRightHeat: v('Off'),
+      seatFrontRightVent: v('Off'),
+      seatRearLeftHeat: v('Off'),
+      seatRearRightHeat: v('Level_3'),
+      seatThirdRowLeftHeat: v('Off'),
+      seatThirdRowRightHeat: v('Level_1'),
+    });
+    // An unknown level isn't read; an unknown surface is skipped.
+    expect(read(RVM_SEAT_CONDITIONING, [...entry(1, 1, 4), ...entry(99, 1, 1)])).toBeNull();
   });
 
   it('reads battery state and the charge limit as legacy battery fields', () => {

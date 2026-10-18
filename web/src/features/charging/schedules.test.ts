@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  departureComfort,
   dayLabel,
   formatDuration,
   formatSeatLevel,
@@ -125,5 +126,55 @@ describe('formatWait', () => {
     expect(formatWait(45 * 60)).toBe('45m');
     expect(formatWait((9 * 60 + 41) * 60)).toBe('9h 41m');
     expect(formatWait((56 * 60 + 38) * 60)).toBe('2d 8h');
+  });
+});
+
+describe('departureComfort', () => {
+  const six = {
+    frontLeftSeat: 'Heat3',
+    frontRightSeat: 'Heat3',
+    rearLeftSeat: 'Heat3',
+    rearRightSeat: 'Heat3',
+    thirdRowLeftSeat: 'Heat3',
+    thirdRowRightSeat: 'Heat3',
+  };
+
+  it('sums up every seat at one level, the wheel and defrost', () => {
+    expect(departureComfort({ ...six, steeringWheel: 'On' }, 'Defrost')).toEqual([
+      'All seats heat 3',
+      'Wheel heat',
+      'Defrost',
+    ]);
+  });
+
+  it('goes row by row, naming seats only where a row is uneven', () => {
+    expect(
+      departureComfort(
+        {
+          ...six,
+          rearLeftSeat: 'Heat2',
+          rearRightSeat: 'Heat2',
+          thirdRowLeftSeat: 'Heat2',
+          thirdRowRightSeat: 'Heat2',
+          steeringWheel: 'Heat1',
+        },
+        'Defrost',
+      ),
+    ).toEqual(['Front heat 3', 'Rear heat 2', 'Third row heat 2', 'Wheel heat', 'Defrost']);
+    expect(
+      departureComfort({
+        ...six,
+        frontRightSeat: 'Heat1',
+        rearLeftSeat: 'Off',
+        rearRightSeat: 'Vent1',
+        thirdRowLeftSeat: 'Off',
+        thirdRowRightSeat: 'Off',
+      }),
+    ).toEqual(['Driver heat 3', 'Passenger heat 1', 'Rear right vent 1']);
+  });
+
+  it('is empty with nothing on', () => {
+    expect(departureComfort({ frontLeftSeat: 'Off' }, 'Off')).toEqual([]);
+    expect(departureComfort({})).toEqual([]);
   });
 });
