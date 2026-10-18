@@ -7,6 +7,7 @@ import {
   estimatedForecast,
   liveCurvePoint,
   forecastForDisplay,
+  withOpeningSoc,
 } from './charging-curve.js';
 
 const p = (
@@ -227,5 +228,27 @@ describe('clipToCharging', () => {
     expect(curveForDisplay(graph, window).map((q) => [q.ts.getTime(), q.soc])).toEqual(
       clipToCharging(graph, window).map((q) => [q.ts.getTime(), q.soc]),
     );
+  });
+});
+
+describe('withOpeningSoc', () => {
+  it("fills the first point's missing SoC with the level it charged from", () => {
+    // Rivian's first graph bar: power at the plug-in moment, no battery level.
+    const curve = [
+      p('graph', '2026-10-18T06:59:00Z', 7.3, null),
+      p('graph', '2026-10-18T07:27:31Z', 7.4, 52),
+    ];
+    expect(withOpeningSoc(curve, 48.7)).toEqual([
+      p('graph', '2026-10-18T06:59:00Z', 7.3, 48.7),
+      curve[1],
+    ]);
+  });
+
+  it('keeps a recorded first SoC, and an unknown level changes nothing', () => {
+    const recorded = [p('graph', '2026-10-18T06:59:00Z', 7.3, 49)];
+    expect(withOpeningSoc(recorded, 48.7)).toEqual(recorded);
+    const missing = [p('graph', '2026-10-18T06:59:00Z', 7.3, null)];
+    expect(withOpeningSoc(missing, null)).toEqual(missing);
+    expect(withOpeningSoc([], 48.7)).toEqual([]);
   });
 });
