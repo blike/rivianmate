@@ -45,12 +45,19 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         .limit(200);
       const places = await placeContext(ctx);
       const capacityKwh = await packCapacityKwh(ctx, request.params.id);
+      const limits = await sessionLimits(ctx, rows);
       const oldest = rows.at(-1);
       const spans = oldest
         ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date())
         : [];
       return rows.map((row) =>
-        toSessionDto(row, places, chargingWindow(spans, row.startedAt, row.endedAt), capacityKwh),
+        toSessionDto(
+          row,
+          places,
+          chargingWindow(spans, row.startedAt, row.endedAt),
+          capacityKwh,
+          limits.get(row.id) ?? null,
+        ),
       );
     },
   );
@@ -127,6 +134,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         await placeContext(ctx),
         null,
         await packCapacityKwh(ctx, updated[0].vehicleId),
+        (await sessionLimits(ctx, updated)).get(updated[0].id) ?? null,
       );
     },
   );
@@ -239,6 +247,31 @@ async function packCapacityKwh(ctx: AppContext, vehicleId: string): Promise<numb
 }
 
 /**
+ * Each session's charge limit: the last one recorded at or before it ended
+ * (or now, while it's under way), which is what it was charging toward.
+ */
+async function sessionLimits(
+  ctx: AppContext,
+  sessions: readonly { id: number }[],
+): Promise<Map<number, number>> {
+  if (sessions.length === 0) return new Map();
+  const rows = await ctx.db.execute<{ id: number; soc_limit: number | null }>(sql`
+    SELECT s.id, (
+      SELECT v.battery_limit FROM vehicle_state_snapshots v
+      WHERE v.vehicle_id = s.vehicle_id AND v.battery_limit IS NOT NULL
+        AND v.ts <= COALESCE(s.ended_at, now())
+      ORDER BY v.ts DESC LIMIT 1
+    )::float8 AS soc_limit
+    FROM charging_sessions s
+    WHERE s.id IN (${sql.join(
+      sessions.map((s) => sql`${s.id}`),
+      sql`, `,
+    )})
+  `);
+  return new Map(rows.flatMap((r) => (r.soc_limit == null ? [] : [[Number(r.id), r.soc_limit]])));
+}
+
+/**
  * Energy the battery gained over a session, from its battery levels and
  * the pack's capacity: what reached the pack, so a little under what the
  * charger delivered.
@@ -257,6 +290,7 @@ function toSessionDto(
   places: PlaceContext,
   charging: { from: Date; to: Date } | null = null,
   capacityKwh: number | null = null,
+  socLimit: number | null = null,
 ): ChargingSessionDto {
   const place = sessionPlace(row, places.locations, places.wallboxes);
   const { location, isHome } = place;
@@ -301,5 +335,6 @@ function toSessionDto(
     location: location && { id: location.id, name: location.name, isHome: location.isHome },
     estimatedCost,
     estimatedEnergyKwh,
+    socLimit,
   };
 }

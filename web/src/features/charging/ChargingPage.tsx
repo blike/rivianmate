@@ -99,6 +99,7 @@ export function ChargingPage(props: { vehicleId: string }) {
         >
           <CurveChart
             curve={curve}
+            limit={session?.socLimit}
             loading={sessionsPending || (session != null && curvePending)}
             notStarted={
               session != null &&

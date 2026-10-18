@@ -34,7 +34,12 @@ export function ActivityCard(props: {
 }
 
 /** One line naming where: truncated rather than wrapped, with a quieter note on the right. */
-export function ActivityLine(props: { children: ReactNode; note?: ReactNode }) {
+export function ActivityLine(props: {
+  children: ReactNode;
+  note?: ReactNode;
+  /** Wrap onto more lines rather than cut off, like a route's two places. */
+  wrap?: boolean;
+}) {
   const loading = useLoading();
   return (
     <div className="flex min-w-0 items-baseline gap-2 text-base font-medium">
@@ -45,7 +50,15 @@ export function ActivityLine(props: { children: ReactNode; note?: ReactNode }) {
         </span>
       ) : (
         <>
-          <span className="min-w-0 flex-1 truncate">{props.children}</span>
+          <span
+            className={
+              props.wrap
+                ? 'flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2'
+                : 'min-w-0 flex-1 truncate'
+            }
+          >
+            {props.children}
+          </span>
           {props.note && (
             <span className="shrink-0 text-xs font-normal tabular-nums text-(--text-muted)">
               {props.note}

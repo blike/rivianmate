@@ -6,6 +6,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -31,6 +32,15 @@ export interface TrendSeries {
   connectNulls?: boolean;
 }
 
+/** A labelled horizontal line at a fixed value, e.g. a limit. */
+export interface TrendReference {
+  y: number;
+  label: string;
+  color: string;
+  /** Against the right Y axis rather than the left. */
+  right?: boolean;
+}
+
 type Row = Record<string, number | null>;
 
 /** Small chart shared by drive, charging and health views. */
@@ -50,6 +60,7 @@ export function TrendChart(props: {
   leftUnit?: string;
   rightUnit?: string;
   height?: number;
+  references?: TrendReference[];
   /** Index into `data` of the point under the pointer; null when it leaves. */
   onHover?: (index: number | null) => void;
 }) {
@@ -158,6 +169,23 @@ export function TrendChart(props: {
               );
             }}
           />
+          {props.references?.map((r) => (
+            <ReferenceLine
+              key={r.label}
+              y={r.y}
+              yAxisId={r.right ? 'right' : 'left'}
+              stroke={r.color}
+              strokeDasharray="4 4"
+              strokeOpacity={0.8}
+              ifOverflow="extendDomain"
+              label={{
+                value: r.label,
+                position: 'insideTopLeft',
+                fill: 'var(--text-muted)',
+                fontSize: 11,
+              }}
+            />
+          ))}
           {props.series.length > 1 && (
             <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
           )}

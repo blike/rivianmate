@@ -4,13 +4,14 @@ import { api } from '../../api/client';
 import { useChargingSessions, useDrives } from '../../api/hooks';
 import { ContentFrame, LoadingScope } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
-import { VehicleMap } from '../../components/VehicleMap';
+import { TRIPS_LEGEND, VehicleMap } from '../../components/VehicleMap';
 import { isPosition } from '../../lib/geo';
 import { DistancePanel } from './DistancePanel';
-import { activityBands, periodSummary, positionAt, rangeWindow } from './history';
+import { activityBands, periodSummary, positionAt, rangeWindow, tripLines } from './history';
 import { MetricChart } from './MetricChart';
 import { RANGES, METRICS } from './options';
 import { Segmented } from './Segmented';
+import { StatePanel } from './StatePanel';
 import { SummaryCard } from './SummaryCard';
 
 export function HistoryPage(props: { vehicleId: string }) {
@@ -43,11 +44,11 @@ export function HistoryPage(props: { vehicleId: string }) {
         .map((p) => ({ ts: Date.parse(p.ts), lat: p.lat, lon: p.lon })),
     [trail],
   );
-  const trailPositions = useMemo(
-    () => fixes.map((p) => [p.lat, p.lon] as [number, number]),
-    [fixes],
+  const trips = useMemo(
+    () => tripLines((trail ?? []).filter((p) => isPosition(p.lat, p.lon))),
+    [trail],
   );
-  const lastPosition = trailPositions.at(-1);
+  const lastPosition = fixes.at(-1);
   // Hovering the chart marks where the vehicle was at that moment.
   const [hoverTs, setHoverTs] = useState<number | null>(null);
   const hoverPosition = hoverTs != null ? positionAt(fixes, hoverTs) : null;
@@ -97,18 +98,27 @@ export function HistoryPage(props: { vehicleId: string }) {
         />
       </Panel>
 
-      <Panel title="Location history">
+      <Panel
+        title="Location history"
+        action={
+          <span className="flex items-center gap-1.5 text-xs text-(--text-muted)">
+            Once
+            <span className="h-2 w-16 rounded-full" style={{ background: TRIPS_LEGEND }} />
+            Often
+          </span>
+        }
+      >
         <ContentFrame
           height="24rem"
           loading={trailPending}
-          empty={trailPositions.length === 0}
+          empty={fixes.length === 0}
           emptyText="No location points in this period."
         >
           {lastPosition && (
             <VehicleMap
-              lat={lastPosition[0]}
-              lon={lastPosition[1]}
-              trail={trailPositions}
+              lat={lastPosition.lat}
+              lon={lastPosition.lon}
+              trips={trips}
               variant="history"
               height="24rem"
               follow={false}
@@ -117,6 +127,14 @@ export function HistoryPage(props: { vehicleId: string }) {
           )}
         </ContentFrame>
       </Panel>
+
+      <StatePanel
+        vehicleId={props.vehicleId}
+        rangeLabel={range.label}
+        hours={range.hours}
+        from={from}
+        to={to}
+      />
     </div>
   );
 }
