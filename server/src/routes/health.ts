@@ -31,6 +31,7 @@ import {
   numericSeries,
   stateTimeline,
 } from '../services/state-history.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -156,6 +157,9 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/health/phantom-drain',
     async (request): Promise<PhantomDrainDto> => {
       const { days, tz } = drainQuery.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.phantomDrain(request.params.id, days, validTimeZone(tz));
+      }
       const since = new Date(Date.now() - days * 86_400_000);
       const rows = drainRowsFrom(await drainTimeline(ctx, request.params.id, since, new Date()));
       return phantomDrain(rows, validTimeZone(tz));
@@ -166,6 +170,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/ota',
     async (request): Promise<OtaTimelineDto> => {
       const vehicleId = request.params.id;
+      if (isTeslaMateVehicle(vehicleId)) return ctx.teslamate.ota(vehicleId);
       const firstSeen = new Map<string, number>();
       const changes = await changesBetween(
         ctx.db,
@@ -210,7 +215,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/ota/notes/:version',
     async (request, reply) => {
       const { id, version } = request.params;
-      const pdf = await ctx.monitor.getReleaseNotes(id, version);
+      const pdf = isTeslaMateVehicle(id) ? null : await ctx.monitor.getReleaseNotes(id, version);
       if (!pdf) {
         return reply
           .code(404)
@@ -232,6 +237,9 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/health/tires',
     async (request): Promise<TirePressurePointDto[]> => {
       const { days } = daysQuery.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.tirePressures(request.params.id, days);
+      }
       const since = new Date(Date.now() - days * 86_400_000);
       const bucketMs = (days <= 7 ? 1 : days <= 30 ? 6 : 24) * 3600_000;
       const now = new Date();
@@ -264,6 +272,9 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/health/battery',
     async (request): Promise<BatteryHealthDto> => {
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.batteryHealth(request.params.id);
+      }
       // The last reading of each (UTC) day.
       const byDay = new Map<string, CapacityReading>();
       const changes = await changesBetween(

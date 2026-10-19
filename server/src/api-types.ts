@@ -44,6 +44,8 @@ export interface StatusResponse {
   rivianAuthState: 'ok' | 'unauthenticated' | null;
   rivianEmail: string | null;
   mockMode: boolean;
+  /** A TeslaMate database is set up, so its vehicles can be shown without Rivian. */
+  teslamateConfigured: boolean;
 }
 
 export interface VersionResponse {
@@ -62,6 +64,8 @@ export interface VehicleDto {
   modelYear: number | null;
   /** Views of Rivian's render of this vehicle, served at `/api/vehicles/:id/render/:view`. */
   renders: VehicleView[];
+  /** Where its data comes from: Rivian directly, or a TeslaMate database (read-only). */
+  source: 'rivian' | 'teslamate';
 }
 
 export type { ChargingSettings, SavedLocation } from './services/locations.js';
@@ -303,8 +307,11 @@ export interface ChargingSessionDto {
   estimatedEnergyKwh: number | null;
   /** The charge limit when it ended (or now, while it's under way), from recorded state. */
   socLimit: number | null;
-  /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
-  source: 'live' | 'rivian' | 'live+rivian';
+  /**
+   * live = recorded by RivianMate; rivian = imported from Rivian's history;
+   * teslamate = read from TeslaMate.
+   */
+  source: 'live' | 'rivian' | 'live+rivian' | 'teslamate';
   vendor: string | null;
   city: string | null;
   isPublic: boolean | null;
@@ -463,4 +470,21 @@ export interface LogBacklogDto {
   /** The server's LOG_LEVEL: lines below it were never recorded. */
   level: string;
   entries: LogEntryDto[];
+}
+
+/** The TeslaMate database RivianMate reads from; the URL itself isn't sent back. */
+export interface TeslaMateSettingsDto {
+  configured: boolean;
+  /** The connection without its password, e.g. "postgres://teslamate@nas:5432/teslamate". */
+  preview: string | null;
+  /** Whether the last read from TeslaMate worked. */
+  connected: boolean;
+  error: string | null;
+  lastReadAt: string | null;
+  vehicles: VehicleDto[];
+}
+
+export interface TeslaMateSettingsUpdate {
+  /** A Postgres connection URL for TeslaMate's database. */
+  url: string;
 }

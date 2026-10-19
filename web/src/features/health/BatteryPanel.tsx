@@ -4,7 +4,7 @@ import { ContentFrame, LoadingScope, Skeleton, useLoading } from '../../componen
 import { Panel } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { TrendChart } from '../../components/TrendChart';
-import { dateTime, shortDate } from '../../lib/format';
+import { longDateTime, shortDate } from '../../lib/format';
 import { fmt } from '../../lib/state';
 import { capacityTrend, capacityOfRated } from './health';
 import { PackDetails } from './PackDetails';
@@ -16,6 +16,8 @@ export function BatteryPanel(props: {
   insightsPending: boolean;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
+  /** Show energy used while parked (Rivian reports it). */
+  parkedEnergy: boolean;
 }) {
   const reported = props.battery?.reported;
   const latest = props.battery?.latest;
@@ -54,7 +56,7 @@ export function BatteryPanel(props: {
                   xKey="ts"
                   height={180}
                   xFormatter={shortDate}
-                  tooltipLabel={dateTime}
+                  tooltipLabel={longDateTime}
                   series={[
                     {
                       key: 'kwh',
@@ -111,14 +113,16 @@ export function BatteryPanel(props: {
       </div>
 
       {/* Short and wide: both windows side by side under the capacity readings. */}
-      <div className="mt-6 border-t border-(--border) pt-4">
-        <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
-          Used while parked
-        </h4>
-        <LoadingScope loading={props.insightsPending}>
-          <ParkedEnergyPanel insights={props.insights} columns />
-        </LoadingScope>
-      </div>
+      {props.parkedEnergy && (
+        <div className="mt-6 border-t border-(--border) pt-4">
+          <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
+            Used while parked
+          </h4>
+          <LoadingScope loading={props.insightsPending}>
+            <ParkedEnergyPanel insights={props.insights} columns />
+          </LoadingScope>
+        </div>
+      )}
     </Panel>
   );
 }

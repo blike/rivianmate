@@ -153,11 +153,7 @@ function VehicleBlock(props: NavProps) {
           value={props.vehicleId}
           onChange={(e) => props.onSelectVehicle(e.target.value)}
         >
-          {props.vehicles!.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name ?? v.model ?? v.vin}
-            </option>
-          ))}
+          <VehicleOptions vehicles={props.vehicles!} />
         </select>
       )}
     </div>
@@ -277,11 +273,7 @@ export function MobileBar(props: NavProps) {
                         close();
                       }}
                     >
-                      {props.vehicles!.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name ?? v.model ?? v.vin}
-                        </option>
-                      ))}
+                      <VehicleOptions vehicles={props.vehicles!} />
                     </select>
                     <Chevron className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-(--text-muted)" />
                   </div>
@@ -292,6 +284,24 @@ export function MobileBar(props: NavProps) {
         </>
       )}
     </header>
+  );
+}
+
+/** The vehicles to pick from, grouped by where their data comes from when there's more than one source. */
+function VehicleOptions(props: { vehicles: VehicleDto[] }) {
+  const option = (v: VehicleDto) => (
+    <option key={v.id} value={v.id}>
+      {v.name ?? v.model ?? v.vin}
+    </option>
+  );
+  const rivian = props.vehicles.filter((v) => v.source !== 'teslamate');
+  const tesla = props.vehicles.filter((v) => v.source === 'teslamate');
+  if (rivian.length === 0 || tesla.length === 0) return <>{props.vehicles.map(option)}</>;
+  return (
+    <>
+      <optgroup label="Rivian">{rivian.map(option)}</optgroup>
+      <optgroup label="TeslaMate">{tesla.map(option)}</optgroup>
+    </>
   );
 }
 

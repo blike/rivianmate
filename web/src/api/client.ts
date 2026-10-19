@@ -32,10 +32,12 @@ import type {
   NotificationSettingsDto,
   NotificationSettingsUpdate,
   NotificationTestResult,
+  TeslaMateSettingsDto,
 } from '@server/api-types';
 
 export type {
   FeedLatestData,
+  TeslaMateSettingsDto,
   ChargingSettings,
   GeocodeResultDto,
   SavedLocation,
@@ -185,7 +187,8 @@ export const api = {
   batteryWindow: (id: string, from: Date) =>
     request<BatteryWindowDto>(`/api/vehicles/${id}/battery-window?from=${from.toISOString()}`),
   driveCoverage: (id: string) => request<DriveCoverageDto>(`/api/vehicles/${id}/drive-coverage`),
-  drive: (driveId: number) => request<DriveDetailDto>(`/api/drives/${driveId}`),
+  drive: (vehicleId: string, driveId: number) =>
+    request<DriveDetailDto>(`/api/vehicles/${vehicleId}/drives/${driveId}`),
   /** The newest sessions, or with `since`, every session that started after it. */
   chargingSessions: (id: string, since?: Date) =>
     request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${sinceQuery(since)}`),
@@ -209,6 +212,16 @@ export const api = {
     request<TirePressurePointDto[]>(`/api/vehicles/${vehicleId}/health/tires?days=${days}`),
   batteryHealth: (vehicleId: string) =>
     request<BatteryHealthDto>(`/api/vehicles/${vehicleId}/health/battery`),
-  chargingCurve: (sessionId: number) =>
-    request<ChargingCurvePointDto[]>(`/api/charging-sessions/${sessionId}/curve`),
+  chargingCurve: (vehicleId: string, sessionId: number) =>
+    request<ChargingCurvePointDto[]>(
+      `/api/vehicles/${vehicleId}/charging-sessions/${sessionId}/curve`,
+    ),
+  teslamate: () => request<TeslaMateSettingsDto>('/api/settings/teslamate'),
+  setTeslamate: (url: string) =>
+    request<TeslaMateSettingsDto>('/api/settings/teslamate', {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
+  removeTeslamate: () =>
+    request<TeslaMateSettingsDto>('/api/settings/teslamate', { method: 'DELETE' }),
 };

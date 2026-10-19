@@ -4,6 +4,7 @@ import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
+  type TeslaMateSettingsDto,
   type ChargingSettings,
   type SavedLocation,
   type SavedLocationInput,
@@ -82,10 +83,11 @@ export function useDriveCoverage(vehicleId: string) {
   });
 }
 
-export function useDrive(driveId: number | null) {
+export function useDrive(vehicleId: string, driveId: number | null) {
   return useQuery({
-    queryKey: ['drive', driveId],
-    queryFn: () => api.drive(driveId!),
+    // Drive ids are per source, so a Rivian and a TeslaMate drive can share one.
+    queryKey: ['drive', vehicleId, driveId],
+    queryFn: () => api.drive(vehicleId, driveId!),
     enabled: driveId != null,
     refetchInterval: (query) =>
       query.state.data && !query.state.data.endedAt ? LIVE_REFRESH_MS : false,
@@ -233,4 +235,32 @@ export function useRivianDisconnect() {
     mutationFn: api.rivianDisconnect,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['status'] }),
   });
+}
+
+export function useTeslaMate(live = true) {
+  return useQuery({
+    queryKey: ['teslamate'],
+    queryFn: api.teslamate,
+    refetchInterval: live ? 10_000 : false,
+  });
+}
+
+/** Saving or removing TeslaMate changes which vehicles there are. */
+function useOnTeslaMateSaved() {
+  const queryClient = useQueryClient();
+  return (settings: TeslaMateSettingsDto) => {
+    queryClient.setQueryData(['teslamate'], settings);
+    void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    void queryClient.invalidateQueries({ queryKey: ['status'] });
+  };
+}
+
+export function useSetTeslaMate() {
+  const onSuccess = useOnTeslaMateSaved();
+  return useMutation({ mutationFn: (url: string) => api.setTeslamate(url), onSuccess });
+}
+
+export function useRemoveTeslaMate() {
+  const onSuccess = useOnTeslaMateSaved();
+  return useMutation({ mutationFn: api.removeTeslamate, onSuccess });
 }

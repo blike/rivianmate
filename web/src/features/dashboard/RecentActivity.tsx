@@ -8,6 +8,7 @@ import {
   useVehicleState,
 } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
+import { lastChargedTo } from '../../lib/charging';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { nv, sv } from '../../lib/state';
 import { vehicleActivity } from '../../lib/vehicleStatus';
@@ -55,6 +56,7 @@ export function RecentActivity(props: { vehicleId: string }) {
             session={sessions?.[0]}
             now={now}
             charge={liveCharge(isChargingLive(live) ? live : null, state)}
+            lastChargedTo={lastChargedTo(sessions)}
             schedule={
               schedules
                 ? scheduleStatus(

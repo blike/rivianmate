@@ -19,6 +19,7 @@ import { rivianRoutes } from './routes/rivian.js';
 import { healthRoutes } from './routes/health.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { settingsRoutes } from './routes/settings.js';
+import { teslamateRoutes } from './routes/teslamate.js';
 import { vehicleRoutes } from './routes/vehicles.js';
 
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
@@ -90,6 +91,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await healthRoutes(app, ctx);
   await notificationRoutes(app, ctx);
   await logRoutes(app, ctx);
+  await teslamateRoutes(app, ctx);
 
   if (ctx.config.WEB_DIST && existsSync(ctx.config.WEB_DIST)) {
     await app.register(fastifyStatic, { root: ctx.config.WEB_DIST });

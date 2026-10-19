@@ -14,6 +14,7 @@ export const vehicle: VehicleDto = {
   model: 'R1S',
   modelYear: 2023,
   renders: [],
+  source: 'rivian',
 };
 
 export const parkedState = {

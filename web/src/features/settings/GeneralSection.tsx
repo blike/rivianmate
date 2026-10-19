@@ -1,36 +1,21 @@
 import { useState } from 'react';
 import {
   useChargingSettings,
-  useRivianDisconnect,
   useSetChargingSettings,
   useSetUnits,
-  useStatus,
   useUnits,
   useVehicles,
 } from '../../api/hooks';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { Dot } from '../../components/Dot';
 import { Skeleton } from '../../components/LoadingState';
-import {
-  SegmentedControl,
-  SettingRow,
-  SettingsGroup,
-  dangerButton,
-  secondaryButton,
-} from './SettingsControls';
+import { SegmentedControl, SettingRow, SettingsGroup, secondaryButton } from './SettingsControls';
+import { AccountsPanel } from './AccountsPanel';
 
 const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
 
 export function GeneralSection(props: {
   parallaxModes: Record<string, 'classic' | 'parallax'> | undefined;
-  email: string | null;
-  connected: boolean;
-  mockMode: boolean;
 }) {
   const { data: vehicles, isPending } = useVehicles();
-  const { refetch } = useStatus();
-  const disconnect = useRivianDisconnect();
-  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const u = useUnits();
   const { units } = u;
   const setUnits = useSetUnits();
@@ -46,10 +31,7 @@ export function GeneralSection(props: {
             description={<Skeleton className="w-[5em]" />}
           />
         ) : !vehicles?.length ? (
-          <SettingRow
-            label="No vehicles yet"
-            description="Vehicles on your Rivian account appear here once connected."
-          />
+          <SettingRow label="No vehicles yet" description="Vehicles appear here once connected." />
         ) : (
           vehicles.map((v) => {
             const mode = props.parallaxModes?.[v.id];
@@ -60,6 +42,7 @@ export function GeneralSection(props: {
                 description={[
                   v.modelYear,
                   v.model,
+                  v.source === 'teslamate' && 'From TeslaMate',
                   mode && (mode === 'parallax' ? 'Parallax data' : 'Classic data'),
                 ]
                   .filter(Boolean)
@@ -121,44 +104,7 @@ export function GeneralSection(props: {
         </SettingRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Rivian account">
-        <SettingRow
-          label={props.email ?? '—'}
-          description={
-            <span className="inline-flex items-center gap-1.5">
-              <Dot color={props.connected ? 'var(--status-good)' : 'var(--text-muted)'} />
-              {props.connected ? 'Connected' : 'Disconnected'}
-              {props.mockMode && ' · Simulated vehicle'}
-            </span>
-          }
-        />
-        <SettingRow
-          label="Disconnect"
-          description="Stops tracking and forgets your Rivian sign-in. Your recorded history stays."
-        >
-          <button className={dangerButton} onClick={() => setConfirmingDisconnect(true)}>
-            Disconnect
-          </button>
-        </SettingRow>
-      </SettingsGroup>
-
-      <ConfirmDialog
-        open={confirmingDisconnect}
-        title="Disconnect your Rivian account?"
-        confirmLabel="Disconnect"
-        busy={disconnect.isPending}
-        onCancel={() => setConfirmingDisconnect(false)}
-        onConfirm={() =>
-          disconnect.mutate(undefined, {
-            onSettled: () => {
-              setConfirmingDisconnect(false);
-              refetch();
-            },
-          })
-        }
-      >
-        RivianMate stops tracking and forgets your Rivian sign-in. Your recorded history stays.
-      </ConfirmDialog>
+      <AccountsPanel />
     </>
   );
 }

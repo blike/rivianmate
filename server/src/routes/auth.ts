@@ -43,6 +43,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       rivianAuthState: account?.authState ?? null,
       rivianEmail: account?.email ?? null,
       mockMode: ctx.config.MOCK_RIVIAN,
+      teslamateConfigured: ctx.teslamate.configured,
     };
   });
 

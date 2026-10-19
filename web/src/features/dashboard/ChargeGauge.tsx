@@ -9,10 +9,12 @@ const SCALE = [0, 25, 50, 75, 100];
  * State of charge as a row of cells, like the pack it stands for: lit to
  * the level, the charge limit marked above, and while charging the cells
  * still to fill ripple toward it. Past the limit the cells are dimmed.
+ * Another level can stand in for the limit, named by `limitLabel`.
  */
 export function ChargeGauge(props: {
   level: number | null;
   limit: number | null;
+  limitLabel?: string;
   charging: boolean;
 }) {
   const loading = useLoading();
@@ -36,7 +38,7 @@ export function ChargeGauge(props: {
       aria-valuenow={props.level ?? undefined}
       aria-valuetext={
         props.level != null
-          ? `${fmt(props.level, 0)}%${limit != null ? `, limit ${fmt(limit, 0)}%` : ''}`
+          ? `${fmt(props.level, 0)}%${limit != null ? `, ${(props.limitLabel ?? 'Limit').toLowerCase()} ${fmt(limit, 0)}%` : ''}`
           : undefined
       }
       className="charge-gauge relative pt-6"
@@ -52,7 +54,7 @@ export function ChargeGauge(props: {
           }}
         >
           <span className="text-[11px] leading-4 whitespace-nowrap text-(--text-secondary) tabular-nums">
-            Limit {fmt(limit, 0)}%
+            {props.limitLabel ?? 'Limit'} {fmt(limit, 0)}%
           </span>
           <span className="mt-1 w-px flex-1 bg-(--text-secondary)" />
         </div>

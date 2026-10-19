@@ -98,3 +98,13 @@ export function sessionTotals(
   }
   return { energyKwh, cost, estimated };
 }
+
+/**
+ * Battery level the latest finished charge ended at, newest sessions first;
+ * stands in for the charge limit when the vehicle doesn't report one.
+ */
+export function lastChargedTo(
+  sessions: readonly Pick<ChargingSessionDto, 'endedAt' | 'endSoc'>[] | undefined,
+): number | null {
+  return sessions?.find((s) => s.endedAt != null && s.endSoc != null)?.endSoc ?? null;
+}

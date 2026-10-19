@@ -1,4 +1,5 @@
 import type { VehicleDto } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useInsights, useVehicleState } from '../../api/hooks';
 import { FreshnessBadge } from '../../components/FreshnessBadge';
 import { LoadingScope } from '../../components/LoadingState';
@@ -14,6 +15,7 @@ import { ConnectivityRows } from './ConnectivityPanel';
 import { Overview } from './Overview';
 import { RecentActivity } from './RecentActivity';
 import { SchedulesSection } from './SchedulesSection';
+import { TeslaClimatePanel } from './TeslaClimatePanel';
 import { VehiclePlan } from './VehiclePlan';
 
 /** Label and value rows under hairlines, flowing into two columns from md up. */
@@ -26,6 +28,9 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
   const v = props.vehicle;
   const name = v?.name ?? v?.model ?? 'Vehicle';
   const model = [v?.modelYear, v?.model].filter(Boolean).join(' ');
+  // TeslaMate logs tires and climate, but not closures, schedules, parked
+  // energy or the vehicle's systems.
+  const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   return (
     <>
@@ -49,7 +54,7 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
 
         <RecentActivity vehicleId={props.vehicleId} />
 
-        <SchedulesSection vehicleId={props.vehicleId} />
+        {!teslamate && <SchedulesSection vehicleId={props.vehicleId} />}
 
         <section>
           <SectionRule>Vehicle</SectionRule>
@@ -57,42 +62,44 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
               {/* Spans both rows at xl; the plan centers in whatever height they make. */}
               <Panel
-                title="Body & tires"
+                title={teslamate ? 'Tires' : 'Body & tires'}
                 className="flex flex-col md:col-span-2 xl:col-span-5 xl:row-span-2"
               >
-                <VehiclePlan state={state} vehicle={v} />
+                <VehiclePlan state={state} vehicle={v} closures={!teslamate} />
               </Panel>
 
               <Panel title="Climate" className="xl:col-span-3">
-                <ClimatePanel state={state} />
+                {teslamate ? <TeslaClimatePanel state={state} /> : <ClimatePanel state={state} />}
               </Panel>
 
-              <LoadingScope loading={isPending || insightsPending}>
-                <Panel title="Energy while parked" className="xl:col-span-4">
-                  <ParkedEnergyPanel insights={insights} />
-                </Panel>
+              {!teslamate && (
+                <LoadingScope loading={isPending || insightsPending}>
+                  <Panel title="Energy while parked" className="xl:col-span-4">
+                    <ParkedEnergyPanel insights={insights} />
+                  </Panel>
 
-                {/* Two columns of readings from md up, so the list stays short. */}
-                <Panel title="Systems" className="md:col-span-2 xl:col-span-7">
-                  <dl className={SPECS}>
-                    <Row label="12V battery" value={twelveVoltLabel(state)} />
-                    <Row label="Charge port" value={chargePortLabel(state)} />
-                    <ConnectivityRows insights={insights} />
-                    {showLegacyOnly(state, 'brakeFluidLow') && (
-                      <Row label="Brake fluid" value={brakeFluidLabel(state)} />
-                    )}
-                    {showLegacyOnly(state, 'wiperFluidState') && (
-                      <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
-                    )}
-                    {showLegacyOnly(state, 'driveMode') && (
-                      <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
-                    )}
-                    {showLegacyOnly(state, 'gearGuardLocked') && (
-                      <Row label="Gear Guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
-                    )}
-                  </dl>
-                </Panel>
-              </LoadingScope>
+                  {/* Two columns of readings from md up, so the list stays short. */}
+                  <Panel title="Systems" className="md:col-span-2 xl:col-span-7">
+                    <dl className={SPECS}>
+                      <Row label="12V battery" value={twelveVoltLabel(state)} />
+                      <Row label="Charge port" value={chargePortLabel(state)} />
+                      <ConnectivityRows insights={insights} />
+                      {showLegacyOnly(state, 'brakeFluidLow') && (
+                        <Row label="Brake fluid" value={brakeFluidLabel(state)} />
+                      )}
+                      {showLegacyOnly(state, 'wiperFluidState') && (
+                        <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
+                      )}
+                      {showLegacyOnly(state, 'driveMode') && (
+                        <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
+                      )}
+                      {showLegacyOnly(state, 'gearGuardLocked') && (
+                        <Row label="Gear Guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
+                      )}
+                    </dl>
+                  </Panel>
+                </LoadingScope>
+              )}
             </div>
           </LoadingScope>
         </section>

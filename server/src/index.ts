@@ -24,6 +24,8 @@ import { VehicleMonitor } from './services/vehicle-monitor.js';
 import { HistoryKeys } from './services/history-keys.js';
 import { HistoryMaintenance } from './services/history-maintenance.js';
 import { ParallaxArchive } from './services/parallax-archive.js';
+import { getTeslaMateUrl } from './routes/teslamate.js';
+import { TeslaMateSource } from './teslamate/source.js';
 import { loadVersion } from './version.js';
 
 const START_RETRY_BASE_MS = 30_000;
@@ -88,6 +90,8 @@ async function main(): Promise<void> {
     ),
   );
 
+  const teslamate = new TeslaMateSource(bus, logger.child({ component: 'teslamate' }));
+
   const notifications = new NotificationService(
     db,
     crypto,
@@ -111,6 +115,7 @@ async function main(): Promise<void> {
     monitor,
     notifications,
     rivianFactory,
+    teslamate,
     governor,
     // Searches are typed by the user, so they run in mock mode too.
     searchPlaces: nominatimSearch(userAgent),
@@ -175,11 +180,16 @@ async function main(): Promise<void> {
   };
   startMonitor();
 
+  // Read-only and independent of Rivian; failed reads retry on their own.
+  const teslamateUrl = await getTeslaMateUrl(ctx);
+  if (teslamateUrl) void teslamate.configure(teslamateUrl);
+
   const shutdown = async () => {
     appLog.info('shutting down');
     clearTimeout(startRetry);
     notifications.stop();
     history.stop();
+    await teslamate.stop();
     await monitor.stop();
     await app.close();
     process.exit(0);

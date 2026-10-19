@@ -10,6 +10,7 @@ import type { PlaceSearch } from './services/drive-places.js';
 import type { LiveBus } from './services/live-bus.js';
 import type { NotificationService } from './services/notifications.js';
 import type { TokenStore } from './services/token-store.js';
+import type { TeslaMateSource } from './teslamate/source.js';
 import type { RivianConnection, VehicleMonitor } from './services/vehicle-monitor.js';
 
 export interface RivianFactory {
@@ -38,6 +39,8 @@ export interface AppContext {
   monitor: VehicleMonitor;
   notifications: NotificationService;
   rivianFactory: RivianFactory;
+  /** Vehicles read from a TeslaMate database, when one is set up. */
+  teslamate: TeslaMateSource;
   /** Shared throttle/cooldown/counters for all Rivian traffic. */
   governor: RivianGovernor;
   /** Address search for placing saved locations. */

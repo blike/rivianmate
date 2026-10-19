@@ -14,7 +14,7 @@ const sections = [
   {
     id: 'general',
     label: 'General',
-    description: 'Your vehicle, display units and Rivian account.',
+    description: 'Your vehicles, display units and connected accounts.',
     icon: <CarIcon />,
   },
   {
@@ -113,12 +113,7 @@ export function SettingsPage() {
           </p>
         </header>
         {section.id === 'general' && (
-          <GeneralSection
-            parallaxModes={diagnostics?.monitor.parallaxModes}
-            email={status?.rivianEmail ?? null}
-            connected={status?.rivianConnected ?? false}
-            mockMode={status?.mockMode ?? false}
-          />
+          <GeneralSection parallaxModes={diagnostics?.monitor.parallaxModes} />
         )}
         {section.id === 'locations' && <LocationsPanel vehicleId={vehicles?.[0]?.id} />}
         {section.id === 'notifications' && <NotificationsPanel />}

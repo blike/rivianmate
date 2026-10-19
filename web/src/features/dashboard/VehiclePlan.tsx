@@ -13,12 +13,20 @@ import { TIRES, tireLevel } from '../health/health';
  * glow where something is open, a tire glows when it needs attention, and the
  * pressures stand beside the wheels.
  */
-export function VehiclePlan(props: { state: VehicleState | undefined; vehicle?: VehicleDto }) {
+export function VehiclePlan(props: {
+  state: VehicleState | undefined;
+  vehicle?: VehicleDto;
+  /** Whether the source reports doors and windows (TeslaMate doesn't). */
+  closures?: boolean;
+}) {
+  const closuresKnown = props.closures ?? true;
   const loading = useLoading();
   const s = props.state;
   const model = props.vehicle?.model;
   const { closures, windows } = closureStatuses(s, model);
-  const open = new Set([...closures, ...windows].filter((c) => !c.closed).map((c) => c.key));
+  const open = new Set(
+    closuresKnown ? [...closures, ...windows].filter((c) => !c.closed).map((c) => c.key) : [],
+  );
   const security = securitySummary(s, model);
   const truck = vehicleBody(model) === 'truck';
   const render = props.vehicle?.renders?.includes('overhead')
@@ -35,9 +43,10 @@ export function VehiclePlan(props: { state: VehicleState | undefined; vehicle?: 
     attention: loading ? undefined : attention,
     open: loading ? undefined : open,
     truck,
-    label: loading
-      ? 'Vehicle'
-      : `Vehicle from above. ${security.openLabel}${security.locked == null ? '' : security.locked ? ', locked' : ', unlocked'}.`,
+    label:
+      loading || !closuresKnown
+        ? 'Vehicle'
+        : `Vehicle from above. ${security.openLabel}${security.locked == null ? '' : security.locked ? ', locked' : ', unlocked'}.`,
   };
 
   return (
@@ -51,30 +60,37 @@ export function VehiclePlan(props: { state: VehicleState | undefined; vehicle?: 
         <Tire tire={rr!} state={s} align="left" />
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 border-t border-(--hairline) pt-4 text-sm">
-        {loading ? (
-          <Skeleton className="w-[12em]" />
-        ) : (
-          <>
-            {security.locked !== null && (
-              <span
-                className={security.locked ? 'text-(--text-secondary)' : 'text-(--status-warning)'}
-              >
-                {security.locked ? 'Locked' : 'Unlocked'}
-              </span>
-            )}
-            <span
-              className={
-                security.open.length ? 'text-(--status-warning)' : 'text-(--text-secondary)'
-              }
-            >
-              {security.open.length === 0
-                ? 'Everything closed'
-                : `${security.open.join(', ')} open`}
-            </span>
-          </>
-        )}
-      </div>
+      {/* Left out when there's nothing to say: no closures and no lock state. */}
+      {(closuresKnown || security.locked !== null) && (
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 border-t border-(--hairline) pt-4 text-sm">
+          {loading ? (
+            <Skeleton className="w-[12em]" />
+          ) : (
+            <>
+              {security.locked !== null && (
+                <span
+                  className={
+                    security.locked ? 'text-(--text-secondary)' : 'text-(--status-warning)'
+                  }
+                >
+                  {security.locked ? 'Locked' : 'Unlocked'}
+                </span>
+              )}
+              {closuresKnown && (
+                <span
+                  className={
+                    security.open.length ? 'text-(--status-warning)' : 'text-(--text-secondary)'
+                  }
+                >
+                  {security.open.length === 0
+                    ? 'Everything closed'
+                    : `${security.open.join(', ')} open`}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

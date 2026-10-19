@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { VehicleDto, VehicleState } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import {
   useChargingSessions,
   useDrives,
@@ -10,7 +11,7 @@ import {
 import { Dot } from '../../components/Dot';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
-import { chargeOutlook, chargerLabel } from '../../lib/charging';
+import { chargeOutlook, chargerLabel, lastChargedTo } from '../../lib/charging';
 import { locationIsBehind } from '../../lib/freshness';
 import { isActivePhase, softwareUpdate } from '../../lib/ota';
 import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
@@ -84,6 +85,8 @@ export function Overview(props: {
       }
     : null;
   const security = securitySummary(state, vehicle?.model);
+  // TeslaMate doesn't log doors or windows, so "all closed" would be a guess.
+  const closuresKnown = !isTeslaMateVehicle(props.vehicleId);
   const chargePower = live(liveSession?.power);
   const chargeRate = live(liveSession?.kilometersChargedPerHour);
   const secondsLeft = live(liveSession?.timeRemaining);
@@ -95,10 +98,14 @@ export function Overview(props: {
     minutesLeft: secondsLeft != null ? secondsLeft / 60 : null,
   });
   const ota = softwareUpdate(state);
+  // Without a reported limit (TeslaMate doesn't log it), the level the last
+  // charge reached is the best guide to where it's usually charged to.
+  const lastCharge = limit == null ? lastChargedTo(sessions) : null;
+  const target = limit ?? lastCharge;
   // Scales today's estimate, so it follows the vehicle's own recent efficiency.
   const rangeAtLimit =
-    rangeKm != null && battery != null && battery > 0 && limit != null
-      ? (rangeKm * limit) / battery
+    rangeKm != null && battery != null && battery > 0 && target != null
+      ? (rangeKm * target) / battery
       : null;
 
   // Where it is: the charger while plugged in, otherwise where the last drive ended.
@@ -165,12 +172,14 @@ export function Overview(props: {
                       {security.locked ? 'Locked' : 'Unlocked'}
                     </li>
                   )}
-                  <li
-                    className={security.open.length > 0 ? 'text-(--status-warning)' : ''}
-                    title={security.open.join(', ') || undefined}
-                  >
-                    {security.openLabel}
-                  </li>
+                  {closuresKnown && (
+                    <li
+                      className={security.open.length > 0 ? 'text-(--status-warning)' : ''}
+                      title={security.open.join(', ') || undefined}
+                    >
+                      {security.openLabel}
+                    </li>
+                  )}
                   {climateOn && (
                     <li>Climate on{cabin != null && ` · cabin ${u.formatTemperature(cabin)}`}</li>
                   )}
@@ -219,7 +228,12 @@ export function Overview(props: {
           </div>
 
           <div className="mt-4">
-            <ChargeGauge level={battery} limit={limit} charging={charging} />
+            <ChargeGauge
+              level={battery}
+              limit={target}
+              limitLabel={limit == null ? 'Last charge' : undefined}
+              charging={charging}
+            />
           </div>
 
           {ota && (
@@ -271,7 +285,7 @@ export function Overview(props: {
               </>
             ) : (
               <>
-                <Figure label={limit != null ? `Range at ${fmt(limit, 0)}%` : 'Range at limit'}>
+                <Figure label={target != null ? `Range at ${fmt(target, 0)}%` : 'Range at limit'}>
                   {u.formatDistance(rangeAtLimit)}
                 </Figure>
                 <Figure label="Software">{sv(state, 'otaCurrentVersion') ?? '—'}</Figure>
