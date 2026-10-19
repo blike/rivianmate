@@ -6,6 +6,7 @@ import { useUnits } from '../../api/hooks';
 import { ContentFrame, LoadingScope } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
+import { vehicleBody } from '../../lib/closures';
 import { dateTime, shortDate } from '../../lib/format';
 import { type TireKey, TIRES, tireTrend } from './health';
 import { TireDiagram } from './TireDiagram';
@@ -23,6 +24,7 @@ export function TiresPanel(props: {
   vehicleId: string;
   state: VehicleState | undefined;
   statePending: boolean;
+  model?: string | null;
 }) {
   const [days, setDays] = useState<number>(30);
   const u = useUnits();
@@ -63,7 +65,12 @@ export function TiresPanel(props: {
     <Panel title="Tires" action={<WindowPicker value={days} onChange={setDays} />}>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:items-center">
         <LoadingScope loading={props.statePending}>
-          <TireDiagram state={props.state} trend={trend} days={days} />
+          <TireDiagram
+            state={props.state}
+            trend={trend}
+            days={days}
+            truck={vehicleBody(props.model) === 'truck'}
+          />
         </LoadingScope>
         <div className="min-w-0">
           {leaking && (

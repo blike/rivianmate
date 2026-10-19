@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
@@ -12,6 +12,7 @@ import {
   sessionRate,
   wallboxSpots,
 } from '../services/locations.js';
+import { listLimit, listWindowSchema } from './list-window.js';
 import { loadLocations } from './locations.js';
 import { getChargingSettings } from './settings.js';
 import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
@@ -37,12 +38,19 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/charging-sessions',
     async (request): Promise<ChargingSessionDto[]> => {
+      const q = listWindowSchema.parse(request.query);
       const rows = await ctx.db
         .select()
         .from(chargingSessions)
-        .where(eq(chargingSessions.vehicleId, request.params.id))
+        .where(
+          and(
+            eq(chargingSessions.vehicleId, request.params.id),
+            q.from ? gte(chargingSessions.startedAt, q.from) : undefined,
+            q.to ? lte(chargingSessions.startedAt, q.to) : undefined,
+          ),
+        )
         .orderBy(desc(chargingSessions.startedAt))
-        .limit(200);
+        .limit(listLimit(q));
       const places = await placeContext(ctx);
       const capacityKwh = await packCapacityKwh(ctx, request.params.id);
       const limits = await sessionLimits(ctx, rows);

@@ -61,13 +61,24 @@ export function useLiveCharging(vehicleId: string | undefined) {
 /** Anything still under way (a drive, navigation) refreshes this often. */
 const LIVE_REFRESH_MS = 15_000;
 
-export function useDrives(vehicleId: string) {
+/** The newest drives, or with `since`, all of them from then on. */
+export function useDrives(vehicleId: string, since?: Date) {
   return useQuery({
-    queryKey: ['drives', vehicleId],
-    queryFn: () => api.drives(vehicleId),
+    queryKey: since ? ['drives', vehicleId, since.toISOString()] : ['drives', vehicleId],
+    queryFn: () => api.drives(vehicleId, since),
     // A drive in progress grows by the second.
     refetchInterval: (query) =>
       query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
+    placeholderData: since ? keepPreviousData : undefined,
+  });
+}
+
+/** When drive history starts, which charging history can reach back before. */
+export function useDriveCoverage(vehicleId: string) {
+  return useQuery({
+    queryKey: ['driveCoverage', vehicleId],
+    queryFn: () => api.driveCoverage(vehicleId),
+    staleTime: 10 * 60_000,
   });
 }
 
@@ -83,11 +94,24 @@ export function useDrive(driveId: number | null) {
   });
 }
 
-export function useChargingSessions(vehicleId: string) {
+/** The newest sessions, or with `since`, all of them from then on. */
+export function useChargingSessions(vehicleId: string, since?: Date) {
   return useQuery({
-    queryKey: ['chargingSessions', vehicleId],
-    queryFn: () => api.chargingSessions(vehicleId),
+    queryKey: since
+      ? ['chargingSessions', vehicleId, since.toISOString()]
+      : ['chargingSessions', vehicleId],
+    queryFn: () => api.chargingSessions(vehicleId, since),
     refetchInterval: 60_000,
+    placeholderData: since ? keepPreviousData : undefined,
+  });
+}
+
+/** The charging and departure schedules set in the Rivian app. */
+export function useSchedules(vehicleId: string) {
+  return useQuery({
+    queryKey: ['schedules', vehicleId],
+    queryFn: () => api.schedules(vehicleId),
+    refetchInterval: 5 * 60_000,
   });
 }
 

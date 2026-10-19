@@ -11,7 +11,10 @@ const DOT: Record<FreshnessLevel, string> = {
   stale: 'var(--status-warning)',
 };
 
-/** "Online · updated 2 min ago": keeps stale data from looking live. */
+/**
+ * "Online · updated 2 min ago": keeps stale data from looking live. Where the
+ * sidebar shows, it already says online or asleep, so this says only when.
+ */
 export function FreshnessBadge(props: { state: VehicleState | undefined }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -33,7 +36,8 @@ export function FreshnessBadge(props: { state: VehicleState | undefined }) {
       title={f.lastSeen ? f.lastSeen.toLocaleString() : undefined}
     >
       <Dot color={DOT[f.level]} />
-      {f.label}
+      <span className="lg:hidden">{f.label}</span>
+      <span className="max-lg:hidden">{f.seen}</span>
     </span>
   );
 }

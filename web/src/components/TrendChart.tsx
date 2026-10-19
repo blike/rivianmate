@@ -22,6 +22,8 @@ export interface TrendSeries {
   mark?: 'area' | 'line' | 'bar';
   /** Put the series on a second Y axis on the right. */
   right?: boolean;
+  /** Scale the series on its own hidden axis; its values show in the tooltip. */
+  ownScale?: boolean;
   unit?: string;
   digits?: number;
   /** Draw a dot per data point (for sparse series). */
@@ -65,12 +67,13 @@ export function TrendChart(props: {
   onHover?: (index: number | null) => void;
 }) {
   const gradientId = useId().replace(/:/g, '');
-  const hasRight = props.series.some((s) => s.right);
+  const hasRight = props.series.some((s) => s.right && !s.ownScale);
+  const axisOf = (s: TrendSeries) => (s.ownScale ? `own-${s.key}` : s.right ? 'right' : 'left');
   const tick = { fill: 'var(--text-muted)', fontSize: 11 };
   const xFormatter = props.xFormatter ?? ((x: number) => fmt(x, 0));
   // Axis ticks use the series' precision so narrow ranges don't repeat labels.
-  const leftDigits = props.series.find((s) => !s.right)?.digits ?? 0;
-  const rightDigits = props.series.find((s) => s.right)?.digits ?? 0;
+  const leftDigits = props.series.find((s) => !s.right && !s.ownScale)?.digits ?? 0;
+  const rightDigits = props.series.find((s) => s.right && !s.ownScale)?.digits ?? 0;
 
   return (
     <div style={{ height: props.height ?? 220 }}>
@@ -133,6 +136,11 @@ export function TrendChart(props: {
               }
             />
           )}
+          {props.series
+            .filter((s) => s.ownScale)
+            .map((s) => (
+              <YAxis key={s.key} yAxisId={axisOf(s)} domain={['auto', 'auto']} hide />
+            ))}
           <Tooltip
             cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
             content={({ active, payload, label }) => {
@@ -194,7 +202,7 @@ export function TrendChart(props: {
               key: s.key,
               dataKey: s.key,
               name: s.label,
-              yAxisId: s.right ? 'right' : 'left',
+              yAxisId: axisOf(s),
               isAnimationActive: false,
             };
             if (s.mark === 'bar') return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;

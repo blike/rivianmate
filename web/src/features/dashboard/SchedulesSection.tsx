@@ -1,10 +1,9 @@
 import type { ChargingSchedule, DepartureSchedule } from '@server/api-types';
-import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
-import { api } from '../../api/client';
-import { useUnits } from '../../api/hooks';
+import { useEffect, useState } from 'react';
+import { useSchedules, useUnits } from '../../api/hooks';
 import { Dot } from '../../components/Dot';
 import { Skeleton, SkeletonBlock } from '../../components/LoadingState';
+import { SectionRule } from '../../components/PageHeader';
 import { Panel } from '../../components/Panel';
 import {
   dayLabel,
@@ -20,135 +19,112 @@ import {
 
 /**
  * Read-only view of the charging and departure schedules set in the Rivian
- * app. Schedules switched off are left out; Rivian returns those too.
+ * app, as a card each. Schedules switched off are left out; Rivian returns
+ * those too.
  */
-export function SchedulesPanel(props: { vehicleId: string; className?: string }) {
-  const { data, isPending } = useQuery({
-    queryKey: ['schedules', props.vehicleId],
-    queryFn: () => api.schedules(props.vehicleId),
-    refetchInterval: 5 * 60_000,
-  });
+export function SchedulesSection(props: { vehicleId: string }) {
+  const { data, isPending } = useSchedules(props.vehicleId);
   const charging = data?.charging?.filter((c) => c.enabled !== false);
   // Only the next window, from Parallax, when Rivian doesn't send the schedules (an R2).
   const nextOnly = data?.chargingFromParallax ?? false;
   const departures = data?.departures?.filter((d) => d.enabled !== false);
   const now = useMinuteClock();
 
+  // Left out where Rivian doesn't provide them (no legacy feed, as on an R2).
   const showDepartures = !data?.departuresUnavailable;
+  // The week chart wants the width; a lone next window keeps to half.
+  const withWeek = !nextOnly && (isPending || !!charging?.length);
+  const columns = withWeek
+    ? showDepartures
+      ? 'lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'
+      : ''
+    : 'md:grid-cols-2';
 
-  // Charging and departures side by side, without a schedule list or week.
-  // Legacy's schedules keep the layout below.
-  if (nextOnly) {
-    return (
-      <Panel title="Schedules" className={`@container ${props.className ?? ''}`}>
-        <div
-          className={`grid grid-cols-1 gap-x-8 gap-y-6 ${showDepartures ? '@2xl:grid-cols-2' : ''}`}
-        >
-          <div className="min-w-0 space-y-5">
-            {isPending ? (
-              <div className="space-y-2">
-                <Skeleton className="w-[10em]" />
-                <Skeleton className="block h-7 w-[14em]" />
+  return (
+    <section>
+      <SectionRule>Schedules</SectionRule>
+      <div className={`grid grid-cols-1 gap-4 ${columns}`}>
+        <Panel title="Charging schedule" className="@container">
+          <div className="grid grid-cols-1 gap-x-8 gap-y-6 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+            <div className="min-w-0 space-y-5">
+              {isPending ? (
+                <NextSkeleton />
+              ) : (
+                <NextWindow
+                  schedules={charging ?? []}
+                  now={now}
+                  loaded={charging != null}
+                  amps={nextOnly ? charging?.[0]?.amperage : undefined}
+                />
+              )}
+
+              {/* Parallax sends only the next window, and the window above says when there are none. */}
+              {(isPending || (!nextOnly && !!charging?.length)) && (
+                <div className="border-t border-(--border) pt-3">
+                  {isPending ? (
+                    <SkeletonBlock height="2.5rem" />
+                  ) : (
+                    <ul className="divide-y divide-(--border)">
+                      {charging!.map((c, i) => (
+                        <ScheduleRow
+                          key={i}
+                          days={formatWeekDays(c.weekDays)}
+                          time={formatTimeRange(c.startTime, c.duration)}
+                          detail={[
+                            c.duration ? formatDuration(c.duration) : null,
+                            c.amperage ? `${c.amperage} A` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {withWeek && (
+              <div className="min-w-0">
+                {isPending ? (
+                  <SkeletonBlock height="12rem" />
+                ) : (
+                  <ChargingWeek schedules={charging!} now={now} />
+                )}
               </div>
-            ) : (
-              <NextWindow
-                schedules={charging ?? []}
-                now={now}
-                loaded={charging != null}
-                amps={charging?.[0]?.amperage}
-              />
             )}
           </div>
+        </Panel>
 
-          {/* Left out where Rivian doesn't provide them (no legacy feed, as on an R2). */}
-          {showDepartures && (
-            <div className="min-w-0 space-y-3">
+        {showDepartures && (
+          <Panel title="Departures">
+            <div className="space-y-3">
               {isPending ? (
-                <div className="space-y-2">
-                  <Skeleton className="w-[8em]" />
-                  <Skeleton className="block h-7 w-[12em]" />
-                </div>
+                <NextSkeleton />
               ) : (
                 <NextDeparture departures={departures ?? []} now={now} />
               )}
               {!!departures?.length && (
-                <ul className="divide-y divide-(--border)">
+                <ul className="divide-y divide-(--border) border-t border-(--border)">
                   {departures.map((d) => (
                     <DepartureRow key={d.id} departure={d} />
                   ))}
                 </ul>
               )}
             </div>
-          )}
-        </div>
-      </Panel>
-    );
-  }
-
-  return (
-    <Panel title="Schedules" className={`@container ${props.className ?? ''}`}>
-      <div className="grid grid-cols-1 gap-x-8 gap-y-6 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <div className="min-w-0 space-y-5">
-          {isPending ? (
-            <div className="space-y-2">
-              <Skeleton className="w-[10em]" />
-              <Skeleton className="block h-7 w-[14em]" />
-            </div>
-          ) : (
-            <NextWindow schedules={charging ?? []} now={now} loaded={charging != null} />
-          )}
-
-          <Section title="Charging schedules">
-            {isPending ? (
-              <SkeletonBlock height="2.5rem" />
-            ) : !charging?.length ? (
-              <Empty>{charging == null ? 'Not loaded yet.' : 'None set in the Rivian app.'}</Empty>
-            ) : (
-              <ul className="divide-y divide-(--border)">
-                {charging.map((c, i) => (
-                  <ScheduleRow
-                    key={i}
-                    days={formatWeekDays(c.weekDays)}
-                    time={formatTimeRange(c.startTime, c.duration)}
-                    detail={[
-                      c.duration ? formatDuration(c.duration) : null,
-                      c.amperage ? `${c.amperage} A` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  />
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          {/* Left out where Rivian doesn't provide them, as in the layout above. */}
-          {showDepartures && (
-            <Section title="Departures">
-              {isPending ? (
-                <SkeletonBlock height="2.5rem" />
-              ) : !departures?.length ? (
-                <Empty>None set in the Rivian app.</Empty>
-              ) : (
-                <ul className="divide-y divide-(--border)">
-                  {departures.map((d) => (
-                    <DepartureRow key={d.id} departure={d} />
-                  ))}
-                </ul>
-              )}
-            </Section>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          {isPending ? (
-            <SkeletonBlock height="12rem" />
-          ) : charging?.length ? (
-            <ChargingWeek schedules={charging} now={now} />
-          ) : null}
-        </div>
+          </Panel>
+        )}
       </div>
-    </Panel>
+    </section>
+  );
+}
+
+function NextSkeleton() {
+  return (
+    <div className="space-y-2">
+      <Skeleton className="w-[10em]" />
+      <Skeleton className="block h-7 w-[14em]" />
+    </div>
   );
 }
 
@@ -246,19 +222,6 @@ function NextDeparture(props: { departures: DepartureSchedule[]; now: Date }) {
       )}
     </div>
   );
-}
-
-function Section(props: { title: string; children: ReactNode }) {
-  return (
-    <section className="min-w-0 border-t border-(--border) pt-4">
-      <h4 className="mb-1 text-xs uppercase tracking-wide text-(--text-muted)">{props.title}</h4>
-      {props.children}
-    </section>
-  );
-}
-
-function Empty(props: { children: ReactNode }) {
-  return <p className="py-1 text-sm text-(--text-muted)">{props.children}</p>;
 }
 
 /** "Weekdays    12:00 – 6:00 AM", with its length and amperage underneath. */

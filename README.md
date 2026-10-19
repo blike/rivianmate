@@ -42,6 +42,8 @@ a dashboard you can open from anywhere.
 - Interactive route maps with speed and elevation profiles.
 - Detailed trip statistics, including distance, duration, efficiency, and energy consumption.
 - Start and destination address identification.
+- The weather on each drive (temperature, conditions, wind), looked up every 10 minutes along the
+  route once it ends, and efficiency charted by temperature, speed, climb, length and weather.
 
 ### Charging History & Analytics
 
@@ -236,8 +238,10 @@ RivianMate is designed to keep your vehicle data under your control.
   analytics or cloud service.
 
 The application makes external requests for vehicle data and authentication, map tiles through
-[OpenFreeMap](https://openfreemap.org/), and address lookups through OpenStreetMap's
-[Nominatim](https://nominatim.org/).
+[OpenFreeMap](https://openfreemap.org/), address lookups through OpenStreetMap's
+[Nominatim](https://nominatim.org/), and outside temperatures through
+[Open-Meteo](https://open-meteo.com/). Address and temperature lookups send the coordinates (and,
+for temperatures, the times) of points along your drives to those services.
 
 For more information, including how to responsibly disclose security vulnerabilities, see the
 [Security Policy](SECURITY.md).
@@ -344,6 +348,20 @@ AI-generated changes should be reviewed and validated before submission.
 Project maintainers review contributions and remain responsible for changes merged into the project.
 
 For information about the release process, see [RELEASING.md](RELEASING.md).
+
+## Data Sources
+
+RivianMate uses these free services and open datasets. The same credits appear in the app under
+**Settings → About**.
+
+- **Map data and addresses:** © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+  contributors, available under the Open Database License (ODbL).
+- **Map tiles:** [OpenFreeMap](https://openfreemap.org/), built with
+  [OpenMapTiles](https://openmaptiles.org/).
+- **Address lookups:** [Nominatim](https://nominatim.org/).
+- **Outside temperature:** weather model data by [Open-Meteo.com](https://open-meteo.com/), licensed
+  under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). RivianMate interpolates it along
+  each drive's route and averages it over the drive.
 
 ## License
 

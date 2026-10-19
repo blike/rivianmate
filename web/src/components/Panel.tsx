@@ -8,16 +8,16 @@ export function Panel(props: {
   action?: ReactNode;
   children: ReactNode;
 }) {
-  const heading = <h3 className="text-sm font-medium text-(--text-secondary)">{props.title}</h3>;
+  const heading = <h3 className="eyebrow">{props.title}</h3>;
   return (
-    <section className={`card p-4 ${props.className ?? ''}`}>
+    <section className={`card p-5 ${props.className ?? ''}`}>
       {props.action ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="mb-4 flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-2">
           {heading}
           {props.action}
         </div>
       ) : (
-        <div className="mb-3">{heading}</div>
+        <div className="mb-4">{heading}</div>
       )}
       {props.children}
     </section>

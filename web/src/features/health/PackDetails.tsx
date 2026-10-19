@@ -5,8 +5,8 @@ import { showParallaxOnly } from '../../lib/fieldSources';
 import { dateTime } from '../../lib/format';
 import { fmt } from '../../lib/state';
 
-/** Battery temperatures and cold-weather impact. */
-export function BatteryEnergyPanel(props: {
+/** The pack's cells, their temperatures, and the range the cold holds back. */
+export function PackDetails(props: {
   insights: VehicleInsightsDto | undefined;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
@@ -17,8 +17,8 @@ export function BatteryEnergyPanel(props: {
   const showTemps = showParallaxOnly(props.insights, 'cellTemps');
 
   return (
-    <>
-      <dl className="space-y-1 text-sm">
+    <div>
+      <dl className="divide-y divide-(--hairline) text-sm [&>div]:py-2.5 [&>div:first-child]:pt-0">
         {props.cellType !== undefined && (
           <Row label="Battery cells" value={props.cellType ?? '—'} />
         )}
@@ -44,12 +44,12 @@ export function BatteryEnergyPanel(props: {
         />
       </dl>
       {showTemps && (
-        <p className="mt-2 text-xs text-(--text-muted)">
+        <p className="mt-2 text-xs leading-relaxed text-(--text-muted)">
           {cellTemps && !cellTempsCurrent
             ? `Cell temperatures as of ${dateTime(cellTemps.at)}; the vehicle reports them only while awake.`
             : 'Cell temperatures are reported only while the vehicle is awake.'}
         </p>
       )}
-    </>
+    </div>
   );
 }

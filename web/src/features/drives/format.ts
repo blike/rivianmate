@@ -19,7 +19,7 @@ export const shortPlace = (label: string) => label.split(',')[0]!.trim();
 export const placeName = (p: DrivePlaceDto) =>
   p.locationId != null ? p.label : shortPlace(p.label);
 
-/** "38m · −6.3% · 1.84 mi/kWh" */
+/** "38m · −6.3% · 1.84 mi/kWh · 54 °F" */
 export function driveFacts(d: DriveDto, u: UnitFormatter): string {
   const used = batteryUsed(d);
   return [
@@ -27,6 +27,7 @@ export function driveFacts(d: DriveDto, u: UnitFormatter): string {
     used != null && batteryChange(used),
     // Efficiency swings early in a drive, so it waits for the end.
     d.endedAt != null && d.energyKwh != null && u.formatEfficiency(d.distanceKm, d.energyKwh),
+    d.outsideTempC != null && u.formatTemperature(d.outsideTempC),
   ]
     .filter(Boolean)
     .join(' · ');

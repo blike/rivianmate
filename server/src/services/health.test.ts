@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capacityEstimates, drainSnapshots, phantomDrain } from './health.js';
+import { capacityEstimates, drainSnapshots, parkedLoss, phantomDrain } from './health.js';
 
 const at = (h: number) => new Date(Date.UTC(2026, 8, 1, 0) + h * 3600_000);
 const snap = (h: number, battery: number, mileage = 1000, charger = 'chrgr_sts_not_connected') => ({
@@ -7,6 +7,58 @@ const snap = (h: number, battery: number, mileage = 1000, charger = 'chrgr_sts_n
   batteryLevel: battery,
   mileageM: mileage,
   chargerStatus: charger,
+});
+
+describe('parkedLoss', () => {
+  const span = (h0: number, h1: number | null, l0: number | null, l1: number | null) => ({
+    start: at(h0),
+    end: h1 == null ? null : at(h1),
+    startLevel: l0,
+    endLevel: l1,
+  });
+  const readings: [number, number][] = [];
+  const levelAt = (t: Date) => readings.findLast(([h]) => at(h) <= t)?.[1] ?? null;
+
+  it('measures each parked stretch from one drive or charge to the next', () => {
+    readings.splice(0, Infinity, [0, 80], [13.5, 79]);
+    const r = parkedLoss(
+      [
+        span(1, 2, 79.8, 75), // drive
+        span(4, 5, 74.5, 72), // drive
+        span(6, 10, 71.8, 85), // charge
+        span(12, 13, 84.6, 80), // drive
+      ],
+      at(0),
+      at(14),
+      levelAt,
+    );
+    // 80 → 79.8, 75 → 74.5, 72 → 71.8, 85 → 84.6, then 80 → the last reading, 79.
+    expect(r.lossPct).toBeCloseTo(0.2 + 0.5 + 0.2 + 0.4 + 1);
+    expect(r.parkedHours).toBeCloseTo(1 + 2 + 1 + 2 + 1);
+  });
+
+  it('ignores a dip in the readings that recovers once the vehicle wakes', () => {
+    // Parked at 60 %, read 59.4 % asleep, and the next drive started at 59.9 %.
+    readings.splice(0, Infinity, [0, 60], [5, 59.4], [9, 59.9]);
+    const r = parkedLoss([span(0, 1, 60, 60), span(9, 10, 59.9, 59)], at(1), at(10), levelAt);
+    expect(r.lossPct).toBeCloseTo(0.1);
+    expect(r.parkedHours).toBeCloseTo(8);
+  });
+
+  it('falls back to the readings for spans without levels', () => {
+    readings.splice(0, Infinity, [0, 80], [3, 79], [5, 90]);
+    const r = parkedLoss([span(3, 5, null, null)], at(0), at(6), levelAt);
+    expect(r.lossPct).toBeCloseTo(1);
+    expect(r.parkedHours).toBeCloseTo(4);
+  });
+
+  it('is nothing with no parked time', () => {
+    readings.splice(0, Infinity, [0, 80]);
+    expect(parkedLoss([span(0, null, 80, null)], at(0), at(4), levelAt)).toEqual({
+      lossPct: 0,
+      parkedHours: 0,
+    });
+  });
 });
 
 describe('phantomDrain', () => {

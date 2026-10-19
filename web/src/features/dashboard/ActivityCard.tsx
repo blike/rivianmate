@@ -17,14 +17,12 @@ export function ActivityCard(props: {
   return (
     <Link
       to={props.to}
-      className="card activity-card flex h-full flex-col gap-4 p-5 transition-colors hover:border-[color-mix(in_srgb,var(--accent)_45%,var(--border))]"
+      className="card flex h-full flex-col gap-5 p-5 transition-colors hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--hairline))]"
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-(--surface-2) text-(--accent)">
-            {props.icon}
-          </span>
-          <span className="text-sm font-medium">{props.title}</span>
+        <span className="flex items-center gap-2 text-(--accent)">
+          {props.icon}
+          <span className="eyebrow text-(--text-secondary)">{props.title}</span>
         </span>
         <span className="flex items-center gap-2 text-xs text-(--text-muted)">{props.when}</span>
       </div>
@@ -42,7 +40,7 @@ export function ActivityLine(props: {
 }) {
   const loading = useLoading();
   return (
-    <div className="flex min-w-0 items-baseline gap-2 text-base font-medium">
+    <div className="flex min-w-0 items-baseline gap-2 text-[1.0625rem] leading-6 font-medium tracking-[-0.005em]">
       {loading ? (
         // In a span, so the row keeps a full line's height while it loads.
         <span>
@@ -146,10 +144,10 @@ export function ActivityBar(props: {
 export function ActivityStats(props: { items: { label: string; value: ReactNode }[] }) {
   const loading = useLoading();
   return (
-    <dl className="grid grid-cols-3 gap-3">
+    <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-(--hairline) pt-4">
       {props.items.map((i) => (
         <div key={i.label}>
-          <dt className="text-[11px] uppercase tracking-wide text-(--text-muted)">
+          <dt className="text-[11px] text-(--text-muted)">
             {loading ? <Skeleton className="w-[6em]" /> : i.label}
           </dt>
           <dd className="mt-0.5 truncate text-sm font-medium tabular-nums">

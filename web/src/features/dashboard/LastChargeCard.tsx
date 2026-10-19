@@ -9,7 +9,7 @@ import { relativeTime } from '../../lib/freshness';
 import type { LiveCharge } from '../../lib/liveCharge';
 import { sessionEnergy } from '../../lib/sessionEnergy';
 import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
-import { type ScheduleStatus, dayLabel } from '../charging/schedules';
+import { type ScheduleStatus, dayLabel } from './schedules';
 import { ActivityBar, ActivityCard, ActivityLine, ActivityStats } from './ActivityCard';
 import { ChargeIcon } from './ActivityIcons';
 

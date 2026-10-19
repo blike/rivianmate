@@ -127,6 +127,13 @@
       "when": 1792069980830,
       "tag": "0017_history_stores",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792367397898,
+      "tag": "0018_drive_weather",
+      "breakpoints": true
     }
   ]
 }

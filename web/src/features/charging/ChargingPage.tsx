@@ -9,7 +9,6 @@ import { sv } from '../../lib/state';
 import { CurveChart } from './CurveChart';
 import { EnergySplit } from './EnergySplit';
 import { LiveCard } from './LiveCard';
-import { SchedulesPanel } from './SchedulesPanel';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
@@ -68,7 +67,7 @@ export function ChargingPage(props: { vehicleId: string }) {
             No charging sessions recorded yet.
           </p>
         </Panel>
-        <ScheduleRow vehicleId={props.vehicleId} wallboxes={wallboxes} />
+        <Wallboxes wallboxes={wallboxes} />
       </div>
     );
   }
@@ -136,26 +135,19 @@ export function ChargingPage(props: { vehicleId: string }) {
         </Panel>
       </div>
 
-      <ScheduleRow vehicleId={props.vehicleId} wallboxes={wallboxes} />
+      <Wallboxes wallboxes={wallboxes} />
     </div>
   );
 }
 
-/** Schedules, then any wallboxes beside them. */
-function ScheduleRow(props: { vehicleId: string; wallboxes: WallboxDto[] | undefined }) {
-  const wallboxes = props.wallboxes ?? [];
+/** Any wallboxes, two to a row. */
+function Wallboxes(props: { wallboxes: WallboxDto[] | undefined }) {
+  if (!props.wallboxes?.length) return null;
   return (
-    <div
-      className={`grid grid-cols-1 items-start gap-4 ${wallboxes.length ? 'lg:grid-cols-2' : ''}`}
-    >
-      <SchedulesPanel vehicleId={props.vehicleId} />
-      {wallboxes.length > 0 && (
-        <div className="grid grid-cols-1 gap-4">
-          {wallboxes.map((wb) => (
-            <WallboxPanel key={wb.wallboxId} wallbox={wb} />
-          ))}
-        </div>
-      )}
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      {props.wallboxes.map((wb) => (
+        <WallboxPanel key={wb.wallboxId} wallbox={wb} />
+      ))}
     </div>
   );
 }

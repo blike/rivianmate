@@ -38,6 +38,7 @@ import {
 } from './parallax/index.js';
 import { b64, double, float, int, message, string } from './parallax/encode.js';
 import { ROUTE_HOME } from './mock-route-home.js';
+import type { TemperatureLookup } from '../services/drive-weather.js';
 
 /** Made-up addresses for mock drives (no real lookups in mock mode). */
 export const mockGeocode = async (lat: number, lon: number) => {
@@ -46,6 +47,21 @@ export const mockGeocode = async (lat: number, lon: number) => {
     place: `${number} Prairie Road, Normal`,
     address: `${number} Prairie Road, Normal, Illinois, United States`,
   };
+};
+
+/** Mild weather peaking mid-afternoon (UTC−5), every 15 minutes around the drive. */
+export const mockTemperatures: TemperatureLookup = async (points, from, to) => {
+  const step = 15 * 60_000;
+  const first = Math.floor(from.getTime() / step) * step - step;
+  const times: number[] = [];
+  for (let t = first; t <= to.getTime() + step; t += step) times.push(t);
+  return points.map((p) => ({
+    times,
+    tempsC: times.map((t) => {
+      const hour = (t / 3_600_000 - 5) % 24;
+      return 12 + 7 * Math.sin(((hour - 9) / 24) * 2 * Math.PI) - (p.lat - 40.5) * 2;
+    }),
+  }));
 };
 
 export const MOCK_VIN = '7FCTGAAA0MN000001';

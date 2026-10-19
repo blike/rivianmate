@@ -8,12 +8,20 @@ import type {
   DepartureSchedule,
   LiveSessionData,
   VehicleState,
+  VehicleView,
 } from './rivian/types.js';
 import type { FeedLatestData } from './rivian/subscription.js';
 import type { SavedLocation } from './services/locations.js';
 import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
-export type { ChargingSchedule, DepartureSchedule, FeedLatestData, LiveSessionData, VehicleState };
+export type {
+  ChargingSchedule,
+  DepartureSchedule,
+  FeedLatestData,
+  LiveSessionData,
+  VehicleState,
+  VehicleView,
+};
 
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */
@@ -52,6 +60,8 @@ export interface VehicleDto {
   make: string | null;
   model: string | null;
   modelYear: number | null;
+  /** Views of Rivian's render of this vehicle, served at `/api/vehicles/:id/render/:view`. */
+  renders: VehicleView[];
 }
 
 export type { ChargingSettings, SavedLocation } from './services/locations.js';
@@ -138,12 +148,25 @@ export interface DriveDto {
   startRangeKm: number | null;
   endRangeKm: number | null;
   maxSpeedKmh: number | null;
+  /** Average outside temperature along the route (°C), from weather model data; null until the drive ends. */
+  outsideTempC: number | null;
+  /** The weather over the drive, looked up once it ends; null until then or without data. */
+  weather: DriveWeatherDto | null;
   driveMode: string | null;
   /** Where navigation was headed, if the vehicle was navigating. */
   destination: { name: string | null; lat: number; lon: number } | null;
   /** Where it started and ended: a saved location's name, or an address once looked up. */
   start: DrivePlaceDto | null;
   end: DrivePlaceDto | null;
+}
+
+/**
+ * When RivianMate's drive history starts. Charging history imported from
+ * Rivian can reach back further, so totals that set the two against each
+ * other start here.
+ */
+export interface DriveCoverageDto {
+  since: string | null;
 }
 
 export interface DrivePlaceDto {
@@ -154,6 +177,20 @@ export interface DrivePlaceDto {
   isHome: boolean;
   /** The saved location, when the place is one. */
   locationId: number | null;
+}
+
+export interface DriveWeatherDto {
+  /** Lowest and highest outside temperature along the route (°C). */
+  minC: number;
+  maxC: number;
+  /**
+   * WMO weather code for the drive: the commonest, unless it was wet for a good part of it.
+   * 0 clear, 1–3 cloud, 45 fog, 51–67 drizzle/rain, 71–77 snow, 80–99 showers/storms.
+   */
+  weatherCode: number | null;
+  /** Average wind at 10 m (km/h), and where it mostly blew from (degrees). */
+  windKmh: number | null;
+  windFromDeg: number | null;
 }
 
 export interface DriveDetailDto extends DriveDto {
@@ -183,6 +220,19 @@ export interface PhantomDrainDto {
   days: { day: string; lossPct: number; parkedHours: number; pctPerDay: number }[];
   /** Average %/day over all parked time in the window; null if too little data. */
   avgPctPerDay: number | null;
+}
+
+/**
+ * The battery over a window: its level at each end, and what it lost while
+ * parked and unplugged (net of each parked stretch, as phantom drain counts
+ * it). Levels in percent; capacity is the latest reported.
+ */
+export interface BatteryWindowDto {
+  capacityKwh: number | null;
+  startLevel: number | null;
+  endLevel: number | null;
+  parkedLossPct: number;
+  parkedHours: number;
 }
 
 export interface BatteryHealthDto {

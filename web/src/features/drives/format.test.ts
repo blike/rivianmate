@@ -59,6 +59,14 @@ describe('driveFacts', () => {
     expect(driveFacts(drive(figures), u).split(' · ')).toHaveLength(3);
   });
 
+  it('adds the outside temperature when known', () => {
+    expect(
+      driveFacts(drive({ ...figures, outsideTempC: 10 }), u)
+        .split(' · ')
+        .at(-1),
+    ).toBe('50 °F');
+  });
+
   it('leaves out efficiency until the drive ends', () => {
     const facts = driveFacts(drive({ ...figures, endedAt: null }), u);
     expect(facts).not.toContain('kWh');

@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
   ChargeSpanDto,
+  DriveCoverageDto,
   DriveDetailDto,
   DriveDto,
   DrivePlaceDto,
@@ -14,11 +15,12 @@ import type {
 import type { AppContext } from '../context.js';
 import { drives, locationPoints } from '../db/schema.js';
 import { driveElevation, maxSpeeds, mileageDistanceKm } from '../services/drive-detector.js';
-import { driveEnergyKwh } from '../services/drive-metrics.js';
+import { MIN_DRIVE_KM, driveEnergyKwh } from '../services/drive-metrics.js';
 import type { VehicleState } from '../rivian/types.js';
 import { stateNumber } from '../services/state-utils.js';
 import { nearbySpot } from '../services/locations.js';
 import { type PlaceContext, placeContext } from './charging.js';
+import { listLimit, listWindowSchema } from './list-window.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
 import { simplifyTrack } from '../services/simplify-track.js';
@@ -55,13 +57,6 @@ function trackToleranceM(from: Date, to: Date): number {
   const days = (to.getTime() - from.getTime()) / 86400_000;
   return days <= 7 ? 5 : days <= 31 ? 10 : 20;
 }
-
-/**
- * A finished drive that moved less than this is the vehicle shifting in and
- * out of gear in place (a gear check, nudging forward in the driveway), not a
- * trip: it's kept but left out of the drive list and everything built on it.
- */
-const MIN_DRIVE_KM = 0.1;
 
 const rangeQuerySchema = z.object({
   from: z.coerce.date().default(() => new Date(Date.now() - 86400_000)),
@@ -182,14 +177,30 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
   );
 
   app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/drive-coverage',
+    async (request): Promise<DriveCoverageDto> => {
+      const [first] = await ctx.db
+        .select({ startedAt: drives.startedAt })
+        .from(drives)
+        .where(eq(drives.vehicleId, request.params.id))
+        .orderBy(asc(drives.startedAt))
+        .limit(1);
+      return { since: first ? first.startedAt.toISOString() : null };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/drives',
     async (request): Promise<DriveDto[]> => {
+      const q = listWindowSchema.parse(request.query);
       const rows = await ctx.db
         .select()
         .from(drives)
         .where(
           and(
             eq(drives.vehicleId, request.params.id),
+            q.from ? gte(drives.startedAt, q.from) : undefined,
+            q.to ? lte(drives.startedAt, q.to) : undefined,
             // A drive under way, or one with no distance, still shows.
             or(
               isNull(drives.endedAt),
@@ -199,7 +210,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           ),
         )
         .orderBy(desc(drives.startedAt))
-        .limit(200);
+        .limit(listLimit(q));
       // Drives recorded before elevation tracking: compute once and keep.
       // Only drives that actually have altitude readings are candidates, so
       // drives without any don't cost a query on every listing.
@@ -316,6 +327,17 @@ function toDriveDto(
     startRangeKm: row.startRangeKm,
     endRangeKm: live ? stateNumber(live, 'distanceToEmpty') : row.endRangeKm,
     maxSpeedKmh,
+    outsideTempC: row.avgOutsideTempC,
+    weather:
+      row.minOutsideTempC != null && row.maxOutsideTempC != null
+        ? {
+            minC: row.minOutsideTempC,
+            maxC: row.maxOutsideTempC,
+            weatherCode: row.weatherCode,
+            windKmh: row.windKmh,
+            windFromDeg: row.windFromDeg,
+          }
+        : null,
     driveMode: row.driveMode,
     destination:
       row.destinationLat != null && row.destinationLon != null

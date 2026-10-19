@@ -7,6 +7,8 @@ export interface Freshness {
   level: FreshnessLevel;
   lastSeen: Date | null;
   label: string;
+  /** The label without the state word, for beside something that already says it. */
+  seen: string;
 }
 
 const STALE_MS = 24 * 3600_000;
@@ -73,11 +75,24 @@ function isAsleep(state: VehicleState | undefined): boolean {
 
 export function freshness(state: VehicleState | undefined, now = Date.now()): Freshness {
   const lastSeen = lastSeenAt(state);
-  if (!lastSeen) return { level: 'stale', lastSeen: null, label: 'No data yet' };
+  if (!lastSeen)
+    return { level: 'stale', lastSeen: null, label: 'No data yet', seen: 'No data yet' };
   const age = now - lastSeen.getTime();
   const ago = relativeTime(lastSeen, now);
-  if (age > STALE_MS) return { level: 'stale', lastSeen, label: `No updates · last seen ${ago}` };
-  if (isAsleep(state)) return { level: 'asleep', lastSeen, label: `Asleep · last seen ${ago}` };
-  if (age <= LIVE_MS) return { level: 'live', lastSeen, label: `Online · updated ${ago}` };
-  return { level: 'recent', lastSeen, label: `Online · updated ${ago}` };
+  const lastSeenLabel = `Last seen ${ago}`;
+  const updated = `Updated ${ago}`;
+  if (age > STALE_MS) {
+    return {
+      level: 'stale',
+      lastSeen,
+      label: `No updates · last seen ${ago}`,
+      seen: lastSeenLabel,
+    };
+  }
+  if (isAsleep(state)) {
+    return { level: 'asleep', lastSeen, label: `Asleep · last seen ${ago}`, seen: lastSeenLabel };
+  }
+  if (age <= LIVE_MS)
+    return { level: 'live', lastSeen, label: `Online · updated ${ago}`, seen: updated };
+  return { level: 'recent', lastSeen, label: `Online · updated ${ago}`, seen: updated };
 }

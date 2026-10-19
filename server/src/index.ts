@@ -12,10 +12,11 @@ import { type Logger, createLogger } from './logger.js';
 import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
 import { RivianGovernor } from './rivian/governor.js';
-import { type MockScene, MockRivian, mockGeocode } from './rivian/mock.js';
+import { type MockScene, MockRivian, mockGeocode, mockTemperatures } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
 import { getPasswordHash } from './routes/auth.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
+import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { TokenStore } from './services/token-store.js';
@@ -78,6 +79,12 @@ async function main(): Promise<void> {
       // Mock drives are in made-up places; don't look them up.
       config.MOCK_RIVIAN ? mockGeocode : nominatimGeocoder(userAgent),
       logger.child({ component: 'places' }),
+    ),
+    new DriveWeather(
+      db,
+      // Mock drives are in made-up places too; make up their weather.
+      config.MOCK_RIVIAN ? mockTemperatures : openMeteoTemperatures(userAgent),
+      logger.child({ component: 'weather' }),
     ),
   );
 

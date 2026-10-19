@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useLiveState, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
-import { AppHeader } from './components/AppHeader';
+import { MobileBar, Sidebar } from './components/AppNav';
+import { PageHeader } from './components/PageHeader';
 import { ChargingPage } from './features/charging/ChargingPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { DrivesPage } from './features/drives/DrivesPage';
@@ -47,26 +48,63 @@ function Shell() {
   const vehicle = vehicles?.find((v) => v.id === vehicleId);
   useLiveState(vehicleId);
 
+  const nav = { vehicles, vehicleId, onSelectVehicle: setSelectedId };
+
   return (
-    <div className="mx-auto flex min-h-full max-w-6xl flex-col px-4">
-      <AppHeader vehicles={vehicles} vehicleId={vehicleId} onSelectVehicle={setSelectedId} />
-      <main className="flex-1 pb-10">
-        {vehiclesPending || unitsPending ? null : !vehicleId ? (
-          <p className="text-(--text-muted)">
-            {vehicles ? 'No vehicles found.' : "Couldn't load vehicles."}
-          </p>
-        ) : (
-          <Routes>
-            <Route path="/" element={<DashboardPage vehicleId={vehicleId} vehicle={vehicle} />} />
-            <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
-            <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />
-            <Route path="/charging" element={<ChargingPage vehicleId={vehicleId} />} />
-            <Route path="/health" element={<HealthPage vehicleId={vehicleId} />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        )}
-      </main>
+    <div className="min-h-full lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+      <Sidebar {...nav} />
+      <div className="flex min-h-full min-w-0 flex-col">
+        <MobileBar {...nav} />
+        <main className="w-full max-w-[90rem] flex-1 px-4 pb-12 sm:px-6 lg:px-10 lg:pt-8 xl:px-12">
+          {vehiclesPending || unitsPending ? null : !vehicleId ? (
+            <p className="text-(--text-muted)">
+              {vehicles ? 'No vehicles found.' : "Couldn't load vehicles."}
+            </p>
+          ) : (
+            <Routes>
+              <Route path="/" element={<DashboardPage vehicleId={vehicleId} vehicle={vehicle} />} />
+              <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
+              <Route
+                path="/drives"
+                element={
+                  <>
+                    <PageHeader title="Drives" />
+                    <DrivesPage vehicleId={vehicleId} />
+                  </>
+                }
+              />
+              <Route
+                path="/charging"
+                element={
+                  <>
+                    <PageHeader title="Charging" />
+                    <ChargingPage vehicleId={vehicleId} />
+                  </>
+                }
+              />
+              <Route
+                path="/health"
+                element={
+                  <>
+                    <PageHeader title="Health" />
+                    <HealthPage vehicleId={vehicleId} model={vehicle?.model} />
+                  </>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <>
+                    <PageHeader title="Settings" />
+                    <SettingsPage />
+                  </>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

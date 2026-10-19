@@ -7,6 +7,7 @@ import {
   positionAt,
   rangeWindow,
   stateRows,
+  awakeStretches,
   stateTotals,
 } from './history';
 
@@ -160,6 +161,32 @@ describe('stateRows', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ from: local(1, 6), to: local(2, 6) });
     expect(rows[0]!.segments.map((s) => s.state)).toEqual(['awake', 'driving']);
+  });
+});
+
+describe('awakeStretches', () => {
+  const ms = (h: number) => Date.parse(at(h));
+
+  it('joins awake spans close together and puts the longest first', () => {
+    const stretches = awakeStretches([
+      { state: 'awake', from: ms(1), to: ms(1.5) },
+      { state: 'asleep', from: ms(1.5), to: ms(3) },
+      { state: 'awake', from: ms(3), to: ms(4) },
+      { state: 'awake', from: ms(4.01), to: ms(5) },
+      { state: 'driving', from: ms(5), to: ms(6) },
+    ]);
+    expect(stretches.map((s) => (s.to - s.from) / H)).toEqual([2, 0.5]);
+    expect(stretches[0]!.from).toBe(ms(3));
+  });
+
+  it('leaves out driving, charging and updating', () => {
+    expect(
+      awakeStretches([
+        { state: 'driving', from: ms(0), to: ms(1) },
+        { state: 'charging', from: ms(1), to: ms(2) },
+        { state: 'updating', from: ms(2), to: ms(3) },
+      ]),
+    ).toEqual([]);
   });
 });
 

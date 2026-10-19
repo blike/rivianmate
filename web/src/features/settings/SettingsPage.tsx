@@ -50,7 +50,7 @@ const sections = [
   {
     id: 'about',
     label: 'About',
-    description: 'Version, build and project links.',
+    description: 'Version, build, project links and data sources.',
     icon: <InfoIcon />,
   },
 ];

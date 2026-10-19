@@ -1,9 +1,11 @@
 import type {
   BatteryHealthDto,
+  BatteryWindowDto,
   ChargeSpanDto,
   ChargingCurvePointDto,
   ChargingSessionDto,
   ConnectResponse,
+  DriveCoverageDto,
   DriveDetailDto,
   DriveDto,
   FeedLatestData,
@@ -84,6 +86,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+const sinceQuery = (since?: Date) => (since ? `?from=${since.toISOString()}` : '');
 
 export const api = {
   status: () => request<StatusResponse>('/api/status'),
@@ -175,10 +179,16 @@ export const api = {
     request<LocationPointDto[]>(
       `/api/vehicles/${id}/locations?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
-  drives: (id: string) => request<DriveDto[]>(`/api/vehicles/${id}/drives`),
+  /** The newest drives, or with `since`, every drive that started after it. */
+  drives: (id: string, since?: Date) =>
+    request<DriveDto[]>(`/api/vehicles/${id}/drives${sinceQuery(since)}`),
+  batteryWindow: (id: string, from: Date) =>
+    request<BatteryWindowDto>(`/api/vehicles/${id}/battery-window?from=${from.toISOString()}`),
+  driveCoverage: (id: string) => request<DriveCoverageDto>(`/api/vehicles/${id}/drive-coverage`),
   drive: (driveId: number) => request<DriveDetailDto>(`/api/drives/${driveId}`),
-  chargingSessions: (id: string) =>
-    request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions`),
+  /** The newest sessions, or with `since`, every session that started after it. */
+  chargingSessions: (id: string, since?: Date) =>
+    request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${sinceQuery(since)}`),
   updateSessionCost: (sessionId: number, cost: string | null) =>
     request<ChargingSessionDto>(`/api/charging-sessions/${sessionId}`, {
       method: 'PATCH',

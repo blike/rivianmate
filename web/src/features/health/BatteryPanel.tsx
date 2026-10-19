@@ -7,12 +7,15 @@ import { TrendChart } from '../../components/TrendChart';
 import { dateTime, shortDate } from '../../lib/format';
 import { fmt } from '../../lib/state';
 import { capacityTrend, capacityOfRated } from './health';
+import { PackDetails } from './PackDetails';
 
 export function BatteryPanel(props: {
   battery: BatteryHealthDto | undefined;
   insights: VehicleInsightsDto | undefined;
   batteryPending: boolean;
   insightsPending: boolean;
+  /** Left out when undefined: legacy doesn't report it for this vehicle. */
+  cellType?: string | null;
 }) {
   const reported = props.battery?.reported;
   const latest = props.battery?.latest;
@@ -92,21 +95,29 @@ export function BatteryPanel(props: {
               />
               <CapacityBar pct={ofRated} />
               <p className="mt-2 text-sm text-(--text-secondary)">
-                {ofRated != null && rated != null
-                  ? `${fmt(trend!.latestKwh, 1)} of ${fmt(rated, 1)} kWh rated`
+                {rated != null
+                  ? `Rated ${fmt(rated, 1)} kWh`
                   : 'Shown once the vehicle reports its rated capacity.'}
               </p>
             </div>
           </LoadingScope>
           <div className="border-t border-(--border) pt-4">
-            <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
-              Used while parked
-            </h4>
+            <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">Pack</h4>
             <LoadingScope loading={props.insightsPending}>
-              <ParkedEnergyPanel insights={props.insights} />
+              <PackDetails insights={props.insights} cellType={props.cellType} />
             </LoadingScope>
           </div>
         </div>
+      </div>
+
+      {/* Short and wide: both windows side by side under the capacity readings. */}
+      <div className="mt-6 border-t border-(--border) pt-4">
+        <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
+          Used while parked
+        </h4>
+        <LoadingScope loading={props.insightsPending}>
+          <ParkedEnergyPanel insights={props.insights} columns />
+        </LoadingScope>
       </div>
     </Panel>
   );
