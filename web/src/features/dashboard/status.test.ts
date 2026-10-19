@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sinceLabel, statusSentence } from './status';
+import { sinceLabel, statusSentence, stillAtDriveEnd } from './status';
 
 const now = new Date(2026, 9, 18, 15, 0).getTime();
 
@@ -46,5 +46,24 @@ describe('statusSentence', () => {
   it('names the charger while charging', () => {
     const s = statusSentence({ kind: 'charging', place: 'Rivian', since: null, now });
     expect(s.headline).toBe('Charging at Rivian');
+  });
+});
+
+describe('stillAtDriveEnd', () => {
+  const drive = { endLat: 33.07, endLon: -117.26 };
+
+  it('holds while the vehicle is where the drive ended', () => {
+    expect(stillAtDriveEnd(drive, { lat: 33.0705, lon: -117.2605 })).toBe(true);
+  });
+
+  it('fails once it has moved, as after drives missed while RivianMate was off', () => {
+    expect(stillAtDriveEnd(drive, { lat: 33.05, lon: -117.24 })).toBe(false);
+  });
+
+  it('assumes so without both positions', () => {
+    expect(stillAtDriveEnd(drive, null)).toBe(true);
+    expect(stillAtDriveEnd({ endLat: null, endLon: null }, { lat: 33.05, lon: -117.24 })).toBe(
+      true,
+    );
   });
 });

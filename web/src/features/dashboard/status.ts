@@ -1,5 +1,9 @@
 import type { ActivityKind } from '../../lib/vehicleStatus';
 import { clock, shortDate } from '../../lib/format';
+import { haversineKm } from '../../lib/geo';
+
+/** Farther than this from where the last drive ended, it has moved since. */
+const MOVED_KM = 0.3;
 
 /** The dashboard's headline: what the vehicle is doing, where, and since when. */
 export interface StatusSentence {
@@ -20,6 +24,19 @@ export function sinceLabel(at: number, now: number): string {
   if (days <= 0) return `since ${clock(at)}`;
   if (days === 1) return `since yesterday, ${clock(at)}`;
   return `since ${shortDate(at)}`;
+}
+
+/**
+ * Whether the vehicle is still where a drive ended, so that drive can say
+ * where it's parked. Drives missed while RivianMate was off leave the last
+ * recorded one ending somewhere else; without both positions, assume so.
+ */
+export function stillAtDriveEnd(
+  drive: { endLat: number | null; endLon: number | null },
+  at: { lat: number; lon: number } | null,
+): boolean {
+  if (drive.endLat == null || drive.endLon == null || !at) return true;
+  return haversineKm(drive.endLat, drive.endLon, at.lat, at.lon) <= MOVED_KM;
 }
 
 export function statusSentence(i: {

@@ -22,7 +22,7 @@ import {
   vehicleActivity,
 } from '../../lib/vehicleStatus';
 import { ChargeGauge } from './ChargeGauge';
-import { statusSentence } from './status';
+import { statusSentence, stillAtDriveEnd } from './status';
 import { useActiveDriveTrail } from './useActiveDriveTrail';
 
 const ACTIVITY_COLOR: Record<ActivityKind, string> = {
@@ -110,7 +110,7 @@ export function Overview(props: {
 
   // Where it is: the charger while plugged in, otherwise where the last drive ended.
   const session = sessions?.[0] && !sessions[0].endedAt ? sessions[0] : null;
-  const lastDrive = drives?.[0]?.endedAt ? drives[0] : null;
+  const lastDrive = drives?.[0]?.endedAt && stillAtDriveEnd(drives[0], loc) ? drives[0] : null;
   const plugged = activity?.kind === 'charging' || activity?.kind === 'plugged';
   const status = activity
     ? statusSentence({
