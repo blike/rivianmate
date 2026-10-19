@@ -1,0 +1,469 @@
+{
+  "description": "Drive history, distance and battery consumption for your vehicle.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["rivianmate"],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 201,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time, COUNT(*) OVER () AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Drives",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 202,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Distance",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 203,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, AVG(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Distance / Drive",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 204,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(start_battery-end_battery) AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Battery Used",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "links": [
+            {
+              "targetBlank": false,
+              "title": "Open Drive Details",
+              "url": "/d/rivianmate-drive-details/rivianmate-drive-details?var-drive_id=${__data.fields[\"Drive ID\"]}"
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Drive ID"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Distance (mi)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 205,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id AS \"Drive ID\", started_at AS \"Started\", ended_at AS \"Ended\", ROUND(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))/60.0) AS \"Duration (min)\", COALESCE((SELECT sl.name FROM saved_locations sl WHERE start_lat IS NOT NULL AND start_lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - start_lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - start_lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1), CASE WHEN EXISTS (SELECT 1 FROM wallboxes w WHERE start_lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - start_lon) / 2), 2))) <= 0.15) THEN 'Home' END, start_place) AS \"From\", COALESCE((SELECT sl.name FROM saved_locations sl WHERE end_lat IS NOT NULL AND end_lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - end_lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - end_lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1), CASE WHEN EXISTS (SELECT 1 FROM wallboxes w WHERE end_lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - end_lon) / 2), 2))) <= 0.15) THEN 'Home' END, end_place) AS \"To\", distance_km*0.621371 AS \"Distance (mi)\", ROUND((elevation_gain_m*3.28084)::numeric) AS \"Climb (ft)\", start_battery AS \"Start Batt %\", end_battery AS \"End Batt %\", ROUND((start_battery-end_battery)::numeric, 1) AS \"Batt Used %\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Drive History",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "spanNulls": true
+          },
+          "unit": "lengthmi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "id": 206,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time, distance_km*0.621371 AS \"Distance (mi)\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) ORDER BY started_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Distance per Drive",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "spanNulls": true
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "id": 207,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time, (start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) ORDER BY started_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Battery Used per Drive",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["rivianmate"],
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - Drives",
+  "uid": "rivianmate-drives",
+  "version": 1,
+  "id": null,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "grafana-postgresql-datasource",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  }
+}

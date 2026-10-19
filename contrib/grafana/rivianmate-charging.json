@@ -1,0 +1,789 @@
+{
+  "description": "Charging sessions, energy added, cost and wallbox power for your vehicle.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["rivianmate"],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 101,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time, COUNT(*) OVER () AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY started_at DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "kwatth",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 102,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(energy_kwh) AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Energy Added",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "currencyUSD",
+          "noValue": "No cost data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 103,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(cost) AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) HAVING COUNT(cost) > 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Cost (recorded)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "kwatt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 104,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, AVG(avg_power_kw) AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Charging Power",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 105,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS \"Started\", ended_at AS \"Ended\", ROUND(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))/60.0) AS \"Duration (min)\", ROUND(charging_seconds/60.0) AS \"Charging (min)\", start_soc AS \"Start SoC %\", end_soc AS \"End SoC %\", energy_kwh AS \"Energy (kWh)\", pack_kwh AS \"Pack (kWh)\", thermal_kwh AS \"Thermal (kWh)\", avg_power_kw AS \"Avg kW\", max_power_kw AS \"Max kW\", cost AS \"Cost\", COALESCE(cost, est_cost) AS \"Cost (est.)\", charger_type AS \"Charger Type\", COALESCE(loc_name, CASE WHEN is_home_s THEN 'Home' WHEN is_public THEN 'Public' ELSE 'Other' END) AS \"Location\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY started_at DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Charging Sessions",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "spanNulls": true
+          },
+          "unit": "kwatth"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "id": 106,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time, energy_kwh AS \"Energy (kWh)\" FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND $__timeFilter(started_at) ORDER BY started_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Energy Added per Session",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "spanNulls": true
+          },
+          "unit": "kwatt",
+          "noValue": "No wallbox registered"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 107,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS time, power AS \"Power (kW)\" FROM wallbox_readings WHERE $__timeFilter(ts) ORDER BY ts",
+          "refId": "A"
+        }
+      ],
+      "title": "Wallbox Power Draw",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "noValue": "No wallbox registered"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "id": 108,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT name || ' - ' || model || ' (max ' || max_power || ' kW)' AS value FROM wallboxes LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Wallbox",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "spanNulls": true
+          },
+          "unit": "kwatth",
+          "noValue": "No pack/thermal data in range"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "id": 109,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT started_at AS time, pack_kwh AS \"Pack (kWh)\", thermal_kwh AS \"Thermal (kWh)\" FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (pack_kwh IS NOT NULL OR thermal_kwh IS NOT NULL) AND $__timeFilter(started_at) ORDER BY started_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Pack vs Thermal Energy per Session",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "id": 110,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, COUNT(*) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND is_home_s",
+          "refId": "A"
+        }
+      ],
+      "title": "Home Sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "kwatth",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "id": 111,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(energy_kwh) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND is_home_s",
+          "refId": "A"
+        }
+      ],
+      "title": "Home Energy",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "kwatth",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "id": 112,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, COALESCE(SUM(energy_kwh), 0) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND NOT is_home_s",
+          "refId": "A"
+        }
+      ],
+      "title": "Away Energy",
+      "type": "stat",
+      "description": "Charging outside home: public chargers and saved locations not marked as home."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "currencyUSD",
+          "noValue": "No cost data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 4
+      },
+      "id": 113,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(COALESCE(cost, est_cost)) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) HAVING COUNT(COALESCE(cost, est_cost)) > 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Cost incl. Estimates",
+      "type": "stat",
+      "description": "Recorded cost where there is one, otherwise energy x the rate of the saved location the session was at (0 = free). Sessions at a location with no rate set are left out."
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["rivianmate"],
+  "time": {
+    "from": "now-2d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - Charging",
+  "uid": "rivianmate-charging",
+  "version": 1,
+  "id": null,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "grafana-postgresql-datasource",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  }
+}
