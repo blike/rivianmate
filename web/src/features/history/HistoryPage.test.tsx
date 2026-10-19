@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ID, ago, drives, sessions } from '../../testing/fixtures';
 import { rangeWindow } from './history';
 import { HistoryPage } from './HistoryPage';
@@ -10,11 +10,12 @@ import { RANGES } from './options';
 function render(battery?: object) {
   const client = new QueryClient();
   // Drives and sessions are listed from the start of the default 7-day window.
-  const since = rangeWindow(RANGES[1].hours, new Date()).from.toISOString();
+  const { from, to } = rangeWindow(RANGES[1].hours, new Date());
+  const since = from.toISOString();
   client.setQueryData(['drives', ID, since], drives);
   client.setQueryData(['chargingSessions', ID, since], sessions);
   client.setQueryData(['driveCoverage', ID], { since: ago(24 * 60) });
-  if (battery) client.setQueryData(['batteryWindow', ID, since], battery);
+  if (battery) client.setQueryData(['batteryWindow', ID, since, to.toISOString()], battery);
   client.setQueryData(
     ['chargeSpans', ID, '7d'],
     [{ kind: 'charging', from: ago(29), to: ago(24) }],
@@ -44,6 +45,13 @@ function render(battery?: object) {
 }
 
 describe('HistoryPage', () => {
+  // The page's window ends at the clock, so it has to hold still for the seeded keys.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date());
+  });
+  afterEach(() => vi.useRealTimers());
+
   it('reports the period, its patterns and its energy', () => {
     const html = render();
     expect(html).toContain('Last 7 days');

@@ -36,15 +36,16 @@ export function HistoryPage(props: { vehicleId: string }) {
   const { data: drives, isPending: drivesPending } = useDrives(props.vehicleId, from);
   const { data: sessions, isPending: sessionsPending } = useChargingSessions(props.vehicleId, from);
   const { data: coverage } = useDriveCoverage(props.vehicleId);
-  // The battery over the energy ledger's period, which starts no earlier than the drives.
+  // The battery over the energy ledger's period, which starts no earlier than the drives
+  // and ends where the ledger does.
   const drivesSince = coverage?.since;
   const balanceFrom = useMemo(() => {
     const since = drivesSince ? new Date(drivesSince) : null;
     return since && since > from ? since : from;
   }, [drivesSince, from]);
   const { data: battery } = useQuery({
-    queryKey: ['batteryWindow', props.vehicleId, balanceFrom.toISOString()],
-    queryFn: () => api.batteryWindow(props.vehicleId, balanceFrom),
+    queryKey: ['batteryWindow', props.vehicleId, balanceFrom.toISOString(), to.toISOString()],
+    queryFn: () => api.batteryWindow(props.vehicleId, balanceFrom, to),
     enabled: coverage !== undefined,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,

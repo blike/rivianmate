@@ -184,8 +184,10 @@ export const api = {
   /** The newest drives, or with `since`, every drive that started after it. */
   drives: (id: string, since?: Date) =>
     request<DriveDto[]>(`/api/vehicles/${id}/drives${sinceQuery(since)}`),
-  batteryWindow: (id: string, from: Date) =>
-    request<BatteryWindowDto>(`/api/vehicles/${id}/battery-window?from=${from.toISOString()}`),
+  batteryWindow: (id: string, from: Date, to: Date) =>
+    request<BatteryWindowDto>(
+      `/api/vehicles/${id}/battery-window?from=${from.toISOString()}&to=${to.toISOString()}`,
+    ),
   driveCoverage: (id: string) => request<DriveCoverageDto>(`/api/vehicles/${id}/drive-coverage`),
   drive: (vehicleId: string, driveId: number) =>
     request<DriveDetailDto>(`/api/vehicles/${vehicleId}/drives/${driveId}`),

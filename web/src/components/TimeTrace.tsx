@@ -36,12 +36,15 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
   return ticks;
 }
 
-/** The value at `ts`: the last reading at or before it (points in time order). */
+/**
+ * The value at `ts`: the last reading at or before it (points in time order),
+ * or null inside a gap, where the line breaks too.
+ */
 export function valueAt(points: readonly TracePoint[], ts: number): number | null {
   let found: number | null = null;
   for (const p of points) {
     if (p.ts > ts) break;
-    if (p.value != null) found = p.value;
+    found = p.value;
   }
   return found;
 }

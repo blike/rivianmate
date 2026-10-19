@@ -159,6 +159,38 @@ describe.skipIf(!url)('DriveWeather with Postgres', () => {
     expect(ends.maxOutsideTempC).toBeCloseTo(13);
   });
 
+  it('waits a day for GPS that arrives after a drive ends', async () => {
+    const requests: number[] = [];
+    const [late] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: 'v1', startedAt: at(0), endedAt: at(30), distanceKm: 10 })
+      .returning();
+    let now = START + 31 * 60_000;
+    const weather = service(fakeLookup(requests), { now: () => now });
+    await weather.start();
+    await weather.idle();
+    expect(requests).toEqual([]);
+    expect((await row(late!.id)).weatherCheckedAt).toBeNull();
+
+    await points(late!.id, 0, 30);
+    weather.enqueue(late!.id);
+    await weather.idle();
+    expect(requests).toEqual([4]);
+    expect((await row(late!.id)).avgOutsideTempC).not.toBeNull();
+
+    // One that never gets any is given up on after the day.
+    const [never] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: 'v1', startedAt: at(0), endedAt: at(30), distanceKm: 10 })
+      .returning();
+    now = START + 25 * 3600_000;
+    weather.enqueue(never!.id);
+    await weather.idle();
+    weather.stop();
+    expect(requests).toEqual([4]);
+    expect((await row(never!.id)).weatherCheckedAt).not.toBeNull();
+  });
+
   it('leaves a drive pending when a lookup fails', async () => {
     let fail = true;
     const requests: number[] = [];

@@ -298,6 +298,8 @@ const MAX_POINTS_PER_REQUEST = 50;
 const HOURLY_BUDGET = 2_000;
 const DAILY_BUDGET = 5_000;
 const BACKLOG_BATCH = 200;
+/** How long a drive without coordinates waits for its GPS to arrive before it's given up on. */
+const GPS_GRACE_MS = 24 * 3600_000;
 const MAX_BACKOFF_MS = 60 * 60_000;
 
 /** The call budget is spent for now; the next pass tries again. */
@@ -377,12 +379,7 @@ export class DriveWeather {
     const pending = await this.db
       .select({ id: drives.id })
       .from(drives)
-      .where(
-        and(
-          isNull(drives.weatherCheckedAt),
-          isNotNull(drives.endedAt),
-        ),
-      )
+      .where(and(isNull(drives.weatherCheckedAt), isNotNull(drives.endedAt)))
       .orderBy(desc(drives.startedAt))
       .limit(BACKLOG_BATCH);
     for (const { id } of pending) this.enqueue(id);
@@ -451,6 +448,8 @@ export class DriveWeather {
         { ts: drive.endedAt, lat: drive.endLat, lon: drive.endLon },
       ].filter((p): p is TrackPoint => p.ts != null && isPosition(p.lat, p.lon));
     }
+    // GPS can arrive after the drive ends; stay pending a while for it.
+    if (!route.length && this.now() - drive.endedAt.getTime() < GPS_GRACE_MS) return;
 
     const samples = sampleTrack(route, SAMPLE_INTERVAL_MS, true);
     const readings: WeatherReading[] = [];
