@@ -11,7 +11,6 @@ import { sv, titleCase } from '../../lib/state';
 import { brakeFluidLabel, chargePortLabel, twelveVoltLabel } from '../../lib/vehicleStatus';
 import { ClimatePanel } from './ClimatePanel';
 import { ConnectivityRows } from './ConnectivityPanel';
-// import { DayStrip } from './DayStrip';
 import { Overview } from './Overview';
 import { RecentActivity } from './RecentActivity';
 import { SchedulesSection } from './SchedulesSection';
@@ -47,7 +46,6 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
           <LoadingScope loading={isPending}>
             <Overview vehicleId={props.vehicleId} vehicle={v} state={state} />
           </LoadingScope>
-          {/* <DayStrip vehicleId={props.vehicleId} /> */}
         </div>
 
         <RecentActivity vehicleId={props.vehicleId} />
