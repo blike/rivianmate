@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useChargingSessions, useDriveCoverage, useDrives } from '../../api/hooks';
@@ -208,7 +209,11 @@ export function HistoryPage(props: { vehicleId: string }) {
 
         <section>
           <SectionRule>Efficiency</SectionRule>
-          <EfficiencyPanel drives={drives} loading={drivesPending} />
+          <EfficiencyPanel
+            drives={drives}
+            loading={drivesPending}
+            weather={!isTeslaMateVehicle(props.vehicleId)}
+          />
         </section>
       </div>
     </>

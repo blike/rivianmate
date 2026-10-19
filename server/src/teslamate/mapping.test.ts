@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isTeslaMateVehicle, teslamateCarId, teslamateVehicleId } from './ids.js';
 import {
   type CarSnapshot,
+  activitySpans,
   type ChargingProcessRow,
   type PositionRow,
   buildVehicleState,
@@ -34,6 +35,8 @@ function position(over: Partial<PositionRow> = {}): PositionRow {
     outside_temp: 12,
     inside_temp: 20,
     driver_temp_setting: 21,
+    passenger_temp_setting: 22,
+    fan_status: 0,
     is_climate_on: false,
     is_front_defroster_on: false,
     is_rear_defroster_on: null,
@@ -97,6 +100,8 @@ describe('buildVehicleState', () => {
     expect(state.gnssSpeed?.value).toBe(0);
     expect(state.tirePressureRearLeft?.value).toBe(2.8);
     expect(state.climateOn?.value).toBe('false');
+    expect(state.cabinClimatePassengerTemperature?.value).toBe(22);
+    expect(state.climateFanSpeed?.value).toBe(0);
     expect(state.defrostDefogStatus?.value).toBe('off');
     // TeslaMate logs no heading, so the map shows a Tesla without a direction.
     expect(state.gnssBearing).toBeUndefined();
@@ -387,5 +392,48 @@ describe('capacityHistory', () => {
       reported: [],
       ratedCapacity: null,
     });
+  });
+});
+
+describe('activitySpans', () => {
+  const t = (h: number) => new Date(Date.UTC(2026, 9, 18, h));
+  const span = (state: string, from: number, to: number) => ({
+    state,
+    from: t(from).toISOString(),
+    to: t(to).toISOString(),
+  });
+
+  it('lays drives and charges over the online and asleep states', () => {
+    const spans = activitySpans(
+      [
+        { kind: 'asleep', from: t(0), to: t(6) },
+        { kind: 'awake', from: t(6), to: t(12) },
+        { kind: 'driving', from: t(7), to: t(8) },
+        { kind: 'charging', from: t(9), to: t(11) },
+        { kind: 'updating', from: t(10), to: t(13) },
+      ],
+      t(0),
+      t(14),
+    );
+    expect(spans).toEqual([
+      span('asleep', 0, 6),
+      span('awake', 6, 7),
+      span('driving', 7, 8),
+      span('awake', 8, 9),
+      span('charging', 9, 11),
+      span('updating', 11, 13),
+    ]);
+  });
+
+  it('clips to the window and joins touching spans', () => {
+    const spans = activitySpans(
+      [
+        { kind: 'asleep', from: t(0), to: t(5) },
+        { kind: 'asleep', from: t(5), to: t(10) },
+      ],
+      t(2),
+      t(8),
+    );
+    expect(spans).toEqual([span('asleep', 2, 8)]);
   });
 });

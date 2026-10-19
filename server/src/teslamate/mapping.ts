@@ -3,7 +3,13 @@
  * Tesla shows on the same pages as a Rivian. TeslaMate stores metric units
  * (km, °C, bar, kW), as RivianMate does.
  */
-import type { ChargingSessionDto, DriveDto, DrivePlaceDto, VehicleDto } from '../api-types.js';
+import type {
+  ChargingSessionDto,
+  DriveDto,
+  DrivePlaceDto,
+  StateSpanDto,
+  VehicleDto,
+} from '../api-types.js';
 import type { LiveSessionData, TimeStampedValue, VehicleState } from '../rivian/types.js';
 import { elevationChange } from '../services/drive-metrics.js';
 import {
@@ -53,6 +59,9 @@ export interface PositionRow {
   outside_temp: number | null;
   inside_temp: number | null;
   driver_temp_setting: number | null;
+  passenger_temp_setting: number | null;
+  /** Fan speed, 0 (off) to 11 (Tesla's top speed). */
+  fan_status: number | null;
   is_climate_on: boolean | null;
   is_front_defroster_on: boolean | null;
   is_rear_defroster_on: boolean | null;
@@ -265,6 +274,14 @@ export function buildVehicleState(snap: CarSnapshot, range: RangeKind): VehicleS
   set(
     'cabinClimateDriverTemperature',
     latestValue([full], (p) => p.driver_temp_setting),
+  );
+  set(
+    'cabinClimatePassengerTemperature',
+    latestValue([full], (p) => p.passenger_temp_setting),
+  );
+  set(
+    'climateFanSpeed',
+    latestValue([full], (p) => p.fan_status),
   );
   set(
     'outsideTemperature',
@@ -684,4 +701,66 @@ export function capacityHistory(rows: readonly CapacityRow[], efficiencyKwhPerKm
     reported,
     ratedCapacity: max ? { kwh: max.kwh, at: max.at } : null,
   };
+}
+
+export type ActivityKind = StateSpanDto['state'];
+
+/** What one TeslaMate table says the car was doing, and when. */
+export interface ActivityInterval {
+  kind: ActivityKind;
+  from: Date;
+  to: Date;
+}
+
+/** Where intervals overlap, the first of these wins. */
+const ACTIVITY_PRIORITY: readonly ActivityKind[] = [
+  'driving',
+  'charging',
+  'updating',
+  'awake',
+  'asleep',
+];
+
+/**
+ * The car's activity across [from, to] from overlapping intervals: drives,
+ * charges and updates over its online/asleep states. Time no interval
+ * covers is left out, as unknown.
+ */
+export function activitySpans(
+  intervals: readonly ActivityInterval[],
+  from: Date,
+  to: Date,
+): StateSpanDto[] {
+  const start = from.getTime();
+  const end = to.getTime();
+  const events: { at: number; rank: number; delta: 1 | -1 }[] = [];
+  for (const i of intervals) {
+    const a = Math.max(i.from.getTime(), start);
+    const b = Math.min(i.to.getTime(), end);
+    if (b <= a) continue;
+    const rank = ACTIVITY_PRIORITY.indexOf(i.kind);
+    events.push({ at: a, rank, delta: 1 }, { at: b, rank, delta: -1 });
+  }
+  events.sort((x, y) => x.at - y.at);
+  const open = ACTIVITY_PRIORITY.map(() => 0);
+  const spans: StateSpanDto[] = [];
+  let k = 0;
+  while (k < events.length) {
+    const at = events[k]!.at;
+    while (k < events.length && events[k]!.at === at) {
+      open[events[k]!.rank]! += events[k]!.delta;
+      k++;
+    }
+    const next = events[k]?.at;
+    const rank = open.findIndex((n) => n > 0);
+    if (next == null || rank < 0) continue;
+    const state = ACTIVITY_PRIORITY[rank]!;
+    const last = spans.at(-1);
+    if (last && last.state === state && Date.parse(last.to) === at) {
+      last.to = new Date(next).toISOString();
+    } else {
+      spans.push({ state, from: new Date(at).toISOString(), to: new Date(next).toISOString() });
+    }
+  }
+  return spans;
 }

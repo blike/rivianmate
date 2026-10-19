@@ -288,7 +288,43 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(older).toHaveLength(2);
     expect(Date.parse(older[0]!.to) - Date.parse(older[0]!.from)).toBe(60 * 60_000);
     const trail = await source.locations('tm-1', from, to);
-    expect(trail).toHaveLength(7);
+    // Each drive keeps its route's ends (drive 1 runs straight); parked points stay apart.
+    expect(trail.map((p) => p.driveId ?? null)).toEqual([1, 1, null, 2, 2]);
+  });
+
+  it('reads what the car was doing: awake, then the drive under way', async () => {
+    const now = new Date();
+    const spans = await source.stateSpans('tm-1', new Date(now.getTime() - 2 * 3600_000), now);
+    expect(spans.map((s) => s.state)).toEqual(['awake', 'driving', 'awake']);
+    // The open drive ends at its last position, half a minute ago.
+    expect(now.getTime() - Date.parse(spans[1]!.to)).toBeCloseTo(30_000, -3);
+    // The software update ten days ago.
+    const older = await source.stateSpans(
+      'tm-1',
+      new Date(now.getTime() - 7300 * 60_000),
+      new Date(now.getTime() - 7100 * 60_000),
+    );
+    expect(older.map((s) => s.state)).toEqual(['updating']);
+  });
+
+  it('works out energy used while parked over the last day and week', async () => {
+    const { parkedEnergy } = await source.insights('tm-1');
+    const [week, day] = [...parkedEnergy!.windows].sort((a, b) => b.minutes - a.minutes);
+    const capacity = (450 * 0.153) / 0.9;
+    // A day: from the charge's 90% to the drive under way at 70%.
+    expect(day!.kwh).toBeCloseTo(0.2 * capacity, 1);
+    // 345 km at 69% is 5 km per percent.
+    expect(day!.rangeKm).toBeCloseTo(100, 0);
+    // A week adds the stretch after the earlier drive, 75% down to 50%.
+    expect(week!.kwh).toBeCloseTo(0.45 * capacity, 1);
+    expect(day!.uses).toBeNull();
+
+    const balance = await source.batteryWindow(
+      'tm-1',
+      new Date(Date.now() - 3 * 86_400_000),
+      new Date(),
+    );
+    expect(balance).toMatchObject({ startLevel: 80, endLevel: 69, parkedLossPct: 45 });
   });
 
   it('reads health: tires, capacity and software', async () => {

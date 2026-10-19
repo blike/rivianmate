@@ -33,6 +33,17 @@ export function preconditioningLabel(state: VehicleState | undefined): string {
   return value == null ? 'Unknown' : titleCase(value);
 }
 
+/**
+ * Whether the climate is running: TeslaMate reports it on or off; for a
+ * Rivian it's running while preconditioning.
+ */
+export function climateRunning(state: VehicleState | undefined): boolean {
+  const on = sv(state, 'climateOn');
+  if (on != null) return on === 'true';
+  const precondition = preconditioningLabel(state);
+  return precondition !== 'Off' && precondition !== 'Unknown';
+}
+
 export type ActivityKind = 'driving' | 'charging' | 'plugged' | 'parked' | 'asleep';
 
 /** What the vehicle is doing right now, for the dashboard's headline chip. */

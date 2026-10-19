@@ -3,8 +3,9 @@ import { parkedSegments, parkedWindows, signalLabel, wifiBand, windowLabel } fro
 
 describe('parkedWindows', () => {
   it('keeps whole-hour windows, longest first', () => {
-    const windows = [{ minutes: 480 }, { minutes: 8 }, { minutes: 1440 }];
+    const windows = [{ minutes: 480 }, { minutes: 8 }, { minutes: 1440 }, { minutes: 10080 }];
     expect(parkedWindows(windows).map((w) => windowLabel(w.minutes))).toEqual([
+      'Last 7 days',
       'Last 24 hours',
       'Last 8 hours',
     ]);

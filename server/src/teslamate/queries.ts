@@ -6,6 +6,7 @@
  */
 import type postgres from 'postgres';
 import type {
+  ActivityInterval,
   ActiveChargeRow,
   CapacityRow,
   CarRow,
@@ -111,6 +112,7 @@ function positionColumns(sql: Sql, columns: Columns) {
     battery_level, usable_battery_level,
     outside_temp::float8 AS outside_temp, inside_temp::float8 AS inside_temp,
     driver_temp_setting::float8 AS driver_temp_setting,
+    passenger_temp_setting::float8 AS passenger_temp_setting, fan_status,
     is_climate_on, is_front_defroster_on, is_rear_defroster_on, elevation,
     ${tpms}
   `;
@@ -438,12 +440,50 @@ export function chargeIntervals(
   `;
 }
 
+/**
+ * Online and asleep periods, drives and software updates overlapping
+ * [from, to]. An open state lasts until now; an open drive (left by
+ * TeslaMate restarting) ends at its last position.
+ */
+export function activityIntervals(
+  sql: Sql,
+  carId: number,
+  from: Date,
+  to: Date,
+): Promise<ActivityInterval[]> {
+  return sql<ActivityInterval[]>`
+    SELECT * FROM (
+      SELECT CASE WHEN s.state = 'online' THEN 'awake' ELSE 'asleep' END AS kind,
+             ${utc(sql, 's.start_date')} AS from,
+             COALESCE(s.end_date AT TIME ZONE 'UTC', now()) AS to
+      FROM states s
+      WHERE s.car_id = ${carId} AND s.start_date <= ${at(sql, to)}
+      UNION ALL
+      SELECT 'driving', ${utc(sql, 'd.start_date')},
+             COALESCE(d.end_date, last.date, d.start_date) AT TIME ZONE 'UTC'
+      FROM drives d
+      LEFT JOIN LATERAL (
+        SELECT MAX(date) AS date FROM positions
+        WHERE drive_id = d.id AND d.end_date IS NULL
+      ) last ON true
+      WHERE d.car_id = ${carId} AND d.start_date <= ${at(sql, to)}
+      UNION ALL
+      SELECT 'updating', ${utc(sql, 'u.start_date')},
+             COALESCE(u.end_date AT TIME ZONE 'UTC', now())
+      FROM updates u
+      WHERE u.car_id = ${carId} AND u.start_date <= ${at(sql, to)}
+    ) spans
+    WHERE spans.to >= ${from.toISOString()}::timestamptz
+  `;
+}
+
 export interface LocationRow {
   ts: Date;
   lat: number;
   lon: number;
   speed: number | null;
   elevation: number | null;
+  drive_id: number | null;
 }
 
 export function locations(
@@ -454,15 +494,76 @@ export function locations(
   max: number,
 ): Promise<LocationRow[]> {
   return sql<LocationRow[]>`
-    SELECT ts, lat, lon, speed, elevation FROM (
+    SELECT ts, lat, lon, speed, elevation, drive_id FROM (
       SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
-             speed, elevation,
+             speed, elevation, drive_id::int AS drive_id,
              ROW_NUMBER() OVER (ORDER BY date) AS rn, COUNT(*) OVER () AS n
       FROM positions
       WHERE car_id = ${carId} AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
     ) p
     WHERE rn % CEIL(n / ${max}::float8)::int = 0 OR rn = n OR rn = 1
     ORDER BY ts
+  `;
+}
+
+/**
+ * Drives and charges overlapping [from, to], with the battery level each
+ * began and ended at: the time the car wasn't parked and unplugged. Open
+ * ones end at their last reading, as `chargeIntervals` explains.
+ */
+export function busySpans(
+  sql: Sql,
+  carId: number,
+  from: Date,
+  to: Date,
+): Promise<
+  { start: Date; end: Date | null; startLevel: number | null; endLevel: number | null }[]
+> {
+  return sql`
+    SELECT * FROM (
+      SELECT ${utc(sql, 'd.start_date')} AS start,
+             COALESCE(d.end_date, last.date) AT TIME ZONE 'UTC' AS end,
+             sp.battery_level AS "startLevel", ep.battery_level AS "endLevel"
+      FROM drives d
+      LEFT JOIN positions sp ON sp.id = d.start_position_id
+      LEFT JOIN positions ep ON ep.id = d.end_position_id
+      LEFT JOIN LATERAL (
+        SELECT MAX(date) AS date FROM positions WHERE drive_id = d.id AND d.end_date IS NULL
+      ) last ON true
+      WHERE d.car_id = ${carId} AND d.start_date <= ${at(sql, to)}
+      UNION ALL
+      SELECT ${utc(sql, 'cp.start_date')},
+             COALESCE(cp.end_date, last.date) AT TIME ZONE 'UTC',
+             cp.start_battery_level, cp.end_battery_level
+      FROM charging_processes cp
+      LEFT JOIN LATERAL (
+        SELECT MAX(date) AS date FROM charges
+        WHERE charging_process_id = cp.id AND cp.end_date IS NULL
+      ) last ON true
+      WHERE cp.car_id = ${carId} AND cp.start_date <= ${at(sql, to)}
+    ) spans
+    WHERE spans.end IS NULL OR spans.end >= ${from.toISOString()}::timestamptz
+  `;
+}
+
+/** Battery levels from full reports over [from, to], with the last one before `from`. */
+export function batteryLevels(
+  sql: Sql,
+  carId: number,
+  from: Date,
+  to: Date,
+): Promise<{ at: Date; level: number }[]> {
+  return sql<{ at: Date; level: number }[]>`
+    (SELECT ${utc(sql, 'date')} AS at, battery_level AS level FROM positions
+     WHERE car_id = ${carId} AND ideal_battery_range_km IS NOT NULL
+       AND battery_level IS NOT NULL AND date < ${at(sql, from)}
+     ORDER BY date DESC LIMIT 1)
+    UNION ALL
+    (SELECT ${utc(sql, 'date')}, battery_level FROM positions
+     WHERE car_id = ${carId} AND ideal_battery_range_km IS NOT NULL
+       AND battery_level IS NOT NULL AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
+     ORDER BY date)
+    ORDER BY at
   `;
 }
 

@@ -131,6 +131,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     async (request): Promise<BatteryWindowDto> => {
       const { from, to = new Date() } = batteryWindowQuery.parse(request.query);
       const id = request.params.id;
+      if (isTeslaMateVehicle(id)) return ctx.teslamate.batteryWindow(id, from, to);
       const [history, spans] = await Promise.all([
         stateTimeline(ctx.db, id, ['batteryLevel'], from, to),
         busySpans(ctx, id, from, to),

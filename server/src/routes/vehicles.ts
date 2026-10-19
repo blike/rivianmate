@@ -5,7 +5,7 @@ import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
 import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
-import { EMPTY_INSIGHTS, NO_SCHEDULES } from '../teslamate/source.js';
+import { NO_SCHEDULES } from '../teslamate/source.js';
 
 /** The views a vehicle has a render for. */
 const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
@@ -81,7 +81,7 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/insights',
     async (request): Promise<VehicleInsightsDto> =>
       isTeslaMateVehicle(request.params.id)
-        ? EMPTY_INSIGHTS
+        ? ctx.teslamate.insights(request.params.id)
         : ctx.monitor.getInsights(request.params.id),
   );
 

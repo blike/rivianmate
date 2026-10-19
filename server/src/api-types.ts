@@ -357,7 +357,8 @@ export interface VehicleInsightsDto {
       minutes: number;
       kwh: number;
       rangeKm: number;
-      uses: { climate: number; system: number; gearGuard: number; outlets: number };
+      /** Null where the source doesn't split it by use (TeslaMate). */
+      uses: { climate: number; system: number; gearGuard: number; outlets: number } | null;
     }[];
     at: string;
   } | null;

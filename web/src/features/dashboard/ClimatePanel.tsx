@@ -3,17 +3,23 @@ import { useUnits } from '../../api/hooks';
 import { Row } from '../../components/Panel';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { fmt, nv, sv, titleCase } from '../../lib/state';
-import { preconditioningLabel } from '../../lib/vehicleStatus';
+import { climateRunning, preconditioningLabel } from '../../lib/vehicleStatus';
 
-/** The cabin as it is and what it's set to, then what's running to get it there. */
+/**
+ * The cabin as it is and what it's set to, then what's running to get it
+ * there: preconditioning on a Rivian, the climate and its fan on a Tesla
+ * (from TeslaMate, which reports `climateOn`).
+ */
 export function ClimatePanel(props: { state: VehicleState | undefined }) {
   const s = props.state;
   const u = useUnits();
   const loading = useLoading();
   const interior = nv(s, 'cabinClimateInteriorTemperature');
   const target = nv(s, 'cabinClimateDriverTemperature');
-  const precondition = preconditioningLabel(s);
-  const active = precondition !== 'Off' && precondition !== 'Unknown';
+  const tesla = sv(s, 'climateOn') != null;
+  const active = climateRunning(s);
+  const passenger = nv(s, 'cabinClimatePassengerTemperature');
+  const fan = nv(s, 'climateFanSpeed');
   const heading =
     active && interior != null && target != null && Math.abs(target - interior) >= 0.5
       ? target > interior
@@ -51,9 +57,22 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
         </div>
       </div>
       <dl className="mt-5 divide-y divide-(--hairline) border-t border-(--hairline) text-sm [&>div]:py-2.5">
-        <Row label="Preconditioning" value={precondition} />
-        <Row label="Defrost" value={titleCase(sv(s, 'defrostDefogStatus'))} />
-        <Row label="Pet mode" value={titleCase(sv(s, 'petModeStatus'))} />
+        {tesla ? (
+          <>
+            <Row label="Climate" value={active ? 'On' : 'Off'} />
+            {passenger != null && (
+              <Row label="Passenger set to" value={u.formatTemperature(passenger)} />
+            )}
+            {fan != null && <Row label="Fan" value={fan > 0 ? `Speed ${fmt(fan, 0)}` : 'Off'} />}
+            <Row label="Defrost" value={titleCase(sv(s, 'defrostDefogStatus'))} />
+          </>
+        ) : (
+          <>
+            <Row label="Preconditioning" value={preconditioningLabel(s)} />
+            <Row label="Defrost" value={titleCase(sv(s, 'defrostDefogStatus'))} />
+            <Row label="Pet mode" value={titleCase(sv(s, 'petModeStatus'))} />
+          </>
+        )}
       </dl>
     </>
   );

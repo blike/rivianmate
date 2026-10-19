@@ -7,6 +7,8 @@ export function parkedWindows<T extends { minutes: number }>(windows: readonly T
 
 export function windowLabel(minutes: number): string {
   const hours = minutes / 60;
+  // A week reads as days, not 168 hours; a day stays "24 hours".
+  if (hours > 24 && hours % 24 === 0) return `Last ${hours / 24} days`;
   return `Last ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 }
 

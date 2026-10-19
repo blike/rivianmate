@@ -5,7 +5,11 @@ import { fmt } from '../lib/state';
 import { Skeleton, useLoading } from './LoadingState';
 import { SplitBar, SplitLegend } from './SplitBar';
 
-/** Energy used while parked: one bar per window, split by use; side by side from md with `columns`. */
+/**
+ * Energy used while parked: one bar per window, split by use; side by side
+ * from md with `columns`. Where the source doesn't split it (TeslaMate),
+ * each bar is the window's total against the largest.
+ */
 export function ParkedEnergyPanel(props: {
   insights: VehicleInsightsDto | undefined;
   columns?: boolean;
@@ -13,6 +17,8 @@ export function ParkedEnergyPanel(props: {
   const u = useUnits();
   const loading = useLoading();
   const windows = parkedWindows(props.insights?.parkedEnergy?.windows ?? []);
+  const split = windows.some((w) => w.uses != null);
+  const largest = Math.max(0, ...windows.map((w) => w.kwh));
   if (!loading && windows.length === 0) {
     return <p className="text-sm text-(--text-muted)">No parked energy reported yet.</p>;
   }
@@ -33,14 +39,29 @@ export function ParkedEnergyPanel(props: {
                 )}
               </span>
             </div>
-            <SplitBar
-              segments={w ? parkedSegments(w.uses) : []}
-              emptyLabel="No parked energy used"
-            />
+            {w && !w.uses ? (
+              <div
+                className="parked-bar"
+                role="img"
+                aria-label={`${fmt(w.kwh, 1)} kWh used while parked`}
+              >
+                {w.kwh > 0 && (
+                  <div
+                    className="parked-bar__segment"
+                    style={{ width: `${(w.kwh / largest) * 100}%`, background: 'var(--series-1)' }}
+                  />
+                )}
+              </div>
+            ) : (
+              <SplitBar
+                segments={w?.uses ? parkedSegments(w.uses) : []}
+                emptyLabel="No parked energy used"
+              />
+            )}
           </div>
         ))}
       </div>
-      <SplitLegend items={[...PARKED_USES]} />
+      {(loading || split) && <SplitLegend items={[...PARKED_USES]} />}
     </div>
   );
 }

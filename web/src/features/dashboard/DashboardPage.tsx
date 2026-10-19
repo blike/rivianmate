@@ -15,7 +15,6 @@ import { ConnectivityRows } from './ConnectivityPanel';
 import { Overview } from './Overview';
 import { RecentActivity } from './RecentActivity';
 import { SchedulesSection } from './SchedulesSection';
-import { TeslaClimatePanel } from './TeslaClimatePanel';
 import { VehiclePlan } from './VehiclePlan';
 
 /** Label and value rows under hairlines, flowing into two columns from md up. */
@@ -28,8 +27,7 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
   const v = props.vehicle;
   const name = v?.name ?? v?.model ?? 'Vehicle';
   const model = [v?.modelYear, v?.model].filter(Boolean).join(' ');
-  // TeslaMate logs tires and climate, but not closures, schedules, parked
-  // energy or the vehicle's systems.
+  // TeslaMate doesn't log closures, schedules or the vehicle's systems.
   const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   return (
@@ -68,17 +66,21 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
                 <VehiclePlan state={state} vehicle={v} closures={!teslamate} />
               </Panel>
 
-              <Panel title="Climate" className="xl:col-span-3">
-                {teslamate ? <TeslaClimatePanel state={state} /> : <ClimatePanel state={state} />}
+              {/* Without Systems (a Tesla), these two stack beside the plan. */}
+              <Panel title="Climate" className={teslamate ? 'xl:col-span-7' : 'xl:col-span-3'}>
+                <ClimatePanel state={state} />
               </Panel>
 
-              {!teslamate && (
-                <LoadingScope loading={isPending || insightsPending}>
-                  <Panel title="Energy while parked" className="xl:col-span-4">
-                    <ParkedEnergyPanel insights={insights} />
-                  </Panel>
+              <LoadingScope loading={isPending || insightsPending}>
+                <Panel
+                  title="Energy while parked"
+                  className={teslamate ? 'xl:col-span-7' : 'xl:col-span-4'}
+                >
+                  <ParkedEnergyPanel insights={insights} columns={teslamate} />
+                </Panel>
 
-                  {/* Two columns of readings from md up, so the list stays short. */}
+                {/* Two columns of readings from md up, so the list stays short. */}
+                {!teslamate && (
                   <Panel title="Systems" className="md:col-span-2 xl:col-span-7">
                     <dl className={SPECS}>
                       <Row label="12V battery" value={twelveVoltLabel(state)} />
@@ -98,8 +100,8 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
                       )}
                     </dl>
                   </Panel>
-                </LoadingScope>
-              )}
+                )}
+              </LoadingScope>
             </div>
           </LoadingScope>
         </section>

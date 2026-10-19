@@ -1,6 +1,7 @@
 import postgres from 'postgres';
 import type {
   BatteryHealthDto,
+  BatteryWindowDto,
   ChargeSpanDto,
   ChargingCurvePointDto,
   ChargingSessionDto,
@@ -12,14 +13,17 @@ import type {
   OtaTimelineDto,
   PhantomDrainDto,
   SchedulesDto,
+  StateSpanDto,
   TirePressurePointDto,
   VehicleDto,
   VehicleInsightsDto,
 } from '../api-types.js';
 import { type Logger, silentLogger } from '../logger.js';
 import type { VehicleState } from '../rivian/types.js';
-import { type DrainSnapshot, phantomDrain } from '../services/health.js';
+import { type DrainSnapshot, parkedLoss, phantomDrain } from '../services/health.js';
 import type { LiveBus } from '../services/live-bus.js';
+import { thinTrack, trackToleranceM } from '../services/simplify-track.js';
+import { stateNumber } from '../services/state-utils.js';
 import { teslamateCarId } from './ids.js';
 import {
   type CarRow,
@@ -27,6 +31,7 @@ import {
   type DriveProgress,
   type GeofenceRow,
   type RangeKind,
+  activitySpans,
   buildVehicleState,
   type Places,
   capacityHistory,
@@ -55,8 +60,14 @@ const CARS_REFRESH_MS = 10 * 60_000;
  */
 const ACTIVE_STALE_MS = 30 * 60_000;
 
-const MAX_LOCATIONS = 5000;
+/**
+ * TeslaMate logs a position every few seconds; a long window is thinned
+ * evenly to about this many before its drives are simplified.
+ */
+const MAX_LOCATION_ROWS = 200_000;
 const MAX_DRIVE_POINTS = 10_000;
+/** Energy used while parked over the last day and week. */
+const PARKED_WINDOW_MINUTES = [24 * 60, 7 * 24 * 60];
 
 const BUCKET_INTERVALS: Record<string, string> = {
   '5m': '5 minutes',
@@ -462,6 +473,22 @@ export class TeslaMateSource {
     }));
   }
 
+  /** What the car was doing over time, from TeslaMate's states, drives, charges and updates. */
+  async stateSpans(vehicleId: string, from: Date, to: Date): Promise<StateSpanDto[]> {
+    const car = this.need(vehicleId);
+    if (!car) return [];
+    const sql = this.db();
+    const [intervals, charges] = await Promise.all([
+      q.activityIntervals(sql, car.row.id, from, to),
+      q.chargeIntervals(sql, car.row.id, from, to),
+    ]);
+    return activitySpans(
+      [...intervals, ...charges.map((c) => ({ kind: 'charging' as const, ...c }))],
+      from,
+      to,
+    );
+  }
+
   async chargeSpans(vehicleId: string, from: Date, to: Date): Promise<ChargeSpanDto[]> {
     const car = this.need(vehicleId);
     if (!car) return [];
@@ -476,14 +503,17 @@ export class TeslaMateSource {
   async locations(vehicleId: string, from: Date, to: Date): Promise<LocationPointDto[]> {
     const car = this.need(vehicleId);
     if (!car) return [];
-    const rows = await q.locations(this.db(), car.row.id, from, to, MAX_LOCATIONS);
-    return rows.map((r) => ({
+    const rows = await q.locations(this.db(), car.row.id, from, to, MAX_LOCATION_ROWS);
+    const kept = thinTrack(rows, (r) => r.drive_id, trackToleranceM(from, to));
+    return kept.map((r) => ({
       ts: r.ts.toISOString(),
       lat: r.lat,
       lon: r.lon,
       speedKmh: r.speed,
       bearing: null,
       altitude: r.elevation,
+      // Groups the points into routes on the map.
+      driveId: r.drive_id,
     }));
   }
 
@@ -506,6 +536,85 @@ export class TeslaMateSource {
       gear: r.driving ? 'drive' : 'park',
     }));
     return phantomDrain(snapshots, timeZone);
+  }
+
+  /**
+   * Battery lost while parked and unplugged over [from, to], as the Rivian
+   * side measures it: from where each drive or charge left off to where the
+   * next picked up.
+   */
+  private async parked(carId: number, from: Date, to: Date) {
+    const sql = this.db();
+    const [spans, levels] = await Promise.all([
+      q.busySpans(sql, carId, from, to),
+      q.batteryLevels(sql, carId, from, to),
+    ]);
+    const levelAt = (t: Date) =>
+      levels.findLast((r) => r.at <= t)?.level ?? levels[0]?.level ?? null;
+    return { ...parkedLoss(spans, from, to, levelAt), levels };
+  }
+
+  /** Usable capacity (kWh) and range per percent of charge, for turning percent into both. */
+  private async scale(vehicleId: string, carId: number, efficiency: number | null) {
+    const capacity = capacityHistory(await q.capacityRows(this.db(), carId), efficiency);
+    const state = this.states.get(vehicleId);
+    const level = state ? stateNumber(state, 'batteryLevel') : null;
+    const range = state ? stateNumber(state, 'distanceToEmpty') : null;
+    return {
+      kwh: capacity.latest?.kwh ?? null,
+      kmPerPct: level != null && level > 0 && range != null ? range / level : null,
+    };
+  }
+
+  /**
+   * What the dashboard reads beside the state. Only energy used while parked
+   * comes from TeslaMate, over the last day and week; it isn't split by use.
+   */
+  async insights(vehicleId: string): Promise<VehicleInsightsDto> {
+    const car = this.need(vehicleId);
+    if (!car) return EMPTY_INSIGHTS;
+    const now = new Date();
+    const { kwh, kmPerPct } = await this.scale(vehicleId, car.row.id, car.row.efficiency);
+    if (kwh == null) return EMPTY_INSIGHTS;
+    const windows = await Promise.all(
+      PARKED_WINDOW_MINUTES.map(async (minutes) => {
+        const from = new Date(now.getTime() - minutes * 60_000);
+        const { lossPct } = await this.parked(car.row.id, from, now);
+        return {
+          minutes,
+          kwh: (lossPct / 100) * kwh,
+          rangeKm: kmPerPct != null ? lossPct * kmPerPct : 0,
+          uses: null,
+        };
+      }),
+    );
+    return { ...EMPTY_INSIGHTS, parkedEnergy: { windows, at: now.toISOString() } };
+  }
+
+  /** The battery over a window, as History's balance reads it. */
+  async batteryWindow(vehicleId: string, from: Date, to: Date): Promise<BatteryWindowDto> {
+    const car = this.need(vehicleId);
+    if (!car) {
+      return {
+        capacityKwh: null,
+        startLevel: null,
+        endLevel: null,
+        parkedLossPct: 0,
+        parkedHours: 0,
+      };
+    }
+    const [{ lossPct, parkedHours, levels }, { kwh }] = await Promise.all([
+      this.parked(car.row.id, from, to),
+      this.scale(vehicleId, car.row.id, car.row.efficiency),
+    ]);
+    const within = levels.filter((r) => r.at >= from);
+    return {
+      capacityKwh: kwh,
+      startLevel: within[0]?.level ?? null,
+      endLevel: within.at(-1)?.level ?? null,
+      parkedLossPct: lossPct,
+      parkedHours,
+    };
   }
 
   async tirePressures(vehicleId: string, days: number): Promise<TirePressurePointDto[]> {

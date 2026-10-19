@@ -1,4 +1,3 @@
-import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { useInsights, useVehicleState } from '../../api/hooks';
@@ -26,8 +25,6 @@ export function HealthPage(props: { vehicleId: string; model?: string | null }) 
     queryFn: () => api.batteryHealth(props.vehicleId),
     refetchInterval: 60_000,
   });
-  // TeslaMate doesn't log parked energy use.
-  const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   return (
     <div className="space-y-4">
@@ -50,7 +47,6 @@ export function HealthPage(props: { vehicleId: string; model?: string | null }) 
         cellType={
           showLegacyOnly(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined
         }
-        parkedEnergy={!teslamate}
       />
 
       <TiresPanel

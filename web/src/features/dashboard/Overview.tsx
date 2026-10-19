@@ -17,7 +17,7 @@ import { isActivePhase, softwareUpdate } from '../../lib/ota';
 import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
 import {
   type ActivityKind,
-  preconditioningLabel,
+  climateRunning,
   securitySummary,
   vehicleActivity,
 } from '../../lib/vehicleStatus';
@@ -134,8 +134,7 @@ export function Overview(props: {
     : null;
   // The cabin's temperature lives in the Climate panel; here it's news only
   // while something is running to change it.
-  const precondition = preconditioningLabel(state);
-  const climateOn = precondition !== 'Off' && precondition !== 'Unknown';
+  const climateOn = climateRunning(state);
   const cabin = nv(state, 'cabinClimateInteriorTemperature');
 
   return (

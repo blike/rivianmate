@@ -18,13 +18,27 @@ const CHART_HEIGHT = 144;
  * Efficiency by what the drives were driven in, one small chart per factor
  * on a shared scale, with the period's average across them all.
  */
-export function EfficiencyPanel(props: { drives: DriveDto[] | undefined; loading: boolean }) {
+export function EfficiencyPanel(props: {
+  drives: DriveDto[] | undefined;
+  loading: boolean;
+  /** Whether drives get weather lookups; TeslaMate's don't, so Conditions is left out. */
+  weather: boolean;
+}) {
   const u = useUnits();
   const miles = u.distanceUnit === 'mi';
   const unit = miles ? 'mi/kWh' : 'kWh/100 km';
   const digits = miles ? 2 : 1;
 
-  const factors = useMemo(() => efficiencyFactors(props.drives ?? [], u), [props.drives, u]);
+  const factors = useMemo(
+    () =>
+      efficiencyFactors(props.drives ?? [], u).filter(
+        (f) => props.weather || f.key !== 'conditions',
+      ),
+    [props.drives, u, props.weather],
+  );
+  // Without Conditions, the average spans a row (md) or two (xl) so the
+  // four charts beside it fill the grid.
+  const even = factors.length % 2 === 0;
   const overall = useMemo(() => overallEfficiency(props.drives ?? []), [props.drives]);
   const average = efficiencyValue(overall.km, overall.kwh, u);
 
@@ -42,7 +56,9 @@ export function EfficiencyPanel(props: { drives: DriveDto[] | undefined; loading
       emptyText="No finished drives with battery readings in this period."
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <section className="card flex flex-col p-5 sm:p-6">
+        <section
+          className={`card flex flex-col p-5 sm:p-6 ${even ? 'md:col-span-2 xl:col-span-1 xl:row-span-2' : ''}`}
+        >
           <h3 className="eyebrow text-(--text-secondary)">Average efficiency</h3>
           <div className="mt-3 flex items-baseline gap-1.5">
             <span className="readout text-5xl font-[350]">{fmt(average, digits)}</span>

@@ -12,6 +12,7 @@ import {
   SettingsIcon,
 } from './AppIcons';
 import { Dot } from './Dot';
+import { VehicleMenu, vehicleName } from './VehicleMenu';
 
 export const NAV = [
   { to: '/', label: 'Overview', icon: <OverviewIcon /> },
@@ -127,34 +128,46 @@ function VehicleBlock(props: NavProps) {
   const multiple = (props.vehicles?.length ?? 0) > 1;
   const model = [vehicle.modelYear, vehicle.model].filter(Boolean).join(' ');
 
-  return (
-    <div className="relative mt-7 rounded-xl border border-(--hairline) bg-(--surface-1) px-3 py-2.5">
+  const card = (open?: boolean) => (
+    <>
       {/* The model sits with the name it belongs to; the state gets its own line. */}
-      <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="truncate text-sm font-medium">{vehicle.name ?? vehicle.model}</span>
           {model && model !== vehicle.name && (
             <span className="shrink-0 text-xs text-(--text-muted)">{model}</span>
           )}
         </span>
-        {multiple && <Chevron className="shrink-0 text-(--text-muted)" />}
-      </div>
-      <div className="mt-1 flex items-center gap-1.5 text-xs text-(--text-secondary)">
+        {multiple && (
+          <Chevron
+            className={`shrink-0 text-(--text-muted) transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        )}
+      </span>
+      <span className="mt-1 flex items-center gap-1.5 text-xs text-(--text-secondary)">
         {state && <Dot color={LEVEL_DOT[f.level]} pulse={f.level === 'live'} />}
         <span className="truncate" title={f.label}>
           {state ? LEVEL_WORD[f.level] : ' '}
         </span>
-      </div>
-      {multiple && (
-        // The card is the control: a transparent select over it.
-        <select
-          aria-label="Vehicle"
-          className="absolute inset-0 cursor-pointer opacity-0"
+      </span>
+    </>
+  );
+  const frame = 'block rounded-xl border border-(--hairline) bg-(--surface-1) px-3 py-2.5';
+
+  return (
+    <div className="mt-7">
+      {multiple ? (
+        // The card is the control.
+        <VehicleMenu
+          vehicles={props.vehicles!}
           value={props.vehicleId}
-          onChange={(e) => props.onSelectVehicle(e.target.value)}
+          onChange={props.onSelectVehicle}
+          className={`cursor-pointer ${frame}`}
         >
-          <VehicleOptions vehicles={props.vehicles!} />
-        </select>
+          {card}
+        </VehicleMenu>
+      ) : (
+        <div className={frame}>{card()}</div>
       )}
     </div>
   );
@@ -258,50 +271,41 @@ export function MobileBar(props: NavProps) {
                 ))}
               </ul>
               {multiple && (
-                <label
-                  className="rm-item-in mt-5 block"
+                <div
+                  className="rm-item-in mt-5"
                   style={{ animationDelay: `${40 + items.length * 25}ms` }}
                 >
                   <span className="eyebrow mb-1.5 block">Vehicle</span>
-                  <div className="relative h-11">
-                    <select
-                      aria-label="Vehicle"
-                      className="h-full w-full appearance-none rounded-lg border border-(--border) bg-(--surface-1) pr-9 pl-3 text-base"
-                      value={props.vehicleId}
-                      onChange={(e) => {
-                        props.onSelectVehicle(e.target.value);
-                        close();
-                      }}
-                    >
-                      <VehicleOptions vehicles={props.vehicles!} />
-                    </select>
-                    <Chevron className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-(--text-muted)" />
-                  </div>
-                </label>
+                  <VehicleMenu
+                    vehicles={props.vehicles!}
+                    value={props.vehicleId}
+                    onChange={(id) => {
+                      props.onSelectVehicle(id);
+                      close();
+                    }}
+                    className="flex h-11 items-center gap-2 rounded-lg border border-(--border) bg-(--surface-1) px-3 text-base"
+                  >
+                    {(open) => {
+                      const current = props.vehicles!.find((v) => v.id === props.vehicleId);
+                      return (
+                        <>
+                          <span className="min-w-0 flex-1 truncate">
+                            {current ? vehicleName(current) : '—'}
+                          </span>
+                          <Chevron
+                            className={`shrink-0 text-(--text-muted) transition-transform ${open ? 'rotate-180' : ''}`}
+                          />
+                        </>
+                      );
+                    }}
+                  </VehicleMenu>
+                </div>
               )}
             </nav>
           </div>
         </>
       )}
     </header>
-  );
-}
-
-/** The vehicles to pick from, grouped by where their data comes from when there's more than one source. */
-function VehicleOptions(props: { vehicles: VehicleDto[] }) {
-  const option = (v: VehicleDto) => (
-    <option key={v.id} value={v.id}>
-      {v.name ?? v.model ?? v.vin}
-    </option>
-  );
-  const rivian = props.vehicles.filter((v) => v.source !== 'teslamate');
-  const tesla = props.vehicles.filter((v) => v.source === 'teslamate');
-  if (rivian.length === 0 || tesla.length === 0) return <>{props.vehicles.map(option)}</>;
-  return (
-    <>
-      <optgroup label="Rivian">{rivian.map(option)}</optgroup>
-      <optgroup label="TeslaMate">{tesla.map(option)}</optgroup>
-    </>
   );
 }
 

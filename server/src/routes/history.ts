@@ -23,7 +23,7 @@ import { type PlaceContext, placeContext } from './charging.js';
 import { listLimit, listWindowSchema } from './list-window.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
-import { simplifyTrack } from '../services/simplify-track.js';
+import { thinTrack, trackToleranceM } from '../services/simplify-track.js';
 import { bucketSeries, latestNumber, numericSeries } from '../services/state-history.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
@@ -48,16 +48,6 @@ const BUCKET_MS: Record<string, number> = {
   '6h': 6 * 3600_000,
   '1d': 86400_000,
 };
-
-const MAX_LOCATIONS = 20_000;
-/**
- * How far a simplified drive may stray from its recorded points: tighter for
- * short windows, viewed up close; looser for long ones, viewed zoomed out.
- */
-function trackToleranceM(from: Date, to: Date): number {
-  const days = (to.getTime() - from.getTime()) / 86400_000;
-  return days <= 7 ? 5 : days <= 31 ? 10 : 20;
-}
 
 const rangeQuerySchema = z.object({
   from: z.coerce.date().default(() => new Date(Date.now() - 86400_000)),
@@ -124,6 +114,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/state-spans',
     async (request): Promise<StateSpanDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.stateSpans(request.params.id, q.from, q.to);
+      }
       const spans = await loadStateSpans(ctx.db, request.params.id, q.from, q.to);
       return spans.map((s) => ({
         state: s.state,
@@ -155,23 +148,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
         ORDER BY ts
       `);
-      // Each drive is simplified rather than every nth point kept, so trips
-      // along the same road keep their shape and line up on the map.
-      const tolerance = trackToleranceM(q.from, q.to);
-      let kept: (typeof rows)[number][] = [];
-      for (let start = 0; start < rows.length;) {
-        let end = start + 1;
-        while (end < rows.length && rows[end]!.drive_id === rows[start]!.drive_id) end++;
-        const group = rows.slice(start, end);
-        if (group[0]!.drive_id == null) kept.push(...group);
-        else for (const i of simplifyTrack(group, tolerance)) kept.push(group[i]!);
-        start = end;
-      }
-      // Still too many: thin evenly, keeping both ends.
-      if (kept.length > MAX_LOCATIONS) {
-        const step = Math.ceil(kept.length / MAX_LOCATIONS);
-        kept = kept.filter((_, i) => i % step === 0 || i === kept.length - 1);
-      }
+      const kept = thinTrack(rows, (r) => r.drive_id, trackToleranceM(q.from, q.to));
       return kept.map((r) => ({
         ts: new Date(r.ts).toISOString(),
         lat: r.lat,
