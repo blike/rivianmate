@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { StatusResponse } from '../api-types.js';
@@ -33,12 +33,47 @@ const changeSchema = z.object({
   newPassword: z.string().max(MAX_INPUT_LENGTH),
 });
 
+/** Whether the request carries a live session cookie. */
+export function isAuthed(ctx: AppContext, request: FastifyRequest): boolean {
+  return ctx.crypto.verifySession(request.cookies[SESSION_COOKIE]);
+}
+
+/**
+ * Checks a password against the stored hash, counting failures toward the
+ * client's limit; replies 429 or 401 and returns false when it can't go on.
+ */
+async function checkPassword(
+  ctx: AppContext,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  password: string,
+): Promise<boolean> {
+  const wait = ctx.loginThrottle.retryAfter(request.ip);
+  if (wait > 0) {
+    await reply
+      .code(429)
+      .header('Retry-After', String(wait))
+      .send({ error: 'Too many attempts; try again later' });
+    return false;
+  }
+  const hash = await getPasswordHash(ctx);
+  if (!hash || !(await verifyPassword(password, hash))) {
+    ctx.loginThrottle.fail(request.ip);
+    await reply.code(401).send({ error: 'Invalid password' });
+    return false;
+  }
+  ctx.loginThrottle.succeed(request.ip);
+  return true;
+}
+
 export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/status', async (request): Promise<StatusResponse> => {
-    const account = await ctx.tokenStore.load();
+    const authed = isAuthed(ctx, request);
+    // The account is only described to someone signed in.
+    const account = authed ? await ctx.tokenStore.load() : null;
     return {
       needsSetup: (await getPasswordHash(ctx)) === null,
-      authed: ctx.crypto.verifySession(request.cookies[SESSION_COOKIE]),
+      authed,
       rivianConnected: ctx.monitor.isRunning,
       rivianAuthState: account?.authState ?? null,
       rivianEmail: account?.email ?? null,
@@ -54,17 +89,20 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     const body = credentialsSchema.parse(request.body);
     const problem = passwordProblem(body.password);
     if (problem) return reply.code(400).send({ error: problem });
-    await setPasswordHash(ctx, hashPassword(body.password));
+    // Only the first of two setups racing each other sets the password.
+    const created = await ctx.db
+      .insert(appSettings)
+      .values({ key: PASSWORD_KEY, value: await hashPassword(body.password) })
+      .onConflictDoNothing()
+      .returning();
+    if (!created.length) return reply.code(409).send({ error: 'Already set up' });
     issueSession(ctx, reply);
     return { ok: true };
   });
 
   app.post('/api/auth/login', async (request, reply) => {
     const body = credentialsSchema.parse(request.body);
-    const hash = await getPasswordHash(ctx);
-    if (!hash || !verifyPassword(body.password, hash)) {
-      return reply.code(401).send({ error: 'Invalid password' });
-    }
+    if (!(await checkPassword(ctx, request, reply, body.password))) return reply;
     issueSession(ctx, reply);
     return { ok: true };
   });
@@ -76,30 +114,22 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
 
   app.post('/api/auth/change-password', async (request, reply) => {
     const body = changeSchema.parse(request.body);
-    const hash = await getPasswordHash(ctx);
-    if (!hash || !verifyPassword(body.currentPassword, hash)) {
-      return reply.code(401).send({ error: 'Invalid password' });
-    }
+    if (!(await checkPassword(ctx, request, reply, body.currentPassword))) return reply;
     const problem = passwordProblem(body.newPassword);
     if (problem) return reply.code(400).send({ error: problem });
     if (body.newPassword === body.currentPassword) {
       return reply.code(400).send({ error: 'Choose a password different from the current one' });
     }
-    await setPasswordHash(ctx, hashPassword(body.newPassword));
+    await setPasswordHash(ctx, await hashPassword(body.newPassword));
     return { ok: true };
   });
 
   app.get('/api/auth/session', async (request) => {
-    return {
-      authed: ctx.crypto.verifySession(request.cookies[SESSION_COOKIE]),
-    };
+    return { authed: isAuthed(ctx, request) };
   });
 }
 
-function issueSession(
-  ctx: AppContext,
-  reply: { setCookie: (name: string, value: string, opts: object) => unknown },
-): void {
+function issueSession(ctx: AppContext, reply: FastifyReply): void {
   reply.setCookie(SESSION_COOKIE, ctx.crypto.createSession(SESSION_TTL_MS), {
     path: '/',
     httpOnly: true,

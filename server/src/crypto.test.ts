@@ -36,10 +36,10 @@ describe('TokenCrypto', () => {
 });
 
 describe('password hashing', () => {
-  it('verifies correct password and rejects wrong one', () => {
-    const stored = hashPassword('hunter22');
-    expect(verifyPassword('hunter22', stored)).toBe(true);
-    expect(verifyPassword('hunter23', stored)).toBe(false);
-    expect(verifyPassword('hunter22', 'malformed')).toBe(false);
+  it('verifies correct password and rejects wrong one', async () => {
+    const stored = await hashPassword('hunter22');
+    expect(await verifyPassword('hunter22', stored)).toBe(true);
+    expect(await verifyPassword('hunter23', stored)).toBe(false);
+    expect(await verifyPassword('hunter22', 'malformed')).toBe(false);
   });
 });

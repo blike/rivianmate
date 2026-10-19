@@ -8,6 +8,7 @@ import type { RivianGovernor } from './rivian/governor.js';
 import type { RivianTokens } from './rivian/types.js';
 import type { PlaceSearch } from './services/drive-places.js';
 import type { LiveBus } from './services/live-bus.js';
+import type { LoginThrottle } from './services/login-throttle.js';
 import type { NotificationService } from './services/notifications.js';
 import type { TokenStore } from './services/token-store.js';
 import type { TeslaMateSource } from './teslamate/source.js';
@@ -34,6 +35,8 @@ export interface AppContext {
   logs: LogBuffer;
   db: Db;
   crypto: TokenCrypto;
+  /** Limits password guesses. */
+  loginThrottle: LoginThrottle;
   tokenStore: TokenStore;
   bus: LiveBus;
   monitor: VehicleMonitor;

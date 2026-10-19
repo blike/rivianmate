@@ -19,6 +19,7 @@ import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/driv
 import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
+import { LoginThrottle } from './services/login-throttle.js';
 import { TokenStore } from './services/token-store.js';
 import { VehicleMonitor } from './services/vehicle-monitor.js';
 import { HistoryKeys } from './services/history-keys.js';
@@ -110,6 +111,7 @@ async function main(): Promise<void> {
     logs,
     db,
     crypto,
+    loginThrottle: new LoginThrottle(),
     tokenStore,
     bus,
     monitor,
@@ -130,7 +132,7 @@ async function main(): Promise<void> {
       .insert(appSettings)
       .values({
         key: 'app_password_hash',
-        value: hashPassword(config.APP_PASSWORD),
+        value: await hashPassword(config.APP_PASSWORD),
       })
       .onConflictDoNothing();
   }

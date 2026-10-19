@@ -10,7 +10,7 @@ import Fastify, {
 import { existsSync } from 'node:fs';
 import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
-import { SESSION_COOKIE, authRoutes } from './routes/auth.js';
+import { authRoutes, isAuthed } from './routes/auth.js';
 import { chargingRoutes } from './routes/charging.js';
 import { historyRoutes } from './routes/history.js';
 import { locationRoutes } from './routes/locations.js';
@@ -62,10 +62,12 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   await app.register(fastifyCookie);
 
+  // Judged by the route that matched, not the raw URL: the router decodes
+  // the path, so "/%61pi/..." reaches the same handlers as "/api/...".
   app.addHook('preHandler', async (request, reply) => {
-    const path = request.url.split('?')[0] ?? '';
-    if (!path.startsWith('/api/') || PUBLIC_PATHS.has(path)) return;
-    if (!ctx.crypto.verifySession(request.cookies[SESSION_COOKIE])) {
+    const route = request.routeOptions.url ?? '';
+    if (!route.startsWith('/api/') || PUBLIC_PATHS.has(route)) return;
+    if (!isAuthed(ctx, request)) {
       return reply.code(401).send({ error: 'Not authenticated' });
     }
   });
