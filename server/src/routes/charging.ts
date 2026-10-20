@@ -1,4 +1,4 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
@@ -12,6 +12,7 @@ import {
   sessionRate,
   wallboxSpots,
 } from '../services/locations.js';
+import { listLimit, listWindowSchema } from './list-window.js';
 import { loadLocations } from './locations.js';
 import { getChargingSettings } from './settings.js';
 import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
@@ -28,6 +29,7 @@ const CLOCK_SLACK_MS = 60_000;
 import { isChargingState, socReadingsBetween } from '../services/charging-time.js';
 import { latestNumber, stateTimeline } from '../services/state-history.js';
 import { chargingWindow, loadChargeSpans } from '../services/charge-spans.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
 const patchSchema = z.object({
   cost: z.union([z.string(), z.number()]).nullable(),
@@ -37,12 +39,25 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/charging-sessions',
     async (request): Promise<ChargingSessionDto[]> => {
+      const q = listWindowSchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.chargingSessions(request.params.id, await placeContext(ctx), {
+          ...q,
+          limit: listLimit(q),
+        });
+      }
       const rows = await ctx.db
         .select()
         .from(chargingSessions)
-        .where(eq(chargingSessions.vehicleId, request.params.id))
+        .where(
+          and(
+            eq(chargingSessions.vehicleId, request.params.id),
+            q.from ? gte(chargingSessions.startedAt, q.from) : undefined,
+            q.to ? lte(chargingSessions.startedAt, q.to) : undefined,
+          ),
+        )
         .orderBy(desc(chargingSessions.startedAt))
-        .limit(200);
+        .limit(listLimit(q));
       const places = await placeContext(ctx);
       const capacityKwh = await packCapacityKwh(ctx, request.params.id);
       const limits = await sessionLimits(ctx, rows);
@@ -64,81 +79,18 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
 
   app.get<{ Params: { sessionId: string } }>(
     '/api/charging-sessions/:sessionId/curve',
+    async (request): Promise<ChargingCurvePointDto[]> =>
+      rivianCurve(ctx, Number(request.params.sessionId)),
+  );
+
+  app.get<{ Params: { id: string; sessionId: string } }>(
+    '/api/vehicles/:id/charging-sessions/:sessionId/curve',
     async (request): Promise<ChargingCurvePointDto[]> => {
+      const { id } = request.params;
       const sessionId = Number(request.params.sessionId);
-      const rows = await ctx.db
-        .select()
-        .from(chargingCurvePoints)
-        .where(eq(chargingCurvePoints.sessionId, sessionId))
-        .orderBy(chargingCurvePoints.ts)
-        .limit(20_000);
-      // Nothing recorded can be from the future; such rows were forecast.
-      const latest = Date.now() + CLOCK_SLACK_MS;
-      const [session] = await ctx.db
-        .select({
-          vehicleId: chargingSessions.vehicleId,
-          startedAt: chargingSessions.startedAt,
-          endedAt: chargingSessions.endedAt,
-          chargingSince: chargingSessions.chargingSince,
-          startSoc: chargingSessions.startSoc,
-        })
-        .from(chargingSessions)
-        .where(eq(chargingSessions.id, sessionId));
-      // Drawn over just the time it charged, from recorded charger status.
-      const window = session
-        ? chargingWindow(
-            await loadChargeSpans(
-              ctx.db,
-              session.vehicleId,
-              session.startedAt,
-              session.endedAt ?? new Date(),
-            ),
-            session.startedAt,
-            session.endedAt,
-          )
-        : null;
-      const clipped = curveForDisplay(
-        rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
-        window,
-      );
-      // Starts at the level the session shows it charging from.
-      const curve =
-        session && clipped[0] && clipped[0].soc == null
-          ? withOpeningSoc(clipped, await socAt(ctx, session, clipped[0].ts))
-          : clipped;
-      // Only while it's actually charging: stopped but still plugged in, or
-      // unplugged, there's nothing left to forecast.
-      const charging = session != null && session.endedAt == null && session.chargingSince != null;
-      const live = session && charging ? ctx.bus.latestChargingSession(session.vehicleId) : null;
-      const liveCharging = live && isChargingState(String(live.vehicleChargerState?.value ?? ''));
-      // The curve reaches the level shown with it, not just the last graph bar.
-      const tail = liveCharging && curve.length > 0 ? liveCurvePoint(live, curve.at(-1)) : null;
-      const recorded = tail ? [...curve, tail] : curve;
-      const forecast = forecastForDisplay(rows, recorded, charging);
-      // Without Rivian's forecast, the app's own.
-      const estimated =
-        liveCharging && forecast.length === 0
-          ? forecastForDisplay(estimatedForecast(live), recorded, true)
-          : [];
-      if (recorded.length > 0) {
-        return [
-          ...recorded.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
-          ...forecast.map((r) => ({
-            ts: r.ts.toISOString(),
-            powerKw: null,
-            soc: r.soc,
-            projected: true,
-          })),
-          ...estimated.map((r) => ({
-            ts: r.ts.toISOString(),
-            powerKw: null,
-            soc: r.soc,
-            projected: true,
-            estimated: true,
-          })),
-        ];
-      }
-      return socCurveFromState(ctx, sessionId);
+      return isTeslaMateVehicle(id)
+        ? ctx.teslamate.chargingCurve(id, sessionId)
+        : rivianCurve(ctx, sessionId, id);
     },
   );
 
@@ -195,6 +147,89 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
     }
     return result;
   });
+}
+
+/** A session's curve; empty if missing or (with `vehicleId`) another vehicle's. */
+async function rivianCurve(
+  ctx: AppContext,
+  sessionId: number,
+  vehicleId?: string,
+): Promise<ChargingCurvePointDto[]> {
+  if (!Number.isSafeInteger(sessionId)) return [];
+  const [session] = await ctx.db
+    .select({
+      vehicleId: chargingSessions.vehicleId,
+      startedAt: chargingSessions.startedAt,
+      endedAt: chargingSessions.endedAt,
+      chargingSince: chargingSessions.chargingSince,
+      startSoc: chargingSessions.startSoc,
+    })
+    .from(chargingSessions)
+    .where(eq(chargingSessions.id, sessionId));
+  if (vehicleId != null && session?.vehicleId !== vehicleId) return [];
+  const rows = await ctx.db
+    .select()
+    .from(chargingCurvePoints)
+    .where(eq(chargingCurvePoints.sessionId, sessionId))
+    .orderBy(chargingCurvePoints.ts)
+    .limit(20_000);
+  // Nothing recorded can be from the future; such rows were forecast.
+  const latest = Date.now() + CLOCK_SLACK_MS;
+  // Drawn over just the time it charged, from recorded charger status.
+  const window = session
+    ? chargingWindow(
+        await loadChargeSpans(
+          ctx.db,
+          session.vehicleId,
+          session.startedAt,
+          session.endedAt ?? new Date(),
+        ),
+        session.startedAt,
+        session.endedAt,
+      )
+    : null;
+  const clipped = curveForDisplay(
+    rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
+    window,
+  );
+  // Starts at the level the session shows it charging from.
+  const curve =
+    session && clipped[0] && clipped[0].soc == null
+      ? withOpeningSoc(clipped, await socAt(ctx, session, clipped[0].ts))
+      : clipped;
+  // Only while it's actually charging: stopped but still plugged in, or
+  // unplugged, there's nothing left to forecast.
+  const charging = session != null && session.endedAt == null && session.chargingSince != null;
+  const live = session && charging ? ctx.bus.latestChargingSession(session.vehicleId) : null;
+  const liveCharging = live && isChargingState(String(live.vehicleChargerState?.value ?? ''));
+  // The curve reaches the level shown with it, not just the last graph bar.
+  const tail = liveCharging && curve.length > 0 ? liveCurvePoint(live, curve.at(-1)) : null;
+  const recorded = tail ? [...curve, tail] : curve;
+  const forecast = forecastForDisplay(rows, recorded, charging);
+  // Without Rivian's forecast, the app's own.
+  const estimated =
+    liveCharging && forecast.length === 0
+      ? forecastForDisplay(estimatedForecast(live), recorded, true)
+      : [];
+  if (recorded.length > 0) {
+    return [
+      ...recorded.map((r) => ({ ts: r.ts.toISOString(), powerKw: r.powerKw, soc: r.soc })),
+      ...forecast.map((r) => ({
+        ts: r.ts.toISOString(),
+        powerKw: null,
+        soc: r.soc,
+        projected: true,
+      })),
+      ...estimated.map((r) => ({
+        ts: r.ts.toISOString(),
+        powerKw: null,
+        soc: r.soc,
+        projected: true,
+        estimated: true,
+      })),
+    ];
+  }
+  return socCurveFromState(ctx, sessionId);
 }
 
 export interface PlaceContext {

@@ -12,17 +12,21 @@ import { type Logger, createLogger } from './logger.js';
 import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
 import { RivianGovernor } from './rivian/governor.js';
-import { type MockScene, MockRivian, mockGeocode } from './rivian/mock.js';
+import { type MockScene, MockRivian, mockGeocode, mockTemperatures } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
 import { getPasswordHash } from './routes/auth.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
+import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
+import { LoginThrottle } from './services/login-throttle.js';
 import { TokenStore } from './services/token-store.js';
 import { VehicleMonitor } from './services/vehicle-monitor.js';
 import { HistoryKeys } from './services/history-keys.js';
 import { HistoryMaintenance } from './services/history-maintenance.js';
 import { ParallaxArchive } from './services/parallax-archive.js';
+import { getTeslaMateUrl } from './routes/teslamate.js';
+import { TeslaMateSource } from './teslamate/source.js';
 import { loadVersion } from './version.js';
 
 const START_RETRY_BASE_MS = 30_000;
@@ -79,7 +83,15 @@ async function main(): Promise<void> {
       config.MOCK_RIVIAN ? mockGeocode : nominatimGeocoder(userAgent),
       logger.child({ component: 'places' }),
     ),
+    new DriveWeather(
+      db,
+      // Mock drives are in made-up places too; make up their weather.
+      config.MOCK_RIVIAN ? mockTemperatures : openMeteoTemperatures(userAgent),
+      logger.child({ component: 'weather' }),
+    ),
   );
+
+  const teslamate = new TeslaMateSource(bus, logger.child({ component: 'teslamate' }));
 
   const notifications = new NotificationService(
     db,
@@ -99,11 +111,13 @@ async function main(): Promise<void> {
     logs,
     db,
     crypto,
+    loginThrottle: new LoginThrottle(),
     tokenStore,
     bus,
     monitor,
     notifications,
     rivianFactory,
+    teslamate,
     governor,
     // Searches are typed by the user, so they run in mock mode too.
     searchPlaces: nominatimSearch(userAgent),
@@ -118,7 +132,7 @@ async function main(): Promise<void> {
       .insert(appSettings)
       .values({
         key: 'app_password_hash',
-        value: hashPassword(config.APP_PASSWORD),
+        value: await hashPassword(config.APP_PASSWORD),
       })
       .onConflictDoNothing();
   }
@@ -168,11 +182,16 @@ async function main(): Promise<void> {
   };
   startMonitor();
 
+  // Read-only and independent of Rivian; failed reads retry on their own.
+  const teslamateUrl = await getTeslaMateUrl(ctx);
+  if (teslamateUrl) void teslamate.configure(teslamateUrl);
+
   const shutdown = async () => {
     appLog.info('shutting down');
     clearTimeout(startRetry);
     notifications.stop();
     history.stop();
+    await teslamate.stop();
     await monitor.stop();
     await app.close();
     process.exit(0);

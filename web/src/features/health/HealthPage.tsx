@@ -2,12 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
+import { showLegacyOnly } from '../../lib/fieldSources';
+import { sv } from '../../lib/state';
 import { BatteryPanel } from './BatteryPanel';
 import { Overview } from './Overview';
 import { SoftwarePanel } from './SoftwarePanel';
 import { TiresPanel } from './TiresPanel';
 
-export function HealthPage(props: { vehicleId: string }) {
+export function HealthPage(props: { vehicleId: string; model?: string | null }) {
   const { data: state, isPending: statePending } = useVehicleState(props.vehicleId);
   const {
     data: insights,
@@ -42,9 +44,17 @@ export function HealthPage(props: { vehicleId: string }) {
         insights={insights}
         batteryPending={batteryPending || statePending}
         insightsPending={insightsPending}
+        cellType={
+          showLegacyOnly(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined
+        }
       />
 
-      <TiresPanel vehicleId={props.vehicleId} state={state} statePending={statePending} />
+      <TiresPanel
+        vehicleId={props.vehicleId}
+        state={state}
+        statePending={statePending}
+        model={props.model}
+      />
 
       <SoftwarePanel vehicleId={props.vehicleId} />
     </div>

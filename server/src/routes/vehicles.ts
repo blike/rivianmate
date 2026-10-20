@@ -1,37 +1,88 @@
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
+import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
+import { NO_SCHEDULES } from '../teslamate/source.js';
+
+/** The views a vehicle has a render for. */
+const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
+  VEHICLE_VIEWS.filter((v) => images?.[v]);
 
 export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/vehicles', async (): Promise<VehicleDto[]> => {
-    const fromMonitor = ctx.monitor.getVehicles();
-    if (fromMonitor.length > 0) return fromMonitor;
     const rows = await ctx.db.select().from(vehicles);
-    return rows.map((r) => ({
-      id: r.id,
-      vin: r.vin,
-      name: r.name,
-      make: r.make,
-      model: r.model,
-      modelYear: r.modelYear,
-    }));
+    const fromMonitor = ctx.monitor.getVehicles();
+    const images = new Map(rows.map((r) => [r.id, r.images]));
+    const rivian = fromMonitor.length > 0 ? fromMonitor : rows;
+    return [
+      ...rivian.map((r) => ({
+        id: r.id,
+        vin: r.vin,
+        name: r.name,
+        make: r.make,
+        model: r.model,
+        modelYear: r.modelYear,
+        renders: rendersOf(images.get(r.id)),
+        source: 'rivian' as const,
+      })),
+      ...ctx.teslamate.getVehicles(),
+    ];
   });
 
+  // Rivian's render URLs carry a token, so the server fetches them and keeps
+  // each one, keyed by its URL, until discovery stores a new one.
+  const renderCache = new Map<string, { type: string; body: Buffer }>();
+  app.get<{ Params: { id: string; view: string } }>(
+    '/api/vehicles/:id/render/:view',
+    async (request, reply) => {
+      const view = VEHICLE_VIEWS.find((v) => v === request.params.view);
+      const [row] = await ctx.db
+        .select({ images: vehicles.images })
+        .from(vehicles)
+        .where(eq(vehicles.id, request.params.id));
+      const url = view && row?.images?.[view];
+      if (!url) return reply.code(404).send({ error: 'No render' });
+
+      let render = renderCache.get(url);
+      if (!render) {
+        const res = await fetch(url);
+        if (!res.ok) return reply.code(502).send({ error: 'Render unavailable' });
+        render = {
+          type: res.headers.get('content-type') ?? 'image/png',
+          body: Buffer.from(await res.arrayBuffer()),
+        };
+        renderCache.set(url, render);
+      }
+      return reply
+        .header('Content-Type', render.type)
+        .header('Cache-Control', 'private, max-age=86400')
+        .send(render.body);
+    },
+  );
+
   app.get<{ Params: { id: string } }>('/api/vehicles/:id/state', async (request, reply) => {
-    const state = ctx.monitor.getState(request.params.id);
+    const state = vehicleState(ctx, request.params.id);
     if (!state) return reply.code(404).send({ error: 'No state yet' });
     return state;
   });
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/schedules',
-    async (request): Promise<SchedulesDto> => ctx.monitor.getSchedules(request.params.id),
+    async (request): Promise<SchedulesDto> =>
+      isTeslaMateVehicle(request.params.id)
+        ? NO_SCHEDULES
+        : ctx.monitor.getSchedules(request.params.id),
   );
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/insights',
-    async (request): Promise<VehicleInsightsDto> => ctx.monitor.getInsights(request.params.id),
+    async (request): Promise<VehicleInsightsDto> =>
+      isTeslaMateVehicle(request.params.id)
+        ? ctx.teslamate.insights(request.params.id)
+        : ctx.monitor.getInsights(request.params.id),
   );
 
   /** SSE stream of merged full-state updates + live charging session. */
@@ -50,7 +101,7 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    const initial = ctx.monitor.getState(vehicleId);
+    const initial = vehicleState(ctx, vehicleId);
     if (initial) send('state', initial);
     // Always sent, so clients can tell "not charging" from "not loaded yet".
     send('charging', ctx.bus.latestChargingSession(vehicleId));
@@ -69,4 +120,11 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
       clearInterval(keepalive);
     });
   });
+}
+
+/** Latest merged state, from TeslaMate or the Rivian monitor. */
+export function vehicleState(ctx: AppContext, vehicleId: string) {
+  return isTeslaMateVehicle(vehicleId)
+    ? ctx.teslamate.getState(vehicleId)
+    : ctx.monitor.getState(vehicleId);
 }

@@ -1,65 +1,33 @@
 import type { VehicleState } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
+import { CarPlan } from '../../components/CarPlan';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { fmt, nv, sv } from '../../lib/state';
-import { type TireKey, type TireTrend, TIRES, tireLevel } from './health';
+import { type TireTrend, TIRES, tireLevel } from './health';
 import { LEVEL_COLOR } from './levels';
-
-/** Wheel positions in the diagram's 64×128 viewBox. */
-const WHEEL_AT: Record<TireKey, [number, number]> = {
-  fl: [4, 20],
-  fr: [52, 20],
-  rl: [4, 84],
-  rr: [52, 84],
-};
 
 /** The vehicle from above, with each tire's pressure beside it. */
 export function TireDiagram(props: {
   state: VehicleState | undefined;
   trend: TireTrend | null;
   days: number;
+  truck?: boolean;
 }) {
   const [fl, fr, rl, rr] = TIRES;
   const tire = (t: (typeof TIRES)[number]) => (
     <TireReading tire={t} state={props.state} trend={props.trend} days={props.days} />
   );
-  const color = (t: (typeof TIRES)[number]) => {
-    if (props.trend?.leaking === t.key) return LEVEL_COLOR.attention;
-    const level = tireLevel(sv(props.state, t.status));
-    return level === 'good' ? 'var(--text-secondary)' : LEVEL_COLOR[level];
-  };
+  // A tire the vehicle flags, or one losing pressure faster than the rest.
+  const attention = new Set(
+    TIRES.filter(
+      (t) => props.trend?.leaking === t.key || tireLevel(sv(props.state, t.status)) === 'attention',
+    ).map((t) => t.key),
+  );
 
   return (
     <div className="mx-auto grid w-full max-w-[16rem] grid-cols-[1fr_auto_1fr] grid-rows-2 items-center gap-x-3 gap-y-6">
       {tire(fl!)}
-      <svg viewBox="0 0 64 128" className="row-span-2 h-40 w-auto" aria-hidden>
-        <rect
-          x="10"
-          y="4"
-          width="44"
-          height="120"
-          rx="18"
-          fill="var(--surface-2)"
-          stroke="var(--border)"
-        />
-        <path d="M16 38 Q32 30 48 38 L46 52 Q32 47 18 52 Z" fill="var(--surface-0)" opacity="0.7" />
-        <path
-          d="M18 98 Q32 102 46 98 L47 108 Q32 114 17 108 Z"
-          fill="var(--surface-0)"
-          opacity="0.7"
-        />
-        {TIRES.map((t) => (
-          <rect
-            key={t.key}
-            x={WHEEL_AT[t.key][0]}
-            y={WHEEL_AT[t.key][1]}
-            width="8"
-            height="24"
-            rx="3"
-            fill={color(t)}
-          />
-        ))}
-      </svg>
+      <CarPlan className="row-span-2 h-40 w-auto" truck={props.truck} attention={attention} />
       {tire(fr!)}
       {tire(rl!)}
       {tire(rr!)}

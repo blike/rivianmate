@@ -30,7 +30,7 @@ export function DrivesPage(props: { vehicleId: string }) {
     data: detail,
     isPending: detailPending,
     isPlaceholderData: showingPreviousDrive,
-  } = useDrive(driveId);
+  } = useDrive(props.vehicleId, driveId);
   const loading = drivesPending || (driveId != null && detailPending);
 
   // The drive under way shows where navigation is taking it, and the
@@ -60,19 +60,16 @@ export function DrivesPage(props: { vehicleId: string }) {
         }
       : null;
 
-  const profile = useMemo(
-    () =>
-      detail
-        ? driveProfile(detail.points, detail.startedAt).map((p) => ({
-            minutes: p.minutes,
-            speed: u.distance(p.speedKmh),
-            elevation: u.elevation(p.altitudeM),
-            lat: p.lat,
-            lon: p.lon,
-          }))
-        : [],
-    [detail, u],
-  );
+  const profile = useMemo(() => {
+    if (!detail) return [];
+    return driveProfile(detail.points, detail.startedAt).map((p) => ({
+      minutes: p.minutes,
+      speed: u.distance(p.speedKmh),
+      elevation: u.elevation(p.altitudeM),
+      lat: p.lat,
+      lon: p.lon,
+    }));
+  }, [detail, u]);
   // The chart point under the pointer, marked on the route map.
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const hoverPosition = hoverIndex != null ? profilePosition(profile, hoverIndex) : null;

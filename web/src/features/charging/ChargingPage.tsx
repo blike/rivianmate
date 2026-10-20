@@ -1,15 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
 import { useChargingSessions, useLiveCharging, useVehicleState } from '../../api/hooks';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
+import { lastChargedTo } from '../../lib/charging';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
 import { CurveChart } from './CurveChart';
 import { EnergySplit } from './EnergySplit';
 import { LiveCard } from './LiveCard';
-import { SchedulesPanel } from './SchedulesPanel';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
@@ -21,11 +22,14 @@ export function ChargingPage(props: { vehicleId: string }) {
   const { data: state } = useVehicleState(props.vehicleId);
 
   const { data: sessions, isPending: sessionsPending } = useChargingSessions(props.vehicleId);
+  // TeslaMate is read-only, and schedules and wallboxes are Rivian's.
+  const teslamate = isTeslaMateVehicle(props.vehicleId);
 
   const { data: wallboxes } = useQuery({
     queryKey: ['wallboxes'],
     queryFn: api.wallboxes,
     refetchInterval: 60_000,
+    enabled: !teslamate,
   });
 
   const costMutation = useMutation({
@@ -51,8 +55,8 @@ export function ChargingPage(props: { vehicleId: string }) {
     isPending: curvePending,
     isPlaceholderData: showingPreviousCurve,
   } = useQuery({
-    queryKey: ['chargingCurve', session?.id],
-    queryFn: () => api.chargingCurve(session!.id),
+    queryKey: ['chargingCurve', props.vehicleId, session?.id],
+    queryFn: () => api.chargingCurve(props.vehicleId, session!.id),
     enabled: session != null,
     refetchInterval: session && !session.endedAt ? 30_000 : false,
     // Keep the previous curve on screen (dimmed) while the next one loads.
@@ -68,7 +72,7 @@ export function ChargingPage(props: { vehicleId: string }) {
             No charging sessions recorded yet.
           </p>
         </Panel>
-        <ScheduleRow vehicleId={props.vehicleId} wallboxes={wallboxes} />
+        {!teslamate && <Wallboxes wallboxes={wallboxes} />}
       </div>
     );
   }
@@ -87,7 +91,9 @@ export function ChargingPage(props: { vehicleId: string }) {
           <SessionCard
             session={session}
             live={showingOpen ? liveCharge(isLive ? live : null, state) : null}
-            onSaveCost={session ? saveCost(session.id) : undefined}
+            lastChargedTo={lastChargedTo(sessions)}
+            // A TeslaMate session's id is TeslaMate's, so its cost isn't RivianMate's to edit.
+            onSaveCost={session && !teslamate ? saveCost(session.id) : undefined}
           />
         </LoadingScope>
       </div>
@@ -136,26 +142,19 @@ export function ChargingPage(props: { vehicleId: string }) {
         </Panel>
       </div>
 
-      <ScheduleRow vehicleId={props.vehicleId} wallboxes={wallboxes} />
+      {!teslamate && <Wallboxes wallboxes={wallboxes} />}
     </div>
   );
 }
 
-/** Schedules, then any wallboxes beside them. */
-function ScheduleRow(props: { vehicleId: string; wallboxes: WallboxDto[] | undefined }) {
-  const wallboxes = props.wallboxes ?? [];
+/** Any wallboxes, two to a row. */
+function Wallboxes(props: { wallboxes: WallboxDto[] | undefined }) {
+  if (!props.wallboxes?.length) return null;
   return (
-    <div
-      className={`grid grid-cols-1 items-start gap-4 ${wallboxes.length ? 'lg:grid-cols-2' : ''}`}
-    >
-      <SchedulesPanel vehicleId={props.vehicleId} />
-      {wallboxes.length > 0 && (
-        <div className="grid grid-cols-1 gap-4">
-          {wallboxes.map((wb) => (
-            <WallboxPanel key={wb.wallboxId} wallbox={wb} />
-          ))}
-        </div>
-      )}
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      {props.wallboxes.map((wb) => (
+        <WallboxPanel key={wb.wallboxId} wallbox={wb} />
+      ))}
     </div>
   );
 }

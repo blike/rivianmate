@@ -245,6 +245,25 @@ export function stateTotals(
 }
 
 /**
+ * Stretches awake while parked: the vehicle awake without driving,
+ * charging or updating. Spans less than a minute apart join up, and the
+ * longest come first.
+ */
+export function awakeStretches(segments: readonly StateSegment[]): { from: number; to: number }[] {
+  const stretches: { from: number; to: number }[] = [];
+  const awake = segments
+    .filter((s) => s.state === 'awake')
+    .map((s) => ({ from: s.from, to: s.to }))
+    .sort((a, b) => a.from - b.from);
+  for (const s of awake) {
+    const last = stretches.at(-1);
+    if (last && s.from - last.to < 60_000) last.to = Math.max(last.to, s.to);
+    else stretches.push({ ...s });
+  }
+  return stretches.sort((a, b) => b.to - b.from - (a.to - a.from));
+}
+
+/**
  * Location points grouped into one [lat, lon] line per drive, in time order.
  * Points recorded while parked (no drive) aren't part of any line.
  */

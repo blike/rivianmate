@@ -3,11 +3,11 @@
   RivianMate
 </h1>
 
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)](https://github.com/blike/rivianmate/actions/workflows/docker-publish.yml)
-[![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)](https://github.com/blike/rivianmate/releases/latest)
-[![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)](https://hub.docker.com/r/mitchvitale/rivianmate)
-[![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)](https://hub.docker.com/r/mitchvitale/rivianmate)
+![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
+![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)
+![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)
+![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)
+![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)
 
 **A self-hosted data logger and dashboard for your Rivian.**
 
@@ -42,6 +42,8 @@ a dashboard you can open from anywhere.
 - Interactive route maps with speed and elevation profiles.
 - Detailed trip statistics, including distance, duration, efficiency, and energy consumption.
 - Start and destination address identification.
+- The weather on each drive (temperature, conditions, wind), and efficiency charted by temperature,
+  speed, climb, length and weather.
 
 ### Charging History & Analytics
 
@@ -80,8 +82,6 @@ a dashboard you can open from anywhere.
   <img src="docs/screenshots/dashboard-desktop.png" alt="The dashboard on a desktop, partway through a drive home" width="73%">
   <img src="docs/screenshots/dashboard-mobile.png" alt="The dashboard on a phone, on the same drive home" width="23%">
 </p>
-
-Shown in demo mode with a simulated R1S. Map data © OpenStreetMap contributors and OpenMapTiles.
 
 ## Quick Start
 
@@ -186,6 +186,23 @@ RivianMate supports configurable vehicle alerts through:
 
 Configure notification providers and alert preferences under **Settings → Notifications**.
 
+### TeslaMate
+
+Also have a Tesla logged by [TeslaMate](https://github.com/teslamate-org/teslamate)? Add its
+database under **Settings → General → Accounts** and its cars join the vehicle menu, on the same
+dashboard, drives, charging, history and health pages, with drives and charging sessions updating
+live while they happen.
+
+RivianMate only reads from TeslaMate: it opens a read-only session, copies nothing into its own
+database, and never writes to TeslaMate's. Enter a Postgres URL such as
+`postgres://teslamate:password@192.168.1.10:5432/teslamate`. The database has to be reachable from
+the RivianMate container, for example by publishing TeslaMate's Postgres port or by putting both on
+the same Docker network. The URL is stored encrypted with `APP_SECRET`.
+
+TeslaMate doesn't log some things Rivian reports, such as locks, doors, the charge limit and pending
+software updates, so those parts of the pages are left out for Tesla vehicles, and notifications
+only cover Rivian vehicles.
+
 ## Updating
 
 To update RivianMate to the latest version, run the following commands from your installation
@@ -236,8 +253,11 @@ RivianMate is designed to keep your vehicle data under your control.
   analytics or cloud service.
 
 The application makes external requests for vehicle data and authentication, map tiles through
-[OpenFreeMap](https://openfreemap.org/), and address lookups through OpenStreetMap's
-[Nominatim](https://nominatim.org/).
+[OpenFreeMap](https://openfreemap.org/), address lookups through OpenStreetMap's
+[Nominatim](https://nominatim.org/), and outside temperatures through
+[Open-Meteo](https://open-meteo.com/), plus read-only queries to your TeslaMate database if you add
+one. Address and temperature lookups send the coordinates (and, for temperatures, the times) of
+points along your drives to those services.
 
 For more information, including how to responsibly disclose security vulnerabilities, see the
 [Security Policy](SECURITY.md).
@@ -344,6 +364,20 @@ AI-generated changes should be reviewed and validated before submission.
 Project maintainers review contributions and remain responsible for changes merged into the project.
 
 For information about the release process, see [RELEASING.md](RELEASING.md).
+
+## Data Sources
+
+RivianMate uses these free services and open datasets. The same credits appear in the app under
+**Settings → About**.
+
+- **Map data and addresses:** © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+  contributors, available under the Open Database License (ODbL).
+- **Map tiles:** [OpenFreeMap](https://openfreemap.org/), built with
+  [OpenMapTiles](https://openmaptiles.org/).
+- **Address lookups:** [Nominatim](https://nominatim.org/).
+- **Outside temperature:** weather model data by [Open-Meteo.com](https://open-meteo.com/), licensed
+  under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). RivianMate interpolates it along
+  each drive's route and averages it over the drive.
 
 ## License
 

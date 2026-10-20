@@ -30,6 +30,7 @@ import { ChargingMonitor } from './charging-monitor.js';
 import { DriveDetector } from './drive-detector.js';
 import { HistoryKeys } from './history-keys.js';
 import type { DrivePlaces } from './drive-places.js';
+import type { DriveWeather } from './drive-weather.js';
 import { LocationWriter } from './location-writer.js';
 import { OtaNotesStore } from './ota-notes.js';
 import { ParallaxArchive } from './parallax-archive.js';
@@ -153,6 +154,8 @@ export class VehicleMonitor {
     private readonly logger: Logger = silentLogger,
     /** Fills in drives' start and end places; absent when lookups are off. */
     private readonly drivePlaces?: DrivePlaces,
+    /** Records the weather along drives; absent when lookups are off. */
+    private readonly driveWeather?: DriveWeather,
   ) {
     this.log = logger.child({ component: 'monitor' });
     const keys = new HistoryKeys(db);
@@ -166,7 +169,11 @@ export class VehicleMonitor {
       // Name the start while the drive is under way.
       if (driveId != null) this.drivePlaces?.enqueue(driveId);
     });
-    this.driveDetector.onDriveEnded = (driveId) => this.drivePlaces?.enqueue(driveId);
+    // Weather waits for the end, when the whole route is in.
+    this.driveDetector.onDriveEnded = (driveId) => {
+      this.drivePlaces?.enqueue(driveId);
+      this.driveWeather?.enqueue(driveId);
+    };
     this.driveDetector.log = logger.child({ component: 'drive' });
   }
 
@@ -311,6 +318,9 @@ export class VehicleMonitor {
     void this.drivePlaces
       ?.start()
       .catch((err: unknown) => this.log.error({ err }, 'drive place lookups failed to start'));
+    void this.driveWeather
+      ?.start()
+      .catch((err: unknown) => this.log.error({ err }, 'temperature lookups failed to start'));
 
     // Seed the cache with one poll per vehicle, then rely on the stream.
     for (const vehicle of this.vehicles) {
@@ -435,6 +445,7 @@ export class VehicleMonitor {
     this.scheduleRefresh.stop();
     this.driveDetector.stop();
     this.drivePlaces?.stop();
+    this.driveWeather?.stop();
     this.clearFallbackTimers();
     this.streamConnected = false;
     this.streamConnectedAt = null;

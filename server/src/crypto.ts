@@ -3,9 +3,17 @@ import {
   createDecipheriv,
   createHmac,
   randomBytes,
+  scrypt,
   scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
+import { promisify } from 'node:util';
+
+const scryptAsync = promisify(scrypt) as (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+) => Promise<Buffer>;
 
 const KEY_LEN = 32;
 const IV_LEN = 12;
@@ -61,16 +69,17 @@ export class TokenCrypto {
   }
 }
 
-export function hashPassword(password: string): string {
+// Off the event loop: scrypt takes long enough to stall every other request.
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, KEY_LEN);
+  const hash = await scryptAsync(password, salt, KEY_LEN);
   return `${salt.toString('base64')}.${hash.toString('base64')}`;
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [saltB64, hashB64] = stored.split('.');
   if (!saltB64 || !hashB64) return false;
   const expected = Buffer.from(hashB64, 'base64');
-  const actual = scryptSync(password, Buffer.from(saltB64, 'base64'), KEY_LEN);
+  const actual = await scryptAsync(password, Buffer.from(saltB64, 'base64'), KEY_LEN);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }

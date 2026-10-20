@@ -1,4 +1,5 @@
 import type { OtaTimelineDto } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client';
@@ -47,6 +48,8 @@ export function SoftwarePanel(props: { vehicleId: string }) {
   const update = softwareUpdate(state);
   const failed = lastInstallFailed(state);
   const reports = reportsUpdates(state);
+  // Release notes come from Rivian, so a TeslaMate vehicle has none.
+  const notes = !isTeslaMateVehicle(props.vehicleId);
 
   // Oldest first, so the track reads left to right into the future.
   const versions = [...(ota?.versions ?? [])].reverse();
@@ -78,7 +81,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
               <Stop kind="past" grow={0.8}>
                 <div className="text-sm text-(--text-muted)">{hidden} earlier</div>
                 <div className="whitespace-nowrap text-xs text-(--text-muted)">
-                  Since {shortDate(before[0]!.firstSeen)}
+                  Since {longDate(before[0]!.firstSeen)}
                 </div>
               </Stop>
             )}
@@ -118,7 +121,7 @@ export function SoftwarePanel(props: { vehicleId: string }) {
                   ? `${tracked ? 'Seen since' : 'Installed'} ${longDate(installed.firstSeen)} · ${age(now - Date.parse(installed.firstSeen))}`
                   : 'Waiting for the vehicle to report its version'}
               </div>
-              {current && <NotesLink vehicleId={props.vehicleId} version={current} />}
+              {current && notes && <NotesLink vehicleId={props.vehicleId} version={current} />}
             </Stop>
             {update ? (
               <Stop kind="update" grow={2} active={isActivePhase(update.phase)}>

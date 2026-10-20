@@ -10,7 +10,7 @@ import Fastify, {
 import { existsSync } from 'node:fs';
 import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
-import { SESSION_COOKIE, authRoutes } from './routes/auth.js';
+import { authRoutes, isAuthed } from './routes/auth.js';
 import { chargingRoutes } from './routes/charging.js';
 import { historyRoutes } from './routes/history.js';
 import { locationRoutes } from './routes/locations.js';
@@ -19,6 +19,7 @@ import { rivianRoutes } from './routes/rivian.js';
 import { healthRoutes } from './routes/health.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { settingsRoutes } from './routes/settings.js';
+import { teslamateRoutes } from './routes/teslamate.js';
 import { vehicleRoutes } from './routes/vehicles.js';
 
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
@@ -61,10 +62,12 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   await app.register(fastifyCookie);
 
+  // Judged by the route that matched, not the raw URL: the router decodes
+  // the path, so "/%61pi/..." reaches the same handlers as "/api/...".
   app.addHook('preHandler', async (request, reply) => {
-    const path = request.url.split('?')[0] ?? '';
-    if (!path.startsWith('/api/') || PUBLIC_PATHS.has(path)) return;
-    if (!ctx.crypto.verifySession(request.cookies[SESSION_COOKIE])) {
+    const route = request.routeOptions.url ?? '';
+    if (!route.startsWith('/api/') || PUBLIC_PATHS.has(route)) return;
+    if (!isAuthed(ctx, request)) {
       return reply.code(401).send({ error: 'Not authenticated' });
     }
   });
@@ -90,6 +93,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await healthRoutes(app, ctx);
   await notificationRoutes(app, ctx);
   await logRoutes(app, ctx);
+  await teslamateRoutes(app, ctx);
 
   if (ctx.config.WEB_DIST && existsSync(ctx.config.WEB_DIST)) {
     await app.register(fastifyStatic, { root: ctx.config.WEB_DIST });

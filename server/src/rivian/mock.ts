@@ -38,6 +38,7 @@ import {
 } from './parallax/index.js';
 import { b64, double, float, int, message, string } from './parallax/encode.js';
 import { ROUTE_HOME } from './mock-route-home.js';
+import type { TemperatureLookup } from '../services/drive-weather.js';
 
 /** Made-up addresses for mock drives (no real lookups in mock mode). */
 export const mockGeocode = async (lat: number, lon: number) => {
@@ -46,6 +47,21 @@ export const mockGeocode = async (lat: number, lon: number) => {
     place: `${number} Prairie Road, Normal`,
     address: `${number} Prairie Road, Normal, Illinois, United States`,
   };
+};
+
+/** Mild weather peaking mid-afternoon (UTC−5), every 15 minutes around the drive. */
+export const mockTemperatures: TemperatureLookup = async (points, from, to) => {
+  const step = 15 * 60_000;
+  const first = Math.floor(from.getTime() / step) * step - step;
+  const times: number[] = [];
+  for (let t = first; t <= to.getTime() + step; t += step) times.push(t);
+  return points.map((p) => ({
+    times,
+    tempsC: times.map((t) => {
+      const hour = (t / 3_600_000 - 5) % 24;
+      return 12 + 7 * Math.sin(((hour - 9) / 24) * 2 * Math.PI) - (p.lat - 40.5) * 2;
+    }),
+  }));
 };
 
 export const MOCK_VIN = '7FCTGAAA0MN000001';
@@ -198,8 +214,13 @@ const altitudeAt = (tick: number) => Math.round(240 + 35 * Math.sin(tick / 8));
 /** Demo scenes the mock can start in instead of parked at home (MOCK_SCENE). */
 export type MockScene = 'drive-home';
 
-/** The drive-home scene: this far along the drive home, which began at this battery level. */
-const DRIVE_HOME = { fraction: 0.6, startBattery: 66 };
+/**
+ * The drive-home scene: this far along the drive home, which began at
+ * `startBattery`. The level holds at `battery` for the rest of the drive, so
+ * screenshots read the same whenever they're taken: 201 mi of range at 61%,
+ * 231 mi at the 70% limit.
+ */
+const DRIVE_HOME = { fraction: 0.6, startBattery: 64, battery: 61, limit: 70, kmPerPct: 5.31 };
 const START_MILEAGE_M = 12_345_678;
 
 const usedPct = (m: number) => ((m / 1000) * KWH_PER_KM) / KWH_PER_PCT;
@@ -227,6 +248,9 @@ export function driveHomeSoFar(endMs: number) {
   return {
     startedAt: points[0]!.ts,
     startBattery: DRIVE_HOME.startBattery,
+    /** Where the mock picks the drive up: this far along, at this level. */
+    distanceM: ticks * stepM,
+    battery: DRIVE_HOME.battery,
     startMileageM: START_MILEAGE_M,
     batteryCapacityKwh: 135,
     destination: { name: 'Home', ...HOME },
@@ -272,8 +296,14 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   private sessionEnergyKwh = 0;
   private sessionStart?: string;
   private sessionStartSoc = 0;
+  private limit = 85;
+  /** Estimated range per % of battery. */
+  private kmPerPct = 4.4;
+  /** The drive-home scene: battery held, no pending update, no cold-weather report. */
+  private scene?: MockScene;
 
   constructor(options: { scene?: MockScene } = {}) {
+    this.scene = options.scene;
     if (options.scene === 'drive-home') {
       // Partway home, where driveHomeSoFar leaves off.
       this.route = HOME_ROUTE;
@@ -283,7 +313,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       this.lat = at.lat;
       this.lon = at.lon;
       this.heading = at.heading;
-      this.battery = DRIVE_HOME.startBattery - usedPct(this.drivenM());
+      this.battery = DRIVE_HOME.battery;
+      this.limit = DRIVE_HOME.limit;
+      this.kmPerPct = DRIVE_HOME.kmPerPct;
       this.mileageM = START_MILEAGE_M + this.drivenM();
     }
   }
@@ -319,7 +351,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         {
           id: MOCK_VEHICLE_ID,
           vin: MOCK_VIN,
-          name: 'Mock R1S',
+          name: 'Shadow',
           roles: ['owner'],
           state: 'ACTIVE',
           vehicle: {
@@ -390,7 +422,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         updatedAt: now,
       },
       vehicleChargerState: { value: 'charging_active', updatedAt: now },
-      socLimit: { value: 85, updatedAt: now },
+      socLimit: { value: this.limit, updatedAt: now },
     };
   }
 
@@ -548,7 +580,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.onAuthenticated?.();
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.emit(this.fullState());
-    this.emitParallax(RVM_COLD_WEATHER, [...int(1, 85), ...int(2, 6), ...int(3, 24)]);
+    if (this.scene !== 'drive-home') {
+      this.emitParallax(RVM_COLD_WEATHER, [...int(1, 85), ...int(2, 6), ...int(3, 24)]);
+    }
     // Uses: 2 climate, 3 outlets, 4 system, 5 Gear Guard (see decodeParkedEnergy).
     this.emitParallax(RVM_PARKED_ENERGY, [
       ...message(1, [
@@ -611,7 +645,6 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     const seconds = this.route.driveTicks * (TICK_MS / 1000);
     const secondsLeft = (this.route.driveTicks - this.tickInPhase) * (TICK_MS / 1000);
     const arrivalS = Math.round(Date.now() / 1000 + secondsLeft);
-    // Range is 4.4 km per %.
     const arrivalSoc = Math.max(5, this.battery - usedPct(this.route.lengthM - this.drivenM()));
     this.emitParallax(RVM_TRIP_INFO, [
       ...string(1, 'mock-trip'),
@@ -627,7 +660,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
           ]),
         ),
         ...double(6, arrivalSoc),
-        ...double(7, arrivalSoc * 4.4 * 1000),
+        ...double(7, arrivalSoc * this.kmPerPct * 1000),
         ...string(10, encodePolyline(this.route.points)),
       ]),
       ...double(5, this.battery + usedPct(this.drivenM())),
@@ -676,7 +709,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       this.lon = at.lon;
       this.heading = at.heading;
       this.mileageM += stepM;
-      this.battery = Math.max(5, this.battery - usedPct(stepM));
+      if (this.scene !== 'drive-home' || this.route !== HOME_ROUTE) {
+        this.battery = Math.max(5, this.battery - usedPct(stepM));
+      }
       this.emit({
         gnssLocation: {
           latitude: this.lat,
@@ -688,18 +723,18 @@ export class MockRivian implements RivianApi, VehicleStateStream {
         gnssBearing: v(Math.round(this.heading)),
         gnssAltitude: v(altitudeAt(this.tickInPhase)),
         batteryLevel: v(Number(this.battery.toFixed(1))),
-        distanceToEmpty: v(Math.round(this.battery * 4.4)),
+        distanceToEmpty: v(Math.round(this.battery * this.kmPerPct)),
         vehicleMileage: v(Math.round(this.mileageM)),
         cabinClimateInteriorTemperature: v(21),
       });
       this.emitGnss();
       this.emitTripProgress();
     } else if (this.phase === 'charging') {
-      this.battery = Math.min(85, this.battery + 0.12);
+      this.battery = Math.min(this.limit, this.battery + 0.12);
       this.sessionEnergyKwh += (11.5 * TICK_MS) / 3_600_000;
       this.emit({
         batteryLevel: v(Number(this.battery.toFixed(1))),
-        distanceToEmpty: v(Math.round(this.battery * 4.4)),
+        distanceToEmpty: v(Math.round(this.battery * this.kmPerPct)),
         timeToEndOfCharge: v(((PHASE_TICKS.charging - this.tickInPhase) * (TICK_MS / 1000)) / 60),
       });
       void this.pushCharging();
@@ -793,9 +828,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       gnssBearing: v(Math.round(this.heading)),
       gnssAltitude: v(240),
       batteryLevel: v(Number(this.battery.toFixed(1))),
-      batteryLimit: v(85),
+      batteryLimit: v(this.limit),
       batteryCapacity: v(135),
-      distanceToEmpty: v(Math.round(this.battery * 4.4)),
+      distanceToEmpty: v(Math.round(this.battery * this.kmPerPct)),
       vehicleMileage: v(Math.round(this.mileageM)),
       powerState: v(driving ? 'go' : 'standby'),
       gearStatus: v(driving ? 'drive' : 'park'),
@@ -837,7 +872,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       wiperFluidState: v('normal'),
       brakeFluidLow: v('false'),
       otaCurrentVersion: v('2026.34.1'),
-      otaAvailableVersion: v('2026.36.2'),
+      otaAvailableVersion: v(this.scene === 'drive-home' ? '2026.34.1' : '2026.36.2'),
       otaStatus: v('Ready_To_Install'),
       otaCurrentStatus: v('Install_Success'),
       otaInstallReady: v('ota_available'),

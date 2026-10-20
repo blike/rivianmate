@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
   ChargeSpanDto,
+  DriveCoverageDto,
   DriveDetailDto,
   DriveDto,
   DrivePlaceDto,
@@ -14,15 +15,17 @@ import type {
 import type { AppContext } from '../context.js';
 import { drives, locationPoints } from '../db/schema.js';
 import { driveElevation, maxSpeeds, mileageDistanceKm } from '../services/drive-detector.js';
-import { driveEnergyKwh } from '../services/drive-metrics.js';
+import { MIN_DRIVE_KM, driveEnergyKwh } from '../services/drive-metrics.js';
 import type { VehicleState } from '../rivian/types.js';
 import { stateNumber } from '../services/state-utils.js';
 import { nearbySpot } from '../services/locations.js';
 import { type PlaceContext, placeContext } from './charging.js';
+import { listLimit, listWindowSchema } from './list-window.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
-import { simplifyTrack } from '../services/simplify-track.js';
+import { thinTrack, trackToleranceM } from '../services/simplify-track.js';
 import { bucketSeries, latestNumber, numericSeries } from '../services/state-history.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
 const METRIC_FIELDS: Record<string, string> = {
   battery: 'batteryLevel',
@@ -46,23 +49,6 @@ const BUCKET_MS: Record<string, number> = {
   '1d': 86400_000,
 };
 
-const MAX_LOCATIONS = 20_000;
-/**
- * How far a simplified drive may stray from its recorded points: tighter for
- * short windows, viewed up close; looser for long ones, viewed zoomed out.
- */
-function trackToleranceM(from: Date, to: Date): number {
-  const days = (to.getTime() - from.getTime()) / 86400_000;
-  return days <= 7 ? 5 : days <= 31 ? 10 : 20;
-}
-
-/**
- * A finished drive that moved less than this is the vehicle shifting in and
- * out of gear in place (a gear check, nudging forward in the driveway), not a
- * trip: it's kept but left out of the drive list and everything built on it.
- */
-const MIN_DRIVE_KM = 0.1;
-
 const rangeQuerySchema = z.object({
   from: z.coerce.date().default(() => new Date(Date.now() - 86400_000)),
   to: z.coerce.date().default(() => new Date()),
@@ -73,6 +59,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/history',
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) return ctx.teslamate.history(request.params.id, q);
       // Nothing is known past now; a value held then isn't carried into the future.
       const to = new Date(Math.min(q.to.getTime(), Date.now()));
       const { opening, changes } = await numericSeries(
@@ -111,6 +98,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/charge-spans',
     async (request): Promise<ChargeSpanDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.chargeSpans(request.params.id, q.from, q.to);
+      }
       const spans = await loadChargeSpans(ctx.db, request.params.id, q.from, q.to);
       return spans.map((s) => ({
         kind: s.kind,
@@ -124,6 +114,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/state-spans',
     async (request): Promise<StateSpanDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.stateSpans(request.params.id, q.from, q.to);
+      }
       const spans = await loadStateSpans(ctx.db, request.params.id, q.from, q.to);
       return spans.map((s) => ({
         state: s.state,
@@ -137,6 +130,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/locations',
     async (request): Promise<LocationPointDto[]> => {
       const q = rangeQuerySchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.locations(request.params.id, q.from, q.to);
+      }
       const rows = await ctx.db.execute<{
         ts: string;
         lat: number;
@@ -152,23 +148,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
         ORDER BY ts
       `);
-      // Each drive is simplified rather than every nth point kept, so trips
-      // along the same road keep their shape and line up on the map.
-      const tolerance = trackToleranceM(q.from, q.to);
-      let kept: (typeof rows)[number][] = [];
-      for (let start = 0; start < rows.length;) {
-        let end = start + 1;
-        while (end < rows.length && rows[end]!.drive_id === rows[start]!.drive_id) end++;
-        const group = rows.slice(start, end);
-        if (group[0]!.drive_id == null) kept.push(...group);
-        else for (const i of simplifyTrack(group, tolerance)) kept.push(group[i]!);
-        start = end;
-      }
-      // Still too many: thin evenly, keeping both ends.
-      if (kept.length > MAX_LOCATIONS) {
-        const step = Math.ceil(kept.length / MAX_LOCATIONS);
-        kept = kept.filter((_, i) => i % step === 0 || i === kept.length - 1);
-      }
+      const kept = thinTrack(rows, (r) => r.drive_id, trackToleranceM(q.from, q.to));
       return kept.map((r) => ({
         ts: new Date(r.ts).toISOString(),
         lat: r.lat,
@@ -182,14 +162,39 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
   );
 
   app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/drive-coverage',
+    async (request): Promise<DriveCoverageDto> => {
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.driveCoverage(request.params.id);
+      }
+      const [first] = await ctx.db
+        .select({ startedAt: drives.startedAt })
+        .from(drives)
+        .where(eq(drives.vehicleId, request.params.id))
+        .orderBy(asc(drives.startedAt))
+        .limit(1);
+      return { since: first ? first.startedAt.toISOString() : null };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/drives',
     async (request): Promise<DriveDto[]> => {
+      const q = listWindowSchema.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.drives(request.params.id, await placeContext(ctx), {
+          ...q,
+          limit: listLimit(q),
+        });
+      }
       const rows = await ctx.db
         .select()
         .from(drives)
         .where(
           and(
             eq(drives.vehicleId, request.params.id),
+            q.from ? gte(drives.startedAt, q.from) : undefined,
+            q.to ? lte(drives.startedAt, q.to) : undefined,
             // A drive under way, or one with no distance, still shows.
             or(
               isNull(drives.endedAt),
@@ -199,7 +204,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           ),
         )
         .orderBy(desc(drives.startedAt))
-        .limit(200);
+        .limit(listLimit(q));
       // Drives recorded before elevation tracking: compute once and keep.
       // Only drives that actually have altitude readings are candidates, so
       // drives without any don't cost a query on every listing.
@@ -250,31 +255,55 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
   app.get<{ Params: { driveId: string } }>(
     '/api/drives/:driveId',
     async (request, reply): Promise<DriveDetailDto | void> => {
-      const driveId = Number(request.params.driveId);
-      const rows = await ctx.db.select().from(drives).where(eq(drives.id, driveId)).limit(1);
-      const drive = rows[0];
-      if (!drive) return reply.code(404).send({ error: 'Not found' });
-      const points = await ctx.db
-        .select()
-        .from(locationPoints)
-        .where(eq(locationPoints.driveId, driveId))
-        .orderBy(locationPoints.ts)
-        .limit(10_000);
-      const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
-      const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
-      const state = ctx.monitor.getState(drive.vehicleId);
-      if (!drive.endedAt) {
-        // Elevation is stored when a drive ends; until then, from points so far.
-        const elevation = await driveElevation(ctx.db, drive.id);
-        drive.elevationGainM = elevation?.gainM ?? null;
-        drive.elevationLossM = elevation?.lossM ?? null;
-      }
-      return {
-        ...toDriveDto(drive, fallback, speed, state, await placeContext(ctx)),
-        points: points.map(toLocationDto),
-      };
+      const detail = await rivianDriveDetail(ctx, Number(request.params.driveId));
+      if (!detail) return reply.code(404).send({ error: 'Not found' });
+      return detail;
     },
   );
+
+  app.get<{ Params: { id: string; driveId: string } }>(
+    '/api/vehicles/:id/drives/:driveId',
+    async (request, reply): Promise<DriveDetailDto | void> => {
+      const { id } = request.params;
+      const driveId = Number(request.params.driveId);
+      const detail = isTeslaMateVehicle(id)
+        ? await ctx.teslamate.drive(id, driveId, await placeContext(ctx))
+        : await rivianDriveDetail(ctx, driveId, id);
+      if (!detail) return reply.code(404).send({ error: 'Not found' });
+      return detail;
+    },
+  );
+}
+
+/** A recorded drive with its route; null if missing or another vehicle's. */
+async function rivianDriveDetail(
+  ctx: AppContext,
+  driveId: number,
+  vehicleId?: string,
+): Promise<DriveDetailDto | null> {
+  if (!Number.isSafeInteger(driveId)) return null;
+  const rows = await ctx.db.select().from(drives).where(eq(drives.id, driveId)).limit(1);
+  const drive = rows[0];
+  if (!drive || (vehicleId != null && drive.vehicleId !== vehicleId)) return null;
+  const points = await ctx.db
+    .select()
+    .from(locationPoints)
+    .where(eq(locationPoints.driveId, driveId))
+    .orderBy(locationPoints.ts)
+    .limit(10_000);
+  const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
+  const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
+  const state = ctx.monitor.getState(drive.vehicleId);
+  if (!drive.endedAt) {
+    // Elevation is stored when a drive ends; until then, from points so far.
+    const elevation = await driveElevation(ctx.db, drive.id);
+    drive.elevationGainM = elevation?.gainM ?? null;
+    drive.elevationLossM = elevation?.lossM ?? null;
+  }
+  return {
+    ...toDriveDto(drive, fallback, speed, state, await placeContext(ctx)),
+    points: points.map(toLocationDto),
+  };
 }
 
 /** Latest pack capacity seen for the vehicle (for drives without one). */
@@ -316,6 +345,17 @@ function toDriveDto(
     startRangeKm: row.startRangeKm,
     endRangeKm: live ? stateNumber(live, 'distanceToEmpty') : row.endRangeKm,
     maxSpeedKmh,
+    outsideTempC: row.avgOutsideTempC,
+    weather:
+      row.minOutsideTempC != null && row.maxOutsideTempC != null
+        ? {
+            minC: row.minOutsideTempC,
+            maxC: row.maxOutsideTempC,
+            weatherCode: row.weatherCode,
+            windKmh: row.windKmh,
+            windFromDeg: row.windFromDeg,
+          }
+        : null,
     driveMode: row.driveMode,
     destination:
       row.destinationLat != null && row.destinationLon != null

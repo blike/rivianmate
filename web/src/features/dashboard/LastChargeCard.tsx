@@ -9,7 +9,7 @@ import { relativeTime } from '../../lib/freshness';
 import type { LiveCharge } from '../../lib/liveCharge';
 import { sessionEnergy } from '../../lib/sessionEnergy';
 import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
-import { type ScheduleStatus, dayLabel } from '../charging/schedules';
+import { type ScheduleStatus, dayLabel } from './schedules';
 import { ActivityBar, ActivityCard, ActivityLine, ActivityStats } from './ActivityCard';
 import { ChargeIcon } from './ActivityIcons';
 
@@ -33,6 +33,8 @@ export function LastChargeCard(props: {
   plug?: 'charging' | 'plugged' | null;
   /** Whether vehicle state has loaded: plugged in, its battery level decides what shows. */
   stateLoaded?: boolean;
+  /** The level the last finished charge reached, marked when no limit is reported. */
+  lastChargedTo?: number | null;
 }) {
   const loading = useLoading();
   const u = useUnits();
@@ -50,6 +52,9 @@ export function LastChargeCard(props: {
   const cost = s?.cost ?? s?.estimatedCost ?? null;
   const soc = c?.soc ?? s?.endSoc ?? null;
   const limit = c?.limit ?? null;
+  // Without a reported limit (TeslaMate doesn't log one), the level the last
+  // charge reached is marked instead; it doesn't make this charge complete.
+  const lastCharge = limit == null ? (props.lastChargedTo ?? null) : null;
   const atLimit = soc != null && limit != null && soc >= limit - 0.5;
   const added =
     e != null
@@ -137,12 +142,15 @@ export function LastChargeCard(props: {
                   { from: s?.startSoc ?? soc, to: soc, color: ADDED },
                 ]
           }
-          tick={open ? limit : null}
+          tick={open ? (limit ?? lastCharge) : null}
           left={
             open ? (
               soc != null ? (
                 <>
-                  {fmt(soc, 0)}%{limit != null && ` of ${fmt(limit, 0)}% limit`}
+                  {fmt(soc, 0)}%
+                  {limit != null
+                    ? ` of ${fmt(limit, 0)}% limit`
+                    : lastCharge != null && ` · last charge ${fmt(lastCharge, 0)}%`}
                 </>
               ) : (
                 'Battery level unknown'

@@ -89,6 +89,21 @@ export const drives = pgTable(
     endAddress: text('end_address'),
     /** When the lookup finished (found or not); null = still to do. */
     placesCheckedAt: timestamp('places_checked_at', { withTimezone: true }),
+    /**
+     * The weather along the route, from weather model data every few minutes
+     * of it, looked up once the drive ends. Temperatures in °C: time-weighted
+     * average, low, and high.
+     */
+    avgOutsideTempC: real('avg_outside_temp_c'),
+    minOutsideTempC: real('min_outside_temp_c'),
+    maxOutsideTempC: real('max_outside_temp_c'),
+    /** WMO code for the drive's conditions: the commonest, unless it was wet for a good part of it. */
+    weatherCode: integer('weather_code'),
+    /** Average wind at 10 m (km/h), and where it mostly blew from (degrees), weighted by speed. */
+    windKmh: real('wind_kmh'),
+    windFromDeg: real('wind_from_deg'),
+    /** When the weather lookup finished (found or not); null = still to do. */
+    weatherCheckedAt: timestamp('weather_checked_at', { withTimezone: true }),
   },
   (t) => [index('drives_vehicle_started_idx').on(t.vehicleId, t.startedAt)],
 );

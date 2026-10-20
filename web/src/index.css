@@ -1,15 +1,23 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/archivo/wght.css';
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
+/* One family at one width; hierarchy comes from size, weight and color. */
+@theme {
+  --font-sans: 'Archivo Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
 :root {
-  /* Single committed dark look */
-  --surface-0: #121211;
-  --surface-1: #1a1a19;
-  --surface-2: #242423;
-  --border: #33332f;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #8b8a80;
+  /* Single committed dark look: warm near-blacks, hairlines rather than boxes. */
+  --surface-0: #0e0e0d;
+  --surface-1: #161615;
+  --surface-2: #20201e;
+  --surface-3: #2a2a27;
+  --border: #2e2e2a;
+  --hairline: rgb(255 255 240 / 0.07);
+  --text-primary: #f4f3ee;
+  --text-secondary: #bebdb2;
+  --text-muted: #87867c;
   --series-1: #3987e5; /* validated on dark surface */
   --series-2: #199e70;
   --series-3: #a77de8;
@@ -69,19 +77,33 @@ body,
 body {
   background: var(--surface-0);
   color: var(--text-primary);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .card {
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 240 / 0.025);
+}
+
+/* Small capitals: section and figure labels. */
+@utility eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Large figures, the ones a page is read for. */
+@utility readout {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
 
 /* ---- Map (MapLibre) ---- */
@@ -237,77 +259,47 @@ body {
 }
 
 /* ---- Dashboard ---- */
-.hero-card {
-  background:
-    radial-gradient(42rem 22rem at -10% -20%, rgb(245 197 24 / 0.08), transparent 65%),
-    var(--surface-1);
-}
 
-/* The hero map runs edge to edge inside its card. */
-.hero-map .rm-map {
+/* The overview's map runs edge to edge inside its card. */
+.overview-map .rm-map {
   border-radius: 0;
   box-shadow: none;
 }
 
-.battery-bar {
-  position: relative;
-  height: 14px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--border);
+/* A cell lights from the left by --part, so the level can end inside one. */
+.charge-gauge__cell {
+  flex: 1;
+  min-width: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--gauge) var(--part, 0%),
+    var(--surface-3) var(--part, 0%)
+  );
+  transition: background-color 0.4s ease;
 }
 
-.battery-bar__fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
-  transition: width 0.6s ease;
-  overflow: hidden;
+.charge-gauge__cell--on {
+  background: var(--gauge);
+  box-shadow: 0 0 10px -2px color-mix(in srgb, var(--gauge) 45%, transparent);
 }
 
-.battery-bar__fill--ok {
-  background: linear-gradient(90deg, #b8920f, var(--accent));
-  box-shadow: 0 0 16px rgb(245 197 24 / 0.25);
+.charge-gauge__cell--beyond {
+  opacity: 0.4;
 }
 
-.battery-bar__fill--warn {
-  background: linear-gradient(90deg, #b9800f, var(--status-warning));
+.charge-gauge__cell--pending {
+  animation: gauge-pending 2.4s ease-in-out infinite;
 }
 
-.battery-bar__fill--low {
-  background: linear-gradient(90deg, #8f2424, var(--status-critical));
-}
-
-.battery-bar__fill--charging {
-  background: linear-gradient(90deg, #097a09, var(--status-good));
-  box-shadow: 0 0 16px rgb(12 163 12 / 0.35);
-}
-
-.battery-bar__fill--charging::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
-  transform: translateX(-100%);
-  animation: battery-shimmer 2.2s ease-in-out infinite;
-}
-
-@keyframes battery-shimmer {
-  to {
-    transform: translateX(100%);
+@keyframes gauge-pending {
+  0%,
+  100% {
+    background: var(--surface-3);
   }
-}
-
-/* Charge limit: a tick that stands just proud of the bar. */
-.battery-bar__limit {
-  position: absolute;
-  top: -4px;
-  bottom: -4px;
-  width: 2px;
-  margin-left: -1px;
-  border-radius: 1px;
-  background: var(--text-primary);
-  opacity: 0.75;
+  30% {
+    background: color-mix(in srgb, var(--gauge) 45%, var(--surface-3));
+  }
 }
 
 .chip-dot--pulse {
@@ -363,11 +355,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .battery-bar__fill,
   .ota-progress {
     transition: none;
   }
-  .battery-bar__fill--charging::after,
+  .charge-gauge__cell--pending,
   .chip-dot--pulse,
   .ota-progress--indeterminate {
     animation: none;

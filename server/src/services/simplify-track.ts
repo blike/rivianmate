@@ -47,3 +47,45 @@ export function simplifyTrack(
   for (let i = 0; i < n; i++) if (keep[i]) kept.push(i);
   return kept;
 }
+
+/** At most this many points for a window's routes. */
+export const MAX_TRACK_POINTS = 20_000;
+
+/**
+ * How far a simplified drive may stray from its recorded points: tighter for
+ * short windows, viewed up close; looser for long ones, viewed zoomed out.
+ */
+export function trackToleranceM(from: Date, to: Date): number {
+  const days = (to.getTime() - from.getTime()) / 86400_000;
+  return days <= 7 ? 5 : days <= 31 ? 10 : 20;
+}
+
+/**
+ * A window's points, in time order, thinned for drawing its routes. Each
+ * drive is simplified rather than every nth point kept, so trips along the
+ * same road keep their shape and line up on the map; points outside a drive
+ * stay as they are. Still more than `max`, they're thinned evenly, keeping
+ * both ends.
+ */
+export function thinTrack<T extends { lat: number; lon: number }>(
+  rows: readonly T[],
+  driveOf: (row: T) => number | null,
+  toleranceM: number,
+  max = MAX_TRACK_POINTS,
+): T[] {
+  let kept: T[] = [];
+  for (let start = 0; start < rows.length;) {
+    const drive = driveOf(rows[start]!);
+    let end = start + 1;
+    while (end < rows.length && driveOf(rows[end]!) === drive) end++;
+    const group = rows.slice(start, end);
+    if (drive == null) kept.push(...group);
+    else for (const i of simplifyTrack(group, toleranceM)) kept.push(group[i]!);
+    start = end;
+  }
+  if (kept.length > max) {
+    const step = Math.ceil(kept.length / max);
+    kept = kept.filter((_, i) => i % step === 0 || i === kept.length - 1);
+  }
+  return kept;
+}

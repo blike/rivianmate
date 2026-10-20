@@ -6,28 +6,32 @@ import {
   decodeBatteryState,
 } from '../rivian/parallax/index.js';
 import { stateNumber } from '../services/state-utils.js';
-import { eq } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, or } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
   BatteryHealthDto,
+  BatteryWindowDto,
   OtaTimelineDto,
   PhantomDrainDto,
   TirePressurePointDto,
 } from '../api-types.js';
 import type { AppContext } from '../context.js';
-import { parallaxLatest } from '../db/schema.js';
+import { chargingSessions, drives, parallaxLatest } from '../db/schema.js';
 import { stateString } from '../services/state-utils.js';
-import { drainSnapshots, phantomDrain } from '../services/health.js';
+import { type BusySpan, drainSnapshots, parkedLoss, phantomDrain } from '../services/health.js';
 import { stampedAt } from '../services/charging-time.js';
 import type { VehicleState } from '../rivian/types.js';
 import {
   END_OF_TIME,
   bucketSeries,
   changesBetween,
+  latestNumber,
   numericSeries,
   stateTimeline,
 } from '../services/state-history.js';
+import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
 const daysQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -51,33 +55,114 @@ const TIRES = {
   rearRight: 'tirePressureRearRight',
 } as const;
 
+/** Recorded moments of the fields drain reads, over [from, to]. */
+async function drainTimeline(ctx: AppContext, vehicleId: string, from: Date, to: Date) {
+  return stateTimeline(
+    ctx.db,
+    vehicleId,
+    ['batteryLevel', 'vehicleMileage', 'chargerStatus', 'gearStatus'],
+    from,
+    to,
+    { heartbeats: true },
+  );
+}
+
+function drainRowsFrom(history: Awaited<ReturnType<typeof drainTimeline>>) {
+  const stamped = (state: VehicleState, field: string) => {
+    const value = stateNumber(state, field);
+    return value == null ? null : { value, at: stampedAt(state, field, Infinity) };
+  };
+  return drainSnapshots(
+    history.map(({ at, state }) => ({
+      at,
+      batteryLevel: stamped(state, 'batteryLevel'),
+      mileage: stamped(state, 'vehicleMileage'),
+      chargerStatus: stateString(state, 'chargerStatus'),
+      gear: stateString(state, 'gearStatus'),
+    })),
+  );
+}
+
+/** Drives and plug-ins overlapping [from, to], with the levels they began and ended at. */
+async function busySpans(
+  ctx: AppContext,
+  vehicleId: string,
+  from: Date,
+  to: Date,
+): Promise<BusySpan[]> {
+  const overlaps = (start: AnyPgColumn, end: AnyPgColumn) =>
+    and(lte(start, to), or(isNull(end), gte(end, from)));
+  const [driveRows, sessionRows] = await Promise.all([
+    ctx.db
+      .select({
+        start: drives.startedAt,
+        end: drives.endedAt,
+        startLevel: drives.startBattery,
+        endLevel: drives.endBattery,
+      })
+      .from(drives)
+      .where(and(eq(drives.vehicleId, vehicleId), overlaps(drives.startedAt, drives.endedAt))),
+    ctx.db
+      .select({
+        start: chargingSessions.startedAt,
+        end: chargingSessions.endedAt,
+        startLevel: chargingSessions.startSoc,
+        endLevel: chargingSessions.endSoc,
+      })
+      .from(chargingSessions)
+      .where(
+        and(
+          eq(chargingSessions.vehicleId, vehicleId),
+          overlaps(chargingSessions.startedAt, chargingSessions.endedAt),
+        ),
+      ),
+  ]);
+  return [...driveRows, ...sessionRows];
+}
+
+const batteryWindowQuery = z.object({
+  from: z.coerce.date(),
+  to: z.coerce.date().optional(),
+});
+
 export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/battery-window',
+    async (request): Promise<BatteryWindowDto> => {
+      const { from, to = new Date() } = batteryWindowQuery.parse(request.query);
+      const id = request.params.id;
+      if (isTeslaMateVehicle(id)) return ctx.teslamate.batteryWindow(id, from, to);
+      const [history, spans] = await Promise.all([
+        stateTimeline(ctx.db, id, ['batteryLevel'], from, to),
+        busySpans(ctx, id, from, to),
+      ]);
+      const readings = history.flatMap(({ at, state }) => {
+        const level = stateNumber(state, 'batteryLevel');
+        return level == null ? [] : [{ at, level }];
+      });
+      const levels = readings.map((r) => r.level);
+      const levelAt = (t: Date) =>
+        readings.findLast((r) => r.at <= t.getTime())?.level ?? readings[0]?.level ?? null;
+      const parked = parkedLoss(spans, from, to, levelAt);
+      return {
+        capacityKwh: await latestNumber(ctx.db, request.params.id, 'batteryCapacity'),
+        startLevel: levels[0] ?? null,
+        endLevel: levels.at(-1) ?? null,
+        parkedLossPct: parked.lossPct,
+        parkedHours: parked.parkedHours,
+      };
+    },
+  );
+
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/health/phantom-drain',
     async (request): Promise<PhantomDrainDto> => {
       const { days, tz } = drainQuery.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.phantomDrain(request.params.id, days, validTimeZone(tz));
+      }
       const since = new Date(Date.now() - days * 86_400_000);
-      const history = await stateTimeline(
-        ctx.db,
-        request.params.id,
-        ['batteryLevel', 'vehicleMileage', 'chargerStatus', 'gearStatus'],
-        since,
-        new Date(),
-        { heartbeats: true },
-      );
-      const stamped = (state: VehicleState, field: string) => {
-        const value = stateNumber(state, field);
-        return value == null ? null : { value, at: stampedAt(state, field, Infinity) };
-      };
-      const rows = drainSnapshots(
-        history.map(({ at, state }) => ({
-          at,
-          batteryLevel: stamped(state, 'batteryLevel'),
-          mileage: stamped(state, 'vehicleMileage'),
-          chargerStatus: stateString(state, 'chargerStatus'),
-          gear: stateString(state, 'gearStatus'),
-        })),
-      );
+      const rows = drainRowsFrom(await drainTimeline(ctx, request.params.id, since, new Date()));
       return phantomDrain(rows, validTimeZone(tz));
     },
   );
@@ -86,6 +171,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/ota',
     async (request): Promise<OtaTimelineDto> => {
       const vehicleId = request.params.id;
+      if (isTeslaMateVehicle(vehicleId)) return ctx.teslamate.ota(vehicleId);
       const firstSeen = new Map<string, number>();
       const changes = await changesBetween(
         ctx.db,
@@ -130,7 +216,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/ota/notes/:version',
     async (request, reply) => {
       const { id, version } = request.params;
-      const pdf = await ctx.monitor.getReleaseNotes(id, version);
+      const pdf = isTeslaMateVehicle(id) ? null : await ctx.monitor.getReleaseNotes(id, version);
       if (!pdf) {
         return reply
           .code(404)
@@ -152,6 +238,9 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
     '/api/vehicles/:id/health/tires',
     async (request): Promise<TirePressurePointDto[]> => {
       const { days } = daysQuery.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.tirePressures(request.params.id, days);
+      }
       const since = new Date(Date.now() - days * 86_400_000);
       const bucketMs = (days <= 7 ? 1 : days <= 30 ? 6 : 24) * 3600_000;
       const now = new Date();
@@ -184,6 +273,9 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/health/battery',
     async (request): Promise<BatteryHealthDto> => {
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.batteryHealth(request.params.id);
+      }
       // The last reading of each (UTC) day.
       const byDay = new Map<string, CapacityReading>();
       const changes = await changesBetween(

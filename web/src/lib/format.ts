@@ -30,3 +30,13 @@ export const dateTime = (when: When) =>
     hour: 'numeric',
     minute: '2-digit',
   });
+
+/** "Oct 10, 2026, 12:53 PM": for points that can span years. */
+export const longDateTime = (when: When) =>
+  new Date(when).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });

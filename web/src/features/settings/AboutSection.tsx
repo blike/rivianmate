@@ -46,6 +46,28 @@ export function AboutSection() {
           description="Bugs and feature requests"
         />
       </SettingsGroup>
+      <SettingsGroup title="Data sources">
+        <ExternalRow
+          href="https://www.openstreetmap.org/copyright"
+          label="OpenStreetMap"
+          description="Map data and addresses © OpenStreetMap contributors, under the ODbL"
+        />
+        <ExternalRow
+          href="https://openfreemap.org/"
+          label="OpenFreeMap"
+          description="Map tiles, built with OpenMapTiles"
+        />
+        <ExternalRow
+          href="https://nominatim.org/"
+          label="Nominatim"
+          description="Address lookups for drive starts and ends"
+        />
+        <ExternalRow
+          href="https://open-meteo.com/"
+          label="Open-Meteo"
+          description="Outside temperature: Open-Meteo.com model data under CC BY 4.0, interpolated along each drive's route"
+        />
+      </SettingsGroup>
     </>
   );
 }

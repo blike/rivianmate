@@ -1,6 +1,13 @@
 /** Pure calculations for drive summaries. */
 
 /**
+ * A finished drive that moved less than this is the vehicle shifting in and
+ * out of gear in place (a gear check, nudging forward in the driveway), not a
+ * trip: it's kept but left out of the drive list and everything built on it.
+ */
+export const MIN_DRIVE_KM = 0.1;
+
+/**
  * Elevation gain/loss with hysteresis: GPS altitude jitters by a few metres,
  * so only count a climb or descent once it moves past `thresholdM` from the
  * last counted point. Summing raw deltas would inflate both numbers.

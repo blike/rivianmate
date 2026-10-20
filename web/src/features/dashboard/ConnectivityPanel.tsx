@@ -2,8 +2,8 @@ import type { VehicleInsightsDto } from '@server/api-types';
 import { Row } from '../../components/Panel';
 import { signalLabel, wifiBand } from '../../lib/insights';
 
-/** How the vehicle reaches the cloud: Wi-Fi and cellular. */
-export function ConnectivityPanel(props: { insights: VehicleInsightsDto | undefined }) {
+/** How the vehicle reaches the cloud, as Wi-Fi and cellular rows for a `<dl>`. */
+export function ConnectivityRows(props: { insights: VehicleInsightsDto | undefined }) {
   const c = props.insights?.connectivity;
   const wifi = c?.wifi;
   const wifiDetail = wifi
@@ -21,9 +21,9 @@ export function ConnectivityPanel(props: { insights: VehicleInsightsDto | undefi
     : null;
 
   return (
-    <dl className="space-y-1 text-sm">
+    <>
       <Row label="Wi-Fi" value={c ? (wifiDetail ?? 'Not connected') : '—'} />
       <Row label="Cellular" value={c ? (cellular ?? 'Not connected') : '—'} />
-    </dl>
+    </>
   );
 }

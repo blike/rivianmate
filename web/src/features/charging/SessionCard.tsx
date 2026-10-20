@@ -28,6 +28,8 @@ export function SessionCard(props: {
   session: ChargingSessionDto | undefined;
   /** The charge under way, when this is its session. */
   live?: LiveCharge | null;
+  /** The level the last finished charge reached, marked when no limit is reported. */
+  lastChargedTo?: number | null;
   onSaveCost?: (cost: string | null) => void;
 }) {
   const u = useUnits();
@@ -68,13 +70,17 @@ export function SessionCard(props: {
       value:
         s && props.onSaveCost ? (
           <CostEditor key={s.id} session={s} onSave={props.onSaveCost} />
+        ) : cost ? (
+          `${cost.estimated ? '≈ ' : ''}${formatMoney(String(cost.amount), s?.currency ?? null)}`
         ) : (
           '—'
         ),
       sub:
         cost && energy
           ? `${formatMoney(String(cost.amount / energy), s?.currency ?? null)} per kWh${cost.estimated ? ' (home rate)' : ''}`
-          : 'Click to add',
+          : props.onSaveCost
+            ? 'Click to add'
+            : undefined,
     },
   ];
 
@@ -89,6 +95,9 @@ export function SessionCard(props: {
               {!s.endedAt && <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} />}
               <TimeRange session={s} />
               {s.source === 'rivian' && <SourceBadge />}
+              {s.source === 'teslamate' && (
+                <SourceBadge label="TeslaMate" title="Read from TeslaMate" />
+              )}
             </>
           )}
         </div>
@@ -107,7 +116,7 @@ export function SessionCard(props: {
             </>
           )}
         </h2>
-        <BatteryRow session={s} live={live} />
+        <BatteryRow session={s} live={live} lastChargedTo={props.lastChargedTo ?? null} />
       </div>
       <StatTiles tiles={tiles} columns="grid-cols-2 lg:grid-cols-4" />
     </section>
@@ -115,13 +124,20 @@ export function SessionCard(props: {
 }
 
 /** The battery over the session, with the charge limit while plugged in. */
-function BatteryRow(props: { session: ChargingSessionDto | undefined; live: LiveCharge | null }) {
+function BatteryRow(props: {
+  session: ChargingSessionDto | undefined;
+  live: LiveCharge | null;
+  lastChargedTo: number | null;
+}) {
   const loading = useLoading();
   const s = props.session;
   const live = props.live;
   const end = live?.soc ?? s?.endSoc ?? null;
   const known = s != null && (s.startSoc != null || end != null);
   const atLimit = live?.soc != null && live.limit != null && live.soc >= live.limit - 0.5;
+  // Without a reported limit (TeslaMate doesn't log one), the level the last
+  // charge reached is marked instead; it doesn't make this charge complete.
+  const lastCharge = live && live.limit == null ? props.lastChargedTo : null;
   const right = live
     ? live.finish
       ? `Done around ${live.finish}${live.secondsLeft ? ` · ${fmtSeconds(live.secondsLeft)} left` : ''}`
@@ -137,7 +153,7 @@ function BatteryRow(props: { session: ChargingSessionDto | undefined; live: Live
       : '';
   return (
     <div className="mt-4">
-      <SocTrack soc={end} limit={live?.limit ?? null} start={s?.startSoc} />
+      <SocTrack soc={end} limit={live?.limit ?? lastCharge ?? null} start={s?.startSoc} />
       <div className="mt-2 flex justify-between gap-3 text-sm tabular-nums">
         {loading || !s ? (
           <Skeleton className="w-[10em]" />
@@ -145,8 +161,12 @@ function BatteryRow(props: { session: ChargingSessionDto | undefined; live: Live
           <>
             <span className="truncate">
               {known ? socRange(s.startSoc, end) : 'Battery level not recorded'}
-              {live?.limit != null && (
+              {live?.limit != null ? (
                 <span className="text-(--text-muted)"> of {fmt(live.limit, 0)}% limit</span>
+              ) : (
+                lastCharge != null && (
+                  <span className="text-(--text-muted)"> · last charge {fmt(lastCharge, 0)}%</span>
+                )
               )}
             </span>
             <span className="shrink-0 text-(--text-secondary)">{right}</span>
@@ -181,13 +201,13 @@ function TimeRange(props: { session: ChargingSessionDto }) {
   );
 }
 
-function SourceBadge() {
+function SourceBadge(props: { label?: string; title?: string }) {
   return (
     <span
       className="rounded-full border border-(--border) px-1.5 text-[10px] uppercase tracking-wide text-(--text-muted)"
-      title="Imported from Rivian's charging history"
+      title={props.title ?? "Imported from Rivian's charging history"}
     >
-      Rivian
+      {props.label ?? 'Rivian'}
     </span>
   );
 }

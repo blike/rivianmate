@@ -5,34 +5,63 @@ import { fmt } from '../lib/state';
 import { Skeleton, useLoading } from './LoadingState';
 import { SplitBar, SplitLegend } from './SplitBar';
 
-/** Energy used while parked: one bar per window, split by use. */
-export function ParkedEnergyPanel(props: { insights: VehicleInsightsDto | undefined }) {
+/**
+ * Energy used while parked: one bar per window, split by use; side by side
+ * from md with `columns`. Where the source doesn't split it (TeslaMate),
+ * each bar is the window's total against the largest.
+ */
+export function ParkedEnergyPanel(props: {
+  insights: VehicleInsightsDto | undefined;
+  columns?: boolean;
+}) {
   const u = useUnits();
   const loading = useLoading();
   const windows = parkedWindows(props.insights?.parkedEnergy?.windows ?? []);
+  const split = windows.some((w) => w.uses != null);
+  const largest = Math.max(0, ...windows.map((w) => w.kwh));
   if (!loading && windows.length === 0) {
     return <p className="text-sm text-(--text-muted)">No parked energy reported yet.</p>;
   }
   return (
     <div className="space-y-3">
-      {(loading ? [null, null] : windows).map((w, i) => (
-        <div key={w?.minutes ?? i}>
-          <div className="mb-1.5 flex items-baseline justify-between gap-4 text-sm">
-            <span className="text-(--text-secondary)">
-              {w ? windowLabel(w.minutes) : <Skeleton className="w-[5em]" />}
-            </span>
-            <span className="tabular-nums">
-              {w ? (
-                `${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}`
-              ) : (
-                <Skeleton className="w-[6em]" />
-              )}
-            </span>
+      <div className={props.columns ? 'grid gap-x-8 gap-y-3 md:grid-cols-2' : 'space-y-3'}>
+        {(loading ? [null, null] : windows).map((w, i) => (
+          <div key={w?.minutes ?? i}>
+            <div className="mb-1.5 flex items-baseline justify-between gap-4 text-sm">
+              <span className="text-(--text-secondary)">
+                {w ? windowLabel(w.minutes) : <Skeleton className="w-[5em]" />}
+              </span>
+              <span className="tabular-nums">
+                {w ? (
+                  `${fmt(w.kwh, 1)} kWh · ${u.formatDistance(w.rangeKm)}`
+                ) : (
+                  <Skeleton className="w-[6em]" />
+                )}
+              </span>
+            </div>
+            {w && !w.uses ? (
+              <div
+                className="parked-bar"
+                role="img"
+                aria-label={`${fmt(w.kwh, 1)} kWh used while parked`}
+              >
+                {w.kwh > 0 && (
+                  <div
+                    className="parked-bar__segment"
+                    style={{ width: `${(w.kwh / largest) * 100}%`, background: 'var(--series-1)' }}
+                  />
+                )}
+              </div>
+            ) : (
+              <SplitBar
+                segments={w?.uses ? parkedSegments(w.uses) : []}
+                emptyLabel="No parked energy used"
+              />
+            )}
           </div>
-          <SplitBar segments={w ? parkedSegments(w.uses) : []} emptyLabel="No parked energy used" />
-        </div>
-      ))}
-      <SplitLegend items={[...PARKED_USES]} />
+        ))}
+      </div>
+      {(loading || split) && <SplitLegend items={[...PARKED_USES]} />}
     </div>
   );
 }

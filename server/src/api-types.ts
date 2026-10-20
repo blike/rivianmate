@@ -8,12 +8,20 @@ import type {
   DepartureSchedule,
   LiveSessionData,
   VehicleState,
+  VehicleView,
 } from './rivian/types.js';
 import type { FeedLatestData } from './rivian/subscription.js';
 import type { SavedLocation } from './services/locations.js';
 import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
-export type { ChargingSchedule, DepartureSchedule, FeedLatestData, LiveSessionData, VehicleState };
+export type {
+  ChargingSchedule,
+  DepartureSchedule,
+  FeedLatestData,
+  LiveSessionData,
+  VehicleState,
+  VehicleView,
+};
 
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */
@@ -36,6 +44,8 @@ export interface StatusResponse {
   rivianAuthState: 'ok' | 'unauthenticated' | null;
   rivianEmail: string | null;
   mockMode: boolean;
+  /** A TeslaMate database is set up, so its vehicles can be shown without Rivian. */
+  teslamateConfigured: boolean;
 }
 
 export interface VersionResponse {
@@ -52,6 +62,10 @@ export interface VehicleDto {
   make: string | null;
   model: string | null;
   modelYear: number | null;
+  /** Views of Rivian's render of this vehicle, served at `/api/vehicles/:id/render/:view`. */
+  renders: VehicleView[];
+  /** Where its data comes from: Rivian directly, or a TeslaMate database (read-only). */
+  source: 'rivian' | 'teslamate';
 }
 
 export type { ChargingSettings, SavedLocation } from './services/locations.js';
@@ -138,12 +152,25 @@ export interface DriveDto {
   startRangeKm: number | null;
   endRangeKm: number | null;
   maxSpeedKmh: number | null;
+  /** Average outside temperature along the route (°C), from weather model data; null until the drive ends. */
+  outsideTempC: number | null;
+  /** The weather over the drive, looked up once it ends; null until then or without data. */
+  weather: DriveWeatherDto | null;
   driveMode: string | null;
   /** Where navigation was headed, if the vehicle was navigating. */
   destination: { name: string | null; lat: number; lon: number } | null;
   /** Where it started and ended: a saved location's name, or an address once looked up. */
   start: DrivePlaceDto | null;
   end: DrivePlaceDto | null;
+}
+
+/**
+ * When RivianMate's drive history starts. Charging history imported from
+ * Rivian can reach back further, so totals that set the two against each
+ * other start here.
+ */
+export interface DriveCoverageDto {
+  since: string | null;
 }
 
 export interface DrivePlaceDto {
@@ -154,6 +181,20 @@ export interface DrivePlaceDto {
   isHome: boolean;
   /** The saved location, when the place is one. */
   locationId: number | null;
+}
+
+export interface DriveWeatherDto {
+  /** Lowest and highest outside temperature along the route (°C). */
+  minC: number;
+  maxC: number;
+  /**
+   * WMO weather code for the drive: the commonest, unless it was wet for a good part of it.
+   * 0 clear, 1–3 cloud, 45 fog, 51–67 drizzle/rain, 71–77 snow, 80–99 showers/storms.
+   */
+  weatherCode: number | null;
+  /** Average wind at 10 m (km/h), and where it mostly blew from (degrees). */
+  windKmh: number | null;
+  windFromDeg: number | null;
 }
 
 export interface DriveDetailDto extends DriveDto {
@@ -183,6 +224,19 @@ export interface PhantomDrainDto {
   days: { day: string; lossPct: number; parkedHours: number; pctPerDay: number }[];
   /** Average %/day over all parked time in the window; null if too little data. */
   avgPctPerDay: number | null;
+}
+
+/**
+ * The battery over a window: its level at each end, and what it lost while
+ * parked and unplugged (net of each parked stretch, as phantom drain counts
+ * it). Levels in percent; capacity is the latest reported.
+ */
+export interface BatteryWindowDto {
+  capacityKwh: number | null;
+  startLevel: number | null;
+  endLevel: number | null;
+  parkedLossPct: number;
+  parkedHours: number;
 }
 
 export interface BatteryHealthDto {
@@ -253,8 +307,11 @@ export interface ChargingSessionDto {
   estimatedEnergyKwh: number | null;
   /** The charge limit when it ended (or now, while it's under way), from recorded state. */
   socLimit: number | null;
-  /** live = recorded by RivianMate; rivian = imported from Rivian's history. */
-  source: 'live' | 'rivian' | 'live+rivian';
+  /**
+   * live = recorded by RivianMate; rivian = imported from Rivian's history;
+   * teslamate = read from TeslaMate.
+   */
+  source: 'live' | 'rivian' | 'live+rivian' | 'teslamate';
   vendor: string | null;
   city: string | null;
   isPublic: boolean | null;
@@ -300,7 +357,8 @@ export interface VehicleInsightsDto {
       minutes: number;
       kwh: number;
       rangeKm: number;
-      uses: { climate: number; system: number; gearGuard: number; outlets: number };
+      /** Null where the source doesn't split it by use (TeslaMate). */
+      uses: { climate: number; system: number; gearGuard: number; outlets: number } | null;
     }[];
     at: string;
   } | null;
@@ -413,4 +471,21 @@ export interface LogBacklogDto {
   /** The server's LOG_LEVEL: lines below it were never recorded. */
   level: string;
   entries: LogEntryDto[];
+}
+
+/** The TeslaMate database RivianMate reads from; the URL itself isn't sent back. */
+export interface TeslaMateSettingsDto {
+  configured: boolean;
+  /** The connection without its password, e.g. "postgres://teslamate@nas:5432/teslamate". */
+  preview: string | null;
+  /** Whether the last read from TeslaMate worked. */
+  connected: boolean;
+  error: string | null;
+  lastReadAt: string | null;
+  vehicles: VehicleDto[];
+}
+
+export interface TeslaMateSettingsUpdate {
+  /** A Postgres connection URL for TeslaMate's database. */
+  url: string;
 }
