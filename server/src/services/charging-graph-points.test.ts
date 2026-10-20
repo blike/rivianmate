@@ -62,6 +62,27 @@ describe('graphPoints', () => {
     expect(result.last).toBeNull();
   });
 
+  it('leaves out powerless bars that overlap the charging bars', () => {
+    // A waiting bar, then charging bars interleaved with a stale series at 50%.
+    const result = graphPoints(
+      [
+        bar(-60, 16, 50, null),
+        bar(0, 16, 52, 7.3),
+        bar(8, 16, 50, null),
+        bar(16, 16, 53, 7.3),
+        bar(24, 16, 50, null),
+        bar(32, 16, 55, 7.3),
+      ],
+      t0 + 48 * MIN,
+    );
+    expect(rows(result)).toEqual([
+      [0, 7.3, 50],
+      [16, 7.3, 52],
+      [32, 7.3, 53],
+      [48, 7.3, 55],
+    ]);
+  });
+
   it('leaves out bars with neither reading', () => {
     expect(graphPoints([bar(0, 1, null, null)], t0 + 5 * MIN)).toEqual({ points: [], last: null });
   });

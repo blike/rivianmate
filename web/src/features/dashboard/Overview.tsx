@@ -152,13 +152,16 @@ export function Overview(props: {
               </>
             ) : (
               <>
-                <p className="flex items-center gap-3 text-lg leading-7 font-medium tracking-[-0.01em]">
-                  <Dot
-                    color={ACTIVITY_COLOR[status.kind]}
-                    pulse={status.kind === 'charging' || status.kind === 'driving'}
-                    size="md"
-                  />
-                  <span className="min-w-0 truncate">
+                <p className="flex items-start gap-3 text-lg leading-7 font-medium tracking-[-0.01em]">
+                  {/* Level with the first line when the status wraps. */}
+                  <span className="flex h-7 shrink-0 items-center">
+                    <Dot
+                      color={ACTIVITY_COLOR[status.kind]}
+                      pulse={status.kind === 'charging' || status.kind === 'driving'}
+                      size="md"
+                    />
+                  </span>
+                  <span className="min-w-0">
                     {status.headline}
                     {status.detail && (
                       <span className="font-normal text-(--text-muted)"> {status.detail}</span>
@@ -264,22 +267,22 @@ export function Overview(props: {
                   ) : (
                     <>
                       {fmt(chargePower, 1)} kW
-                      {chargeRate ? (
-                        <span className="text-(--text-muted)">
-                          {' '}
-                          · {u.formatChargeRate(chargeRate)}
-                        </span>
-                      ) : null}
+                      {chargeRate ? <Aside>{u.formatChargeRate(chargeRate)}</Aside> : null}
                     </>
                   )}
                 </Figure>
                 {/* A schedule can end the session before it reaches the limit. */}
                 <Figure label={outlook.kind === 'session' ? 'Session ends in' : 'Time to limit'}>
-                  {outlook.minutes == null
-                    ? '—'
-                    : outlook.kind === 'session' && outlook.endSoc != null
-                      ? `${fmtSeconds(outlook.minutes * 60)} · ~${fmt(outlook.endSoc, 0)}%`
-                      : fmtSeconds(outlook.minutes * 60)}
+                  {outlook.minutes == null ? (
+                    '—'
+                  ) : (
+                    <>
+                      {fmtSeconds(outlook.minutes * 60)}
+                      {outlook.kind === 'session' && outlook.endSoc != null && (
+                        <Aside>~{fmt(outlook.endSoc, 0)}%</Aside>
+                      )}
+                    </>
+                  )}
                 </Figure>
               </>
             ) : (
@@ -344,9 +347,19 @@ function Figure(props: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="eyebrow">{props.label}</dt>
-      <dd className="mt-1.5 truncate text-[0.9375rem] font-medium tabular-nums">
+      <dd className="mt-1.5 text-[0.9375rem] font-medium tabular-nums">
         {loading ? <Skeleton className="w-[5em]" /> : props.children}
       </dd>
     </div>
+  );
+}
+
+/** A figure's second reading: on its own line on phones, after a dot from sm up. */
+function Aside(props: { children: ReactNode }) {
+  return (
+    <span className="block text-(--text-muted) sm:inline">
+      <span className="hidden sm:inline"> · </span>
+      {props.children}
+    </span>
   );
 }
