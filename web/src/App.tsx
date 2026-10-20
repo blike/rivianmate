@@ -56,7 +56,7 @@ function Shell() {
       <Sidebar {...nav} />
       <div className="flex min-h-full min-w-0 flex-col">
         <MobileBar {...nav} />
-        <main className="w-full max-w-[90rem] flex-1 px-4 pb-12 sm:px-6 lg:px-10 lg:pt-8 xl:px-12">
+        <main className="w-full max-w-360 flex-1 px-4 pb-12 sm:px-6 lg:px-10 lg:pt-8 xl:px-12">
           {vehiclesPending || unitsPending ? null : (
             <Routes>
               {/* Settings needs no vehicle, so a broken connection can always be fixed. */}

@@ -34,7 +34,7 @@ interface NavProps {
 
 function Wordmark() {
   return (
-    <span className="text-[1.05rem] font-semibold tracking-tight">
+    <span className="text-[1.25rem] font-semibold tracking-tight">
       Rivian<span className="text-(--accent)">Mate</span>
     </span>
   );
@@ -123,7 +123,7 @@ function VehicleBlock(props: NavProps) {
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
   }, []);
-  if (!vehicle) return <div className="mt-7 h-15" />;
+  if (!vehicle) return <div className="mt-6 h-15" />;
   const f = freshness(state, now);
   const multiple = (props.vehicles?.length ?? 0) > 1;
   const model = [vehicle.modelYear, vehicle.model].filter(Boolean).join(' ');
@@ -155,7 +155,7 @@ function VehicleBlock(props: NavProps) {
   const frame = 'block rounded-xl border border-(--hairline) bg-(--surface-1) px-3 py-2.5';
 
   return (
-    <div className="mt-7">
+    <div className="mt-6">
       {multiple ? (
         // The card is the control.
         <VehicleMenu

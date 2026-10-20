@@ -142,7 +142,7 @@ export function Overview(props: {
       <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
         <div className="flex min-w-0 flex-col p-5 sm:p-7">
           {/* What it's doing, in words. */}
-          <div className="min-h-[3.25rem]">
+          <div className="min-h-13">
             {loading || !status ? (
               <>
                 <Skeleton className="h-7 w-[12em]" />
@@ -252,7 +252,7 @@ export function Overview(props: {
 
           {/* The figures sit at the foot, level with the bottom of the map. */}
           <div aria-hidden className="min-h-6 flex-1" />
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-(--hairline) pt-5 sm:grid-cols-3">
+          <dl className="grid grid-cols-3 gap-x-2 border-t border-(--hairline) pt-5 sm:gap-x-6">
             <Figure label="Odometer">
               {u.formatDistance(mileageM != null ? mileageM / 1000 : null)}
             </Figure>
@@ -293,7 +293,7 @@ export function Overview(props: {
           </dl>
         </div>
 
-        <div className="overview-map relative min-h-72 border-t border-(--hairline) xl:min-h-[25rem] xl:border-t-0 xl:border-l">
+        <div className="overview-map relative min-h-72 border-t border-(--hairline) xl:min-h-100 xl:border-t-0 xl:border-l">
           {loading ? (
             <SkeletonBlock height="100%" className="absolute inset-0 rounded-none" />
           ) : loc ? (
@@ -342,7 +342,7 @@ export function Overview(props: {
 function Figure(props: { label: string; children: ReactNode }) {
   const loading = useLoading();
   return (
-    <div className="min-w-0 last:max-sm:col-span-2">
+    <div className="min-w-0">
       <dt className="eyebrow">{props.label}</dt>
       <dd className="mt-1.5 truncate text-[0.9375rem] font-medium tabular-nums">
         {loading ? <Skeleton className="w-[5em]" /> : props.children}
