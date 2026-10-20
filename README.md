@@ -1,13 +1,10 @@
-<h1>
-  <img src="web/public/icon.svg" alt="RivianMate" width="40" height="40" align="absmiddle">
-  RivianMate
-</h1>
+# ![RivianMate](web/public/icon.svg) RivianMate
 
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)](https://github.com/blike/rivianmate/actions/workflows/docker-publish.yml)
-[![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)](https://github.com/blike/rivianmate/releases/latest)
-[![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)](https://hub.docker.com/r/mitchvitale/rivianmate)
-[![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)](https://hub.docker.com/r/mitchvitale/rivianmate)
+![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
+![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)
+![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)
+![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)
+![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)
 
 **A self-hosted data logger and dashboard for your Rivian.**
 
@@ -42,8 +39,8 @@ a dashboard you can open from anywhere.
 - Interactive route maps with speed and elevation profiles.
 - Detailed trip statistics, including distance, duration, efficiency, and energy consumption.
 - Start and destination address identification.
-- The weather on each drive (temperature, conditions, wind), looked up every 10 minutes along the
-  route once it ends, and efficiency charted by temperature, speed, climb, length and weather.
+- The weather on each drive (temperature, conditions, wind), and efficiency charted by temperature,
+  speed, climb, length and weather.
 
 ### Charging History & Analytics
 
@@ -78,12 +75,7 @@ a dashboard you can open from anywhere.
 
 ## Screenshots
 
-<p>
-  <img src="docs/screenshots/dashboard-desktop.png" alt="The dashboard on a desktop, partway through a drive home" width="73%">
-  <img src="docs/screenshots/dashboard-mobile.png" alt="The dashboard on a phone, on the same drive home" width="23%">
-</p>
-
-Shown in demo mode with a simulated R1S. Map data © OpenStreetMap contributors and OpenMapTiles.
+![The dashboard on a desktop, partway through a drive home](docs/screenshots/dashboard-desktop.png)![The dashboard on a phone, on the same drive home](docs/screenshots/dashboard-mobile.png)
 
 ## Quick Start
 
