@@ -83,6 +83,7 @@ export const sessions = [
     energyKwh: 54.1,
     packKwh: null,
     thermalKwh: null,
+    lossKwh: null,
     rangeAddedKm: null,
     avgPowerKw: 10,
     maxPowerKw: 11,

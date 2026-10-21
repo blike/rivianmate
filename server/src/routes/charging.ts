@@ -388,6 +388,7 @@ function toSessionDto(
     energyKwh: row.energyKwh,
     packKwh: row.packKwh,
     thermalKwh: row.thermalKwh,
+    lossKwh: null,
     rangeAddedKm: row.rangeAddedKm,
     avgPowerKw: row.avgPowerKw,
     maxPowerKw: row.maxPowerKw,

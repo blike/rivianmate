@@ -301,6 +301,12 @@ export interface ChargingSessionDto {
   /** Rivian's split of the energy: stored in the pack vs heating/cooling it. */
   packKwh: number | null;
   thermalKwh: number | null;
+  /**
+   * Drawn from the charger but not added to the battery, from TeslaMate's
+   * AC sessions; it can't tell heating from conversion losses, so it isn't
+   * part of `thermalKwh`.
+   */
+  lossKwh: number | null;
   rangeAddedKm: number | null;
   avgPowerKw: number | null;
   maxPowerKw: number | null;

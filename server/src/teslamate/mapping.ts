@@ -561,6 +561,8 @@ export interface ChargingProcessRow {
   started_at: Date;
   ended_at: Date | null;
   charge_energy_added: number | null;
+  /** Drawn from the charger, from its power over time; null when TeslaMate couldn't tell. */
+  charge_energy_used: number | null;
   start_battery_level: number | null;
   end_battery_level: number | null;
   duration_min: number | null;
@@ -600,6 +602,12 @@ export function toSessionDto(
     : pick(row.end_ideal_range_km, row.end_rated_range_km);
   const energyKwh = running ? row.latest_energy : row.charge_energy_added;
   const hours = (row.duration_min ?? 0) / 60;
+  // On DC the charger's power is measured at the battery, so what it drew
+  // and what was added differ only by noise.
+  const lossKwh =
+    !running && row.fast !== true && row.charge_energy_used != null && energyKwh != null
+      ? Math.max(0, row.charge_energy_used - energyKwh)
+      : null;
   const supercharger = row.fast === true && /tesla/i.test(row.brand ?? '');
   // A geofence named Home counts as a home charger; DC fast charging never does.
   const at = sessionPlace(
@@ -640,6 +648,7 @@ export function toSessionDto(
     energyKwh,
     packKwh: null,
     thermalKwh: null,
+    lossKwh,
     rangeAddedKm:
       startRange != null && endRange != null ? Math.max(0, endRange - startRange) : null,
     avgPowerKw: !running && energyKwh != null && hours > 0 ? energyKwh / hours : null,
