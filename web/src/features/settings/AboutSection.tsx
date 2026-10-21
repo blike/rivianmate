@@ -23,7 +23,7 @@ export function AboutSection() {
                 href={`${REPO_URL}/commit/${info!.commit}`}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="font-mono text-xs text-(--text-primary) underline-offset-4 hover:underline"
+                className="text-xs text-(--text-primary) underline-offset-4 hover:underline"
               >
                 {commit}
               </a>

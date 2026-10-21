@@ -60,7 +60,7 @@ export function GeneralSection(props: {
                   .filter(Boolean)
                   .join(' · ')}
               >
-                <span className="select-all font-mono text-xs tracking-wide text-(--text-secondary)">
+                <span className="select-all text-xs tracking-wide text-(--text-secondary)">
                   {v.vin}
                 </span>
                 <CopyButton text={v.vin} label="Copy VIN" />
