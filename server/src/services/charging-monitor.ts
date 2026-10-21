@@ -989,11 +989,21 @@ interface GraphPoint {
  * point carries the previous bar's. The closing point, at the last bar's
  * end (or `sentAt` while it runs), carries that bar's SoC, and its power so
  * the curve reaches it; it's returned as `last` too, as it repeats a bar.
+ *
+ * Rivian can leave a second, powerless series in the graph while it charges
+ * (bars on another grid, still at the level charging started from). Those
+ * overlap the charging bars and would hand each one their stale level, so
+ * a powerless bar that overlaps a powered one is left out.
  */
 export function graphPoints(
-  bars: readonly ChargingGraphBar[],
+  all: readonly ChargingGraphBar[],
   sentAt: number,
 ): { points: GraphPoint[]; last: GraphPoint | null } {
+  const end = (b: ChargingGraphBar) => b.endMs ?? b.startMs;
+  const powered = all.filter((b) => b.powerKw != null);
+  const bars = all.filter(
+    (b) => b.powerKw != null || !powered.some((p) => p.startMs < end(b) && b.startMs < end(p)),
+  );
   const points: GraphPoint[] = [];
   bars.forEach((bar, i) => {
     const soc = bars[i - 1]?.soc ?? null;

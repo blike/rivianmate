@@ -92,11 +92,15 @@ export function SessionCard(props: {
             <Skeleton className="w-[14em]" />
           ) : (
             <>
-              {!s.endedAt && <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} />}
               <TimeRange session={s} />
               {s.source === 'rivian' && <SourceBadge />}
               {s.source === 'teslamate' && (
                 <SourceBadge label="TeslaMate" title="Read from TeslaMate" />
+              )}
+              {!s.endedAt && (
+                <span className="ml-auto">
+                  <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} />
+                </span>
               )}
             </>
           )}
@@ -154,12 +158,12 @@ function BatteryRow(props: {
   return (
     <div className="mt-4">
       <SocTrack soc={end} limit={live?.limit ?? lastCharge ?? null} start={s?.startSoc} />
-      <div className="mt-2 flex justify-between gap-3 text-sm tabular-nums">
+      <div className="mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm tabular-nums">
         {loading || !s ? (
           <Skeleton className="w-[10em]" />
         ) : (
           <>
-            <span className="truncate">
+            <span>
               {known ? socRange(s.startSoc, end) : 'Battery level not recorded'}
               {live?.limit != null ? (
                 <span className="text-(--text-muted)"> of {fmt(live.limit, 0)}% limit</span>
@@ -169,7 +173,7 @@ function BatteryRow(props: {
                 )
               )}
             </span>
-            <span className="shrink-0 text-(--text-secondary)">{right}</span>
+            <span className="text-(--text-secondary)">{right}</span>
           </>
         )}
       </div>
