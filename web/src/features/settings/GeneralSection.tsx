@@ -11,6 +11,7 @@ import {
 import { Skeleton } from '../../components/LoadingState';
 import {
   SegmentedControl,
+  Select,
   SettingRow,
   SettingsGroup,
   Switch,
@@ -99,19 +100,13 @@ export function GeneralSection(props: {
           />
         </SettingRow>
         <SettingRow label="Currency" htmlFor="currency" description="For charging rates and costs.">
-          <select
+          <Select
             id="currency"
             value={charging?.currency ?? 'USD'}
+            options={CURRENCIES}
             disabled={!charging || setCharging.isPending}
-            onChange={(e) => setCharging.mutate({ currency: e.target.value })}
-            className="rounded-md border border-(--border) bg-(--surface-2) px-2 py-1.5 text-sm outline-none"
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+            onChange={(currency) => setCharging.mutate({ currency })}
+          />
         </SettingRow>
       </SettingsGroup>
 
