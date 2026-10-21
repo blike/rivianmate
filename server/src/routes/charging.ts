@@ -14,7 +14,7 @@ import {
 } from '../services/locations.js';
 import { listLimit, listWindowSchema } from './list-window.js';
 import { loadLocations } from './locations.js';
-import { getChargingSettings } from './settings.js';
+import { getChargingSettings, getLookupSettings } from './settings.js';
 import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
 import {
   curveForDisplay,
@@ -236,6 +236,8 @@ export interface PlaceContext {
   settings: ChargingSettings;
   locations: SavedLocation[];
   wallboxes: Spot[];
+  /** Whether drives' addresses are looked up; off, unnamed places show their coordinates. */
+  addressLookups: boolean;
 }
 
 export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
@@ -246,6 +248,7 @@ export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
     settings: await getChargingSettings(ctx),
     locations: await loadLocations(ctx),
     wallboxes: wallboxSpots(boxes),
+    addressLookups: (await getLookupSettings(ctx)).addresses,
   };
 }
 

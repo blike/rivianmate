@@ -104,4 +104,41 @@ describe.skipIf(!url)('DrivePlaces with Postgres', () => {
     await places.idle();
     expect((await row(id)).placesCheckedAt).toBeNull();
   });
+
+  it('sends nothing while turned off, and catches up once turned back on', async () => {
+    const calls: number[] = [];
+    const geocode: ReverseGeocode = async (lat) => {
+      calls.push(lat);
+      return { place: `Place ${lat}`, address: null };
+    };
+    const id = await drive(33, 34);
+    const places = new DrivePlaces(handle.db, geocode, silentLogger, 0);
+    places.setEnabled(false);
+    await places.start();
+    places.enqueue(id);
+    await places.idle();
+    expect(calls).toEqual([]);
+    expect((await row(id)).placesCheckedAt).toBeNull();
+
+    places.setEnabled(true);
+    await new Promise((r) => setTimeout(r, 50)); // the backlog is listed in the background
+    await places.idle();
+    expect(calls).toEqual([33, 34]);
+    expect((await row(id)).endPlace).toBe('Place 34');
+  });
+
+  it('stops before the next lookup when turned off mid-drive', async () => {
+    const calls: number[] = [];
+    const geocode: ReverseGeocode = async (lat) => {
+      calls.push(lat);
+      places.setEnabled(false);
+      return { place: `Place ${lat}`, address: null };
+    };
+    const id = await drive(33, 34);
+    const places = new DrivePlaces(handle.db, geocode, silentLogger, 0);
+    places.enqueue(id);
+    await places.idle();
+    expect(calls).toEqual([33]);
+    expect((await row(id)).placesCheckedAt).toBeNull();
+  });
 });

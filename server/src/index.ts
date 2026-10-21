@@ -15,6 +15,7 @@ import { RivianGovernor } from './rivian/governor.js';
 import { type MockScene, MockRivian, mockGeocode, mockTemperatures } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
 import { getPasswordHash } from './routes/auth.js';
+import { getLookupSettings } from './routes/settings.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
 import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
 import { LiveBus } from './services/live-bus.js';
@@ -90,6 +91,8 @@ async function main(): Promise<void> {
       logger.child({ component: 'weather' }),
     ),
   );
+  // Before the monitor starts, so a lookup turned off never runs.
+  monitor.setLookups(await getLookupSettings({ db, log: appLog }));
 
   const teslamate = new TeslaMateSource(bus, logger.child({ component: 'teslamate' }));
 

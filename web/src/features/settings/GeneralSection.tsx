@@ -1,14 +1,23 @@
 import { useState } from 'react';
 import {
   useChargingSettings,
+  useLookupSettings,
   useSetChargingSettings,
+  useSetLookupSettings,
   useSetUnits,
   useUnits,
   useVehicles,
 } from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
-import { SegmentedControl, SettingRow, SettingsGroup, secondaryButton } from './SettingsControls';
+import {
+  SegmentedControl,
+  SettingRow,
+  SettingsGroup,
+  Switch,
+  secondaryButton,
+} from './SettingsControls';
 import { AccountsPanel } from './AccountsPanel';
+import { LOOKUPS } from './LookupDetails';
 
 const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
 
@@ -21,6 +30,8 @@ export function GeneralSection(props: {
   const setUnits = useSetUnits();
   const { data: charging } = useChargingSettings();
   const setCharging = useSetChargingSettings();
+  const { data: lookups } = useLookupSettings();
+  const setLookups = useSetLookupSettings();
 
   return (
     <>
@@ -102,6 +113,23 @@ export function GeneralSection(props: {
             ))}
           </select>
         </SettingRow>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Outside services"
+        note="When turned back on, a lookup also fills in the drives made while it was off."
+      >
+        {(['addresses', 'weather'] as const).map((key) => (
+          <SettingRow key={key} label={LOOKUPS[key].label} description={LOOKUPS[key].summary}>
+            {lookups && (
+              <Switch
+                label={`${LOOKUPS[key].label} lookups`}
+                checked={lookups[key]}
+                onChange={(on) => setLookups.mutate({ ...lookups, [key]: on })}
+              />
+            )}
+          </SettingRow>
+        ))}
       </SettingsGroup>
 
       <AccountsPanel />

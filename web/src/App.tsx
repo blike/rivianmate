@@ -11,6 +11,7 @@ import { HistoryPage } from './features/history/HistoryPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RivianConnectPage } from './features/auth/RivianConnectPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { OutsideServicesPage } from './features/auth/OutsideServicesPage';
 import { SetupPage } from './features/auth/SetupPage';
 
 export default function App() {
@@ -37,6 +38,8 @@ export default function App() {
       />
     );
   }
+  // Last step of first-run setup, once the account is connected.
+  if (status.needsLookupChoice) return <OutsideServicesPage onDone={() => refetch()} />;
   return <Shell />;
 }
 

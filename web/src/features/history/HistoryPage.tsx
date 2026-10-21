@@ -2,7 +2,12 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useMemo, useState } from 'react';
 import { api } from '../../api/client';
-import { useChargingSessions, useDriveCoverage, useDrives } from '../../api/hooks';
+import {
+  useChargingSessions,
+  useDriveCoverage,
+  useDrives,
+  useLookupSettings,
+} from '../../api/hooks';
 import { ContentFrame, LoadingScope } from '../../components/LoadingState';
 import { PageHeader, SectionRule } from '../../components/PageHeader';
 import { TRIPS_LEGEND, VehicleMap } from '../../components/VehicleMap';
@@ -36,6 +41,7 @@ export function HistoryPage(props: { vehicleId: string }) {
   const { data: drives, isPending: drivesPending } = useDrives(props.vehicleId, from);
   const { data: sessions, isPending: sessionsPending } = useChargingSessions(props.vehicleId, from);
   const { data: coverage } = useDriveCoverage(props.vehicleId);
+  const { data: lookups } = useLookupSettings();
   // The battery over the energy ledger's period, which starts no earlier than the drives
   // and ends where the ledger does.
   const drivesSince = coverage?.since;
@@ -213,7 +219,13 @@ export function HistoryPage(props: { vehicleId: string }) {
           <EfficiencyPanel
             drives={drives}
             loading={drivesPending}
-            weather={!isTeslaMateVehicle(props.vehicleId)}
+            weather={
+              isTeslaMateVehicle(props.vehicleId)
+                ? 'none'
+                : lookups?.weather === false
+                  ? 'off'
+                  : 'on'
+            }
           />
         </section>
       </div>

@@ -6,6 +6,7 @@ import {
   api,
   type TeslaMateSettingsDto,
   type ChargingSettings,
+  type LookupSettings,
   type SavedLocation,
   type SavedLocationInput,
   type UnitPreferences,
@@ -148,6 +149,25 @@ export function useSetUnits() {
     onMutate: (units) => queryClient.setQueryData(['units'], units),
     onSuccess: (units) => queryClient.setQueryData(['units'], units),
     onError: () => queryClient.invalidateQueries({ queryKey: ['units'] }),
+  });
+}
+
+export function useLookupSettings() {
+  return useQuery({ queryKey: ['lookups'], queryFn: api.lookups, staleTime: Infinity });
+}
+
+export function useSetLookupSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (lookups: LookupSettings) => api.setLookups(lookups),
+    onMutate: (lookups) => queryClient.setQueryData(['lookups'], lookups),
+    onSuccess: (lookups) => {
+      queryClient.setQueryData(['lookups'], lookups);
+      // Unnamed places show their coordinates only while address lookups are off.
+      void queryClient.invalidateQueries({ queryKey: ['drives'] });
+      void queryClient.invalidateQueries({ queryKey: ['drive'] });
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: ['lookups'] }),
   });
 }
 

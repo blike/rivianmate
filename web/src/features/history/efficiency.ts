@@ -181,6 +181,30 @@ export function efficiencyFactors(drives: readonly DriveDto[], u: Units): Effici
   });
 }
 
+/**
+ * Weather lookups for the drives: on, turned off in Settings, or none
+ * (TeslaMate's drives, whose temperatures come from the car).
+ */
+export type WeatherLookups = 'on' | 'off' | 'none';
+
+const WEATHER_FACTORS = new Set(['temperature', 'conditions']);
+
+/** Whether a factor's values come from weather lookups. */
+export const isWeatherFactor = (key: string) => WEATHER_FACTORS.has(key);
+
+/**
+ * The factors worth a chart: a weather factor no drive has data for is left
+ * out, unless lookups are on and may still fill it in.
+ */
+export function shownFactors(
+  factors: readonly EfficiencyFactor[],
+  weather: WeatherLookups,
+): EfficiencyFactor[] {
+  return factors.filter(
+    (f) => !isWeatherFactor(f.key) || weather === 'on' || f.buckets.some((b) => b.drives > 0),
+  );
+}
+
 /** Drives, distance and energy over every usable drive, for the average. */
 export function overallEfficiency(drives: readonly DriveDto[]): {
   drives: number;

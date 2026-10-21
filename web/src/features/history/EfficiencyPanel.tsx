@@ -7,12 +7,25 @@ import {
   type EfficiencyBucket,
   type EfficiencyFactor,
   FEW_DRIVES,
+  type WeatherLookups,
   efficiencyFactors,
   efficiencyValue,
+  isWeatherFactor,
   overallEfficiency,
+  shownFactors,
 } from './efficiency';
 
 const CHART_HEIGHT = 144;
+
+/**
+ * How the average card spans the grid so the charts beside it fill it, by
+ * how many charts there are: four sit in a 2×2 beside it (xl) or under it
+ * (md); three sit in a row under it (xl). Five fill the grid as they are.
+ */
+const AVERAGE_SPAN: Record<number, string> = {
+  4: 'md:col-span-2 xl:col-span-1 xl:row-span-2',
+  3: 'xl:col-span-3',
+};
 
 /**
  * Efficiency by what the drives were driven in, one small chart per factor
@@ -21,8 +34,7 @@ const CHART_HEIGHT = 144;
 export function EfficiencyPanel(props: {
   drives: DriveDto[] | undefined;
   loading: boolean;
-  /** Whether drives get weather lookups; TeslaMate's don't, so Conditions is left out. */
-  weather: boolean;
+  weather: WeatherLookups;
 }) {
   const u = useUnits();
   const miles = u.distanceUnit === 'mi';
@@ -30,15 +42,11 @@ export function EfficiencyPanel(props: {
   const digits = miles ? 2 : 1;
 
   const factors = useMemo(
-    () =>
-      efficiencyFactors(props.drives ?? [], u).filter(
-        (f) => props.weather || f.key !== 'conditions',
-      ),
+    () => shownFactors(efficiencyFactors(props.drives ?? [], u), props.weather),
     [props.drives, u, props.weather],
   );
-  // Without Conditions, the average spans a row (md) or two (xl) so the
-  // four charts beside it fill the grid.
-  const even = factors.length % 2 === 0;
+  // Lookups off, what's shown comes from drives looked up before.
+  const partialWeather = props.weather === 'off' && factors.some((f) => isWeatherFactor(f.key));
   const overall = useMemo(() => overallEfficiency(props.drives ?? []), [props.drives]);
   const average = efficiencyValue(overall.km, overall.kwh, u);
 
@@ -56,9 +64,7 @@ export function EfficiencyPanel(props: {
       emptyText="No finished drives with battery readings in this period."
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <section
-          className={`card flex flex-col p-5 sm:p-6 ${even ? 'md:col-span-2 xl:col-span-1 xl:row-span-2' : ''}`}
-        >
+        <section className={`card flex flex-col p-5 sm:p-6 ${AVERAGE_SPAN[factors.length] ?? ''}`}>
           <h3 className="eyebrow text-(--text-secondary)">Average efficiency</h3>
           <div className="mt-3 flex items-baseline gap-1.5">
             <span className="readout text-5xl font-[350]">{fmt(average, digits)}</span>
@@ -82,6 +88,11 @@ export function EfficiencyPanel(props: {
           />
         ))}
       </div>
+      {partialWeather && (
+        <p className="mt-3 px-1 text-xs text-(--text-muted)">
+          Weather lookups are off, so temperature and conditions count only drives looked up before.
+        </p>
+      )}
     </ContentFrame>
   );
 }

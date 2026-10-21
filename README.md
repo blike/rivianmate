@@ -164,6 +164,7 @@ automatically loads these values when starting the application.
 Additional preferences are configured directly in the web interface under **Settings**, including:
 
 - Units and currency
+- Address and weather lookups
 - Saved locations and electricity rates
 - Vehicle management
 - Notification preferences
@@ -252,12 +253,26 @@ RivianMate is designed to keep your vehicle data under your control.
 - **No application telemetry.** RivianMate does not send your vehicle data to a RivianMate-operated
   analytics or cloud service.
 
-The application makes external requests for vehicle data and authentication, map tiles through
-[OpenFreeMap](https://openfreemap.org/), address lookups through OpenStreetMap's
-[Nominatim](https://nominatim.org/), and outside temperatures through
-[Open-Meteo](https://open-meteo.com/), plus read-only queries to your TeslaMate database if you add
-one. Address and temperature lookups send the coordinates (and, for temperatures, the times) of
-points along your drives to those services.
+RivianMate connects to these outside services:
+
+- **Rivian**, for vehicle data and sign-in.
+- **[OpenFreeMap](https://openfreemap.org/)**, for map tiles.
+- **OpenStreetMap's [Nominatim](https://nominatim.org/)**, for drive addresses, and for place search
+  when you save a location.
+- **[Open-Meteo](https://open-meteo.com/)**, for the weather on each drive.
+- **Your TeslaMate database**, read-only, if you add one.
+
+Address and weather lookups are optional. Choose during setup, or change them later under **Settings
+→ General → Outside services**.
+
+- **Addresses** sends where each drive starts and ends. When off, places you haven't saved show as
+  coordinates.
+- **Weather** sends a point every 10 minutes along each drive, and the drive's date. It doesn't send
+  times of day: your server matches the readings to the drive's times. When off, drives have no
+  weather.
+
+Neither sends your account, name or vehicle details. Turning a lookup back on also fills in the
+drives made while it was off. Place search runs only when you search.
 
 For more information, including how to responsibly disclose security vulnerabilities, see the
 [Security Policy](SECURITY.md).
