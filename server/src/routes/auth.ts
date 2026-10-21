@@ -6,6 +6,7 @@ import type { AppContext } from '../context.js';
 import { hashPassword, verifyPassword } from '../crypto.js';
 import { appSettings } from '../db/schema.js';
 import { passwordProblem } from '../password-policy.js';
+import { holdLookupsForChoice, lookupChoicePending } from './settings.js';
 
 export const SESSION_COOKIE = 'rivianmate_session';
 const SESSION_TTL_MS = 30 * 24 * 3600_000;
@@ -79,6 +80,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       rivianEmail: account?.email ?? null,
       mockMode: ctx.config.MOCK_RIVIAN,
       teslamateConfigured: ctx.teslamate.configured,
+      needsLookupChoice: authed && (await lookupChoicePending(ctx)),
     };
   });
 
@@ -96,6 +98,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       .onConflictDoNothing()
       .returning();
     if (!created.length) return reply.code(409).send({ error: 'Already set up' });
+    await holdLookupsForChoice(ctx);
     issueSession(ctx, reply);
     return { ok: true };
   });

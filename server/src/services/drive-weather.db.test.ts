@@ -233,4 +233,46 @@ describe.skipIf(!url)('DriveWeather with Postgres', () => {
     const checked = [await row(first), await row(second)].filter((d) => d.weatherCheckedAt);
     expect(checked).toHaveLength(1);
   });
+
+  it('sends nothing while turned off, and catches up once turned back on', async () => {
+    const requests: number[] = [];
+    const id = await drive(20);
+    const weather = service(fakeLookup(requests));
+    weather.setEnabled(false);
+    await weather.start();
+    weather.enqueue(id);
+    await weather.idle();
+    expect(requests).toEqual([]);
+    expect((await row(id)).weatherCheckedAt).toBeNull();
+
+    weather.setEnabled(true);
+    await new Promise((r) => setTimeout(r, 50)); // the backlog is listed in the background
+    await weather.idle();
+    weather.stop();
+    expect(requests).toEqual([3]);
+    expect((await row(id)).weatherCheckedAt).not.toBeNull();
+  });
+
+  it('turned back on, retries at once rather than waiting out a backoff', async () => {
+    let fail = true;
+    const requests: number[] = [];
+    const ok = fakeLookup(requests);
+    const flaky: TemperatureLookup = async (...args) => {
+      if (fail) throw new Error('blocked');
+      return ok(...args);
+    };
+    const id = await drive(20);
+    const weather = service(flaky, { now: () => START });
+    await weather.start();
+    await weather.idle();
+    expect((await row(id)).weatherCheckedAt).toBeNull();
+
+    fail = false;
+    weather.setEnabled(false);
+    weather.setEnabled(true);
+    await new Promise((r) => setTimeout(r, 50));
+    await weather.idle();
+    weather.stop();
+    expect(requests).toEqual([3]);
+  });
 });

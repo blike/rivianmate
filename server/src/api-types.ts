@@ -46,6 +46,8 @@ export interface StatusResponse {
   mockMode: boolean;
   /** A TeslaMate database is set up, so its vehicles can be shown without Rivian. */
   teslamateConfigured: boolean;
+  /** First-run setup still has to ask which outside lookups to allow. */
+  needsLookupChoice: boolean;
 }
 
 export interface VersionResponse {
@@ -83,6 +85,14 @@ export interface GeocodeResultDto {
 export interface UnitPreferences {
   distance: 'mi' | 'km';
   temperature: 'F' | 'C';
+}
+
+/** Which outside services finished drives are sent to. */
+export interface LookupSettings {
+  /** Start and end addresses, from OpenStreetMap's Nominatim. */
+  addresses: boolean;
+  /** The weather along the route, from Open-Meteo. */
+  weather: boolean;
 }
 
 export interface RivianDiagnosticsResponse {
@@ -181,6 +191,8 @@ export interface DrivePlaceDto {
   isHome: boolean;
   /** The saved location, when the place is one. */
   locationId: number | null;
+  /** Neither saved nor looked up (address lookups off): the label is the coordinates. */
+  unnamed: boolean;
 }
 
 export interface DriveWeatherDto {

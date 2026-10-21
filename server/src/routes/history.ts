@@ -377,12 +377,33 @@ export function drivePlace(
   const location = nearbySpot(lat, lon, places.locations);
   if (location) {
     const isHome = location.isHome || nearbySpot(lat, lon, places.wallboxes) !== null;
-    return { label: location.name, address, isHome, locationId: location.id };
+    return { label: location.name, address, isHome, locationId: location.id, unnamed: false };
   }
   if (nearbySpot(lat, lon, places.wallboxes)) {
-    return { label: 'Home', address, isHome: true, locationId: null };
+    return { label: 'Home', address, isHome: true, locationId: null, unnamed: false };
   }
-  return place ? { label: place, address, isHome: false, locationId: null } : null;
+  if (place) return { label: place, address, isHome: false, locationId: null, unnamed: false };
+  // With lookups off no address is coming, so say where rather than "Unknown".
+  if (!places.addressLookups && lat != null && lon != null) {
+    return {
+      label: coordinatesLabel(lat, lon),
+      address: null,
+      isHome: false,
+      locationId: null,
+      unnamed: true,
+    };
+  }
+  return null;
+}
+
+/**
+ * "33.0714°N 117.2566°W": to about 11 m, and without a comma, which short
+ * labels cut at.
+ */
+export function coordinatesLabel(lat: number, lon: number): string {
+  const part = (v: number, pos: string, neg: string) =>
+    `${Math.abs(v).toFixed(4)}°${v < 0 ? neg : pos}`;
+  return `${part(lat, 'N', 'S')} ${part(lon, 'E', 'W')}`;
 }
 
 function toLocationDto(row: typeof locationPoints.$inferSelect): LocationPointDto {

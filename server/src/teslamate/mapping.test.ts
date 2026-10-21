@@ -258,12 +258,14 @@ describe('places', () => {
       address: work.display_name,
       isHome: false,
       locationId: 2,
+      unnamed: false,
     });
     expect(drivePlace('Office', work, 1, 1, none)).toEqual({
       label: 'Office',
       address: work.display_name,
       isHome: false,
       locationId: null,
+      unnamed: false,
     });
     expect(drivePlace(null, null, 1, 1, none)).toBeNull();
   });

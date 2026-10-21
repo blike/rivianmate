@@ -122,15 +122,20 @@ const LOOKUP_SPACING_MS = 1_100;
 /** Drives filled per pass of the backlog. */
 const BACKLOG_BATCH = 200;
 
+/** Lookups were turned off while a drive was being filled; it stays pending. */
+class LookupsOff extends Error {}
+
 /**
  * Fills in start and end places for finished drives, one lookup at a time
  * and newest first, reusing earlier results for nearby coordinates. A drive
- * whose lookup fails stays pending and is retried on the next pass.
+ * whose lookup fails stays pending and is retried on the next pass. While
+ * lookups are turned off, nothing is sent and drives stay pending.
  */
 export class DrivePlaces {
   private queue: number[] = [];
   private running = false;
   private stopped = false;
+  private enabled = true;
   private lastLookupAt = 0;
 
   constructor(
@@ -143,6 +148,7 @@ export class DrivePlaces {
   /** Queues drives that finished without places (including older ones). */
   async start(): Promise<void> {
     this.stopped = false;
+    if (!this.enabled) return;
     const pending = await this.db
       .select({ id: drives.id })
       .from(drives)
@@ -157,8 +163,20 @@ export class DrivePlaces {
     this.queue = [];
   }
 
+  /** Turns lookups on or off; turned back on, drives left pending meanwhile are queued. */
+  setEnabled(on: boolean): void {
+    if (on === this.enabled) return;
+    this.enabled = on;
+    if (!on) this.queue = [];
+    else if (!this.stopped) {
+      this.start().catch((err: unknown) =>
+        this.log.warn({ err }, 'could not list drives for place lookups'),
+      );
+    }
+  }
+
   enqueue(driveId: number): void {
-    if (this.stopped || this.queue.includes(driveId)) return;
+    if (this.stopped || !this.enabled || this.queue.includes(driveId)) return;
     this.queue.push(driveId);
     void this.drain();
   }
@@ -172,11 +190,12 @@ export class DrivePlaces {
     if (this.running) return;
     this.running = true;
     try {
-      while (!this.stopped && this.queue.length > 0) {
+      while (!this.stopped && this.enabled && this.queue.length > 0) {
         const driveId = this.queue.shift()!;
         try {
           await this.fill(driveId);
         } catch (err) {
+          if (err instanceof LookupsOff) break;
           // Leave the drive pending; the next start retries it.
           this.log.warn({ err, driveId }, 'place lookup failed');
           if (this.queue.length) this.log.warn('pausing place lookups until the next restart');
@@ -225,6 +244,8 @@ export class DrivePlaces {
 
     const wait = this.lastLookupAt + this.spacingMs - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    // Checked last, so nothing is sent once lookups are turned off.
+    if (!this.enabled) throw new LookupsOff();
     this.lastLookupAt = Date.now();
     const found = await this.geocode(lat, lon);
     await this.db

@@ -61,8 +61,8 @@ export const drives: DriveDto[] = [
     weather: null,
     driveMode: null,
     destination: null,
-    start: { label: 'Work', address: null, isHome: false, locationId: 2 },
-    end: { label: 'Home', address: null, isHome: true, locationId: 1 },
+    start: { label: 'Work', address: null, isHome: false, locationId: 2, unnamed: false },
+    end: { label: 'Home', address: null, isHome: true, locationId: 1, unnamed: false },
   },
 ];
 

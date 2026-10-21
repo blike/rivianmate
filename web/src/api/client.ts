@@ -19,6 +19,7 @@ import type {
   StateSpanDto,
   StatusResponse,
   TirePressurePointDto,
+  LookupSettings,
   UnitPreferences,
   VehicleDto,
   VehicleInsightsDto,
@@ -45,6 +46,7 @@ export type {
   BatteryHealthDto,
   ChargingCurvePointDto,
   RivianDiagnosticsResponse,
+  LookupSettings,
   UnitPreferences,
   ChargingSessionDto,
   ConnectResponse,
@@ -152,6 +154,12 @@ export const api = {
     }),
   testNotifications: () =>
     request<NotificationTestResult[]>('/api/settings/notifications/test', { method: 'POST' }),
+  lookups: () => request<LookupSettings>('/api/settings/lookups'),
+  setLookups: (lookups: LookupSettings) =>
+    request<LookupSettings>('/api/settings/lookups', {
+      method: 'PUT',
+      body: JSON.stringify(lookups),
+    }),
   units: () => request<UnitPreferences>('/api/settings/units'),
   setUnits: (units: UnitPreferences) =>
     request<UnitPreferences>('/api/settings/units', {
