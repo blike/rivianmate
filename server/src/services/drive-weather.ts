@@ -305,6 +305,9 @@ const MAX_BACKOFF_MS = 60 * 60_000;
 /** The call budget is spent for now; the next pass tries again. */
 class BudgetSpent extends Error {}
 
+/** Lookups were turned off while a drive was being filled; it stays pending. */
+class LookupsOff extends Error {}
+
 export interface DriveWeatherOptions {
   spacingMs?: number;
   passMs?: number;
@@ -317,12 +320,14 @@ export interface DriveWeatherOptions {
  * Records the weather of each drive once it ends, including drives that
  * ended before RivianMate could look them up: the route every 10 minutes is
  * looked up, and the readings summed up on the drive. A failed lookup
- * leaves the drive pending; passes then back off until one succeeds.
+ * leaves the drive pending; passes then back off until one succeeds. While
+ * lookups are turned off, nothing is sent and drives stay pending.
  */
 export class DriveWeather {
   private queue: number[] = [];
   private running = false;
   private stopped = true;
+  private enabled = true;
   private timer?: ReturnType<typeof setInterval>;
   private lastRequestAt = 0;
   private calls: { at: number; count: number }[] = [];
@@ -361,8 +366,24 @@ export class DriveWeather {
     this.timer = undefined;
   }
 
+  /** Turns lookups on or off; turned back on, drives left pending meanwhile are queued. */
+  setEnabled(on: boolean): void {
+    if (on === this.enabled) return;
+    this.enabled = on;
+    if (!on) {
+      this.queue = [];
+      return;
+    }
+    // A fresh start, rather than waiting out a backoff from before.
+    this.backoffMs = 0;
+    this.retryAt = 0;
+    this.enqueuePending().catch((err: unknown) =>
+      this.log.warn({ err }, 'could not list drives for temperature lookups'),
+    );
+  }
+
   enqueue(driveId: number): void {
-    if (this.stopped || this.now() < this.retryAt) return;
+    if (this.stopped || !this.enabled || this.now() < this.retryAt) return;
     if (this.skipped.has(driveId) || this.queue.includes(driveId)) return;
     this.queue.push(driveId);
     void this.drain();
@@ -375,7 +396,7 @@ export class DriveWeather {
 
   /** Ended drives not yet looked up, newest first. */
   private async enqueuePending(): Promise<void> {
-    if (this.stopped || this.now() < this.retryAt) return;
+    if (this.stopped || !this.enabled || this.now() < this.retryAt) return;
     const pending = await this.db
       .select({ id: drives.id })
       .from(drives)
@@ -389,12 +410,13 @@ export class DriveWeather {
     if (this.running) return;
     this.running = true;
     try {
-      while (!this.stopped && this.queue.length > 0) {
+      while (!this.stopped && this.enabled && this.queue.length > 0) {
         const driveId = this.queue.shift()!;
         try {
           await this.fill(driveId);
           this.backoffMs = 0;
         } catch (err) {
+          if (err instanceof LookupsOff) break;
           if (err instanceof LookupRejectedError) {
             // Skip this drive until the next restart and go on with the rest.
             this.log.warn({ err, driveId }, 'temperature lookup rejected; skipping the drive');
@@ -493,6 +515,8 @@ export class DriveWeather {
     }
     const wait = this.lastRequestAt + (this.options.spacingMs ?? REQUEST_SPACING_MS) - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    // Checked last, so nothing is sent once lookups are turned off.
+    if (!this.enabled) throw new LookupsOff();
     this.lastRequestAt = Date.now();
     this.calls.push({ at: now, count });
   }

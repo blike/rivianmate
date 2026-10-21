@@ -1,14 +1,24 @@
 import { useState } from 'react';
 import {
   useChargingSettings,
+  useLookupSettings,
   useSetChargingSettings,
+  useSetLookupSettings,
   useSetUnits,
   useUnits,
   useVehicles,
 } from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
-import { SegmentedControl, SettingRow, SettingsGroup, secondaryButton } from './SettingsControls';
+import {
+  SegmentedControl,
+  Select,
+  SettingRow,
+  SettingsGroup,
+  Switch,
+  secondaryButton,
+} from './SettingsControls';
 import { AccountsPanel } from './AccountsPanel';
+import { LOOKUPS } from './LookupDetails';
 
 const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
 
@@ -21,6 +31,8 @@ export function GeneralSection(props: {
   const setUnits = useSetUnits();
   const { data: charging } = useChargingSettings();
   const setCharging = useSetChargingSettings();
+  const { data: lookups } = useLookupSettings();
+  const setLookups = useSetLookupSettings();
 
   return (
     <>
@@ -48,7 +60,7 @@ export function GeneralSection(props: {
                   .filter(Boolean)
                   .join(' · ')}
               >
-                <span className="select-all font-mono text-xs tracking-wide text-(--text-secondary)">
+                <span className="select-all text-xs tracking-wide text-(--text-secondary)">
                   {v.vin}
                 </span>
                 <CopyButton text={v.vin} label="Copy VIN" />
@@ -88,20 +100,31 @@ export function GeneralSection(props: {
           />
         </SettingRow>
         <SettingRow label="Currency" htmlFor="currency" description="For charging rates and costs.">
-          <select
+          <Select
             id="currency"
             value={charging?.currency ?? 'USD'}
+            options={CURRENCIES}
             disabled={!charging || setCharging.isPending}
-            onChange={(e) => setCharging.mutate({ currency: e.target.value })}
-            className="rounded-md border border-(--border) bg-(--surface-2) px-2 py-1.5 text-sm outline-none"
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+            onChange={(currency) => setCharging.mutate({ currency })}
+          />
         </SettingRow>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Outside services"
+        note="When turned back on, a lookup also fills in the drives made while it was off."
+      >
+        {(['addresses', 'weather'] as const).map((key) => (
+          <SettingRow key={key} label={LOOKUPS[key].label} description={LOOKUPS[key].summary}>
+            {lookups && (
+              <Switch
+                label={`${LOOKUPS[key].label} lookups`}
+                checked={lookups[key]}
+                onChange={(on) => setLookups.mutate({ ...lookups, [key]: on })}
+              />
+            )}
+          </SettingRow>
+        ))}
       </SettingsGroup>
 
       <AccountsPanel />

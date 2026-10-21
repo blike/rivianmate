@@ -30,7 +30,7 @@ export function SetupPage(props: { onDone: () => void }) {
     <AuthCard
       title="Welcome"
       subtitle="Choose a password to protect this app. You'll connect your Rivian account next."
-      step={{ current: 1, total: 3 }}
+      step={{ current: 1, total: 4 }}
       error={error}
       busy={busy}
       submitLabel="Create password"

@@ -4,17 +4,16 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import { loadConfig } from './config.js';
 import type { AppContext, RivianFactory } from './context.js';
-import { TokenCrypto, hashPassword } from './crypto.js';
+import { TokenCrypto } from './crypto.js';
 import { createDb, runMigrations } from './db/client.js';
-import { appSettings } from './db/schema.js';
 import { LogBuffer } from './log-buffer.js';
 import { type Logger, createLogger } from './logger.js';
-import { passwordProblem } from './password-policy.js';
 import { RivianClient, type RivianApi } from './rivian/client.js';
 import { RivianGovernor } from './rivian/governor.js';
 import { type MockScene, MockRivian, mockGeocode, mockTemperatures } from './rivian/mock.js';
 import { RivianSubscriptionManager } from './rivian/subscription.js';
-import { getPasswordHash } from './routes/auth.js';
+import { seedAppPassword } from './routes/auth.js';
+import { getLookupSettings } from './routes/settings.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
 import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
 import { LiveBus } from './services/live-bus.js';
@@ -90,6 +89,8 @@ async function main(): Promise<void> {
       logger.child({ component: 'weather' }),
     ),
   );
+  // Before the monitor starts, so a lookup turned off never runs.
+  monitor.setLookups(await getLookupSettings({ db, log: appLog }));
 
   const teslamate = new TeslaMateSource(bus, logger.child({ component: 'teslamate' }));
 
@@ -125,17 +126,7 @@ async function main(): Promise<void> {
   };
 
   // Optional: seed the app password from the environment on first boot.
-  if (config.APP_PASSWORD && (await getPasswordHash(ctx)) === null) {
-    const problem = passwordProblem(config.APP_PASSWORD);
-    if (problem) throw new Error(`APP_PASSWORD is too weak: ${problem}`);
-    await db
-      .insert(appSettings)
-      .values({
-        key: 'app_password_hash',
-        value: await hashPassword(config.APP_PASSWORD),
-      })
-      .onConflictDoNothing();
-  }
+  if (config.APP_PASSWORD) await seedAppPassword(ctx, config.APP_PASSWORD);
 
   const app = await buildApp(ctx);
 

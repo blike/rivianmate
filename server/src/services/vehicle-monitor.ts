@@ -15,7 +15,7 @@ import {
   tripInfo,
   vehicleSupportsParallax,
 } from '../rivian/parallax/index.js';
-import type { SchedulesDto, VehicleInsightsDto } from '../api-types.js';
+import type { LookupSettings, SchedulesDto, VehicleInsightsDto } from '../api-types.js';
 import {
   ChargingSchedule,
   DepartureSchedule,
@@ -175,6 +175,12 @@ export class VehicleMonitor {
       this.driveWeather?.enqueue(driveId);
     };
     this.driveDetector.log = logger.child({ component: 'drive' });
+  }
+
+  /** Turns the address and weather lookups on or off, as set in Settings. */
+  setLookups(lookups: LookupSettings): void {
+    this.drivePlaces?.setEnabled(lookups.addresses);
+    this.driveWeather?.setEnabled(lookups.weather);
   }
 
   get isRunning(): boolean {

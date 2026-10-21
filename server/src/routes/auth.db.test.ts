@@ -58,7 +58,7 @@ describe.skipIf(!url)('auth with Postgres', () => {
       tokenStore: {
         load: async () => ({ email: 'owner@example.com', authState: 'ok', tokens: {} }),
       },
-      monitor: { isRunning: true },
+      monitor: { isRunning: true, setLookups: () => {} },
       teslamate: { configured: false },
     } as unknown as AppContext;
     app = await buildApp(ctx);

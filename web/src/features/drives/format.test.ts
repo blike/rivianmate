@@ -8,6 +8,7 @@ const place = (label: string, locationId: number | null = null): DrivePlaceDto =
   address: null,
   isHome: false,
   locationId,
+  unnamed: false,
 });
 const drive = (over: Partial<DriveDto>) =>
   ({

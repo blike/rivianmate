@@ -116,9 +116,7 @@ export function AccountsPanel() {
             <SettingRow
               label={
                 hasTeslaMate ? (
-                  <span className="break-all font-mono">
-                    {teslamate?.preview ?? 'TeslaMate database'}
-                  </span>
+                  <span className="break-all">{teslamate?.preview ?? 'TeslaMate database'}</span>
                 ) : (
                   'TeslaMate'
                 )

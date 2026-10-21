@@ -4,7 +4,12 @@ interface PatternPlace {
   label: string;
   isHome: boolean;
   locationId: number | null;
+  /** Coordinates in place of a name; each parking spot differs, so they don't count as places. */
+  unnamed?: boolean;
 }
+
+/** A place that can be counted: one with a name. */
+const named = (p: PatternPlace | null): p is PatternPlace => p != null && !p.unnamed;
 
 export interface PatternDrive {
   startedAt: string;
@@ -76,7 +81,7 @@ export function topDestinations(
 ): PlaceVisits[] {
   const places = new Map<string, PlaceVisits & { last: number }>();
   for (const d of drives) {
-    if (!d.endedAt || !d.end || !within(d.startedAt, from, to)) continue;
+    if (!d.endedAt || !named(d.end) || !within(d.startedAt, from, to)) continue;
     const key = d.end.label;
     const place = places.get(key) ?? {
       label: d.end.label,
@@ -120,7 +125,7 @@ export function commonRoutes(
 ): RouteStats[] {
   const routes = new Map<string, RouteStats & { km: number }>();
   for (const d of drives) {
-    if (!d.endedAt || !d.start || !d.end || !within(d.startedAt, from, to)) continue;
+    if (!d.endedAt || !named(d.start) || !named(d.end) || !within(d.startedAt, from, to)) continue;
     if (d.start.label === d.end.label) continue;
     // One route for both directions, named in the direction first seen.
     const key = [d.start.label, d.end.label].sort().join('\u0000');

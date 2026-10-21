@@ -56,7 +56,7 @@ export function RivianConnectPage(props: {
             <span className="font-medium text-(--text-primary)">{email}</span>.
           </>
         }
-        step={props.reauth ? undefined : { current: 3, total: 3 }}
+        step={props.reauth ? undefined : { current: 3, total: 4 }}
         error={error}
         busy={busy}
         submitDisabled={code.length < OTP_LENGTH}
@@ -106,7 +106,7 @@ export function RivianConnectPage(props: {
           ? 'Your Rivian session expired — sign in again to resume tracking.'
           : 'Your credentials go directly to Rivian; only the resulting tokens are stored, encrypted.'
       }
-      step={props.reauth ? undefined : { current: 2, total: 3 }}
+      step={props.reauth ? undefined : { current: 2, total: 4 }}
       error={error}
       busy={busy}
       submitLabel="Connect"

@@ -77,6 +77,15 @@ describe('topDestinations', () => {
     const live = { ...drive(0, 8, 'Home', 'Work'), endedAt: null };
     expect(topDestinations([live], from, to)).toEqual([]);
   });
+
+  it('leaves out places known only by their coordinates', () => {
+    const spot = { ...place('40.0000°N 100.0000°W'), unnamed: true };
+    const toSpot = { ...drive(0, 8, 'Home', 'Work'), end: spot };
+    const top = topDestinations([toSpot, toSpot, drive(1, 8, 'Home', 'Work')], from, to);
+    expect(top.map((p) => p.label)).toEqual(['Work']);
+    const fromSpot = { ...drive(0, 17, 'Work', 'Home'), start: spot };
+    expect(commonRoutes([fromSpot, fromSpot], from, to)).toEqual([]);
+  });
 });
 
 describe('commonRoutes', () => {

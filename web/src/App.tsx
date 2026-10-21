@@ -11,6 +11,7 @@ import { HistoryPage } from './features/history/HistoryPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RivianConnectPage } from './features/auth/RivianConnectPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { OutsideServicesPage } from './features/auth/OutsideServicesPage';
 import { SetupPage } from './features/auth/SetupPage';
 
 export default function App() {
@@ -25,7 +26,10 @@ export default function App() {
   }
 
   if (status.needsSetup) return <SetupPage onDone={() => refetch()} />;
-  if (!status.authed) return <LoginPage onDone={() => refetch()} />;
+  // On a first boot with APP_PASSWORD, signing in is step 1 of setup.
+  if (!status.authed) {
+    return <LoginPage setup={status.signInStartsSetup} onDone={() => refetch()} />;
+  }
   // TeslaMate alone is enough to show something; Rivian can be connected later.
   if (!status.rivianConnected && !status.teslamateConfigured) {
     return (
@@ -37,6 +41,8 @@ export default function App() {
       />
     );
   }
+  // Last step of first-run setup, once the account is connected.
+  if (status.needsLookupChoice) return <OutsideServicesPage onDone={() => refetch()} />;
   return <Shell />;
 }
 

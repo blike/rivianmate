@@ -115,7 +115,14 @@ export function Overview(props: {
   const status = activity
     ? statusSentence({
         kind: activity.kind,
-        place: plugged ? (session ? chargerLabel(session) : null) : (lastDrive?.end?.label ?? null),
+        // Coordinates make a poor "Parked at"; say nothing rather than those.
+        place: plugged
+          ? session
+            ? chargerLabel(session)
+            : null
+          : lastDrive?.end && !lastDrive.end.unnamed
+            ? lastDrive.end.label
+            : null,
         since: plugged
           ? session
             ? Date.parse(

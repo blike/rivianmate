@@ -429,11 +429,12 @@ export function drivePlace(
       address: full,
       isHome: location.isHome || home,
       locationId: location.id,
+      unnamed: false,
     };
   }
-  if (home) return { label: 'Home', address: full, isHome: true, locationId: null };
+  if (home) return { label: 'Home', address: full, isHome: true, locationId: null, unnamed: false };
   const label = geofence || shortAddress(address);
-  return label ? { label, address: full, isHome: false, locationId: null } : null;
+  return label ? { label, address: full, isHome: false, locationId: null, unnamed: false } : null;
 }
 
 export interface DriveRow {

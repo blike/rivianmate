@@ -2,7 +2,13 @@ import type { DriveDto } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
 import { drives as fixtureDrives } from '../../testing/fixtures';
 import { unitFormatter } from '../../lib/units';
-import { bucketEdges, efficiencyFactors, efficiencyValue, overallEfficiency } from './efficiency';
+import {
+  bucketEdges,
+  efficiencyFactors,
+  efficiencyValue,
+  overallEfficiency,
+  shownFactors,
+} from './efficiency';
 
 const imperial = unitFormatter({ distance: 'mi', temperature: 'F' });
 const metric = unitFormatter({ distance: 'km', temperature: 'C' });
@@ -150,5 +156,31 @@ describe('efficiencyValue', () => {
     expect(efficiencyValue(100, 20, imperial)).toBeCloseTo(3.107, 3);
     expect(efficiencyValue(100, 20, metric)).toBeCloseTo(20);
     expect(efficiencyValue(100, 0, imperial)).toBeNull();
+  });
+});
+
+describe('shownFactors', () => {
+  const keys = (drives: DriveDto[], weather: 'on' | 'off' | 'none') =>
+    shownFactors(efficiencyFactors(drives, imperial), weather).map((f) => f.key);
+  const noWeather = [drive(30, 10, 30, { outsideTempC: null, weather: null })];
+
+  it('keeps empty weather charts while lookups may still fill them', () => {
+    expect(keys(noWeather, 'on')).toEqual([
+      'temperature',
+      'speed',
+      'elevation',
+      'length',
+      'conditions',
+    ]);
+  });
+
+  it('leaves out weather charts no drive has data for once lookups are off', () => {
+    expect(keys(noWeather, 'off')).toEqual(['speed', 'elevation', 'length']);
+    expect(keys(noWeather, 'none')).toEqual(['speed', 'elevation', 'length']);
+  });
+
+  it('keeps the weather drives were looked up for before', () => {
+    const before = [...noWeather, drive(30, 10, 30, { outsideTempC: 10 })];
+    expect(keys(before, 'off')).toContain('temperature');
   });
 });
