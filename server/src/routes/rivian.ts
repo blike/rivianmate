@@ -9,15 +9,21 @@ import {
   RivianUnauthenticatedError,
 } from '../rivian/types.js';
 
+/**
+ * Messages the connect page shows as they are. The email check is stricter
+ * than the browser's, which lets "name@host" through.
+ */
 const connectSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
+  email: z.email('Enter the full email address for your Rivian account, like name@example.com.'),
+  password: z.string().min(1, 'Enter your Rivian password.'),
 });
 const otpSchema = z.object({ code: z.string().min(4).max(10) });
 
 export async function rivianRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.post('/api/rivian/connect', async (request, reply) => {
-    const body = connectSchema.parse(request.body);
+    const parsed = connectSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]!.message });
+    const body = parsed.data;
     const api = ctx.rivianFactory.createApi();
     try {
       const result = await api.login(body.email, body.password);

@@ -33,7 +33,10 @@ export function AuthCard(props: {
           </span>
         </div>
 
+        {/* The server checks each field and says what's wrong in the error box
+            below; the browser's own pop-ups would say it differently. */}
         <form
+          noValidate
           onSubmit={handleSubmit}
           className="card space-y-5 p-7 shadow-[0_24px_64px_-24px_rgba(0,0,0,0.7)]"
         >
