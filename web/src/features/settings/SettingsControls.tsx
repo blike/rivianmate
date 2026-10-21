@@ -137,6 +137,43 @@ export function SegmentedControl<T extends string>(props: {
   );
 }
 
+/** A dropdown sized and colored like SegmentedControl, with the app's chevron in place of the native one. */
+export function Select<T extends string>(props: {
+  id?: string;
+  value: T;
+  options: readonly T[];
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="relative">
+      <select
+        id={props.id}
+        value={props.value}
+        disabled={props.disabled}
+        onChange={(e) => props.onChange(e.target.value as T)}
+        className="appearance-none rounded-lg bg-(--surface-2) py-1.5 pr-8 pl-3 text-sm font-medium outline-none transition-colors hover:text-(--text-primary) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-60"
+      >
+        {props.options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+      <svg
+        viewBox="0 0 12 12"
+        className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 text-(--text-muted)"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        aria-hidden
+      >
+        <path d="M2.5 4.5 6 8l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
 export function Switch(props: {
   label: string;
   checked: boolean;
