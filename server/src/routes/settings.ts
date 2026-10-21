@@ -87,30 +87,38 @@ export async function saveLookupSettings(
   ctx.monitor.setLookups(lookups);
 }
 
+/** How first-run setup set the password: chosen in step 1, or from APP_PASSWORD. */
+export type SetupStart = 'setup' | 'app_password';
+
 /**
  * At first-run setup: hold both lookups off until they're chosen, after the
- * Rivian account is connected, so none runs before then.
+ * Rivian account is connected, so none runs before then. Remembers how
+ * setup started, which decides whether signing in is its first step.
  */
-export async function holdLookupsForChoice(ctx: Pick<AppContext, 'db' | 'monitor'>) {
+export async function holdLookupsForChoice(
+  ctx: Pick<AppContext, 'db' | 'monitor'>,
+  start: SetupStart,
+) {
   const off: LookupSettings = { addresses: false, weather: false };
   const value = JSON.stringify(off);
   await ctx.db
     .insert(appSettings)
     .values([
       { key: LOOKUPS_KEY, value },
-      { key: LOOKUPS_PENDING_KEY, value: 'true' },
+      { key: LOOKUPS_PENDING_KEY, value: start },
     ])
     .onConflictDoNothing();
   ctx.monitor.setLookups(off);
 }
 
-/** Whether setup is still waiting for the lookups to be chosen. */
-export async function lookupChoicePending(ctx: Pick<AppContext, 'db'>): Promise<boolean> {
+/** How setup started, while it's still waiting for the lookups to be chosen; null once they are. */
+export async function lookupChoicePending(ctx: Pick<AppContext, 'db'>): Promise<SetupStart | null> {
   const rows = await ctx.db
     .select()
     .from(appSettings)
     .where(eq(appSettings.key, LOOKUPS_PENDING_KEY));
-  return rows.length > 0;
+  if (!rows[0]) return null;
+  return rows[0].value === 'app_password' ? 'app_password' : 'setup';
 }
 
 /** App-wide display preferences (single-user app, so stored server-side). */

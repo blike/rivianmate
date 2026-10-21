@@ -67,11 +67,30 @@ async function checkPassword(
   return true;
 }
 
+/**
+ * First boot with APP_PASSWORD: sets the password, then has setup carry on
+ * as /api/setup does, asking about the outside lookups after Rivian and
+ * holding them off until then. Does nothing once a password is set.
+ */
+export async function seedAppPassword(ctx: AppContext, password: string): Promise<void> {
+  if ((await getPasswordHash(ctx)) !== null) return;
+  const problem = passwordProblem(password);
+  if (problem) throw new Error(`APP_PASSWORD is too weak: ${problem}`);
+  const created = await ctx.db
+    .insert(appSettings)
+    .values({ key: PASSWORD_KEY, value: await hashPassword(password) })
+    .onConflictDoNothing()
+    .returning();
+  if (created.length) await holdLookupsForChoice(ctx, 'app_password');
+}
+
 export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/status', async (request): Promise<StatusResponse> => {
     const authed = isAuthed(ctx, request);
     // The account is only described to someone signed in.
     const account = authed ? await ctx.tokenStore.load() : null;
+    // Read before sign-in too, so signing in can show as the first step of setup.
+    const pending = await lookupChoicePending(ctx);
     return {
       needsSetup: (await getPasswordHash(ctx)) === null,
       authed,
@@ -80,7 +99,8 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       rivianEmail: account?.email ?? null,
       mockMode: ctx.config.MOCK_RIVIAN,
       teslamateConfigured: ctx.teslamate.configured,
-      needsLookupChoice: authed && (await lookupChoicePending(ctx)),
+      needsLookupChoice: pending !== null,
+      signInStartsSetup: pending === 'app_password',
     };
   });
 
@@ -98,7 +118,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       .onConflictDoNothing()
       .returning();
     if (!created.length) return reply.code(409).send({ error: 'Already set up' });
-    await holdLookupsForChoice(ctx);
+    await holdLookupsForChoice(ctx, 'setup');
     issueSession(ctx, reply);
     return { ok: true };
   });

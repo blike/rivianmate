@@ -13,6 +13,7 @@ import { TokenCrypto } from '../crypto.js';
 import { createDb, runMigrations } from '../db/client.js';
 import { silentLogger } from '../logger.js';
 import { LoginThrottle } from '../services/login-throttle.js';
+import { seedAppPassword } from './auth.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -93,5 +94,35 @@ describe.skipIf(!url)('lookup settings with Postgres', () => {
     await lookups(chosen);
     expect(applied.at(-1)).toEqual(chosen);
     expect((await status()).needsLookupChoice).toBe(false);
+  });
+
+  it('with APP_PASSWORD, holds the lookups off from first boot and starts setup at sign-in', async () => {
+    await handle.sql`TRUNCATE app_settings`;
+    applied = [];
+    const ctx = { db: handle.db, monitor: { setLookups: (l: LookupSettings) => applied.push(l) } };
+    await seedAppPassword(ctx as unknown as AppContext, PASSWORD);
+    expect(applied).toEqual([{ addresses: false, weather: false }]);
+
+    const before = (await app.inject({ url: '/api/status' })).json();
+    expect(before).toMatchObject({
+      authed: false,
+      needsLookupChoice: true,
+      signInStartsSetup: true,
+    });
+
+    // A later boot leaves the password and the pending choice alone.
+    await seedAppPassword(ctx as unknown as AppContext, `${PASSWORD} two`);
+    expect(applied).toHaveLength(1);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { password: PASSWORD },
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it('starts setup at the password step without APP_PASSWORD', async () => {
+    const status = (await app.inject({ url: '/api/status' })).json();
+    expect(status).toMatchObject({ needsLookupChoice: true, signInStartsSetup: false });
   });
 });

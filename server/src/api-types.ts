@@ -48,6 +48,8 @@ export interface StatusResponse {
   teslamateConfigured: boolean;
   /** First-run setup still has to ask which outside lookups to allow. */
   needsLookupChoice: boolean;
+  /** APP_PASSWORD set the password on first boot, so signing in is setup's first step. */
+  signInStartsSetup: boolean;
 }
 
 export interface VersionResponse {
