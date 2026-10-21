@@ -18,6 +18,7 @@ function render(path: string, status: Partial<StatusResponse> = {}) {
     mockMode: false,
     teslamateConfigured: true,
     needsLookupChoice: false,
+    signInStartsSetup: false,
     ...status,
   });
   client.setQueryData(['vehicles'], []);
@@ -52,5 +53,17 @@ describe('App during first-run setup', () => {
     expect(html).toContain('306 W Willow St');
     expect(html).toContain('Step 4 of 4');
     expect(html).not.toContain('No vehicles found.');
+  });
+
+  it('shows signing in as step 1 when APP_PASSWORD set the password', () => {
+    const html = render('/', { authed: false, needsLookupChoice: true, signInStartsSetup: true });
+    expect(html).toContain('Step 1 of 4');
+    expect(html).toContain('APP_PASSWORD');
+  });
+
+  it('signs in without setup steps otherwise', () => {
+    const html = render('/', { authed: false, needsLookupChoice: true });
+    expect(html).toContain('Welcome back');
+    expect(html).not.toContain('Step 1 of 4');
   });
 });
