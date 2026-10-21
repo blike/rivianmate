@@ -142,6 +142,9 @@ source; if you have several, pick the RivianMate one.
   temperatures in °C. To change a unit, edit the query behind the panel.
 - Vehicles do not all report the same fields. A panel for something yours does not report shows "Not
   reported" or "No data".
+- **The dashboards show one vehicle**: the first one in the database, and there is no vehicle picker
+  yet. If your account has several vehicles, the others do not appear, except on the Location and
+  Visited maps, which draw the points of every vehicle.
 - The dashboards follow RivianMate's database schema. After updating RivianMate, check the release
   notes, and if a panel shows a query error, update to the matching version of the dashboards. The
   database role in step 2 may need to be run again.
