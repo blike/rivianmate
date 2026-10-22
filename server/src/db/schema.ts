@@ -224,13 +224,17 @@ export const chargingCurvePoints = pgTable(
       .notNull()
       .references(() => chargingSessions.id, { onDelete: 'cascade' }),
     /**
-     * graph = Parallax charging graph; push_chart = the push feed's chart;
+     * observed = the app's own sample a minute while charging, from the
+     * live readings; graph = Parallax charging graph; push_chart = the push
+     * feed's chart;
      * push_live = the push feed's current reading; forecast = the vehicle's
      * projection to the limit for a charge in progress (replaced by each
      * graph, never a reading); legacy = recorded before sources were kept
      * apart.
      */
-    source: text('source', { enum: ['graph', 'push_chart', 'push_live', 'forecast', 'legacy'] })
+    source: text('source', {
+      enum: ['observed', 'graph', 'push_chart', 'push_live', 'forecast', 'legacy'],
+    })
       .notNull()
       .default('legacy'),
     ts: timestamp('ts', { withTimezone: true }).notNull(),

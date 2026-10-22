@@ -7,6 +7,8 @@ import {
   estimatedForecast,
   liveCurvePoint,
   forecastForDisplay,
+  minuteSamples,
+  observedCurve,
   withOpeningSoc,
 } from './charging-curve.js';
 
@@ -250,5 +252,71 @@ describe('withOpeningSoc', () => {
     const missing = [p('graph', '2026-10-18T06:59:00Z', 7.3, null)];
     expect(withOpeningSoc(missing, null)).toEqual(missing);
     expect(withOpeningSoc([], 48.7)).toEqual([]);
+  });
+});
+
+describe('observedCurve', () => {
+  it('fills only the stretch without samples from the recorded series', () => {
+    const observed = [
+      p('observed', '2026-10-20T07:00:00Z', 7.3, 50),
+      p('observed', '2026-10-20T07:01:00Z', 7.3, 50.1),
+      // The app was down from 07:01 to 08:00.
+      p('observed', '2026-10-20T08:00:00Z', 7.4, 56),
+    ];
+    const graph = [
+      p('graph', '2026-10-20T07:02:00Z', 7.3, 50),
+      p('graph', '2026-10-20T07:30:00Z', 7.3, 53),
+      p('graph', '2026-10-20T07:58:00Z', 7.4, 55),
+    ];
+    expect(observedCurve(observed, graph).map((r) => [r.source, r.soc])).toEqual([
+      ['observed', 50],
+      ['observed', 50.1],
+      ['graph', 53],
+      ['observed', 56],
+    ]);
+  });
+
+  it('drops an implausible level among its own samples', () => {
+    const observed = [
+      p('observed', '2026-10-20T07:00:00Z', 7.3, 50),
+      p('observed', '2026-10-20T07:01:00Z', 7.3, 12),
+      p('observed', '2026-10-20T07:02:00Z', null, 50.2),
+    ];
+    expect(observedCurve(observed, []).map((r) => r.soc)).toEqual([50, 50.2]);
+  });
+});
+
+describe('minuteSamples', () => {
+  const at = (iso: string) => Date.parse(iso);
+  const span = { from: new Date('2026-10-20T07:00:00Z'), to: new Date('2026-10-20T07:02:30Z') };
+
+  it('samples each minute and the end with the latest readings', () => {
+    const samples = minuteSamples(
+      [
+        { at: at('2026-10-20T06:30:00Z'), field: 'soc', value: 50 },
+        { at: at('2026-10-20T07:00:20Z'), field: 'powerKw', value: 7.3 },
+        { at: at('2026-10-20T07:01:40Z'), field: 'soc', value: 50.2 },
+      ],
+      [span],
+    );
+    expect(samples.map((s) => [s.ts.toISOString().slice(11, 19), s.powerKw, s.soc])).toEqual([
+      ['07:00:00', null, 50],
+      ['07:01:00', 7.3, 50],
+      ['07:02:00', 7.3, 50.2],
+      ['07:02:30', 7.3, 50.2],
+    ]);
+  });
+
+  it('ignores power from before the span and lets it go stale', () => {
+    const samples = minuteSamples(
+      [{ at: at('2026-10-20T06:59:00Z'), field: 'powerKw', value: 7.3 }],
+      [span],
+    );
+    expect(samples).toEqual([]);
+    const stale = minuteSamples(
+      [{ at: at('2026-10-20T07:00:00Z'), field: 'powerKw', value: 7.3 }],
+      [{ from: span.from, to: new Date('2026-10-20T07:08:00Z') }],
+    );
+    expect(stale.map((s) => s.powerKw)).toEqual([7.3, 7.3, 7.3, 7.3, 7.3, 7.3]);
   });
 });
