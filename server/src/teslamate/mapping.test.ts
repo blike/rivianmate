@@ -296,6 +296,7 @@ describe('toSessionDto', () => {
     started_at: at('2026-10-09T20:00:00Z'),
     ended_at: at('2026-10-09T22:00:00Z'),
     charge_energy_added: 20,
+    charge_energy_used: 22.5,
     start_battery_level: 40,
     end_battery_level: 70,
     duration_min: 120,
@@ -351,6 +352,19 @@ describe('toSessionDto', () => {
       cost: '12.35',
       estimatedCost: null,
     });
+  });
+
+  it('counts what an AC charge drew beyond what it added as losses', () => {
+    const opts = { vehicleId: 'tm-1', range: 'rated' as const, places };
+    expect(toSessionDto(row, opts)).toMatchObject({
+      energyKwh: 20,
+      lossKwh: 2.5,
+      thermalKwh: null,
+    });
+    expect(toSessionDto({ ...row, charge_energy_used: 19.8 }, opts).lossKwh).toBe(0);
+    expect(toSessionDto({ ...row, charge_energy_used: null }, opts).lossKwh).toBeNull();
+    expect(toSessionDto({ ...row, fast: true }, opts).lossKwh).toBeNull();
+    expect(toSessionDto({ ...row, ended_at: null }, opts).lossKwh).toBeNull();
   });
 
   it('shows a running session’s readings so far', () => {

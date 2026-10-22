@@ -319,6 +319,7 @@ export function chargingProcesses(
     SELECT cp.id::int AS id, (cp.start_date AT TIME ZONE 'UTC') AS started_at,
            (cp.end_date AT TIME ZONE 'UTC') AS ended_at,
            cp.charge_energy_added::float8 AS charge_energy_added,
+           cp.charge_energy_used::float8 AS charge_energy_used,
            cp.start_battery_level, cp.end_battery_level, cp.duration_min,
            cp.start_ideal_range_km::float8 AS start_ideal_range_km,
            cp.end_ideal_range_km::float8 AS end_ideal_range_km,

@@ -21,6 +21,7 @@ import {
   estimatedForecast,
   forecastForDisplay,
   liveCurvePoint,
+  observedCurve,
   withOpeningSoc,
 } from '../services/charging-curve.js';
 
@@ -189,14 +190,21 @@ async function rivianCurve(
       )
     : null;
   const clipped = curveForDisplay(
-    rows.filter((r) => r.source === 'forecast' || r.ts.getTime() <= latest),
+    rows.filter(
+      (r) => r.source !== 'observed' && (r.source === 'forecast' || r.ts.getTime() <= latest),
+    ),
     window,
   );
-  // Starts at the level the session shows it charging from.
+  // The app's own samples when it recorded the charge, with the vehicle's
+  // record filling any time it wasn't running.
+  const observed = rows.filter((r) => r.source === 'observed');
   const curve =
-    session && clipped[0] && clipped[0].soc == null
-      ? withOpeningSoc(clipped, await socAt(ctx, session, clipped[0].ts))
-      : clipped;
+    observed.length >= 2
+      ? observedCurve(observed, clipped)
+      : // Starts at the level the session shows it charging from.
+        session && clipped[0] && clipped[0].soc == null
+        ? withOpeningSoc(clipped, await socAt(ctx, session, clipped[0].ts))
+        : clipped;
   // Only while it's actually charging: stopped but still plugged in, or
   // unplugged, there's nothing left to forecast.
   const charging = session != null && session.endedAt == null && session.chargingSince != null;
@@ -388,6 +396,7 @@ function toSessionDto(
     energyKwh: row.energyKwh,
     packKwh: row.packKwh,
     thermalKwh: row.thermalKwh,
+    lossKwh: null,
     rangeAddedKm: row.rangeAddedKm,
     avgPowerKw: row.avgPowerKw,
     maxPowerKw: row.maxPowerKw,

@@ -114,13 +114,7 @@ export function ChargingPage(props: { vehicleId: string }) {
               session.chargingSince == null
             }
           />
-          {session && (
-            <EnergySplit
-              packKwh={session.packKwh}
-              thermalKwh={session.thermalKwh}
-              inProgress={!session.endedAt}
-            />
-          )}
+          {session && <EnergySplit session={session} />}
         </Panel>
 
         <Panel title="All sessions" className="hidden flex-col lg:flex">

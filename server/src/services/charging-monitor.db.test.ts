@@ -5,7 +5,7 @@
 import { fileURLToPath } from 'node:url';
 import { silentLogger } from '../logger.js';
 import { dirname, join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
 import { chargingCurvePoints, chargingSessions, vehicles } from '../db/schema.js';
@@ -177,7 +177,12 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     const points = await handle.db
       .select()
       .from(chargingCurvePoints)
-      .where(eq(chargingCurvePoints.sessionId, session!.id))
+      .where(
+        and(
+          eq(chargingCurvePoints.sessionId, session!.id),
+          eq(chargingCurvePoints.source, 'graph'),
+        ),
+      )
       .orderBy(chargingCurvePoints.ts);
     // Each bar's power at its start, with the level at its end on the next point.
     expect(points.map((p) => [p.ts.getTime() - t0, p.powerKw, p.soc])).toEqual([
@@ -220,7 +225,12 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     const points = await handle.db
       .select()
       .from(chargingCurvePoints)
-      .where(eq(chargingCurvePoints.sessionId, session!.id))
+      .where(
+        and(
+          eq(chargingCurvePoints.sessionId, session!.id),
+          eq(chargingCurvePoints.source, 'graph'),
+        ),
+      )
       .orderBy(chargingCurvePoints.ts);
     // Only the 32-minute bars' points: none left over from the 16-minute ones.
     expect(points.map((p) => [(p.ts.getTime() - t0) / MIN, p.powerKw, p.soc])).toEqual([
@@ -521,6 +531,37 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     ]);
   });
 
+  it('samples the live power and level at most once a minute, only while charging', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T11:00:00Z', CHARGING, 'charging_active', 50);
+    const push = (at: string, kw: number) => {
+      clock = Date.parse(at);
+      return m.ingest('v1', {
+        ...live('2026-10-01T11:00:00Z', kw),
+        power: { value: kw, updatedAt: at },
+        vehicleChargerState: { value: 'charging_active', updatedAt: at },
+      } as LiveSessionData);
+    };
+    await push('2026-10-01T11:00:30Z', 7.2); // under a minute since the last sample
+    await push('2026-10-01T11:01:00Z', 7.3);
+    // The power reading is 7 minutes old: unknown in the sample.
+    await note(m, '2026-10-01T11:08:00Z', CHARGING, 'charging_active', 53);
+    await note(m, '2026-10-01T11:10:00Z', PLUGGED, 'charging_ready', 54);
+    m.stop();
+
+    const points = await handle.db
+      .select()
+      .from(chargingCurvePoints)
+      .where(eq(chargingCurvePoints.source, 'observed'))
+      .orderBy(chargingCurvePoints.ts);
+    expect(points.map((pt) => [pt.ts.toISOString().slice(11, 19), pt.powerKw, pt.soc])).toEqual([
+      ['11:00:00', null, 50],
+      ['11:01:00', expect.closeTo(7.3), 50],
+      ['11:08:00', null, 53],
+    ]);
+  });
+
   it("keeps the graph's forecast apart from its readings, and drops it when the charge ends", async () => {
     const m = monitor();
     await m.start();
@@ -534,9 +575,13 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
         payload: chargingGraph(...bars),
       });
     const sources = async () =>
-      (await handle.db.select().from(chargingCurvePoints).orderBy(chargingCurvePoints.ts)).map(
-        (r) => [r.source, (r.ts.getTime() - t) / min, r.soc],
-      );
+      (
+        await handle.db
+          .select()
+          .from(chargingCurvePoints)
+          .where(ne(chargingCurvePoints.source, 'observed'))
+          .orderBy(chargingCurvePoints.ts)
+      ).map((r) => [r.source, (r.ts.getTime() - t) / min, r.soc]);
 
     // Sent 6 minutes in: two bars so far, then the vehicle's projection.
     clock = t + 6 * min;

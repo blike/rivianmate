@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
 import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
@@ -24,6 +24,7 @@ import {
   RivianUnauthenticatedError,
   type VehicleState,
 } from '../rivian/types.js';
+import { OBSERVED_SAMPLE_MS, POWER_MAX_AGE_MS } from './charging-curve.js';
 import { isChargingState, stampedAt } from './charging-time.js';
 import { LiveChargeState, type LiveSource } from './live-charging.js';
 import { nearbySpot } from './locations.js';
@@ -111,6 +112,8 @@ export class ChargingMonitor {
   private live = new Map<string, LiveChargeState>();
   /** What was last emitted per vehicle, so repeats aren't re-sent. */
   private liveSent = new Map<string, string>();
+  /** When each vehicle's curve was last sampled. */
+  private lastSample = new Map<string, number>();
 
   /** Rivian rejected credentials even after a session rotation. */
   onAuthFailure?: () => void;
@@ -486,6 +489,7 @@ export class ChargingMonitor {
    * between sources (Rivian's push is silent for some chargers).
    */
   private emitLive(vehicleId: string): void {
+    this.sampleCurve(vehicleId);
     const open = this.openSessions.get(vehicleId);
     const session = open ? this.liveState(vehicleId).session(open.startedAt, this.now()) : null;
     // Compare without timestamps: each report re-stamps them.
@@ -495,6 +499,34 @@ export class ChargingMonitor {
     if (this.liveSent.get(vehicleId) === signature) return;
     this.liveSent.set(vehicleId, signature);
     this.bus.emitChargingSession(vehicleId, session);
+  }
+
+  /**
+   * The session's own curve: while it charges, a sample a minute of the
+   * merged live power and battery level, taken as readings arrive.
+   */
+  private sampleCurve(vehicleId: string): void {
+    const open = this.openSessions.get(vehicleId);
+    const live = this.liveState(vehicleId);
+    const now = this.now();
+    if (!open || !live.isCharging(now)) return;
+    if (now - (this.lastSample.get(vehicleId) ?? -Infinity) < OBSERVED_SAMPLE_MS) return;
+    // Live power stays on screen for a while; a sample takes only a recent one.
+    const power = live.resolve('powerKw', now);
+    const powerKw = power && now - power.at <= POWER_MAX_AGE_MS ? num(power.value) : null;
+    const soc = num(live.resolve('soc', now)?.value);
+    if (powerKw == null && soc == null) return;
+    this.lastSample.set(vehicleId, now);
+    const sample = {
+      sessionId: open.id,
+      source: 'observed' as const,
+      ts: new Date(now),
+      powerKw,
+      soc,
+    };
+    void this.enqueue(vehicleId, async () => {
+      await this.db.insert(chargingCurvePoints).values(sample).onConflictDoNothing();
+    });
   }
 
   async start(): Promise<void> {
@@ -895,7 +927,8 @@ export class ChargingMonitor {
       .where(
         and(
           eq(chargingCurvePoints.sessionId, leftover.id),
-          ne(chargingCurvePoints.source, 'forecast'),
+          // Observed samples repeat the live readings already stored.
+          notInArray(chargingCurvePoints.source, ['forecast', 'observed']),
         ),
       );
     const count = stats?.count ?? 0;

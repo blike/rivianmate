@@ -1,7 +1,7 @@
 /** Picking the one series a session's charging curve is drawn from. */
 import type { LiveSessionData } from '../rivian/types.js';
 
-export type CurveSource = 'graph' | 'push_chart' | 'push_live' | 'forecast' | 'legacy';
+export type CurveSource = 'observed' | 'graph' | 'push_chart' | 'push_live' | 'forecast' | 'legacy';
 
 export interface CurvePoint {
   source: CurveSource;
@@ -31,6 +31,89 @@ const MIN_POWER_POINTS = 2;
  */
 const SOC_DROP_TOLERANCE = 2;
 const SOC_WINDOW_MS = 15 * 60_000;
+
+/** How often the app samples a charge's power and battery level. */
+export const OBSERVED_SAMPLE_MS = 60_000;
+
+/**
+ * Samples farther apart than this are a gap: the app wasn't running, or the
+ * stream dropped. A recorded series fills it.
+ */
+const OBSERVED_GAP_MS = 5 * OBSERVED_SAMPLE_MS;
+
+/** Power older than this is from before a pause, not a reading now. */
+export const POWER_MAX_AGE_MS = 5 * 60_000;
+
+/**
+ * The curve from the app's own samples, without implausible SoC drops, with
+ * points from a recorded series (see curveForDisplay) where there are none:
+ * only those farther than a gap from every sample, so the two never
+ * interleave.
+ */
+export function observedCurve(
+  observed: readonly CurvePoint[],
+  fill: readonly CurvePoint[],
+): CurvePoint[] {
+  // Not withoutUnpoweredRise: a sample's power is unknown, not zero, while
+  // the power feed is quiet, and the level still rises.
+  const own = withoutSocDrops([...observed].sort((a, b) => a.ts.getTime() - b.ts.getTime()));
+  const times = own.map((p) => p.ts.getTime());
+  const near = (t: number) => {
+    // The first sample at or after t, and the one before it.
+    let lo = 0;
+    let hi = times.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (times[mid]! < t) lo = mid + 1;
+      else hi = mid;
+    }
+    return [times[lo - 1], times[lo]].some((s) => s != null && Math.abs(s - t) <= OBSERVED_GAP_MS);
+  };
+  return [...own, ...fill.filter((p) => !near(p.ts.getTime()))].sort(
+    (a, b) => a.ts.getTime() - b.ts.getTime(),
+  );
+}
+
+export interface LiveReading {
+  at: number;
+  field: 'powerKw' | 'soc';
+  value: number;
+}
+
+/**
+ * A sample a minute over each span it charged, plus one at the span's end,
+ * from timestamped readings: each carries the latest power read within the
+ * span (and in the last few minutes) and the latest battery level. This is
+ * what the app records live, rebuilt from archived readings.
+ */
+export function minuteSamples(
+  readings: readonly LiveReading[],
+  spans: readonly { from: Date; to: Date }[],
+): CurvePoint[] {
+  const sorted = [...readings].sort((a, b) => a.at - b.at);
+  const out: CurvePoint[] = [];
+  for (const span of spans) {
+    const from = span.from.getTime();
+    const to = span.to.getTime();
+    const times: number[] = [];
+    for (let t = from; t < to; t += OBSERVED_SAMPLE_MS) times.push(t);
+    times.push(to);
+    let i = 0;
+    let power: LiveReading | null = null;
+    let soc: number | null = null;
+    for (const t of times) {
+      for (; i < sorted.length && sorted[i]!.at <= t; i++) {
+        const r = sorted[i]!;
+        if (r.field === 'soc') soc = r.value;
+        else if (r.at >= from) power = r;
+      }
+      const powerKw = power && t - power.at <= POWER_MAX_AGE_MS ? power.value : null;
+      if (powerKw == null && soc == null) continue;
+      out.push({ source: 'observed', ts: new Date(t), powerKw, soc });
+    }
+  }
+  return out;
+}
 
 /**
  * One source's points, in time order, without implausible SoC drops, over
