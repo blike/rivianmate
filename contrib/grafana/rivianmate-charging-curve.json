@@ -119,7 +119,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, power_kw AS \"Power (kW)\", soc AS \"SoC %\" FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) AND source = COALESCE((SELECT source FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) ORDER BY (source='graph') DESC LIMIT 1), 'graph') ORDER BY ts",
+          "rawSql": "SELECT ts AS time, power_kw AS \"Power (kW)\", soc AS \"SoC %\" FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) AND source = COALESCE((SELECT source FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) ORDER BY (source='graph') DESC, (source='observed') DESC LIMIT 1), 'graph') ORDER BY ts",
           "refId": "A"
         }
       ],
