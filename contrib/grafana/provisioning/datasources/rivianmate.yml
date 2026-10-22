@@ -1,0 +1,20 @@
+# Grafana data source for the RivianMate database.
+# Copy to Grafana's provisioning/datasources/ folder. See docs/GRAFANA.md.
+apiVersion: 1
+
+datasources:
+  - name: RivianMate
+    uid: rivianmate
+    type: grafana-postgresql-datasource
+    access: proxy
+    # The PostgreSQL service as Grafana sees it: the service name when Grafana joins RivianMate's
+    # Docker network, otherwise the host and published port.
+    url: postgres:5432
+    user: grafana_ro
+    jsonData:
+      # Grafana reads the database name from here, not from a top-level field.
+      database: rivianmate
+      sslmode: disable
+    secureJsonData:
+      # Set RIVIANMATE_GRAFANA_PASSWORD in Grafana's environment.
+      password: ${RIVIANMATE_GRAFANA_PASSWORD}

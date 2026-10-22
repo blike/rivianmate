@@ -76,6 +76,12 @@ a dashboard you can open from anywhere.
 - Responsive web interface optimized for desktop, tablet, and mobile devices.
 - Full access to dashboards, trip history, charging sessions, and analytics from any screen size.
 
+### Grafana Dashboards (optional)
+
+- Ready-made dashboards for people who already run Grafana, reading RivianMate's database read-only.
+- Load them by pointing Grafana at the folder; see [docs/GRAFANA.md](docs/GRAFANA.md).
+- Tested with Grafana 13.2.4 only; other versions may work but have not been tried.
+
 ## Screenshots
 
 <p>

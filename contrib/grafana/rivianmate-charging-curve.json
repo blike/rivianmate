@@ -1,0 +1,191 @@
+{
+  "description": "Power and SoC over time for the most recent charging session.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["rivianmate"],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": ["rivianmate"],
+  "time": {
+    "from": "now-1d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - Charging Curve",
+  "uid": "rivianmate-charging-curve",
+  "version": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "pointSize": 4,
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Power (kW)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SoC %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS time, power_kw AS \"Power (kW)\", soc AS \"SoC %\" FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) AND source = COALESCE((SELECT source FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) ORDER BY (source='graph') DESC, (source='observed') DESC LIMIT 1), 'graph') ORDER BY ts",
+          "refId": "A"
+        }
+      ],
+      "title": "Most Recent Session: Power & SoC",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT id AS \"Session ID\", started_at AS \"Started\", ended_at AS \"Ended\", source AS \"Source\", (SELECT count(*) FROM charging_curve_points WHERE session_id = charging_sessions.id) AS \"Curve Points\" FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY started_at DESC LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Sessions (pick a Session ID above to inspect its curve manually)",
+      "type": "table"
+    }
+  ],
+  "id": null,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "grafana-postgresql-datasource",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  }
+}

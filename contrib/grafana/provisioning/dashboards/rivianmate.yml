@@ -1,0 +1,14 @@
+# Tells Grafana to load the RivianMate dashboards from a folder.
+# Copy to Grafana's provisioning/dashboards/ folder. See docs/GRAFANA.md.
+apiVersion: 1
+
+providers:
+  - name: RivianMate
+    folder: RivianMate
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 300
+    options:
+      # Mount this repository's contrib/grafana folder here.
+      path: /var/lib/grafana/dashboards/rivianmate
