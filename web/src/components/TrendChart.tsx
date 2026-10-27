@@ -117,7 +117,7 @@ export function TrendChart(props: {
             tick={tick}
             tickLine={false}
             axisLine={false}
-            width={props.leftUnit ? 64 : 44}
+            width="auto"
             tickFormatter={(v: number) =>
               `${fmt(v, props.leftUnit && Number.isInteger(v) ? 0 : leftDigits)}${props.leftUnit ? ` ${props.leftUnit}` : ''}`
             }
@@ -130,7 +130,7 @@ export function TrendChart(props: {
               tick={tick}
               tickLine={false}
               axisLine={false}
-              width={props.rightUnit ? 52 : 40}
+              width="auto"
               tickFormatter={(v: number) =>
                 `${fmt(v, rightDigits)}${props.rightUnit ? ` ${props.rightUnit}` : ''}`
               }
@@ -146,9 +146,19 @@ export function TrendChart(props: {
             content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
               // One row per series, in declared order, skipping gaps.
-              const rows = props.series.flatMap((s) => {
+              const valueOf = (s: TrendSeries) => {
                 const value = payload.find((p) => p.dataKey === s.key)?.value;
-                return typeof value === 'number' ? [{ s, value }] : [];
+                return typeof value === 'number' ? value : null;
+              };
+              const rows = props.series.flatMap((s) => {
+                const value = valueOf(s);
+                if (value == null) return [];
+                // An estimate adds nothing where a reading on its axis exists,
+                // e.g. where a forecast joins the recorded curve.
+                const read = (o: TrendSeries) =>
+                  !o.dashed && axisOf(o) === axisOf(s) && valueOf(o) != null;
+                if (s.dashed && props.series.some(read)) return [];
+                return [{ s, value }];
               });
               if (rows.length === 0) return null;
               return (
