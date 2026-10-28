@@ -101,9 +101,12 @@ export const defrost = defineRvm({
 });
 
 /**
- * `pet_mode_status`: 1 status (1 on, 2 disabled). Proto3 leaves a zero
- * out, so an empty message is off. Seen switching with legacy's petModeStatus on an
- * R1S (2026-10-18); legacy's petModeTemperatureStatus isn't in it.
+ * `pet_mode_status`: 1 status (1 on, 2 disabled), 2 temperature status (1
+ * cold, 2 hot, 3 faulty), 3 cabin climate (1 cold, 2 hot). Proto3 leaves a
+ * zero out, so an empty message is off, and a temperature or climate left
+ * out is the default (legacy's petModeTemperatureStatus "Default"). Seen
+ * switching with legacy's petModeStatus on an R1S (2026-10-18); 2 and 3
+ * haven't been seen set, so they aren't read.
  */
 export const petMode = defineRvm({
   rvm: RVM_PET_MODE,
@@ -116,7 +119,11 @@ export const petMode = defineRvm({
     }),
   toState: stampReadings,
   stateKeys: ['petModeStatus'],
-  fieldNames: { '1': 'Status (1 on, 2 disabled)' },
+  fieldNames: {
+    '1': 'Status (1 on, 2 disabled)',
+    '2': 'Temperature (1 cold, 2 hot, 3 faulty)',
+    '3': 'Cabin (1 cold, 2 hot)',
+  },
 });
 
 /**

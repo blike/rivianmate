@@ -37,18 +37,18 @@ export function decodeChargingStatus(payloadBase64: string): ChargingStatus | nu
 }
 
 /**
- * `charging.session.time_estimation` (`g70/e0`): 1 hold time (int32
- * seconds, per the docs; not yet seen), 2 minutes remaining. Field 2 matched
- * vehicle state's timeToEndOfCharge on a live charge. Empty when not
- * charging.
+ * `charging.session.time_estimation` (`g70/e0`): 1 whether the estimate
+ * holds (1 valid, 2 not, 3 the pack is discharging; 0 none), 2 minutes
+ * remaining. Field 2 matched vehicle state's timeToEndOfCharge on a live
+ * charge. Empty when not charging.
  */
 export function decodeTimeEstimation(
   payloadBase64: string,
-): { holdTimeSeconds: number; minutesRemaining: number } | null {
+): { validity: number; minutesRemaining: number } | null {
   const m = decodePayload(payloadBase64);
   if (!m) return null;
   return {
-    holdTimeSeconds: Math.max(0, m.int(1) ?? 0),
+    validity: m.int(1) ?? 0,
     minutesRemaining: Math.max(0, m.int(2) ?? 0),
   };
 }
@@ -127,7 +127,7 @@ export const timeEstimation = defineRvm({
   decode: decodeTimeEstimation,
   store: true,
   fieldNames: {
-    '1': 'Hold time (s)',
+    '1': 'Estimate (1 valid, 2 not, 3 pack discharging)',
     '2': 'Minutes remaining',
   },
 });

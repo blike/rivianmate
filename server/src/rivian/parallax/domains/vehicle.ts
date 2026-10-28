@@ -13,12 +13,15 @@ export interface NetworkState {
 }
 
 /**
- * `vehicle.network.state`: 4 Wi-Fi {3 SSID, 8 RSSI dBm, 10 frequency MHz},
- * 5 cellular {1 carrier, 2 technology}. A Wi-Fi block without an SSID
- * means not connected. Also in the Wi-Fi block, not read: 1 state (2
- * connected), 12 (4 connected, 1 not) and 13 (2 connected, 1 not), each
- * matching the SSID in all 283 messages, and 11 channel width (MHz),
- * always 80 at 5240 MHz and 20 at 2427 MHz (R1S, 2026-10-13).
+ * `vehicle.network.state`: 1 the link in use (1 Wi-Fi, 2 cellular), 3 its
+ * signal bars, 4 Wi-Fi {3 SSID, 8 RSSI dBm, 10 frequency MHz}, 5 cellular
+ * {1 carrier, 2 technology}. A Wi-Fi block without an SSID means not
+ * connected. Also in the Wi-Fi block, not read: 1 WPA state (2 connected),
+ * 2 connection check (2 succeeded), 7 bars, 9 link speed, 11 channel width
+ * (MHz; always 80 at 5240 MHz and 20 at 2427 MHz), 12 security (1 open, 4
+ * WPA2 personal…) and 13 secured (2 yes, 1 no); 1, 12 and 13 followed the
+ * SSID in all 283 messages (R1S, 2026-10-13). A signal of -255 is no
+ * reading.
  */
 export function decodeNetwork(payloadBase64: string): NetworkState | null {
   const m = decodePayload(payloadBase64);
@@ -61,15 +64,25 @@ export const network = defineRvm({
   decode: decodeNetwork,
   store: true,
   fieldNames: {
-    '4.1': 'Wi-Fi state (2 connected)',
+    '1': 'Link in use (1 Wi-Fi, 2 cellular)',
+    '2.1': 'Route (1 Wi-Fi, 2 cellular, 3 media, 4 hotspot)',
+    '2.2': 'Route state (1 down, 2 up)',
+    '3': 'Signal bars, link in use (1 = 0 bars … 5 = 4)',
+    '4.1': 'Wi-Fi WPA state (2 connected)',
+    '4.2': 'Wi-Fi connection check (2 succeeded)',
     '4.3': 'Wi-Fi SSID',
-    '4.8': 'Wi-Fi signal (dBm)',
+    '4.7': 'Wi-Fi bars (1 = 0 bars … 5 = 4)',
+    '4.8': 'Wi-Fi signal (dBm; -255 none)',
+    '4.9': 'Wi-Fi link speed (Mbps)',
     '4.10': 'Wi-Fi frequency (MHz)',
     '4.11': 'Wi-Fi channel width (MHz)',
-    '4.12': 'Wi-Fi connected (4 connected, 1 not)',
-    '4.13': 'Wi-Fi connected (2 connected, 1 not)',
+    '4.12': 'Wi-Fi security (1 open, 2 WPA, 4 WPA2, 6 WPA3 personal)',
+    '4.13': 'Wi-Fi secured (2 yes, 1 no)',
+    '4.14': 'Wi-Fi switched on (2 yes, 1 no)',
     '5.1': 'Cellular carrier',
     '5.2': 'Cellular technology',
+    '5.3': 'Cellular bars (1 = 0 bars … 5 = 4)',
+    '5.4': 'Cellular signal (dBm; -255 none)',
   },
 });
 

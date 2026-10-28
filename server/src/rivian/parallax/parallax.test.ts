@@ -641,16 +641,13 @@ describe('decodeChargingWindow', () => {
 });
 
 describe('decodeTimeEstimation', () => {
-  it('reads the hold time in seconds', () => {
-    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({
-      holdTimeSeconds: 5400,
-      minutesRemaining: 0,
-    });
+  it('reads whether the estimate holds', () => {
+    expect(decodeTimeEstimation(b64(int(1, 3)))).toEqual({ validity: 3, minutesRemaining: 0 });
   });
 
   it('reads minutes remaining from a live charge', () => {
     expect(decodeTimeEstimation(b64(int(2, 42)))).toEqual({
-      holdTimeSeconds: 0,
+      validity: 0,
       minutesRemaining: 42,
     });
     expect(decodeTimeEstimation('')).toBeNull();

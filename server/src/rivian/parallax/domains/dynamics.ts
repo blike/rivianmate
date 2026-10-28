@@ -24,11 +24,13 @@ export interface GnssReading {
  * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
  * 4 speed (float, m/s, as VehicleState consumers expect; proto3 leaves it
  * out at a standstill, so a fix without it is 0). Speed matched legacy
- * gnssSpeed from 0 to 22 m/s on an R1S (2026-10-13); 6, read as speed
- * before, stays 0.1–4.9 parked or moving. 10 is the fix time in GPS time
- * (ms since 1980-01-06, no leap seconds): converted to Unix time it runs a
- * median 17.8 s ahead of the message, GPS time's 18 leap seconds (R1S,
- * 2026-10-13); it isn't read. No .proto; other field numbers from a live
+ * gnssSpeed from 0 to 22 m/s on an R1S (2026-10-13). 6–9 are the fix's
+ * error estimates: horizontal and vertical position (m), speed (m/s) and
+ * heading (°); 6, read as speed before, stays 0.1–4.9 parked or moving. 10
+ * is the fix time, which an R1S sends in GPS time (ms since 1980-01-06, no
+ * leap seconds; converted to Unix time it runs a median 17.8 s ahead of the
+ * message, GPS time's 18 leap seconds, 2026-10-13) and other vehicles may
+ * send in Unix time; it isn't read. No .proto; other field numbers from a live
  * capture against a real R2 (2026-09-29/30), not community docs.
  */
 export function decodeGnss(payloadBase64: string): GnssReading | null {
@@ -107,7 +109,11 @@ export const gnss = defineRvm({
     '3': 'Altitude (m)',
     '4': 'Speed (m/s; left out when stopped)',
     '5': 'Heading (°, −180 to 180)',
-    '10': 'Fix time (GPS time, ms since 1980-01-06; 18 s ahead of UTC)',
+    '6': 'Position error, horizontal (m)',
+    '7': 'Position error, vertical (m)',
+    '8': 'Speed error (m/s)',
+    '9': 'Heading error (°)',
+    '10': 'Fix time (ms; GPS time on an R1S, 18 s ahead of UTC)',
   },
 });
 
