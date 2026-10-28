@@ -86,7 +86,8 @@ describe('dashboard warning labels', () => {
     expect(brakeFluidLabel({})).toBe('Unknown');
     // As an R1S: washer fluid reported, brake fluid empty while it's fine.
     expect(brakeFluidLabel(state({ wiperFluidState: 'normal' }))).toBe('Normal');
-    expect(brakeFluidLabel(state({ brakeFluidLow: 'false' }))).toBe('OK');
+    // As Parallax sends it while it's fine.
+    expect(brakeFluidLabel(state({ brakeFluidLow: 'false' }))).toBe('Normal');
     expect(brakeFluidLabel(state({ brakeFluidLow: 'true' }))).toBe('Low');
   });
 

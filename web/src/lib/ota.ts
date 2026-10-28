@@ -53,9 +53,8 @@ export function isActivePhase(phase: OtaPhase): boolean {
 const inProgress = (n: number | null): n is number => n != null && n > 0 && n < 100;
 
 /**
- * Whether the vehicle says when an update is offered. Legacy does; Parallax,
- * all an R2 has, sends only the installed version, so no update pending
- * can't be told from one the app can't see.
+ * Whether the vehicle says when an update is offered; both feeds do. Until
+ * one has, no update pending can't be told from one the app can't see.
  */
 export function reportsUpdates(state: VehicleState | undefined): boolean {
   return state != null && ('otaAvailableVersion' in state || 'otaStatus' in state);

@@ -1,13 +1,13 @@
 import type { VehicleInsightsDto, VehicleState } from '@server/api-types';
 
 /**
- * Fields only the legacy feed reports. A vehicle without it (an R2, or with
- * legacy switched off) never sends them, so they're left out rather than
- * shown as unknown.
+ * Fields not every vehicle sends, left out rather than shown as unknown.
+ * Cell type comes only from the legacy feed, so a vehicle without it (an
+ * R2, or with legacy switched off) never has one; the rest come from
+ * either feed, but Parallax doesn't send them on every vehicle.
  */
-export const LEGACY_ONLY_FIELDS = [
+export const OPTIONAL_FIELDS = [
   'batteryCellType',
-  'batteryHvThermalEvent',
   'brakeFluidLow',
   'driveMode',
   'gearGuardLocked',
@@ -20,10 +20,10 @@ export const LEGACY_ONLY_FIELDS = [
  */
 export const PARALLAX_ONLY_READINGS = ['cellTemps'] as const;
 
-/** Whether to show a legacy-only field: while loading, then once legacy has sent it. */
-export function showLegacyOnly(
+/** Whether to show an optional field: while loading, then once the vehicle has sent it. */
+export function showOptional(
   state: VehicleState | undefined,
-  field: (typeof LEGACY_ONLY_FIELDS)[number],
+  field: (typeof OPTIONAL_FIELDS)[number],
 ): boolean {
   if (state == null) return true;
   return field === 'brakeFluidLow' ? reportsBrakeFluid(state) : field in state;
@@ -32,7 +32,8 @@ export function showLegacyOnly(
 /**
  * Whether the vehicle has brake fluid readings. Legacy sends brake fluid
  * empty while it's fine, as it sends every field on a vehicle without the
- * legacy feed (an R2), so washer fluid, from the same sensors, tells them apart.
+ * legacy feed (an R2), so washer fluid, from the same sensors, tells them
+ * apart until Parallax sends one.
  */
 export function reportsBrakeFluid(state: VehicleState): boolean {
   return 'brakeFluidLow' in state || 'wiperFluidState' in state;

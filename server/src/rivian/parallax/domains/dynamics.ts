@@ -1,4 +1,4 @@
-/** `dynamics.*`: position, tires, gear, odometer and range. */
+/** `dynamics.*`: position, tires, gear, odometer, range, drive mode and brake fluid. */
 import type { VehicleState } from '../../types.js';
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 import { decodePayload } from '../wire.js';
@@ -208,11 +208,34 @@ export const range = defineRvm({
   },
 });
 
-// Probes: archived to be worked out; nothing reads them yet.
+/** Legacy's driveMode spellings. */
+const DRIVE_MODES: Record<number, string> = {
+  1: 'init_mode',
+  2: 'everyday',
+  3: 'off_road_snow_ice',
+  4: 'off_road_sport_auto',
+  5: 'off_road_sport_drift',
+  6: 'sport_launch',
+  7: 'fault',
+  8: 'sport',
+  9: 'distance',
+  10: 'towing',
+  11: 'off_road_auto',
+  12: 'off_road_sand',
+  13: 'off_road_rocks',
+  14: 'off_road_mud',
+  15: 'winter',
+};
+
+/** `dynamics.vehicle.drive_mode`: 1 mode, as legacy driveMode. */
 export const driveMode = defineRvm({
   rvm: 'dynamics.vehicle.drive_mode',
   group: 'vehicleState',
-  maturity: 'probe',
+  maturity: 'partial',
+  decode: (payload) =>
+    readings((put) => put('driveMode', DRIVE_MODES[fieldsOrEmpty(payload)?.int(1) ?? 0])),
+  toState: stampReadings,
+  stateKeys: ['driveMode'],
   store: true,
   fieldNames: {
     '1': 'Mode (2 all-purpose, 3 snow, 8 sport, 9 conserve, 10 towing, 11–14 off-road, 15 winter…)',
@@ -221,6 +244,22 @@ export const driveMode = defineRvm({
   },
 });
 
+const BRAKE_FLUID_LOW: Record<number, string> = { 1: 'false', 2: 'true' };
+
+/** `dynamics.brakes.fluid_level`: 1 low (1 no, 2 yes), as legacy brakeFluidLow. */
+export const brakeFluid = defineRvm({
+  rvm: 'dynamics.brakes.fluid_level',
+  group: 'vehicleState',
+  maturity: 'partial',
+  decode: (payload) =>
+    readings((put) => put('brakeFluidLow', BRAKE_FLUID_LOW[fieldsOrEmpty(payload)?.int(1) ?? 0])),
+  toState: stampReadings,
+  stateKeys: ['brakeFluidLow'],
+  store: true,
+  fieldNames: { '1': 'Brake fluid low (1 no, 2 yes)' },
+});
+
+// Probes: archived to be worked out; nothing reads them yet.
 export const knownLocation = defineRvm({
   rvm: 'dynamics.vehicle.location',
   group: 'vehicleState',
@@ -248,14 +287,6 @@ export const massEstimate = defineRvm({
   maturity: 'probe',
   store: true,
   fieldNames: { '1': 'Mass (kg)' },
-});
-
-export const brakeFluid = defineRvm({
-  rvm: 'dynamics.brakes.fluid_level',
-  group: 'vehicleState',
-  maturity: 'probe',
-  store: true,
-  fieldNames: { '1': 'Brake fluid low (1 no, 2 yes)' },
 });
 
 export const DYNAMICS_RVMS = [

@@ -8,7 +8,7 @@ export function brakeFluidLabel(state: VehicleState | undefined): string {
   if (!state || !reportsBrakeFluid(state)) return 'Unknown';
   if (state.brakeFluidLow == null) return 'Normal';
   const value = sv(state, 'brakeFluidLow');
-  if (value === 'false') return 'OK';
+  if (value === 'false') return 'Normal';
   if (value === 'true') return 'Low';
   return value == null ? 'Unknown' : titleCase(value);
 }
