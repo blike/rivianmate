@@ -42,7 +42,8 @@ describe('App without vehicles', () => {
   it('still opens Settings, to fix the connection', () => {
     const html = render('/settings');
     expect(html).not.toContain('No vehicles found.');
-    expect(html).toContain('Settings</h1>');
+    expect(html).toContain('>Settings</div>');
+    expect(html).toContain('General</h1>');
   });
 });
 
