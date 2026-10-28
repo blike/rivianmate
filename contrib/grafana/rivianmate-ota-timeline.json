@@ -1,0 +1,100 @@
+{
+  "description": "Software versions seen on this vehicle, with Rivian's release notes link. Empty until Rivian accepts the OTA release-notes query for this account.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["rivianmate"],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": ["rivianmate"],
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - OTA Timeline",
+  "uid": "rivianmate-ota-timeline",
+  "version": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "links": [
+            {
+              "targetBlank": true,
+              "title": "Open release notes",
+              "url": "${__data.fields[\"Release Notes\"]}"
+            }
+          ],
+          "noValue": "No OTA release notes recorded yet"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT fetched_at AS \"First Seen\", version AS \"Version\", (pdf IS NOT NULL) AS \"Release Notes Saved\" FROM ota_release_notes WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY fetched_at DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Software Versions Seen",
+      "type": "table"
+    }
+  ],
+  "id": null,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "grafana-postgresql-datasource",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  }
+}

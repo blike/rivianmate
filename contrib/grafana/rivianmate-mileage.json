@@ -1,0 +1,281 @@
+{
+  "description": "Odometer growth over time.",
+  "editable": true,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["rivianmate"],
+      "targetBlank": false,
+      "title": "RivianMate Dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 701,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT mileage_m*0.000621371 AS value FROM (SELECT v.id AS vehicle_id, t.at AS ts, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLevel') ORDER BY c.at DESC LIMIT 1) AS battery_level, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit') ORDER BY c.at DESC LIMIT 1) AS battery_limit, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'distanceToEmpty') ORDER BY c.at DESC LIMIT 1) AS range_km, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'vehicleMileage') ORDER BY c.at DESC LIMIT 1) AS mileage_m, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'powerState') ORDER BY c.at DESC LIMIT 1) AS power_state, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'chargerStatus') ORDER BY c.at DESC LIMIT 1) AS charger_status, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'cabinClimateInteriorTemperature') ORDER BY c.at DESC LIMIT 1) AS cabin_temp FROM vehicles v CROSS JOIN LATERAL (SELECT h.at FROM state_heartbeats h WHERE h.vehicle_seq = v.seq UNION SELECT c.at FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.field_id IN (SELECT id FROM state_fields WHERE name IN ('batteryLevel', 'batteryLimit', 'distanceToEmpty', 'vehicleMileage', 'powerState', 'chargerStatus', 'cabinClimateInteriorTemperature'))) t) AS vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Current Odometer",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 702,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH m AS (SELECT mileage_m, ts FROM (SELECT v.id AS vehicle_id, t.at AS ts, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLevel') ORDER BY c.at DESC LIMIT 1) AS battery_level, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit') ORDER BY c.at DESC LIMIT 1) AS battery_limit, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'distanceToEmpty') ORDER BY c.at DESC LIMIT 1) AS range_km, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'vehicleMileage') ORDER BY c.at DESC LIMIT 1) AS mileage_m, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'powerState') ORDER BY c.at DESC LIMIT 1) AS power_state, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'chargerStatus') ORDER BY c.at DESC LIMIT 1) AS charger_status, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'cabinClimateInteriorTemperature') ORDER BY c.at DESC LIMIT 1) AS cabin_temp FROM vehicles v CROSS JOIN LATERAL (SELECT h.at FROM state_heartbeats h WHERE h.vehicle_seq = v.seq UNION SELECT c.at FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.field_id IN (SELECT id FROM state_fields WHERE name IN ('batteryLevel', 'batteryLimit', 'distanceToEmpty', 'vehicleMileage', 'powerState', 'chargerStatus', 'cabinClimateInteriorTemperature'))) t) AS vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND mileage_m IS NOT NULL) SELECT ((SELECT mileage_m FROM m ORDER BY ts DESC LIMIT 1) - (SELECT mileage_m FROM m ORDER BY ts ASC LIMIT 1)) * 0.000621371 AS value",
+          "refId": "A"
+        }
+      ],
+      "title": "Distance Since First Record",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "lengthmi",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 703,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH m AS (SELECT mileage_m, ts FROM (SELECT v.id AS vehicle_id, t.at AS ts, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLevel') ORDER BY c.at DESC LIMIT 1) AS battery_level, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit') ORDER BY c.at DESC LIMIT 1) AS battery_limit, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'distanceToEmpty') ORDER BY c.at DESC LIMIT 1) AS range_km, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'vehicleMileage') ORDER BY c.at DESC LIMIT 1) AS mileage_m, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'powerState') ORDER BY c.at DESC LIMIT 1) AS power_state, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'chargerStatus') ORDER BY c.at DESC LIMIT 1) AS charger_status, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'cabinClimateInteriorTemperature') ORDER BY c.at DESC LIMIT 1) AS cabin_temp FROM vehicles v CROSS JOIN LATERAL (SELECT h.at FROM state_heartbeats h WHERE h.vehicle_seq = v.seq UNION SELECT c.at FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.field_id IN (SELECT id FROM state_fields WHERE name IN ('batteryLevel', 'batteryLimit', 'distanceToEmpty', 'vehicleMileage', 'powerState', 'chargerStatus', 'cabinClimateInteriorTemperature'))) t) AS vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND mileage_m IS NOT NULL) SELECT ((SELECT mileage_m FROM m ORDER BY ts DESC LIMIT 1) - (SELECT mileage_m FROM m ORDER BY ts ASC LIMIT 1)) * 0.000621371 / GREATEST(EXTRACT(EPOCH FROM ((SELECT ts FROM m ORDER BY ts DESC LIMIT 1) - (SELECT ts FROM m ORDER BY ts ASC LIMIT 1)))/86400.0, 1) AS value",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Distance / Day",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "spanNulls": true
+          },
+          "unit": "lengthmi"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 704,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS time, mileage_m*0.000621371 AS \"Odometer (mi)\" FROM (SELECT v.id AS vehicle_id, t.at AS ts, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLevel') ORDER BY c.at DESC LIMIT 1) AS battery_level, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit') ORDER BY c.at DESC LIMIT 1) AS battery_limit, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'distanceToEmpty') ORDER BY c.at DESC LIMIT 1) AS range_km, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'vehicleMileage') ORDER BY c.at DESC LIMIT 1) AS mileage_m, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'powerState') ORDER BY c.at DESC LIMIT 1) AS power_state, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'chargerStatus') ORDER BY c.at DESC LIMIT 1) AS charger_status, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'cabinClimateInteriorTemperature') ORDER BY c.at DESC LIMIT 1) AS cabin_temp FROM vehicles v CROSS JOIN LATERAL (SELECT h.at FROM state_heartbeats h WHERE h.vehicle_seq = v.seq UNION SELECT c.at FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.field_id IN (SELECT id FROM state_fields WHERE name IN ('batteryLevel', 'batteryLimit', 'distanceToEmpty', 'vehicleMileage', 'powerState', 'chargerStatus', 'cabinClimateInteriorTemperature'))) t) AS vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND $__timeFilter(ts) ORDER BY ts",
+          "refId": "A"
+        }
+      ],
+      "title": "Odometer Over Time",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": ["rivianmate"],
+  "time": {
+    "from": "now-180d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "RivianMate - Mileage",
+  "uid": "rivianmate-mileage",
+  "version": 1,
+  "id": null,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "grafana-postgresql-datasource",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  }
+}
