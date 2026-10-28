@@ -75,8 +75,10 @@ export function SettingsPage() {
   }, [section.id]);
 
   return (
-    <div className="grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] md:gap-10">
-      <div className="md:sticky md:top-4">
+    // One column on phones, pinned to the page width: an implicit auto column
+    // would grow to fit the whole tab strip and push the page sideways.
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] md:gap-10">
+      <div className="min-w-0 md:sticky md:top-4">
         <div className="mb-2 text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-(--text-secondary) md:px-3">
           Settings
         </div>
