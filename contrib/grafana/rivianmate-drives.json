@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -68,7 +68,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT started_at AS time, COUNT(*) OVER () AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC LIMIT 1",
+          "rawSql": "SELECT started_at AS time, COUNT(*) OVER () AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -128,7 +128,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT MAX(started_at) AS time, SUM(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -188,7 +188,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT MAX(started_at) AS time, AVG(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT MAX(started_at) AS time, AVG(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -248,7 +248,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT MAX(started_at) AS time, SUM(start_battery-end_battery) AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT MAX(started_at) AS time, SUM(start_battery-end_battery) AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -270,7 +270,7 @@
             {
               "targetBlank": false,
               "title": "Open Drive Details",
-              "url": "/d/rivianmate-drive-details/rivianmate-drive-details?var-drive_id=${__data.fields[\"Drive ID\"]}"
+              "url": "/d/rivianmate-drive-details/rivianmate-drive-details?var-vehicle=${vehicle}&var-drive_id=${__data.fields[\"Drive ID\"]}"
             }
           ]
         },
@@ -325,7 +325,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT id AS \"Drive ID\", started_at AS \"Started\", ended_at AS \"Ended\", ROUND(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))/60.0) AS \"Duration (min)\", COALESCE((SELECT sl.name FROM saved_locations sl WHERE start_lat IS NOT NULL AND start_lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - start_lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - start_lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1), CASE WHEN EXISTS (SELECT 1 FROM wallboxes w WHERE start_lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - start_lon) / 2), 2))) <= 0.15) THEN 'Home' END, start_place) AS \"From\", COALESCE((SELECT sl.name FROM saved_locations sl WHERE end_lat IS NOT NULL AND end_lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - end_lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - end_lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1), CASE WHEN EXISTS (SELECT 1 FROM wallboxes w WHERE end_lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - end_lon) / 2), 2))) <= 0.15) THEN 'Home' END, end_place) AS \"To\", distance_km*0.621371 AS \"Distance (mi)\", ROUND((elevation_gain_m*3.28084)::numeric) AS \"Climb (ft)\", start_battery AS \"Start Batt %\", end_battery AS \"End Batt %\", ROUND((start_battery-end_battery)::numeric, 1) AS \"Batt Used %\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
+          "rawSql": "SELECT id AS \"Drive ID\", started_at AS \"Started\", ended_at AS \"Ended\", ROUND(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))/60.0) AS \"Duration (min)\", COALESCE((SELECT sl.name FROM saved_locations sl WHERE start_lat IS NOT NULL AND start_lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - start_lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - start_lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1), CASE WHEN EXISTS (SELECT 1 FROM wallboxes w WHERE start_lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - start_lat) / 2), 2) + COS(RADIANS(start_lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - start_lon) / 2), 2))) <= 0.15) THEN 'Home' END, start_place) AS \"From\", COALESCE((SELECT sl.name FROM saved_locations sl WHERE end_lat IS NOT NULL AND end_lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - end_lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - end_lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1), CASE WHEN EXISTS (SELECT 1 FROM wallboxes w WHERE end_lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - end_lat) / 2), 2) + COS(RADIANS(end_lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - end_lon) / 2), 2))) <= 0.15) THEN 'Home' END, end_place) AS \"To\", distance_km*0.621371 AS \"Distance (mi)\", ROUND((elevation_gain_m*3.28084)::numeric) AS \"Climb (ft)\", start_battery AS \"Start Batt %\", end_battery AS \"End Batt %\", ROUND((start_battery-end_battery)::numeric, 1) AS \"Batt Used %\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
           "refId": "A"
         }
       ],
@@ -376,7 +376,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT started_at AS time, distance_km*0.621371 AS \"Distance (mi)\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) ORDER BY started_at",
+          "rawSql": "SELECT started_at AS time, distance_km*0.621371 AS \"Distance (mi)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) ORDER BY started_at",
           "refId": "A"
         }
       ],
@@ -427,7 +427,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT started_at AS time, (start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) ORDER BY started_at",
+          "rawSql": "SELECT started_at AS time, (start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) ORDER BY started_at",
           "refId": "A"
         }
       ],
@@ -463,6 +463,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

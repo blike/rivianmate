@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -69,7 +69,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT fetched_at AS \"First Seen\", version AS \"Version\", (pdf IS NOT NULL) AS \"Release Notes Saved\" FROM ota_release_notes WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY fetched_at DESC",
+          "rawSql": "SELECT fetched_at AS \"First Seen\", version AS \"Version\", (pdf IS NOT NULL) AS \"Release Notes Saved\" FROM ota_release_notes WHERE vehicle_id=${vehicle:sqlstring} ORDER BY fetched_at DESC",
           "refId": "A"
         }
       ],
@@ -94,6 +94,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

@@ -77,6 +77,7 @@ a dashboard you can open from anywhere.
 ### Grafana Dashboards (optional)
 
 - Ready-made dashboards for people who already run Grafana, reading RivianMate's database read-only.
+- A vehicle picker on every dashboard for accounts with more than one vehicle.
 - Load them by pointing Grafana at the folder; see [docs/GRAFANA.md](docs/GRAFANA.md).
 - Tested with Grafana 13.2.4 only; other versions may work but have not been tried.
 

@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -69,7 +69,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(energy_kwh) AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "rawSql": "SELECT SUM(energy_kwh) AS value FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring}",
           "refId": "A"
         }
       ],
@@ -130,7 +130,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(COALESCE(cost, est_cost)) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) HAVING COUNT(COALESCE(cost, est_cost)) > 0",
+          "rawSql": "SELECT SUM(COALESCE(cost, est_cost)) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=${vehicle:sqlstring} HAVING COUNT(COALESCE(cost, est_cost)) > 0",
           "refId": "A"
         }
       ],
@@ -190,7 +190,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "rawSql": "SELECT COUNT(*) AS value FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring}",
           "refId": "A"
         }
       ],
@@ -250,7 +250,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(energy_kwh) AS value FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "rawSql": "SELECT AVG(energy_kwh) AS value FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring}",
           "refId": "A"
         }
       ],
@@ -304,7 +304,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(energy_kwh) FILTER (WHERE is_home_s) AS \"Home (kWh)\", SUM(energy_kwh) FILTER (WHERE NOT is_home_s) AS \"Away (kWh)\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(energy_kwh) FILTER (WHERE is_home_s) AS \"Home (kWh)\", SUM(energy_kwh) FILTER (WHERE NOT is_home_s) AS \"Away (kWh)\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=${vehicle:sqlstring} AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -353,7 +353,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, COUNT(*) AS \"Sessions\" FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, COUNT(*) AS \"Sessions\" FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring} AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -404,7 +404,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(COALESCE(cost, est_cost)) AS \"Cost\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND $__timeFilter(started_at) GROUP BY 1 HAVING COUNT(COALESCE(cost, est_cost)) > 0 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(COALESCE(cost, est_cost)) AS \"Cost\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=${vehicle:sqlstring} AND $__timeFilter(started_at) GROUP BY 1 HAVING COUNT(COALESCE(cost, est_cost)) > 0 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -465,7 +465,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(energy_kwh) FILTER (WHERE is_home_s) * 100.0 / NULLIF(SUM(energy_kwh), 0) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "rawSql": "SELECT SUM(energy_kwh) FILTER (WHERE is_home_s) * 100.0 / NULLIF(SUM(energy_kwh), 0) AS value FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=${vehicle:sqlstring}",
           "refId": "A"
         }
       ],
@@ -576,7 +576,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(loc_name, CASE WHEN is_home_s THEN 'Home' WHEN is_public THEN 'Public' ELSE 'Other' END) AS location, SUM(energy_kwh) AS \"Energy\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) GROUP BY 1",
+          "rawSql": "SELECT COALESCE(loc_name, CASE WHEN is_home_s THEN 'Home' WHEN is_public THEN 'Public' ELSE 'Other' END) AS location, SUM(energy_kwh) AS \"Energy\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=${vehicle:sqlstring} GROUP BY 1",
           "refId": "A"
         }
       ],
@@ -615,7 +615,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(loc_name, CASE WHEN is_home_s THEN 'Home' WHEN is_public THEN 'Public' ELSE 'Other' END) AS \"Location\", COUNT(*) AS \"Sessions\", ROUND(SUM(energy_kwh)::numeric, 1) AS \"Energy (kWh)\", MAX(rate_s) AS \"Rate / kWh\", SUM(COALESCE(cost, est_cost)) AS \"Cost (est.)\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) GROUP BY 1 ORDER BY 3 DESC NULLS LAST",
+          "rawSql": "SELECT COALESCE(loc_name, CASE WHEN is_home_s THEN 'Home' WHEN is_public THEN 'Public' ELSE 'Other' END) AS \"Location\", COUNT(*) AS \"Sessions\", ROUND(SUM(energy_kwh)::numeric, 1) AS \"Energy (kWh)\", MAX(rate_s) AS \"Rate / kWh\", SUM(COALESCE(cost, est_cost)) AS \"Cost (est.)\" FROM (SELECT z.*, CASE WHEN z.energy_kwh > 0 AND z.rate_s IS NOT NULL THEN ROUND(z.energy_kwh::numeric * z.rate_s::numeric, 2) END AS est_cost FROM (SELECT y.*, CASE WHEN y.loc_id IS NOT NULL THEN y.loc_rate WHEN y.is_home_s THEN (SELECT rate_per_kwh FROM saved_locations WHERE is_home ORDER BY id LIMIT 1) END AS rate_s FROM (SELECT x.*, COALESCE(NOT COALESCE(x.is_public, false) AND (COALESCE(x.is_home_charger, false) OR x.charger_type = 'wallbox' OR COALESCE(x.loc_is_home, false) OR x.near_wb), false) AS is_home_s FROM (SELECT s.*, l.id AS loc_id, l.name AS loc_name, l.is_home AS loc_is_home, l.rate_per_kwh AS loc_rate, EXISTS (SELECT 1 FROM wallboxes w WHERE s.lat IS NOT NULL AND w.latitude IS NOT NULL AND w.longitude IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(w.latitude - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(w.latitude)) * POWER(SIN(RADIANS(w.longitude - s.lon) / 2), 2))) <= 0.15) AS near_wb FROM charging_sessions s LEFT JOIN LATERAL (SELECT sl.* FROM saved_locations sl WHERE s.lat IS NOT NULL AND s.lon IS NOT NULL AND 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) <= sl.radius_m / 1000.0 ORDER BY 6371 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(sl.lat - s.lat) / 2), 2) + COS(RADIANS(s.lat)) * COS(RADIANS(sl.lat)) * POWER(SIN(RADIANS(sl.lon - s.lon) / 2), 2))) / (sl.radius_m / 1000.0), sl.id DESC LIMIT 1) l ON true) x) y) z) AS charging_sessions WHERE vehicle_id=${vehicle:sqlstring} GROUP BY 1 ORDER BY 3 DESC NULLS LAST",
           "refId": "A"
         }
       ],
@@ -652,6 +652,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

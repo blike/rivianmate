@@ -1,11 +1,11 @@
 {
-  "description": "Heatmap of everywhere the vehicle has been \u2014 no named places without a geofence table.",
+  "description": "Heatmap of everywhere the vehicle has been — no named places without a geofence table.",
   "editable": true,
   "links": [
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -129,7 +129,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT lat, lon FROM location_points WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 5000",
+          "rawSql": "SELECT lat, lon FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND $__timeFilter(ts) ORDER BY ts DESC LIMIT 5000",
           "refId": "A"
         },
         {
@@ -181,7 +181,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT end_lat AS \"Latitude\", end_lon AS \"Longitude\", COUNT(*) AS \"Times\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND end_lat IS NOT NULL GROUP BY end_lat, end_lon ORDER BY COUNT(*) DESC LIMIT 20",
+          "rawSql": "SELECT end_lat AS \"Latitude\", end_lon AS \"Longitude\", COUNT(*) AS \"Times\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND end_lat IS NOT NULL GROUP BY end_lat, end_lon ORDER BY COUNT(*) DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -217,6 +217,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -485,7 +485,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT lat, lon, speed_kmh, ts FROM location_points WHERE drive_id=$drive_id ORDER BY ts",
+          "rawSql": "SELECT lat, lon, speed_kmh, ts FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -535,7 +535,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, speed_kmh AS \"Speed (km/h)\" FROM location_points WHERE drive_id=$drive_id ORDER BY ts",
+          "rawSql": "SELECT ts AS time, speed_kmh AS \"Speed (km/h)\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -586,7 +586,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, altitude AS \"Altitude (m)\" FROM location_points WHERE drive_id=$drive_id ORDER BY ts",
+          "rawSql": "SELECT ts AS time, altitude AS \"Altitude (m)\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -602,7 +602,7 @@
         "defaults": {
           "custom": {},
           "unit": "lengthm",
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -663,7 +663,7 @@
         "defaults": {
           "custom": {},
           "unit": "lengthm",
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -723,7 +723,7 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -783,7 +783,7 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "noValue": "\u2014",
+          "noValue": "—",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -862,12 +862,32 @@
           "type": "grafana-postgresql-datasource",
           "uid": "${datasource}"
         },
-        "definition": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(distance_km::numeric,1)::text, '?') || ' km' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(distance_km::numeric,1)::text, '?') || ' km' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
         "includeAll": false,
         "label": "Drive",
         "multi": false,
         "name": "drive_id",
-        "query": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(distance_km::numeric,1)::text, '?') || ' km' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
+        "query": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(distance_km::numeric,1)::text, '?') || ' km' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
         "refresh": 1,
         "sort": 0,
         "type": "query"

@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -69,7 +69,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, COALESCE(speed_kmh, 0) AS value FROM location_points ORDER BY ts DESC LIMIT 1",
+          "rawSql": "SELECT ts AS time, COALESCE(speed_kmh, 0) AS value FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} ORDER BY ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -130,7 +130,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, bearing AS value FROM location_points WHERE bearing IS NOT NULL ORDER BY ts DESC LIMIT 1",
+          "rawSql": "SELECT ts AS time, bearing AS value FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND bearing IS NOT NULL ORDER BY ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -191,7 +191,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, altitude AS value FROM location_points WHERE altitude IS NOT NULL ORDER BY ts DESC LIMIT 1",
+          "rawSql": "SELECT ts AS time, altitude AS value FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND altitude IS NOT NULL ORDER BY ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -251,7 +251,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT MAX(ts) AS time, COUNT(*) AS value FROM location_points WHERE $__timeFilter(ts)",
+          "rawSql": "SELECT MAX(ts) AS time, COUNT(*) AS value FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND $__timeFilter(ts)",
           "refId": "A"
         }
       ],
@@ -398,7 +398,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts, lat, lon, speed_kmh FROM location_points WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 2000",
+          "rawSql": "SELECT ts, lat, lon, speed_kmh FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND $__timeFilter(ts) ORDER BY ts DESC LIMIT 2000",
           "refId": "A"
         },
         {
@@ -450,7 +450,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS \"Time\", lat AS \"Latitude\", lon AS \"Longitude\", speed_kmh AS \"Speed (km/h)\", bearing AS \"Bearing\", altitude AS \"Altitude (m)\" FROM location_points ORDER BY ts DESC LIMIT 100",
+          "rawSql": "SELECT ts AS \"Time\", lat AS \"Latitude\", lon AS \"Longitude\", speed_kmh AS \"Speed (km/h)\", bearing AS \"Bearing\", altitude AS \"Altitude (m)\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} ORDER BY ts DESC LIMIT 100",
           "refId": "A"
         }
       ],
@@ -486,6 +486,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

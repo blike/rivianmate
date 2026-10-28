@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -68,7 +68,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'driveMode'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'driveMode'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -127,7 +127,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'gearStatus'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'gearStatus'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -186,7 +186,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'chargerState'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'chargerState'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -246,7 +246,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (data->'timeToEndOfCharge'->>'value')::numeric AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT (data->'timeToEndOfCharge'->>'value')::numeric AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -305,7 +305,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'twelveVoltBatteryHealth'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'twelveVoltBatteryHealth'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -376,7 +376,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'gearGuardLocked'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'gearGuardLocked'->>'value' AS \"value\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -438,7 +438,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (data->'tirePressureFrontLeft'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT (data->'tirePressureFrontLeft'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -499,7 +499,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (data->'tirePressureFrontRight'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT (data->'tirePressureFrontRight'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -560,7 +560,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (data->'tirePressureRearLeft'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT (data->'tirePressureRearLeft'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -621,7 +621,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (data->'tirePressureRearRight'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT (data->'tirePressureRearRight'->>'value')::numeric * 14.5038 AS value FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -662,7 +662,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'tirePressureStatusFrontLeft'->>'value' AS \"FL\", data->'tirePressureStatusFrontRight'->>'value' AS \"FR\", data->'tirePressureStatusRearLeft'->>'value' AS \"RL\", data->'tirePressureStatusRearRight'->>'value' AS \"RR\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'tirePressureStatusFrontLeft'->>'value' AS \"FL\", data->'tirePressureStatusFrontRight'->>'value' AS \"FR\", data->'tirePressureStatusRearLeft'->>'value' AS \"RL\", data->'tirePressureStatusRearRight'->>'value' AS \"RR\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -703,7 +703,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'doorFrontLeftClosed'->>'value' AS \"FL Closed\", data->'doorFrontLeftLocked'->>'value' AS \"FL Locked\", data->'doorFrontRightClosed'->>'value' AS \"FR Closed\", data->'doorFrontRightLocked'->>'value' AS \"FR Locked\", data->'doorRearLeftClosed'->>'value' AS \"RL Closed\", data->'doorRearLeftLocked'->>'value' AS \"RL Locked\", data->'doorRearRightClosed'->>'value' AS \"RR Closed\", data->'doorRearRightLocked'->>'value' AS \"RR Locked\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'doorFrontLeftClosed'->>'value' AS \"FL Closed\", data->'doorFrontLeftLocked'->>'value' AS \"FL Locked\", data->'doorFrontRightClosed'->>'value' AS \"FR Closed\", data->'doorFrontRightLocked'->>'value' AS \"FR Locked\", data->'doorRearLeftClosed'->>'value' AS \"RL Closed\", data->'doorRearLeftLocked'->>'value' AS \"RL Locked\", data->'doorRearRightClosed'->>'value' AS \"RR Closed\", data->'doorRearRightLocked'->>'value' AS \"RR Locked\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -744,7 +744,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'windowFrontLeftClosed'->>'value' AS \"FL\", data->'windowFrontRightClosed'->>'value' AS \"FR\", data->'windowRearLeftClosed'->>'value' AS \"RL\", data->'windowRearRightClosed'->>'value' AS \"RR\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'windowFrontLeftClosed'->>'value' AS \"FL\", data->'windowFrontRightClosed'->>'value' AS \"FR\", data->'windowRearLeftClosed'->>'value' AS \"RL\", data->'windowRearRightClosed'->>'value' AS \"RR\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -786,7 +786,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'closureFrunkClosed'->>'value' AS \"Frunk Closed\", data->'closureFrunkLocked'->>'value' AS \"Frunk Locked\", data->'closureTailgateClosed'->>'value' AS \"Tailgate Closed\", data->'closureTailgateLocked'->>'value' AS \"Tailgate Locked\", data->'closureTonneauClosed'->>'value' AS \"Tonneau Closed\", data->'closureTonneauLocked'->>'value' AS \"Tonneau Locked\", data->'closureSideBinLeftClosed'->>'value' AS \"L Bin Closed\", data->'closureSideBinLeftLocked'->>'value' AS \"L Bin Locked\", data->'closureSideBinRightClosed'->>'value' AS \"R Bin Closed\", data->'closureSideBinRightLocked'->>'value' AS \"R Bin Locked\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'closureFrunkClosed'->>'value' AS \"Frunk Closed\", data->'closureFrunkLocked'->>'value' AS \"Frunk Locked\", data->'closureTailgateClosed'->>'value' AS \"Tailgate Closed\", data->'closureTailgateLocked'->>'value' AS \"Tailgate Locked\", data->'closureTonneauClosed'->>'value' AS \"Tonneau Closed\", data->'closureTonneauLocked'->>'value' AS \"Tonneau Locked\", data->'closureSideBinLeftClosed'->>'value' AS \"L Bin Closed\", data->'closureSideBinLeftLocked'->>'value' AS \"L Bin Locked\", data->'closureSideBinRightClosed'->>'value' AS \"R Bin Closed\", data->'closureSideBinRightLocked'->>'value' AS \"R Bin Locked\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -828,7 +828,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'cabinClimateDriverTemperature'->>'value' AS \"Driver Temp\", data->'cabinPreconditioningStatus'->>'value' AS \"Preconditioning\", data->'defrostDefogStatus'->>'value' AS \"Defrost\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'cabinClimateDriverTemperature'->>'value' AS \"Driver Temp\", data->'cabinPreconditioningStatus'->>'value' AS \"Preconditioning\", data->'defrostDefogStatus'->>'value' AS \"Defrost\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -870,7 +870,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'otaCurrentVersion'->>'value' AS \"Current Version\", data->'otaAvailableVersion'->>'value' AS \"Available Version\", data->'otaInstallProgress'->>'value' AS \"Install Progress %\", data->'otaStatus'->>'value' AS \"Status\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'otaCurrentVersion'->>'value' AS \"Current Version\", data->'otaAvailableVersion'->>'value' AS \"Available Version\", data->'otaInstallProgress'->>'value' AS \"Install Progress %\", data->'otaStatus'->>'value' AS \"Status\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -912,7 +912,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'brakeFluidLow'->>'value' AS \"Brake Fluid Low\", data->'wiperFluidState'->>'value' AS \"Wiper Fluid\", data->'alarmSoundStatus'->>'value' AS \"Alarm\", data->'cloudConnection'->>'value' AS \"Cloud Conn.\", data->'serviceMode'->>'value' AS \"Service Mode\", data->'trailerStatus'->>'value' AS \"Trailer\", data->'petModeStatus'->>'value' AS \"Pet Mode\", data->'carWashMode'->>'value' AS \"Car Wash Mode\", data->'rearHitchStatus'->>'value' AS \"Rear Hitch\", data->'seatFrontLeftHeat'->>'value' AS \"Seat Heat FL\", data->'seatFrontRightHeat'->>'value' AS \"Seat Heat FR\", data->'steeringWheelHeat'->>'value' AS \"Steering Wheel Heat\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles ORDER BY id LIMIT 1) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'brakeFluidLow'->>'value' AS \"Brake Fluid Low\", data->'wiperFluidState'->>'value' AS \"Wiper Fluid\", data->'alarmSoundStatus'->>'value' AS \"Alarm\", data->'cloudConnection'->>'value' AS \"Cloud Conn.\", data->'serviceMode'->>'value' AS \"Service Mode\", data->'trailerStatus'->>'value' AS \"Trailer\", data->'petModeStatus'->>'value' AS \"Pet Mode\", data->'carWashMode'->>'value' AS \"Car Wash Mode\", data->'rearHitchStatus'->>'value' AS \"Rear Hitch\", data->'seatFrontLeftHeat'->>'value' AS \"Seat Heat FL\", data->'seatFrontRightHeat'->>'value' AS \"Seat Heat FR\", data->'steeringWheelHeat'->>'value' AS \"Steering Wheel Heat\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -976,7 +976,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - MAX(received_at)))::int AS \"value\" FROM parallax_latest WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1)",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - MAX(received_at)))::int AS \"value\" FROM parallax_latest WHERE vehicle_id=${vehicle:sqlstring}",
           "refId": "A"
         }
       ],
@@ -1041,7 +1041,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - MAX(at)))::int AS \"value\" FROM state_heartbeats WHERE vehicle_seq=(SELECT seq FROM vehicles ORDER BY id LIMIT 1)",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (now() - MAX(at)))::int AS \"value\" FROM state_heartbeats WHERE vehicle_seq=(SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring})",
           "refId": "A"
         }
       ],
@@ -1078,6 +1078,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }
