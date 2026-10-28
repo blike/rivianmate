@@ -32,6 +32,7 @@ import {
   RVM_TIRES,
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
+  RVM_WHEELS,
   type ParallaxGroup,
   groupOf,
   rvmDef,
@@ -606,6 +607,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.emitParallax(RVM_NETWORK, [
       ...message(4, [...string(3, 'Garage'), ...int(8, -58), ...int(10, 5180)]),
       ...message(5, [...string(1, 'AT&T'), ...string(2, 'LTE')]),
+    ]);
+    // Rotated at 6,000 km, every 9,000 mi.
+    this.emitParallax(RVM_WHEELS, [
+      ...message(1, [...int(1, 3), ...int(4, 6_000_000), ...int(6, 14_484_096), ...int(7, 1)]),
     ]);
     this.emitBatteryState();
     this.emitGnss();

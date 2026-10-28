@@ -1,9 +1,10 @@
-/** `vehicle.*`: power state and connectivity. */
+/** `vehicle.*`: power state, connectivity and wheel sets. */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 import { decodePayload } from '../wire.js';
 
 export const RVM_POWER = 'vehicle.power.state';
 export const RVM_NETWORK = 'vehicle.network.state';
+export const RVM_WHEELS = 'vehicle.wheels.vehicle_wheels';
 
 // Legacy's spellings; 5 and 7 are the app's names in its style.
 const POWER_STATES: Record<number, string> = {
@@ -94,6 +95,59 @@ export const network = defineRvm({
   },
 });
 
+/** A wheel set and its rotation reminder; distances in metres. */
+export interface WheelSet {
+  installed: boolean;
+  odometerAtLastRotationM: number;
+  /** 0 when the reminder is off. */
+  rotationIntervalM: number;
+  /** The vehicle's odometer, when the topic carries it (an R1S leaves it out). */
+  odometerM: number | null;
+  /** When the interval was last changed. */
+  updatedAt: string | null;
+}
+
+/**
+ * `vehicle.wheels.vehicle_wheels`: repeated 1, a wheel set each: 1 package,
+ * 2 tire odometer, 3/5 saved deltas (only on a set not fitted), 4 odometer
+ * at last rotation, 6 rotation interval, 7 fitted, 8 updated {1 s}, 9
+ * tires, 10 odometer; distances in metres, missing reads as 0. Field 2
+ * isn't read: an R1S sends 1 m whatever it has driven.
+ */
+export function decodeWheels(payloadBase64: string): WheelSet[] {
+  return (decodePayload(payloadBase64)?.repeated(1) ?? []).map((w) => {
+    const updated = w.message(8)?.int(1);
+    const odometer = w.int(10);
+    return {
+      installed: (w.int(7) ?? 0) !== 0,
+      odometerAtLastRotationM: Math.max(0, w.int(4) ?? 0),
+      rotationIntervalM: Math.max(0, w.int(6) ?? 0),
+      odometerM: odometer != null && odometer > 0 ? odometer : null,
+      updatedAt: updated ? new Date(updated * 1000).toISOString() : null,
+    };
+  });
+}
+
+export const wheels = defineRvm({
+  rvm: RVM_WHEELS,
+  group: 'vehicleState',
+  maturity: 'partial',
+  decode: decodeWheels,
+  store: true,
+  fieldNames: {
+    '1.1': 'Wheels: package',
+    '1.2': 'Wheels: tire distance (m)',
+    '1.3': 'Wheels: saved tire distance (m; set not fitted)',
+    '1.4': 'Wheels: odometer at last rotation (m)',
+    '1.5': 'Wheels: saved odometer at last rotation (m; set not fitted)',
+    '1.6': 'Wheels: rotate every (m; 0 off)',
+    '1.7': 'Wheels: fitted',
+    '1.8.1': 'Wheels: interval changed (s since epoch)',
+    '1.9': 'Wheels: tires',
+    '1.10': 'Wheels: odometer (m)',
+  },
+});
+
 // Probes: archived to be worked out; nothing reads them yet.
 export const activeProfile = defineRvm({
   rvm: 'vehicle.profiles.active_user',
@@ -101,22 +155,6 @@ export const activeProfile = defineRvm({
   maturity: 'probe',
   store: true,
   fieldNames: { '1': 'Active driver profile id' },
-});
-
-export const wheels = defineRvm({
-  rvm: 'vehicle.wheels.vehicle_wheels',
-  group: 'vehicleState',
-  maturity: 'probe',
-  store: true,
-  fieldNames: {
-    '1.1': 'Wheels: package',
-    '1.2': 'Wheels: tire distance (m)',
-    '1.4': 'Wheels: odometer at last rotation (m)',
-    '1.6': 'Wheels: rotate every (m)',
-    '1.7': 'Wheels: fitted',
-    '1.9': 'Wheels: tires',
-    '1.10': 'Wheels: odometer (m)',
-  },
 });
 
 export const VEHICLE_RVMS = [power, network, activeProfile, wheels] as const;

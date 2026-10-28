@@ -2,8 +2,10 @@ import { reportedCapacity, type CapacityReading } from '../services/reported-cap
 import {
   RVM_BATTERY_CHARACTERISTICS,
   RVM_BATTERY_STATE,
+  RVM_WHEELS,
   decodeBatteryCharacteristics,
   decodeBatteryState,
+  decodeWheels,
 } from '../rivian/parallax/index.js';
 import { stateNumber } from '../services/state-utils.js';
 import { and, eq, gte, isNull, lte, or } from 'drizzle-orm';
@@ -16,6 +18,7 @@ import type {
   OtaTimelineDto,
   PhantomDrainDto,
   TirePressurePointDto,
+  TireRotationDto,
 } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { chargingSessions, drives, parallaxLatest } from '../db/schema.js';
@@ -267,6 +270,30 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
       }
       // Values are in bar, as Rivian reports them.
       return [...byBucket.entries()].sort(([a], [b]) => a - b).map(([, point]) => point);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/health/tire-rotation',
+    async (request): Promise<TireRotationDto | null> => {
+      if (isTeslaMateVehicle(request.params.id)) return null;
+      const [message] = await ctx.db
+        .select()
+        .from(parallaxLatest)
+        .where(
+          and(eq(parallaxLatest.vehicleId, request.params.id), eq(parallaxLatest.rvm, RVM_WHEELS)),
+        );
+      const fitted = message ? decodeWheels(message.payload).find((w) => w.installed) : undefined;
+      if (!fitted) return null;
+      // vehicleMileage is in metres; the topic's own odometer is the fallback.
+      const mileageM = stateNumber(ctx.monitor.getState(request.params.id) ?? {}, 'vehicleMileage');
+      const odometerM = mileageM != null && mileageM > 0 ? mileageM : fitted.odometerM;
+      return {
+        odometerAtLastRotationKm: fitted.odometerAtLastRotationM / 1000,
+        intervalKm: fitted.rotationIntervalM / 1000,
+        odometerKm: odometerM != null ? odometerM / 1000 : null,
+        at: (message!.messageAt ?? message!.receivedAt).toISOString(),
+      };
     },
   );
 

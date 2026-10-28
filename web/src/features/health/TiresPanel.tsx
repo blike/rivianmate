@@ -8,7 +8,15 @@ import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { vehicleBody } from '../../lib/closures';
 import { dateTime, shortDate } from '../../lib/format';
-import { type TireKey, TIRES, tireTrend } from './health';
+import {
+  type CheckLevel,
+  type TireKey,
+  type TireRotation,
+  TIRES,
+  tireRotation,
+  tireTrend,
+} from './health';
+import { LEVEL_COLOR } from './levels';
 import { TireDiagram } from './TireDiagram';
 
 const WINDOWS = [7, 30, 90] as const;
@@ -34,6 +42,12 @@ export function TiresPanel(props: {
     refetchInterval: 15 * 60_000,
     placeholderData: keepPreviousData,
   });
+  const { data: rotationReading } = useQuery({
+    queryKey: ['tireRotation', props.vehicleId],
+    queryFn: () => api.tireRotation(props.vehicleId),
+    refetchInterval: 15 * 60_000,
+  });
+  const rotation = tireRotation(rotationReading);
 
   const points = useMemo(
     () =>
@@ -102,7 +116,76 @@ export function TiresPanel(props: {
           </ContentFrame>
         </div>
       </div>
+
+      {/* Only for a vehicle that reports its wheels' rotation reminder. */}
+      {rotation && (
+        <div className="mt-6 border-t border-(--border) pt-4">
+          <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">Rotation</h4>
+          <RotationReminder rotation={rotation} />
+        </div>
+      )}
     </Panel>
+  );
+}
+
+const ROTATION_FILL: Record<CheckLevel, string> = { ...LEVEL_COLOR, good: 'var(--series-1)' };
+
+function RotationReminder(props: { rotation: TireRotation }) {
+  const u = useUnits();
+  const r = props.rotation;
+  const since = r.sinceKm != null ? `${u.formatDistance(r.sinceKm)} since the last rotation` : null;
+  if (r.off) {
+    return (
+      <>
+        <div className="text-xl font-semibold text-(--text-muted)">Reminder off</div>
+        <p className="mt-2 text-sm text-(--text-secondary)">
+          {since ? `${since}. ` : ''}The vehicle has no rotation interval set.
+        </p>
+      </>
+    );
+  }
+  // In display units, so under a mile (or km) either way reads as due now.
+  const left = u.distance(r.remainingKm);
+  const headline =
+    left == null
+      ? `Due at ${u.formatDistance(r.dueAtKm)}`
+      : left >= 1
+        ? `Due in ${u.formatDistance(r.remainingKm)}`
+        : left <= -1
+          ? `Overdue by ${u.formatDistance(-r.remainingKm!)}`
+          : 'Due now';
+  const pct = r.sinceKm != null ? Math.min(100, (r.sinceKm / r.intervalKm) * 100) : null;
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div
+          className="text-xl font-semibold tabular-nums"
+          style={r.level === 'good' ? undefined : { color: LEVEL_COLOR[r.level] }}
+        >
+          {headline}
+        </div>
+        <div className="text-sm text-(--text-secondary) tabular-nums">
+          Every {u.formatDistance(r.intervalKm)}
+          {r.remainingKm != null && ` · due at ${u.formatDistance(r.dueAtKm)}`}
+        </div>
+      </div>
+      {pct != null && (
+        <div
+          className="mt-3 h-1.5 overflow-hidden rounded-full bg-(--surface-2)"
+          role="meter"
+          aria-label="Distance since the last rotation, against the interval"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct)}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${pct}%`, background: ROTATION_FILL[r.level] }}
+          />
+        </div>
+      )}
+      {since && <p className="mt-2 text-sm text-(--text-secondary) tabular-nums">{since}</p>}
+    </>
   );
 }
 

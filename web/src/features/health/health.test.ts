@@ -6,6 +6,7 @@ import {
   healthChecks,
   healthSummary,
   packOfRated,
+  tireRotation,
   tireTrend,
 } from './health';
 
@@ -210,5 +211,42 @@ describe('capacityOfRated', () => {
     expect(capacityOfRated(111.25, 110)).toBeCloseTo(101.14);
     expect(capacityOfRated(111, null)).toBeNull();
     expect(capacityOfRated(null, 110)).toBeNull();
+  });
+});
+
+describe('tireRotation', () => {
+  const at = '2026-10-19T15:20:51Z';
+  const reading = (odometerKm: number | null, intervalKm = 14_484.096) => ({
+    odometerAtLastRotationKm: 0.001,
+    intervalKm,
+    odometerKm,
+    at,
+  });
+
+  it('counts down to the next rotation', () => {
+    // As observed: never rotated, every 9,000 mi, at 8,260 km.
+    const r = tireRotation(reading(8_260));
+    expect(r).toMatchObject({ off: false, level: 'good', dueAtKm: 14_484.097 });
+    expect(r?.off === false && r.remainingKm).toBeCloseTo(6_224.1);
+    expect(r?.sinceKm).toBeCloseTo(8_260);
+  });
+
+  it('flags one coming up, then one overdue', () => {
+    expect(tireRotation(reading(14_000))).toMatchObject({ level: 'info' });
+    expect(tireRotation(reading(14_484.097))).toMatchObject({ level: 'attention', remainingKm: 0 });
+    expect(tireRotation(reading(16_000))).toMatchObject({ level: 'attention' });
+  });
+
+  it('reads an interval of 0 as the reminder off', () => {
+    expect(tireRotation(reading(8_260, 0))).toMatchObject({ off: true });
+  });
+
+  it('is unknown without an odometer, and absent without a reading', () => {
+    expect(tireRotation(reading(null))).toMatchObject({
+      level: 'unknown',
+      sinceKm: null,
+      remainingKm: null,
+    });
+    expect(tireRotation(null)).toBeNull();
   });
 });
