@@ -127,7 +127,14 @@ describe('decodeChargingGraphBar', () => {
       startMs: START,
       endMs: START + 60_000,
       chargingState: 3,
+      context: 0,
     });
+  });
+
+  it('reads whether a bar is recorded, a forecast, or not charging', () => {
+    const at = (context: number) =>
+      decodeChargingGraphBar(new Uint8Array([...int(3, START), ...int(7, context)]))?.context;
+    expect([at(1), at(2), at(3)]).toEqual([1, 2, 3]);
   });
 
   it('treats a missing power as unknown, never 0 kW, and needs a sane start', () => {
@@ -239,6 +246,7 @@ describe('decodeBatteryState', () => {
     expect(decodeBatteryState(asleep)).toEqual({
       soc: 69.9,
       capacityKwh: 111.285,
+      thermalEvent: false,
       cellTemps: null,
     });
     const awake = decodeBatteryState(
@@ -248,6 +256,9 @@ describe('decodeBatteryState', () => {
       ]),
     );
     expect(awake?.cellTemps).toEqual({ avgC: 42.8, maxC: 46.6, minC: 37.2 });
+    // Without field 3, nothing's known of a thermal event.
+    expect(awake?.thermalEvent).toBeNull();
+    expect(decodeBatteryState(b64(message(3, int(1, 1))))?.thermalEvent).toBe(true);
   });
 });
 
@@ -675,7 +686,16 @@ describe('chargerStateFromStatus', () => {
       'charging_complete',
       'charging_user_stopped',
     ]);
-    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
+    // The rest, not seen yet, after the app's names.
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBe(
+      'charging_station_stopped',
+    );
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 25, evseType: 1 })).toBe(
+      'charging_smart_charging_active',
+    );
+    expect(
+      chargerStateFromStatus({ plugConnection: 2, displayStatus: 26, evseType: 1 }),
+    ).toBeNull();
   });
 
   it('reads 1 as ready only while unplugged', () => {
@@ -955,15 +975,20 @@ describe('vehicleStateFromParallax', () => {
       read(RVM_LOCKS, [
         ...entry(1, 1),
         ...entry(2, 2),
-        ...entry(5, 3), // partly unlocked: not seen yet, so not read
+        ...entry(5, 3), // partly unlocked isn't locked
         ...entry(7, 1),
-        ...entry(14, 1), // no legacy field
+        ...entry(14, 1), // the Gear Guard cable
+        ...entry(15, 2),
+        ...entry(16, 1), // no lock there
         ...entry(3, 7), // unknown state
       ]),
     ).toEqual({
       doorFrontLeftLocked: v('locked'),
       doorFrontRightLocked: v('unlocked'),
+      closureFrunkLocked: v('unlocked'),
       closureLiftgateLocked: v('locked'),
+      gearGuardLocked: v('locked'),
+      closureTonneauLocked: v('unlocked'),
     });
   });
 
@@ -1010,7 +1035,8 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_PET_MODE, int(1, 1))).toEqual({ petModeStatus: v('On') });
     expect(read(RVM_PET_MODE, [])).toEqual({ petModeStatus: v('Off') });
     expect(read(RVM_PET_MODE, int(1, 2))).toEqual({ petModeStatus: v('Disabled') });
-    expect(read(RVM_PET_MODE, int(1, 3))).toBeNull();
+    expect(read(RVM_PET_MODE, int(1, 3))).toEqual({ petModeStatus: v('Faulty') });
+    expect(read(RVM_PET_MODE, int(1, 4))).toBeNull();
   });
 
   it('reads seat and steering wheel heat and vents by entry, wherever they are', () => {
@@ -1051,7 +1077,12 @@ describe('vehicleStateFromParallax', () => {
       ...message(1, [...double(1, 52.4), ...double(2, 111.33)]),
       ...message(3, []),
     ]);
-    expect(battery).toEqual({ batteryLevel: v(52.4), batteryCapacity: v(111.33) });
+    // An empty field 3 is no thermal event, as legacy reports it then.
+    expect(battery).toEqual({
+      batteryLevel: v(52.4),
+      batteryCapacity: v(111.33),
+      batteryHvThermalEvent: v('off'),
+    });
     expect(vehicleStateFromParallax(RVM_SOC_SLIDER, 'CEY=', TS)).toEqual({
       batteryLimit: v(70),
     });

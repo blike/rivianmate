@@ -57,7 +57,13 @@ const POSITION_LABELS: Record<number, string> = {
   10000: 'Any window (R1S)',
 };
 
-/** `body.locks.states` positions: the closures' numbering, for those that lock. */
+/**
+ * `body.locks.states` positions: the closures' numbering up to 9, then
+ * their own. 14 and 15 matched legacy gearGuardLocked and
+ * closureTonneauLocked on an R1S, which sends both: each of 284 changes
+ * came within 30 s of legacy's (2026-10-27). 10–13 haven't been sent, so
+ * they're named in legacy's style.
+ */
 const LOCK_FIELDS: Record<number, string> = {
   1: 'doorFrontLeftLocked',
   2: 'doorFrontRightLocked',
@@ -68,6 +74,23 @@ const LOCK_FIELDS: Record<number, string> = {
   7: 'closureLiftgateLocked',
   8: 'closureSideBinLeftLocked',
   9: 'closureSideBinRightLocked',
+  10: 'closureChargePortLocked',
+  11: 'closureTrunkSecurityLocked',
+  12: 'closureCenterConsoleLocked',
+  13: 'closureGloveBoxLocked',
+  14: 'gearGuardLocked',
+  15: 'closureTonneauLocked',
+};
+
+/** What each lock position is, for the feed viewer. */
+const LOCK_LABELS: Record<number, string> = {
+  ...Object.fromEntries(Object.entries(POSITION_LABELS).filter(([p]) => Number(p) <= 9)),
+  10: 'Charge port',
+  11: 'Trunk security',
+  12: 'Center console',
+  13: 'Glove box',
+  14: 'Gear Guard cable',
+  15: 'Tonneau',
 };
 
 /** Legacy chargePortState for a closure state; it has no ajar, so ajar reads as open. */
@@ -117,15 +140,27 @@ export const closures = defineRvm({
   toState: stampReadings,
   stateKeys: [...Object.values(CLOSURE_FIELDS), 'chargePortState'],
   entryLabels: { field: 1, key: 1, labels: POSITION_LABELS },
+  // 3–11 aren't read: legacy has no fields for them. The charge port's next
+  // action says when a plug is in (9), sooner than its state (R1S, 2026-10-27).
   fieldNames: {
     '1.1': 'Closure: position',
     '1.2': 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
+    '1.3': 'Closure: open (%)',
+    '1.4': 'Closure: fault (1 none, 2 general, 3 no powered operation, 4 obstructed)',
+    '1.5': 'Windows: next action (1 can open, 2 can close, 3 opening, 4 closing…)',
+    '1.6': 'Frunk: next action (1 can open, 2 can close, 3 opening, 4 closing…)',
+    '1.7': 'Liftgate: next action (1 can open, 2 can close, 3 opening, 4 closing…)',
+    '1.8': 'Gear tunnel: next action (1 can open, 2 opening…)',
+    '1.9': 'Tailgate: next action (1 can open, 2 opening…)',
+    '1.10':
+      'Charge port: next action (1 can open, 4 opening, 5 can close, 9 plugged in, 11 closing…)',
+    '1.11': 'Tonneau: next action',
   },
 });
 
 /**
- * Locks: 1 locked, 2 unlocked. The app also has 3, partly unlocked, but no
- * vehicle has sent it, so it's left unread until one does.
+ * Locks: 1 locked, 2 unlocked, 3 partly unlocked (not sent yet), which
+ * reads as unlocked: legacy has only the two, and partly isn't locked.
  */
 export const locks = defineRvm({
   rvm: RVM_LOCKS,
@@ -135,15 +170,16 @@ export const locks = defineRvm({
     readings((put) => {
       for (const { position, state } of entries(payload)) {
         const key = position == null ? undefined : LOCK_FIELDS[position];
-        if (key && (state === 1 || state === 2)) put(key, state === 1 ? 'locked' : 'unlocked');
+        if (key && state && state <= 3) put(key, state === 1 ? 'locked' : 'unlocked');
       }
     }),
   toState: stampReadings,
   stateKeys: Object.values(LOCK_FIELDS),
-  entryLabels: { field: 1, key: 1, labels: POSITION_LABELS },
+  entryLabels: { field: 1, key: 1, labels: LOCK_LABELS },
   fieldNames: {
     '1.1': 'Lock: position',
-    '1.2': 'Lock: state (1 locked, 2 unlocked; 3 partly unlocked, not read)',
+    '1.2': 'Lock: state (1 locked, 2 unlocked, 3 partly unlocked)',
+    '1.3': 'Lock: fault (1 faulted)',
   },
 });
 

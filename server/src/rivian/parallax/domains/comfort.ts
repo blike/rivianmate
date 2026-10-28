@@ -36,12 +36,21 @@ const PRECONDITIONING_TYPES: Record<number, string> = {
 };
 // Defog, defrost, or both, are all on.
 const DEFROST_STATUSES: Record<number, string> = { 0: 'Off', 1: 'On', 2: 'On', 3: 'On', 4: 'Off' };
-const PET_MODE_STATUSES: Record<number, string> = { 0: 'Off', 1: 'On', 2: 'Disabled' };
+const PET_MODE_STATUSES: Record<number, string> = {
+  0: 'Off',
+  1: 'On',
+  2: 'Disabled',
+  3: 'Faulty',
+};
 
 const temperature = (n: number | null | undefined) =>
   n != null && Number.isFinite(n) && n >= -80 && n <= 100 ? f32(n) : null;
 
-/** `cabin_temperatures`: 3 cabin, 4 driver setting (float, °C). */
+/**
+ * `cabin_temperatures`: 1 zones {1 seat, 2 °C}, 2 outside, 3 cabin, 4
+ * driver setting (float, °C). An R1S sends neither 1 nor 2 (2026-10-27);
+ * outside is read for those that do.
+ */
 export const cabinTemperatures = defineRvm({
   rvm: RVM_CABIN_TEMPERATURES,
   group: 'vehicleState',
@@ -51,10 +60,21 @@ export const cabinTemperatures = defineRvm({
       const m = fieldsOrEmpty(payload);
       put('cabinClimateInteriorTemperature', temperature(m?.float(3)));
       put('cabinClimateDriverTemperature', temperature(m?.float(4)));
+      put('cabinClimateExteriorTemperature', temperature(m?.float(2)));
     }),
   toState: stampReadings,
-  stateKeys: ['cabinClimateInteriorTemperature', 'cabinClimateDriverTemperature'],
-  fieldNames: { '3': 'Cabin (°C)', '4': 'Driver setting (°C)' },
+  stateKeys: [
+    'cabinClimateInteriorTemperature',
+    'cabinClimateDriverTemperature',
+    'cabinClimateExteriorTemperature',
+  ],
+  fieldNames: {
+    '1.1': 'Zone: seat',
+    '1.2': 'Zone: temperature (°C)',
+    '2': 'Outside (°C)',
+    '3': 'Cabin (°C)',
+    '4': 'Driver setting (°C)',
+  },
 });
 
 /**
@@ -101,12 +121,13 @@ export const defrost = defineRvm({
 });
 
 /**
- * `pet_mode_status`: 1 status (1 on, 2 disabled), 2 temperature status (1
+ * `pet_mode_status`: 1 status (1 on, 2 disabled, 3 faulty), 2 temperature status (1
  * cold, 2 hot, 3 faulty), 3 cabin climate (1 cold, 2 hot). Proto3 leaves a
  * zero out, so an empty message is off, and a temperature or climate left
  * out is the default (legacy's petModeTemperatureStatus "Default"). Seen
- * switching with legacy's petModeStatus on an R1S (2026-10-18); 2 and 3
- * haven't been seen set, so they aren't read.
+ * switching with legacy's petModeStatus on an R1S (2026-10-18). 2 hasn't
+ * been sent, and 3 came as "hot" in 418 messages with pet mode disabled,
+ * so neither is read.
  */
 export const petMode = defineRvm({
   rvm: RVM_PET_MODE,
@@ -120,7 +141,7 @@ export const petMode = defineRvm({
   toState: stampReadings,
   stateKeys: ['petModeStatus'],
   fieldNames: {
-    '1': 'Status (1 on, 2 disabled)',
+    '1': 'Status (1 on, 2 disabled, 3 faulty)',
     '2': 'Temperature (1 cold, 2 hot, 3 faulty)',
     '3': 'Cabin (1 cold, 2 hot)',
   },
@@ -128,19 +149,31 @@ export const petMode = defineRvm({
 
 /**
  * `seat_conditioning_status` surfaces' legacy fields, by entry kind (1)
- * and position (2: 1 heat, 2 vent). Legacy has no third row, so those are
- * named in its style.
+ * and position (2: 1 heat, 2 vent). Kinds: 1 steering wheel, 2 rear glass,
+ * 3 windshield, 4 side mirrors, 5–7 front row, 8–10 second, 11–13 third
+ * (left, middle, right), 14 wiper area. Legacy has the front row's and the
+ * outer second row's heat, so the rest are named in its style; an R1S
+ * sends only those and the third row's outer seats (2026-10-27).
  */
 const SURFACE_FIELDS: Record<string, string> = {
   '1/1': 'steeringWheelHeat',
+  '2/1': 'rearGlassHeat',
+  '3/1': 'windshieldHeat',
+  '4/1': 'sideMirrorHeat',
   '5/1': 'seatFrontLeftHeat',
   '5/2': 'seatFrontLeftVent',
+  '6/1': 'seatFrontMiddleHeat',
   '7/1': 'seatFrontRightHeat',
   '7/2': 'seatFrontRightVent',
   '8/1': 'seatRearLeftHeat',
+  '8/2': 'seatRearLeftVent',
+  '9/1': 'seatRearMiddleHeat',
   '10/1': 'seatRearRightHeat',
+  '10/2': 'seatRearRightVent',
   '11/1': 'seatThirdRowLeftHeat',
+  '12/1': 'seatThirdRowMiddleHeat',
   '13/1': 'seatThirdRowRightHeat',
+  '14/1': 'wiperHeat',
 };
 const SURFACE_LEVELS: Record<number, string> = {
   0: 'Off',
@@ -184,12 +217,19 @@ export const seatConditioning = defineRvm({
     key: 1,
     labels: {
       1: 'Steering wheel',
+      2: 'Rear glass',
+      3: 'Windshield',
+      4: 'Side mirrors',
       5: 'Front left seat',
+      6: 'Front middle seat',
       7: 'Front right seat',
       8: 'Rear left seat',
+      9: 'Rear middle seat',
       10: 'Rear right seat',
       11: 'Third row left seat',
+      12: 'Third row middle seat',
       13: 'Third row right seat',
+      14: 'Wiper area',
     },
   },
   fieldNames: {

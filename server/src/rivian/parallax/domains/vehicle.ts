@@ -5,7 +5,16 @@ import { decodePayload } from '../wire.js';
 export const RVM_POWER = 'vehicle.power.state';
 export const RVM_NETWORK = 'vehicle.network.state';
 
-const POWER_STATES: Record<number, string> = { 1: 'sleep', 2: 'standby', 3: 'ready', 4: 'go' };
+// Legacy's spellings; ota_update is as legacy sent it, the others after the app's.
+const POWER_STATES: Record<number, string> = {
+  1: 'sleep',
+  2: 'standby',
+  3: 'ready',
+  4: 'go',
+  5: 'vehicle_reset',
+  6: 'ota_update',
+  7: 'shutdown',
+};
 
 export interface NetworkState {
   wifi: { ssid: string; rssiDbm: number | null; frequencyMhz: number | null } | null;
@@ -45,7 +54,10 @@ export function decodeNetwork(payloadBase64: string): NetworkState | null {
   };
 }
 
-/** `vehicle.power.state`: 1 power state (1 sleep, 2 standby, 3 ready, 4 go). */
+/**
+ * `vehicle.power.state`: 1 power state (1 sleep, 2 standby, 3 ready, 4 go,
+ * 5 resetting, 6 installing an update, 7 shutting down).
+ */
 export const power = defineRvm({
   rvm: RVM_POWER,
   group: 'vehicleState',
@@ -54,7 +66,9 @@ export const power = defineRvm({
     readings((put) => put('powerState', POWER_STATES[fieldsOrEmpty(payload)?.int(1) ?? 0])),
   toState: stampReadings,
   stateKeys: ['powerState'],
-  fieldNames: { '1': 'Power state (1 sleep, 2 standby, 3 ready, 4 go)' },
+  fieldNames: {
+    '1': 'Power state (1 sleep, 2 standby, 3 ready, 4 go, 5 reset, 6 updating, 7 shutdown)',
+  },
 });
 
 export const network = defineRvm({

@@ -60,34 +60,57 @@ export function decodeSocSlider(payloadBase64: string): { limit: number } | null
 }
 
 /**
- * The legacy chargerState matching a status's display status: 1 ready,
- * 2 connecting, 3 charging, 4 complete (October 2, 2026), 5 scheduled,
- * 8 stopped from the app. 2 and 8 matched legacy each time on an R1S
- * (2 of 2, 2026-10-13); 2 was read as ready before. 1 is ready only while
- * unplugged, as legacy reports it: sent just after plugging in, legacy says
- * connecting or scheduled instead, so it's left unread then. Null for other
- * values. Parallax reports these about 30 s before vehicle state does.
+ * Display statuses as legacy chargerState: 2 connecting, 3 charging, 4
+ * complete (October 2, 2026), 5 scheduled, 8 stopped from the app, each
+ * seen beside legacy; 2 and 8 matched it each time on an R1S (2 of 2,
+ * 2026-10-13). The rest haven't been sent yet, so they're named after the
+ * Rivian app's states in legacy's style.
+ */
+const CHARGER_STATES: Record<number, string> = {
+  2: 'charging_connecting',
+  3: 'charging_active',
+  4: 'charging_complete',
+  5: 'charging_scheduled',
+  6: 'charging_vehicle_error',
+  7: 'charging_station_error',
+  8: 'charging_user_stopped',
+  9: 'charging_station_stopped',
+  10: 'charging_payment_error',
+  11: 'charging_cert_error',
+  12: 'charging_tls_error',
+  13: 'charging_error_ac_adapter_used_on_dc',
+  14: 'charging_error_dc_adapter_used_on_ac',
+  15: 'charging_error_incompatible_charger',
+  16: 'charging_sd_compensation',
+  17: 'charging_waiting_on_charger',
+  18: 'charging_charger_not_ready_or_incompatible',
+  19: 'charging_vehicle_stopped',
+  20: 'charging_payment_error_start_rivian_app',
+  21: 'charging_tls_error_unknown_charger',
+  22: 'charging_tls_error_unexpected_fail',
+  23: 'charging_tls_error_start_rivian_app',
+  24: 'charging_smart_charging_paused',
+  25: 'charging_smart_charging_active',
+};
+
+/**
+ * The legacy chargerState matching a status's display status (see
+ * CHARGER_STATES). 1 is ready only while unplugged, as legacy reports it:
+ * sent just after plugging in, legacy says connecting or scheduled instead,
+ * so it's left unread then. Null for other values. Parallax reports these
+ * about 30 s before vehicle state does.
  */
 export function chargerStateFromStatus(status: ChargingStatus): string | null {
   if (status.displayStatus === 1) return status.plugConnection === 1 ? 'charging_ready' : null;
-  return (
-    (
-      {
-        2: 'charging_connecting',
-        3: 'charging_active',
-        4: 'charging_complete',
-        5: 'charging_scheduled',
-        8: 'charging_user_stopped',
-      } as Record<number, string>
-    )[status.displayStatus] ?? null
-  );
+  return CHARGER_STATES[status.displayStatus] ?? null;
 }
 
 /**
  * The legacy chargerStatus matching a status's plug connection: 1 unplugged
  * (sent as an R2 was unplugged on October 8, 2026), 2 plugged in. Null for
- * other values. The R2 leaves legacy chargerStatus null, so this is its
- * only plug state.
+ * the others, 3 a connection error and 4 a vehicle-to-load adapter: legacy
+ * has no value for either, and plugged in would start a charging session.
+ * The R2 leaves legacy chargerStatus null, so this is its only plug state.
  */
 export function chargerStatusFromStatus(status: ChargingStatus): string | null {
   if (status.plugConnection === 1) return 'chrgr_sts_not_connected';
@@ -114,9 +137,9 @@ export const chargingStatus = defineRvm({
   stateKeys: ['chargerStatus', 'chargerState'],
   store: true,
   fieldNames: {
-    '1': 'Plug connection (enum)',
-    '2': 'Display status (enum)',
-    '3': 'EVSE type (enum)',
+    '1': 'Plug (1 unplugged, 2 plugged in, 3 error, 4 vehicle-to-load)',
+    '2': 'Charging state (1 ready, 2 connecting, 3 charging, 4 complete, 5 scheduled, 8 stopped…)',
+    '3': 'EVSE type (enum; 1 on a charger)',
   },
 });
 
@@ -149,6 +172,7 @@ export const tripTarget = defineRvm({
   group: 'core',
   maturity: 'probe',
   store: true,
+  fieldNames: { '2': 'Trip target SOC (%; 65535 none)' },
 });
 
 export const chargingNotification = defineRvm({
@@ -156,6 +180,11 @@ export const chargingNotification = defineRvm({
   group: 'core',
   maturity: 'probe',
   store: true,
+  fieldNames: {
+    '1': 'Unexpected stop reason',
+    '2': 'Power limited by (1 warm adapter, 2/3 warm DC/AC plug, 4 charger, 5 nearly full, 7 climate, 8 heating, 9 cooling, 10–14 battery temperature…)',
+    '3': 'Fault (1 charging disabled, 2 DC disabled, 5 DC reduced, 6 AC disabled, 8 AC reduced, 9 partial connection, 10 not in park…)',
+  },
 });
 
 /** A charging window, in the vehicle's local time. */

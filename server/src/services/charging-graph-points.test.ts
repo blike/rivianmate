@@ -15,6 +15,7 @@ const bar = (
   startMs: t0 + startMin * MIN,
   endMs: t0 + (startMin + minutes) * MIN,
   chargingState: 3,
+  context: 0,
 });
 const rows = (r: ReturnType<typeof graphPoints>) =>
   r.points.map((p) => [(p.ts.getTime() - t0) / MIN, p.powerKw, p.soc]);
