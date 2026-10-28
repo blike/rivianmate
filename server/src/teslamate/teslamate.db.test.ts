@@ -216,12 +216,49 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(done!.energyKwh).toBeCloseTo(25 * 0.153);
   });
 
+  it('ends drives and charges TeslaMate left open at their last reading, once newer ones exist', async () => {
+    // A restart mid-drive leaves the drive open for good; it isn't under way.
+    await admin.unsafe(`SET search_path TO ${SCHEMA};
+      INSERT INTO drives (id, car_id, start_date, start_km) VALUES (3, 1, ${ago(4320)}, 900);
+      INSERT INTO positions (id, car_id, drive_id, date, latitude, longitude, speed, odometer)
+        VALUES (9, 1, 3, ${ago(4320)}, 37.0, -122.0, 0, 900),
+               (10, 1, 3, ${ago(4310)}, 37.05, -122.05, 50, 906),
+               (11, 1, 3, ${ago(4300)}, 37.1, -122.1, 0, 912),
+               -- Trips on later days still land in the open drive; it ends at the first stop.
+               (12, 1, 3, ${ago(3000)}, 37.2, -122.2, 60, 950);`);
+    try {
+      const drives = await source.drives('tm-1', home, { limit: 200 });
+      const abandoned = drives.find((d) => d.id === 3)!;
+      expect(Date.parse(abandoned.endedAt!) - Date.parse(abandoned.startedAt)).toBe(20 * 60_000);
+      expect(abandoned.distanceKm).toBe(12);
+      expect([abandoned.endLat, abandoned.endLon]).toEqual([37.1, -122.1]);
+      expect((await source.drive('tm-1', 3, home))?.points).toHaveLength(3);
+      // The newest open drive is still the one under way.
+      expect(drives.find((d) => d.id === 2)!.endedAt).toBeNull();
+    } finally {
+      await admin.unsafe(`SET search_path TO ${SCHEMA};
+        DELETE FROM positions WHERE drive_id = 3; DELETE FROM drives WHERE id = 3;`);
+    }
+    // The fixture's charge left open ten days ago ends at its one reading.
+    const sessions = await source.chargingSessions('tm-1', home, { limit: 200 });
+    const charge = sessions.find((s) => s.id === 3)!;
+    expect(Date.parse(charge.endedAt!) - Date.parse(charge.startedAt)).toBe(60 * 60_000);
+    expect(charge).toMatchObject({ chargingSince: null, energyKwh: 4, endSoc: 45 });
+  });
+
   it('lists only the drives that started in a window', async () => {
     const day = new Date(Date.now() - 86_400_000);
     const recent = await source.drives('tm-1', home, { from: day, limit: 200 });
     expect(recent.map((d) => d.id)).toEqual([2]);
     const older = await source.drives('tm-1', home, { to: day, limit: 200 });
     expect(older.map((d) => d.id)).toEqual([1]);
+    // The next page: those that started before the oldest so far.
+    const [newest] = await source.drives('tm-1', home, { limit: 1 });
+    const next = await source.drives('tm-1', home, {
+      before: new Date(newest!.startedAt),
+      limit: 1,
+    });
+    expect([newest!.id, next.map((d) => d.id)]).toEqual([2, [1]]);
     const coverage = await source.driveCoverage('tm-1');
     expect(Date.parse(coverage.since!)).toBeLessThan(day.getTime());
   });

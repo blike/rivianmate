@@ -74,6 +74,43 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     expect(await get<ChargingSessionDto[]>('/api/vehicles/v1/charging-sessions')).toHaveLength(2);
   });
 
+  it('pages back through everything, newest first, with nothing twice', async () => {
+    const start = (i: number) => new Date(day(1).getTime() + i * 60_000);
+    await handle.db.insert(drives).values(
+      Array.from({ length: 450 }, (_, i) => ({
+        vehicleId: 'v1',
+        startedAt: start(i),
+        endedAt: new Date(start(i).getTime() + 30_000),
+        distanceKm: 5,
+      })),
+    );
+    await handle.db.insert(chargingSessions).values(
+      Array.from({ length: 201 }, (_, i) => ({
+        vehicleId: 'v1',
+        startedAt: start(i),
+        energyKwh: 1,
+      })),
+    );
+
+    const seen: string[] = [];
+    let page = await get<DriveDto[]>('/api/vehicles/v1/drives');
+    while (page.length > 0) {
+      seen.push(...page.map((d) => d.startedAt));
+      if (page.length < 200) break;
+      page = await get<DriveDto[]>(`/api/vehicles/v1/drives?before=${page.at(-1)!.startedAt}`);
+    }
+    expect(seen).toHaveLength(450);
+    expect(new Set(seen).size).toBe(450);
+    expect(seen.at(-1)).toBe(start(0).toISOString());
+
+    const first = await get<ChargingSessionDto[]>('/api/vehicles/v1/charging-sessions');
+    const rest = await get<ChargingSessionDto[]>(
+      `/api/vehicles/v1/charging-sessions?before=${first.at(-1)!.startedAt}`,
+    );
+    expect([first.length, rest.length]).toEqual([200, 1]);
+    expect(rest[0]!.startedAt).toBe(start(0).toISOString());
+  });
+
   it('says when drive history starts', async () => {
     expect(await get<DriveCoverageDto>('/api/vehicles/v1/drive-coverage')).toEqual({
       since: null,

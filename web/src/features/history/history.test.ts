@@ -81,14 +81,22 @@ describe('activityBands', () => {
 });
 
 describe('distanceByPeriod', () => {
-  it('buckets distance by the hour each drive started', () => {
+  it('buckets distance by the local week, from Monday, each drive started in', () => {
+    // Thursday 1 October 2026, local time, for three weeks: Monday to Sunday,
+    // so the drives on Monday and Tuesday go to the second.
+    const thu = new Date(2026, 9, 1, 12).getTime();
+    const day = 24 * H;
     const buckets = distanceByPeriod(
-      [drive(2.5, 3, 40), drive(2.8, 3, 2), drive(5, 6, 10), drive(-1, 0, 99)],
-      from,
-      from + 6 * H,
-      'hour',
+      [drive(0, 1, 40), drive(4 * 24, 1, 2), drive(5 * 24, 1, 10), drive(-48, 1, 99)].map((d) => ({
+        ...d,
+        startedAt: new Date(thu + Date.parse(d.startedAt) - from).toISOString(),
+      })),
+      thu,
+      thu + 20 * day,
+      'week',
     );
-    expect(buckets.map((b) => b.km)).toEqual([0, 0, 42, 0, 0, 10, 0]);
+    expect(buckets[0]!.ts).toBe(new Date(2026, 8, 28).getTime());
+    expect(buckets.map((b) => b.km)).toEqual([40, 12, 0, 0]);
   });
 
   it('includes every day in the window', () => {

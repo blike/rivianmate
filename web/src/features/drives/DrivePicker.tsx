@@ -11,6 +11,7 @@ export function DrivePicker(props: {
   drives: DriveDto[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  older?: { has: boolean; loading: boolean; load: () => void };
 }) {
   const u = useUnits();
   const groups = useMemo(
@@ -36,6 +37,7 @@ export function DrivePicker(props: {
       groups={groups}
       selectedId={props.selectedId}
       onSelect={props.onSelect}
+      older={props.older}
       className="sticky top-2 z-20 lg:hidden"
     />
   );

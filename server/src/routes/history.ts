@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -195,6 +195,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
             eq(drives.vehicleId, request.params.id),
             q.from ? gte(drives.startedAt, q.from) : undefined,
             q.to ? lte(drives.startedAt, q.to) : undefined,
+            q.before ? lt(drives.startedAt, q.before) : undefined,
             // A drive under way, or one with no distance, still shows.
             or(
               isNull(drives.endedAt),

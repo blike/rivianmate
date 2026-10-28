@@ -461,6 +461,8 @@ export interface DriveRow {
   end_geofence: string | null;
   start_address: AddressRow | null;
   end_address: AddressRow | null;
+  /** Left open with a newer drive after it: abandoned when TeslaMate restarted. */
+  superseded: boolean;
 }
 
 /**
@@ -501,7 +503,11 @@ export function toDriveDto(
     geofences?: readonly GeofenceRow[];
   },
 ): DriveDto {
+  // Figures from the positions, for a drive TeslaMate hasn't summed up: one
+  // under way, or one it abandoned, which ends at its last position.
   const live = row.ended_at == null ? (opts.progress ?? null) : null;
+  const abandoned = row.ended_at == null && row.superseded;
+  const endedAt = row.ended_at ?? (abandoned ? (live?.latest?.date ?? row.started_at) : null);
   const startPos = live?.first ?? null;
   const startLat = row.start_lat ?? startPos?.latitude ?? null;
   const startLon = row.start_lon ?? startPos?.longitude ?? null;
@@ -524,7 +530,7 @@ export function toDriveDto(
   return {
     id: row.id,
     startedAt: row.started_at.toISOString(),
-    endedAt: row.ended_at?.toISOString() ?? null,
+    endedAt: endedAt?.toISOString() ?? null,
     startLat,
     startLon,
     endLat: live ? (live.latest?.latitude ?? null) : row.end_lat,
@@ -550,9 +556,21 @@ export function toDriveDto(
       startLon,
       opts.places,
     ),
-    end: live
-      ? null
-      : drivePlace(row.end_geofence, row.end_address, row.end_lat, row.end_lon, opts.places),
+    end: abandoned
+      ? drivePlace(
+          geofenceAt(
+            live?.latest?.latitude ?? null,
+            live?.latest?.longitude ?? null,
+            opts.geofences ?? [],
+          ),
+          null,
+          live?.latest?.latitude ?? null,
+          live?.latest?.longitude ?? null,
+          opts.places,
+        )
+      : live
+        ? null
+        : drivePlace(row.end_geofence, row.end_address, row.end_lat, row.end_lon, opts.places),
   };
 }
 
@@ -578,11 +596,15 @@ export interface ChargingProcessRow {
   max_power: number | null;
   fast: boolean | null;
   brand: string | null;
-  /** Latest charge reading, for a session still running. */
+  /** Latest charge reading, for a session left open. */
   latest_battery_level: number | null;
   latest_energy: number | null;
   latest_ideal_range_km: number | null;
   latest_rated_range_km: number | null;
+  /** When the latest reading of an open one was taken. */
+  latest_date: Date | null;
+  /** Left open with a newer one after it: abandoned when TeslaMate restarted. */
+  superseded: boolean;
 }
 
 export function toSessionDto(
@@ -593,19 +615,30 @@ export function toSessionDto(
     places: Places;
   },
 ): ChargingSessionDto {
-  const running = row.ended_at == null;
+  // Open: still charging, or abandoned, which ends at its last reading. Both
+  // take their figures from the readings so far.
+  const open = row.ended_at == null;
+  const running = open && !row.superseded;
+  const endedAt = row.ended_at ?? (open && !running ? (row.latest_date ?? row.started_at) : null);
   const pick = (ideal: number | null, rated: number | null) =>
     opts.range === 'ideal' ? ideal : rated;
   const startRange = pick(row.start_ideal_range_km, row.start_rated_range_km);
-  const endRange = running
+  const endRange = open
     ? pick(row.latest_ideal_range_km, row.latest_rated_range_km)
     : pick(row.end_ideal_range_km, row.end_rated_range_km);
-  const energyKwh = running ? row.latest_energy : row.charge_energy_added;
-  const hours = (row.duration_min ?? 0) / 60;
+  const energyKwh = open ? row.latest_energy : row.charge_energy_added;
+  const seconds = open
+    ? endedAt
+      ? (endedAt.getTime() - row.started_at.getTime()) / 1000
+      : 0
+    : row.duration_min != null
+      ? row.duration_min * 60
+      : null;
+  const hours = (seconds ?? 0) / 3600;
   // On DC the charger's power is measured at the battery, so what it drew
   // and what was added differ only by noise.
   const lossKwh =
-    !running && row.fast !== true && row.charge_energy_used != null && energyKwh != null
+    !open && row.fast !== true && row.charge_energy_used != null && energyKwh != null
       ? Math.max(0, row.charge_energy_used - energyKwh)
       : null;
   const supercharger = row.fast === true && /tesla/i.test(row.brand ?? '');
@@ -635,16 +668,16 @@ export function toSessionDto(
     id: row.id,
     vehicleId: opts.vehicleId,
     startedAt: row.started_at.toISOString(),
-    endedAt: row.ended_at?.toISOString() ?? null,
+    endedAt: endedAt?.toISOString() ?? null,
     // chargerLabel() shows the charger id when there's no vendor.
     chargerId: place,
     chargerType: 'other',
     startSoc: row.start_battery_level,
-    endSoc: running ? row.latest_battery_level : row.end_battery_level,
-    chargingSeconds: running ? 0 : row.duration_min != null ? row.duration_min * 60 : null,
+    endSoc: open ? row.latest_battery_level : row.end_battery_level,
+    chargingSeconds: seconds,
     chargingSince: running ? row.started_at.toISOString() : null,
     chargingStartedAt: row.started_at.toISOString(),
-    chargingEndedAt: row.ended_at?.toISOString() ?? null,
+    chargingEndedAt: endedAt?.toISOString() ?? null,
     energyKwh,
     packKwh: null,
     thermalKwh: null,

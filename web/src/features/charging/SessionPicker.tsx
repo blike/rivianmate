@@ -12,6 +12,7 @@ export function SessionPicker(props: {
   sessions: ChargingSessionDto[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  older?: { has: boolean; loading: boolean; load: () => void };
 }) {
   const groups = useMemo(
     () =>
@@ -38,6 +39,7 @@ export function SessionPicker(props: {
       groups={groups}
       selectedId={props.selectedId}
       onSelect={props.onSelect}
+      older={props.older}
       className="sticky top-2 z-20 lg:hidden"
     />
   );

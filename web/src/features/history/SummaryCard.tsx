@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useUnits } from '../../api/hooks';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { formatMoney } from '../../lib/charging';
-import { dateTime, shortDate } from '../../lib/format';
+import { shortDate } from '../../lib/format';
 import { fmt, fmtSeconds } from '../../lib/state';
 import { distanceByPeriod, periodSummary } from './history';
 
@@ -20,7 +20,8 @@ export function SummaryCard(props: {
   const u = useUnits();
   const loading = useLoading();
   const s = props.summary;
-  const unit = props.hours <= 24 ? 'hour' : 'day';
+  // A bar a day, until there are too many to see: a year is a bar a week.
+  const unit = props.hours > 24 * 90 ? 'week' : 'day';
   const buckets = useMemo(
     () => distanceByPeriod(props.drives, props.from.getTime(), props.to.getTime(), unit),
     [props.drives, props.from, props.to, unit],
@@ -33,18 +34,16 @@ export function SummaryCard(props: {
     null,
   );
   const when = (ts: number) =>
-    unit === 'hour'
-      ? dateTime(ts)
+    unit === 'week'
+      ? `Week of ${shortDate(ts)}`
       : new Date(ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   // A week fits a weekday under every bar; longer ranges label about five.
   const weekdays = unit === 'day' && buckets.length <= 7;
-  const every = weekdays ? 1 : unit === 'hour' ? 6 : Math.ceil(buckets.length / 5);
+  const every = weekdays ? 1 : Math.ceil(buckets.length / 5);
   const label = (ts: number) =>
-    unit === 'hour'
-      ? new Date(ts).toLocaleTimeString([], { hour: 'numeric' })
-      : weekdays
-        ? new Date(ts).toLocaleDateString([], { weekday: 'short' })
-        : shortDate(ts);
+    weekdays ? new Date(ts).toLocaleDateString([], { weekday: 'short' }) : shortDate(ts);
+  // Gaps of their own would leave no room for bars past a month's worth.
+  const gap = buckets.length > 31 ? 'gap-px' : 'gap-0.75';
 
   return (
     <section className="card overflow-hidden">
@@ -111,8 +110,8 @@ export function SummaryCard(props: {
                 </>
               ) : busiest && !loading ? (
                 <>
-                  Busiest {when(busiest.ts)} ·{' '}
-                  <span className="text-(--text-secondary)">{u.formatDistance(busiest.km)}</span>
+                  Busiest {unit === 'week' ? `week of ${shortDate(busiest.ts)}` : when(busiest.ts)}{' '}
+                  · <span className="text-(--text-secondary)">{u.formatDistance(busiest.km)}</span>
                 </>
               ) : null}
             </span>
@@ -122,7 +121,7 @@ export function SummaryCard(props: {
           ) : (
             <>
               <div
-                className="mt-5 flex min-h-48 flex-1 items-end gap-0.75"
+                className={`mt-5 flex min-h-48 flex-1 items-end ${gap}`}
                 onPointerLeave={() => setHover(null)}
                 role="img"
                 aria-label={`Distance by ${unit}`}
@@ -150,7 +149,7 @@ export function SummaryCard(props: {
                   </div>
                 ))}
               </div>
-              <div className="mt-2 flex gap-0.75 text-[11px] text-(--text-muted)">
+              <div className={`mt-2 flex text-[11px] text-(--text-muted) ${gap}`}>
                 {buckets.map((b, i) => (
                   <div key={b.ts} className="relative h-4 min-w-0 flex-1">
                     {i % every === 0 && (

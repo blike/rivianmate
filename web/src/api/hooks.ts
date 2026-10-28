@@ -1,6 +1,13 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
+import { LIST_LIMIT } from '@server/list-page';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
@@ -62,17 +69,73 @@ export function useLiveCharging(vehicleId: string | undefined) {
 
 /** Anything still under way (a drive, navigation) refreshes this often. */
 const LIVE_REFRESH_MS = 15_000;
+/** A listing with older pages loaded refreshes at most this often. */
+const OLDER_PAGES_REFRESH_MS = 5 * 60_000;
 
 /** The newest drives, or with `since`, all of them from then on. */
 export function useDrives(vehicleId: string, since?: Date) {
   return useQuery({
     queryKey: since ? ['drives', vehicleId, since.toISOString()] : ['drives', vehicleId],
-    queryFn: () => api.drives(vehicleId, since),
+    queryFn: () => api.drives(vehicleId, { from: since }),
     // A drive in progress grows by the second.
     refetchInterval: (query) =>
       query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
     placeholderData: since ? keepPreviousData : undefined,
   });
+}
+
+/**
+ * A listing read a page at a time, newest first: `items` so far, and
+ * `loadOlder` for the next page while there may be more.
+ */
+function usePages<T extends { startedAt: string }>(
+  queryKey: readonly unknown[],
+  fetchPage: (before?: Date) => Promise<T[]>,
+  refetchInterval: (items: T[]) => number,
+) {
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: ({ pageParam }) => fetchPage(pageParam),
+    initialPageParam: undefined as Date | undefined,
+    // A full page may have more behind it.
+    getNextPageParam: (last: T[]) =>
+      last.length >= LIST_LIMIT ? new Date(last.at(-1)!.startedAt) : undefined,
+    // A refresh refetches every page loaded, so once older ones are, less often.
+    refetchInterval: (q) => {
+      const pages = q.state.data?.pages ?? [];
+      const ms = refetchInterval(pages.flat());
+      return pages.length > 1 ? Math.max(ms, OLDER_PAGES_REFRESH_MS) : ms;
+    },
+  });
+  const items = useMemo(() => query.data?.pages.flat(), [query.data]);
+  return {
+    items,
+    isPending: query.isPending,
+    hasOlder: query.hasNextPage,
+    loadingOlder: query.isFetchingNextPage,
+    loadOlder: () => {
+      if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+    },
+  };
+}
+
+/** Every drive, a page at a time, for the Drives page. */
+export function useDrivePages(vehicleId: string) {
+  // Under the drives key, so whatever refreshes drives refreshes these.
+  return usePages(
+    ['drives', vehicleId, 'pages'],
+    (before) => api.drives(vehicleId, { before }),
+    (items) => (items.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000),
+  );
+}
+
+/** Every charging session, a page at a time, for the Charging page. */
+export function useChargingPages(vehicleId: string) {
+  return usePages(
+    ['chargingSessions', vehicleId, 'pages'],
+    (before) => api.chargingSessions(vehicleId, { before }),
+    () => 60_000,
+  );
 }
 
 /** When drive history starts, which charging history can reach back before. */
@@ -103,7 +166,7 @@ export function useChargingSessions(vehicleId: string, since?: Date) {
     queryKey: since
       ? ['chargingSessions', vehicleId, since.toISOString()]
       : ['chargingSessions', vehicleId],
-    queryFn: () => api.chargingSessions(vehicleId, since),
+    queryFn: () => api.chargingSessions(vehicleId, { from: since }),
     refetchInterval: 60_000,
     placeholderData: since ? keepPreviousData : undefined,
   });

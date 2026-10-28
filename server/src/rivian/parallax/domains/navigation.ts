@@ -16,40 +16,72 @@ export interface TripInfo {
   arrivalAtMs: number | null;
   /** The planned route, as [lat, lon] points; null when it isn't sent. */
   route: [number, number][] | null;
+  /** How many stops the route has, the destination included. */
+  stops: number;
+  /** Each leg's length, in order: leg i ends at stop i. */
+  legs: { distanceKm: number | null; durationS: number | null }[];
+}
+
+/** A stop on the route: a place, or a charging stop the route planner added. */
+function waypoint(w: Fields) {
+  const place = w.message(1);
+  const charger = w.message(2);
+  const location = place?.message(1) ?? charger?.message(3);
+  const lat = location?.double(1);
+  const lon = location?.double(2);
+  if (lat == null || lon == null) return null;
+  return place
+    ? {
+        name: place.string(4) || null,
+        lat,
+        lon,
+        soc: place.double(7),
+        rangeM: place.double(8),
+        arrivalS: place.message(9)?.int(1),
+      }
+    : {
+        name: charger?.string(2) || null,
+        lat,
+        lon,
+        soc: charger?.double(6) ?? null,
+        rangeM: charger?.double(7) ?? null,
+        arrivalS: charger?.message(11)?.int(1),
+      };
 }
 
 /**
- * `trip_info` (`t70/v`), the active navigation route; empty when not
- * navigating. Resent as the prediction changes, and recalculated from the
- * vehicle's position on a reroute, so the totals cover what's left from
- * there. 2 origin {1 location, 5 start time, Unix ms}; 3 route {1 distance
- * m, 2 duration s, 3 stops {1 stop {1 location {1 lat, 2 lon}, 4 address,
- * 5 place id, 7 arrival SOC %, 8 arrival range m, 9 {1 arrival, s since
- * epoch}}}, 4 legs {3 main road, 4 polyline}, 6 arrival SOC %, 7 arrival
- * range m, 10 polyline}; 4 route preferences; 5 SOC % at the start; 6 {1
- * arrival, s since epoch}. Polylines are Google's encoding at 5 decimal
- * places. On an R1S (2026-10-14), 3.6 predicted 57.5% and legacy read
- * 57.7% a kilometre out; an earlier capture had arrival SOC and range at the top level, in
- * 6 and 7, so those are read too.
+ * `trip_info`: the active route, empty when not navigating; recalculated
+ * from the vehicle's position on a reroute. 3 route {1 distance m, 2
+ * duration s (driving only), 3 stops in order, each 1 a place {1 location,
+ * 4 address, 7 arrival SOC %, 8 arrival range m, 9 {1 arrival s}} or 2 a
+ * charging stop the planner added {2 label, 3 location, 6 SOC, 7 range, 11
+ * {1 arrival}}, 4 legs, one to each stop {1 m, 2 s, 3 road, 4 polyline}, 6
+ * arrival SOC, 7 arrival range, 10 polyline}; 6 {1 the next stop's time}.
+ * The destination is the last stop. Older messages put arrival SOC and
+ * range at the top level, in 6 and 7.
  */
 export function decodeTripInfo(payloadBase64: string): TripInfo | null {
   const m = decodePayload(payloadBase64);
   const route = m?.message(3);
-  const stop = route?.message(3)?.message(1);
-  const location = stop?.message(1);
-  const lat = location?.double(1);
-  const lon = location?.double(2);
-  if (!m || lat == null || lon == null) return null;
-  const rangeM = route?.double(7) ?? m.double(7) ?? stop?.double(8);
-  const arrivalS = stop?.message(9)?.int(1) ?? m.message(6)?.int(1);
+  const waypoints = route?.repeated(3) ?? [];
+  const destination = waypoints.length > 0 ? waypoint(waypoints.at(-1)!) : null;
+  if (!m || !destination) return null;
+  const rangeM = route?.double(7) ?? m.double(7) ?? destination.rangeM;
+  // Field 6 is the next stop's time, so it's the arrival only with no stop before.
+  const arrivalS = destination.arrivalS ?? (waypoints.length === 1 ? m.message(6)?.int(1) : null);
   return {
-    destination: { name: stop?.string(4) || null, lat, lon },
+    destination: { name: destination.name, lat: destination.lat, lon: destination.lon },
     totalDistanceKm: route?.double(1) != null ? route.double(1)! / 1000 : null,
     totalDurationS: route?.double(2) ?? null,
-    arrivalSoc: route?.double(6) ?? m.double(6) ?? stop?.double(7) ?? null,
+    arrivalSoc: route?.double(6) ?? m.double(6) ?? destination.soc ?? null,
     arrivalRangeKm: rangeM != null ? rangeM / 1000 : null,
     arrivalAtMs: arrivalS && arrivalS > 0 ? arrivalS * 1000 : null,
     route: routeLine(route),
+    stops: waypoints.length,
+    legs: (route?.repeated(4) ?? []).map((leg) => {
+      const distanceM = leg.double(1);
+      return { distanceKm: distanceM != null ? distanceM / 1000 : null, durationS: leg.double(2) };
+    }),
   };
 }
 
@@ -93,31 +125,68 @@ export function decodePolyline(encoded: string): [number, number][] {
 }
 
 export interface TripProgress {
-  /** Estimated arrival (ms since epoch). */
-  etaMs: number | null;
+  /** Estimated arrival (ms since epoch) at the next stop, and at the destination. */
+  nextEtaMs: number | null;
+  finalEtaMs: number | null;
+  /** The stop being driven to, from 0. */
+  nextStopIndex: number;
+  /** What's left to the next stop. */
   remainingKm: number | null;
   remainingS: number | null;
 }
 
 /**
- * `trip_progress` (`t70/x`), sent every few seconds while navigating: 1
- * {1 ETA, s since epoch}, 2 {1 the same ETA}, 4 distance remaining (m), 5
- * time remaining (s), 6 the vehicle's fix {1 {1 lat, 2 lon}, 2 speed m/s,
- * 3 heading 0–360°, 5 time, Unix ms}. Field 6 matched legacy GPS on an
- * R1S (2026-10-14): position within about 2 s of travel, speed and heading
- * alike. It isn't read.
- * Rivian keeps the last progress after a trip ends, so it only means
- * anything alongside a trip_info.
+ * `trip_progress`, every few seconds while navigating: 1 {1 ETA at the next
+ * stop, s}, 2 {1 ETA at the destination}, 3 the next stop's index, 4/5
+ * distance (m) and time (s) to the next stop, 6 the vehicle's fix (not
+ * read). Rivian keeps the last after a trip ends, so it only counts beside
+ * a trip_info.
  */
 export function decodeTripProgress(payloadBase64: string): TripProgress | null {
   const m = decodePayload(payloadBase64);
   if (!m) return null;
-  const eta = m.message(1)?.int(1);
+  const ms = (field: number) => {
+    const s = m.message(field)?.int(1);
+    return s && s > 0 ? s * 1000 : null;
+  };
   const remainingM = m.double(4);
   return {
-    etaMs: eta && eta > 0 ? eta * 1000 : null,
+    nextEtaMs: ms(1),
+    finalEtaMs: ms(2),
+    nextStopIndex: Math.max(0, m.int(3) ?? 0),
     remainingKm: remainingM != null ? remainingM / 1000 : null,
     remainingS: m.double(5),
+  };
+}
+
+/**
+ * The ETA and what's left to the destination: progress's to the next stop
+ * plus the legs after it, or the route's own where that can't be worked out.
+ */
+export function tripRemaining(
+  trip: TripInfo,
+  progress: TripProgress | null,
+): { etaMs: number | null; remainingKm: number | null; remainingS: number | null } {
+  const planned = {
+    etaMs: trip.arrivalAtMs,
+    remainingKm: trip.totalDistanceKm,
+    remainingS: trip.totalDurationS,
+  };
+  if (!progress) return planned;
+  const lastLeg = progress.nextStopIndex >= trip.stops - 1;
+  const ahead = trip.legs.slice(progress.nextStopIndex + 1);
+  const plus = (now: number | null, leg: (l: TripInfo['legs'][number]) => number | null) => {
+    if (now == null) return null;
+    if (lastLeg) return now;
+    const rest = ahead.map(leg);
+    return ahead.length === trip.stops - progress.nextStopIndex - 1 && rest.every((x) => x != null)
+      ? rest.reduce((sum: number, x) => sum + x!, now)
+      : null;
+  };
+  return {
+    etaMs: progress.finalEtaMs ?? (lastLeg ? progress.nextEtaMs : null) ?? planned.etaMs,
+    remainingKm: plus(progress.remainingKm, (l) => l.distanceKm) ?? planned.remainingKm,
+    remainingS: plus(progress.remainingS, (l) => l.durationS) ?? planned.remainingS,
   };
 }
 

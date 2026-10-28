@@ -3,7 +3,11 @@ import { useUnits } from '../../api/hooks';
 import { Row } from '../../components/Panel';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { fmt, nv, sv, titleCase } from '../../lib/state';
-import { climateRunning, preconditioningLabel } from '../../lib/vehicleStatus';
+import {
+  climateRunning,
+  preconditioningCause,
+  preconditioningLabel,
+} from '../../lib/vehicleStatus';
 
 /**
  * The cabin as it is and what it's set to, then what's running to get it
@@ -18,6 +22,7 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
   const target = nv(s, 'cabinClimateDriverTemperature');
   const tesla = sv(s, 'climateOn') != null;
   const active = climateRunning(s);
+  const cause = preconditioningCause(s);
   const passenger = nv(s, 'cabinClimatePassengerTemperature');
   const fan = nv(s, 'climateFanSpeed');
   const heading =
@@ -68,7 +73,10 @@ export function ClimatePanel(props: { state: VehicleState | undefined }) {
           </>
         ) : (
           <>
-            <Row label="Preconditioning" value={preconditioningLabel(s)} />
+            <Row
+              label="Preconditioning"
+              value={cause ? `${preconditioningLabel(s)} · ${cause}` : preconditioningLabel(s)}
+            />
             <Row label="Defrost" value={titleCase(sv(s, 'defrostDefogStatus'))} />
             <Row label="Pet mode" value={titleCase(sv(s, 'petModeStatus'))} />
           </>

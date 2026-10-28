@@ -36,6 +36,7 @@ import {
   decodePolyline,
   decodeTripInfo,
   decodeTripProgress,
+  tripRemaining,
   describeParallax,
   fieldsOf,
   readProtoFields,
@@ -126,7 +127,14 @@ describe('decodeChargingGraphBar', () => {
       startMs: START,
       endMs: START + 60_000,
       chargingState: 3,
+      context: 0,
     });
+  });
+
+  it('reads whether a bar is recorded, a forecast, or not charging', () => {
+    const at = (context: number) =>
+      decodeChargingGraphBar(new Uint8Array([...int(3, START), ...int(7, context)]))?.context;
+    expect([at(1), at(2), at(3)]).toEqual([1, 2, 3]);
   });
 
   it('treats a missing power as unknown, never 0 kW, and needs a sane start', () => {
@@ -238,6 +246,7 @@ describe('decodeBatteryState', () => {
     expect(decodeBatteryState(asleep)).toEqual({
       soc: 69.9,
       capacityKwh: 111.285,
+      thermalEvent: false,
       cellTemps: null,
     });
     const awake = decodeBatteryState(
@@ -247,6 +256,9 @@ describe('decodeBatteryState', () => {
       ]),
     );
     expect(awake?.cellTemps).toEqual({ avgC: 42.8, maxC: 46.6, minC: 37.2 });
+    // Without field 3, nothing's known of a thermal event.
+    expect(awake?.thermalEvent).toBeNull();
+    expect(decodeBatteryState(b64(message(3, int(1, 1))))?.thermalEvent).toBe(true);
   });
 });
 
@@ -374,6 +386,8 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       arrivalRangeKm: 339.4403,
       arrivalAtMs: null,
       route: null,
+      stops: 1,
+      legs: [{ distanceKm: null, durationS: null }],
     });
   });
 
@@ -418,6 +432,71 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       arrivalRangeKm: 308.5773,
       arrivalAtMs: 1792020295000,
       route: points,
+      stops: 1,
+      legs: [],
+    });
+  });
+
+  // Not captured yet: laid out as the Rivian app's schema has it.
+  const roadTrip = b64([
+    ...message(3, [
+      ...double(1, 400_000),
+      ...double(2, 15_000),
+      // A charging stop the planner added, then the destination.
+      ...message(
+        3,
+        message(2, [
+          ...string(2, 'Rivian Adventure Network [RAN]'),
+          ...message(3, [...double(1, 35.1), ...double(2, -117.9)]),
+          ...double(6, 12),
+          ...message(11, int(1, 1792000000)),
+        ]),
+      ),
+      ...message(
+        3,
+        message(1, [
+          ...message(1, [...double(1, 36.6), ...double(2, -118.1)]),
+          ...string(4, 'Lone Pine'),
+          ...double(7, 41),
+          ...message(9, int(1, 1792010000)),
+        ]),
+      ),
+      ...message(4, [...double(1, 250_000), ...double(2, 9_000)]),
+      ...message(4, [...double(1, 150_000), ...double(2, 6_000)]),
+    ]),
+    // The charging stop's departure, not the arrival.
+    ...message(6, int(1, 1792003000)),
+  ]);
+
+  it('takes the last stop as the destination, past a charging stop the planner added', () => {
+    expect(decodeTripInfo(roadTrip)).toMatchObject({
+      destination: { name: 'Lone Pine', lat: 36.6, lon: -118.1 },
+      arrivalSoc: 41,
+      arrivalAtMs: 1792010000000,
+      stops: 2,
+      legs: [
+        { distanceKm: 250, durationS: 9000 },
+        { distanceKm: 150, durationS: 6000 },
+      ],
+    });
+  });
+
+  it('reads a route ending at a charging stop', () => {
+    const toCharger = b64(
+      message(3, [
+        ...message(
+          3,
+          message(2, [
+            ...string(2, 'Supercharger'),
+            ...message(3, [...double(1, 35.1), ...double(2, -117.9)]),
+            ...double(6, 12),
+          ]),
+        ),
+      ]),
+    );
+    expect(decodeTripInfo(toCharger)).toMatchObject({
+      destination: { name: 'Supercharger', lat: 35.1, lon: -117.9 },
+      arrivalSoc: 12,
     });
   });
 
@@ -447,9 +526,51 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       ...message(6, [...message(1, [...double(1, 40.5), ...double(2, -89)]), ...float(2, 7.9)]),
     ]);
     expect(decodeTripProgress(progress)).toEqual({
-      etaMs: 1790869380000,
+      nextEtaMs: 1790869380000,
+      finalEtaMs: 1790869380000,
+      nextStopIndex: 0,
       remainingKm: 30.506,
       remainingS: 2220,
+    });
+  });
+
+  it("counts what's left to the destination, past the next stop", () => {
+    const trip = decodeTripInfo(roadTrip)!;
+    const progress = (fields: number[]) => decodeTripProgress(b64(fields))!;
+    // Driving to the charger: its leg's remainder, plus the leg after it.
+    expect(
+      tripRemaining(
+        trip,
+        progress([
+          ...message(1, int(1, 1792000000)),
+          ...message(2, int(1, 1792010000)),
+          ...double(4, 100_000),
+          ...double(5, 4_000),
+        ]),
+      ),
+    ).toEqual({ etaMs: 1792010000000, remainingKm: 250, remainingS: 10_000 });
+    // On the last leg, progress's own figures.
+    expect(
+      tripRemaining(trip, progress([...int(3, 1), ...double(4, 20_000), ...double(5, 900)])),
+    ).toEqual({ etaMs: 1792010000000, remainingKm: 20, remainingS: 900 });
+    // Without the final ETA, the next stop's isn't the destination's.
+    expect(tripRemaining(trip, progress(message(1, int(1, 1792000000)))).etaMs).toBe(1792010000000);
+    expect(tripRemaining(trip, null)).toEqual({
+      etaMs: 1792010000000,
+      remainingKm: 400,
+      remainingS: 15_000,
+    });
+  });
+
+  it('gives a single-stop route exactly what progress says', () => {
+    const trip = decodeTripInfo(routed([]))!;
+    const progress = decodeTripProgress(
+      b64([...message(1, int(1, 1792020000)), ...double(4, 5_000), ...double(5, 300)]),
+    )!;
+    expect(tripRemaining(trip, progress)).toEqual({
+      etaMs: 1792020000000,
+      remainingKm: 5,
+      remainingS: 300,
     });
   });
 });
@@ -485,6 +606,7 @@ describe('decodeChargingWindow', () => {
       startMinute: 0,
       endDay: 7,
       endMinute: 840,
+      minutes: 840,
       amps: 32,
       latitude: 33,
       longitude: -117,
@@ -510,19 +632,33 @@ describe('decodeChargingWindow', () => {
       weekDays: ['Friday'],
     });
   });
+
+  it('reads a window covering the whole week as charging all day, every day', () => {
+    // Its start and end are the same moment, so only its length tells it from nothing.
+    const allWeek = decodeChargingWindow(window([...int(3, 10080), ...int(6, 3), ...int(7, 3)]))!;
+    expect(chargingWindowSchedule(allWeek)).toEqual({
+      enabled: true,
+      startTime: 0,
+      duration: 1440,
+      amperage: 32,
+      weekDays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+      location: { latitude: 33, longitude: -117 },
+    });
+    // Without a length, a window that starts as it ends is still nothing.
+    expect(
+      chargingWindowSchedule(decodeChargingWindow(window([...int(6, 3), ...int(7, 3)]))!),
+    ).toBeNull();
+  });
 });
 
 describe('decodeTimeEstimation', () => {
-  it('reads the hold time in seconds', () => {
-    expect(decodeTimeEstimation(b64(int(1, 5400)))).toEqual({
-      holdTimeSeconds: 5400,
-      minutesRemaining: 0,
-    });
+  it('reads whether the estimate holds', () => {
+    expect(decodeTimeEstimation(b64(int(1, 3)))).toEqual({ validity: 3, minutesRemaining: 0 });
   });
 
   it('reads minutes remaining from a live charge', () => {
     expect(decodeTimeEstimation(b64(int(2, 42)))).toEqual({
-      holdTimeSeconds: 0,
+      validity: 0,
       minutesRemaining: 42,
     });
     expect(decodeTimeEstimation('')).toBeNull();
@@ -550,7 +686,16 @@ describe('chargerStateFromStatus', () => {
       'charging_complete',
       'charging_user_stopped',
     ]);
-    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBeNull();
+    // The rest, not seen yet, after the app's names.
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 9, evseType: 1 })).toBe(
+      'charging_station_stopped',
+    );
+    expect(chargerStateFromStatus({ plugConnection: 2, displayStatus: 25, evseType: 1 })).toBe(
+      'charging_smart_charging_active',
+    );
+    expect(
+      chargerStateFromStatus({ plugConnection: 2, displayStatus: 26, evseType: 1 }),
+    ).toBeNull();
   });
 
   it('reads 1 as ready only while unplugged', () => {
@@ -638,6 +783,13 @@ describe('decodeTires', () => {
     ]);
   });
 
+  it('skips tires whose reading is marked not valid, as those are old', () => {
+    const stale = message(2, [...int(1, 2), ...int(2, 1), ...double(3, 3.15), ...int(4, 1)]);
+    expect(decodeTires(b64([...tire(1, 1, 3.2), ...stale]))).toEqual([
+      { position: 'FrontLeft', pressureBar: 3.2, status: 'OK' },
+    ]);
+  });
+
   it('returns [] for an empty payload', () => {
     expect(decodeTires('')).toEqual([]);
   });
@@ -721,7 +873,7 @@ describe('describeParallax', () => {
       ),
     ).toEqual([
       'Rear left: position (1–4 = FL, FR, RL, RR)',
-      'Rear left: status (1 = OK)',
+      'Rear left: status (1 OK, 2 hard, 3 soft, 4 puncture warning)',
       'Rear left: pressure (bar)',
     ]);
   });
@@ -823,15 +975,20 @@ describe('vehicleStateFromParallax', () => {
       read(RVM_LOCKS, [
         ...entry(1, 1),
         ...entry(2, 2),
-        ...entry(5, 3), // partly unlocked: not seen yet, so not read
+        ...entry(5, 3), // partly unlocked isn't locked
         ...entry(7, 1),
-        ...entry(14, 1), // no legacy field
+        ...entry(14, 1), // the Gear Guard cable
+        ...entry(15, 2),
+        ...entry(16, 1), // no lock there
         ...entry(3, 7), // unknown state
       ]),
     ).toEqual({
       doorFrontLeftLocked: v('locked'),
       doorFrontRightLocked: v('unlocked'),
+      closureFrunkLocked: v('unlocked'),
       closureLiftgateLocked: v('locked'),
+      gearGuardLocked: v('locked'),
+      closureTonneauLocked: v('unlocked'),
     });
   });
 
@@ -846,23 +1003,40 @@ describe('vehicleStateFromParallax', () => {
   it('reads preconditioning (an empty message is off) and defrost, spelled as legacy does', () => {
     expect(read(RVM_PRECONDITIONING, [])).toEqual({
       cabinPreconditioningStatus: v('undefined'),
+      cabinPreconditioningType: v('NONE'),
     });
-    expect(read(RVM_PRECONDITIONING, int(1, 4))).toEqual({
+    // As legacy reported each beside it on an R1S (2026-10-16 and 18).
+    expect(read(RVM_PRECONDITIONING, [...int(1, 2), ...int(2, 1)])).toEqual({
       cabinPreconditioningStatus: v('active'),
+      cabinPreconditioningType: v('USER_SELECTED'),
     });
-    expect(read(RVM_PRECONDITIONING, int(1, 2))).toEqual({
+    expect(read(RVM_PRECONDITIONING, [...int(1, 4), ...int(2, 1)])).toMatchObject({
+      cabinPreconditioningStatus: v('complete_maintain'),
+    });
+    expect(read(RVM_PRECONDITIONING, int(1, 8))).toMatchObject({
+      cabinPreconditioningStatus: v('unavailable'),
+    });
+    expect(read(RVM_PRECONDITIONING, int(1, 1))).toMatchObject({
       cabinPreconditioningStatus: v('initiate'),
     });
+    expect(read(RVM_PRECONDITIONING, int(1, 42))).toMatchObject({
+      cabinPreconditioningType: v('NONE'),
+    });
+    expect(read(RVM_PRECONDITIONING, int(1, 42))).not.toHaveProperty('cabinPreconditioningStatus');
+    // Defog, defrost and both are on.
+    expect(read(RVM_DEFROST, int(1, 1))).toEqual({ defrostDefogStatus: v('On') });
     expect(read(RVM_DEFROST, int(1, 2))).toEqual({ defrostDefogStatus: v('On') });
+    expect(read(RVM_DEFROST, int(1, 3))).toEqual({ defrostDefogStatus: v('On') });
     expect(read(RVM_DEFROST, int(1, 4))).toEqual({ defrostDefogStatus: v('Off') });
-    expect(read(RVM_DEFROST, int(1, 3))).toBeNull();
+    expect(read(RVM_DEFROST, int(1, 5))).toBeNull();
   });
 
   it('reads pet mode (an empty message is off), spelled as legacy does', () => {
     expect(read(RVM_PET_MODE, int(1, 1))).toEqual({ petModeStatus: v('On') });
     expect(read(RVM_PET_MODE, [])).toEqual({ petModeStatus: v('Off') });
     expect(read(RVM_PET_MODE, int(1, 2))).toEqual({ petModeStatus: v('Disabled') });
-    expect(read(RVM_PET_MODE, int(1, 3))).toBeNull();
+    expect(read(RVM_PET_MODE, int(1, 3))).toEqual({ petModeStatus: v('Faulty') });
+    expect(read(RVM_PET_MODE, int(1, 4))).toBeNull();
   });
 
   it('reads seat and steering wheel heat and vents by entry, wherever they are', () => {
@@ -903,7 +1077,12 @@ describe('vehicleStateFromParallax', () => {
       ...message(1, [...double(1, 52.4), ...double(2, 111.33)]),
       ...message(3, []),
     ]);
-    expect(battery).toEqual({ batteryLevel: v(52.4), batteryCapacity: v(111.33) });
+    // An empty field 3 is no thermal event, as legacy reports it then.
+    expect(battery).toEqual({
+      batteryLevel: v(52.4),
+      batteryCapacity: v(111.33),
+      batteryHvThermalEvent: v('off'),
+    });
     expect(vehicleStateFromParallax(RVM_SOC_SLIDER, 'CEY=', TS)).toEqual({
       batteryLimit: v(70),
     });
@@ -919,15 +1098,33 @@ describe('vehicleStateFromParallax', () => {
     // Captured from an R1S beside legacy distanceToEmpty 282 and NORMAL_OPERATION.
     expect(vehicleStateFromParallax(RVM_RANGE, 'CJoCEAEYAQ==', TS)).toEqual({
       distanceToEmpty: v(282),
+      rangeThreshold: v('normal'),
+      rangeTemperatureImpact: v('normal'),
     });
     expect(vehicleStateFromParallax(RVM_LOW_VOLTAGE_BATTERY, 'CAE=', TS)).toEqual({
       twelveVoltBatteryHealth: v('NORMAL_OPERATION'),
     });
   });
 
-  it('skips range without the field 2 seen so far, and unknown 12V values', () => {
-    expect(read(RVM_RANGE, int(1, 282))).toBeNull();
-    expect(read(RVM_RANGE, [...int(1, 282), ...int(2, 2)])).toBeNull();
+  it('reads range at every level', () => {
+    // Field 2 is how low the range is, so a low battery must still update it.
+    expect(read(RVM_RANGE, [...int(1, 40), ...int(2, 2)])).toEqual({
+      distanceToEmpty: v(40),
+      rangeThreshold: v('low'),
+    });
+    expect(read(RVM_RANGE, [...int(1, 8), ...int(2, 4), ...int(3, 3)])).toEqual({
+      distanceToEmpty: v(8),
+      rangeThreshold: v('critically_low'),
+      rangeTemperatureImpact: v('cold_impact'),
+    });
+    expect(read(RVM_RANGE, [])).toBeNull();
+    expect(read(RVM_RANGE, int(1, 5000))).toBeNull();
+  });
+
+  it('reads a low 12V battery, and skips unknown 12V values', () => {
+    expect(read(RVM_LOW_VOLTAGE_BATTERY, int(1, 2))).toEqual({
+      twelveVoltBatteryHealth: v('LOW'),
+    });
     expect(read(RVM_LOW_VOLTAGE_BATTERY, int(1, 3))).toBeNull();
   });
 

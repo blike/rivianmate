@@ -33,8 +33,8 @@ import { TimeSpent } from './TimeSpent';
 const MAP_HEIGHT = '30rem';
 
 export function HistoryPage(props: { vehicleId: string }) {
-  const [rangeIdx, setRangeIdx] = useState(1);
-  const range = RANGES[rangeIdx] ?? RANGES[1]!;
+  const [rangeIdx, setRangeIdx] = useState(0);
+  const range = RANGES[rangeIdx] ?? RANGES[0];
   const { from, to } = useMemo(() => rangeWindow(range.hours, new Date()), [range.hours]);
 
   // Everything in the window, not just the newest few hundred.

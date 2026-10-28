@@ -18,6 +18,8 @@ import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
 import {
   type ActivityKind,
   climateRunning,
+  coldRangeNote,
+  rangeLevel,
   securitySummary,
   vehicleActivity,
 } from '../../lib/vehicleStatus';
@@ -72,6 +74,9 @@ export function Overview(props: {
   const limit = live(liveSession?.socLimit) ?? nv(state, 'batteryLimit');
   const rangeKm = nv(state, 'distanceToEmpty');
   const cold = (insights?.coldWeather?.rangeImpactKm ?? 0) > 0 ? insights!.coldWeather : null;
+  const lowRange = rangeLevel(state);
+  // Without a distance for it, the vehicle's own word on the cold.
+  const coldNote = cold ? null : coldRangeNote(state);
   const mileageM = nv(state, 'vehicleMileage');
   const speedMps = nv(state, 'gnssSpeed');
   const loc = location(state);
@@ -227,11 +232,22 @@ export function Overview(props: {
                 </span>
                 <span className="text-base text-(--text-muted)">{u.distanceUnit}</span>
               </div>
-              {/* Only while the cold is holding range back; Health has the rest. */}
+              {/* Only while the range is low, or the cold is holding it back; Health has the rest. */}
+              {!loading && lowRange && (
+                <div
+                  className="mt-1 text-xs font-medium"
+                  style={{ color: `var(--status-${lowRange.level})` }}
+                >
+                  {lowRange.label}
+                </div>
+              )}
               {!loading && cold && (
                 <div className="mt-1 text-xs text-(--text-muted)">
                   −{u.formatDistance(cold.rangeImpactKm)} from the cold
                 </div>
+              )}
+              {!loading && coldNote && (
+                <div className="mt-1 text-xs text-(--text-muted)">{coldNote}</div>
               )}
             </div>
           </div>

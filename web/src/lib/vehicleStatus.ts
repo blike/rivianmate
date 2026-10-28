@@ -26,22 +26,78 @@ export function chargePortLabel(state: VehicleState | undefined): string {
   return value === 'close' ? 'Closed' : titleCase(value);
 }
 
-/** Rivian's literal "undefined" is observed when cabin preconditioning is off. */
+/** Rivian's preconditioning statuses in words; its literal "undefined" is off. */
+const PRECONDITIONING_LABELS: Record<string, string> = {
+  undefined: 'Off',
+  initiate: 'Starting',
+  active: 'Active',
+  active_warning: 'Active (warning)',
+  complete_maintain: 'Holding temperature',
+  timeout_temperature_not_achieved: 'Timed out before reaching temperature',
+  timeout_complete: 'Timed out',
+  error_soc_low: 'Battery too low',
+  error_system_fault: 'System fault',
+  unavailable: 'Unavailable',
+};
+
+/** The statuses with the cabin climate running. */
+const PRECONDITIONING_RUNNING = new Set([
+  'initiate',
+  'active',
+  'active_warning',
+  'complete_maintain',
+]);
+
 export function preconditioningLabel(state: VehicleState | undefined): string {
   const value = sv(state, 'cabinPreconditioningStatus');
-  if (value === 'undefined') return 'Off';
-  return value == null ? 'Unknown' : titleCase(value);
+  if (value == null) return 'Unknown';
+  return PRECONDITIONING_LABELS[value] ?? titleCase(value);
+}
+
+/** What started preconditioning, while it runs; null otherwise or when unknown. */
+const PRECONDITIONING_TYPES: Record<string, string> = {
+  USER_SELECTED: 'started by you',
+  SCHEDULED: 'departure schedule',
+  SCREEN_PROTECTION: 'screen protection',
+  AUTO_CABIN_VENTILATION: 'cabin ventilation',
+};
+
+export function preconditioningCause(state: VehicleState | undefined): string | null {
+  const status = sv(state, 'cabinPreconditioningStatus');
+  if (!status || !PRECONDITIONING_RUNNING.has(status)) return null;
+  return PRECONDITIONING_TYPES[sv(state, 'cabinPreconditioningType') ?? ''] ?? null;
+}
+
+/** How low the range is, when it's low; null when normal or unknown. */
+const RANGE_LEVELS: Record<string, { label: string; level: 'warning' | 'critical' }> = {
+  low: { label: 'Low range', level: 'warning' },
+  red: { label: 'Very low range', level: 'critical' },
+  critically_low: { label: 'Critically low range', level: 'critical' },
+};
+
+export function rangeLevel(
+  state: VehicleState | undefined,
+): { label: string; level: 'warning' | 'critical' } | null {
+  return RANGE_LEVELS[sv(state, 'rangeThreshold') ?? ''] ?? null;
+}
+
+/** What the cold is doing to the range, when anything; null otherwise. */
+export function coldRangeNote(state: VehicleState | undefined): string | null {
+  const impact = sv(state, 'rangeTemperatureImpact');
+  if (impact === 'cold_impact') return 'Reduced by the cold';
+  if (impact === 'cold_may_impact') return 'The cold may reduce it';
+  return null;
 }
 
 /**
  * Whether the climate is running: TeslaMate reports it on or off; for a
- * Rivian it's running while preconditioning.
+ * Rivian it's running while preconditioning, not while it's unavailable
+ * (as when driving), timed out or faulted.
  */
 export function climateRunning(state: VehicleState | undefined): boolean {
   const on = sv(state, 'climateOn');
   if (on != null) return on === 'true';
-  const precondition = preconditioningLabel(state);
-  return precondition !== 'Off' && precondition !== 'Unknown';
+  return PRECONDITIONING_RUNNING.has(sv(state, 'cabinPreconditioningStatus') ?? '');
 }
 
 export type ActivityKind = 'driving' | 'charging' | 'plugged' | 'parked' | 'asleep';

@@ -29,5 +29,9 @@ describe('timeTicks', () => {
     const { ticks } = timeTicks(local(1, 0), local(1, 0) + 90 * 86_400_000);
     expect(ticks.length).toBeLessThanOrEqual(8);
     expect(ticks.length).toBeGreaterThanOrEqual(3);
+    // A year fits too, a tick every two months or so.
+    const year = timeTicks(local(1, 0), local(1, 0) + 365 * 86_400_000);
+    expect(year.ticks.length).toBeLessThanOrEqual(8);
+    expect(year.ticks.length).toBeGreaterThanOrEqual(5);
   });
 });

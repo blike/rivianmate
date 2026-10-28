@@ -432,7 +432,10 @@ describe('RivianSubscriptionManager', () => {
         topic: 'charging.session.soc_slider',
         fields: [{ path: '1', name: 'Charge limit (%)', value: 80 }],
       },
-      { topic: 'charging.session.notification', fields: [{ path: '1', name: null, value: 5 }] },
+      {
+        topic: 'charging.session.notification',
+        fields: [{ path: '1', name: 'Unexpected stop reason', value: 5 }],
+      },
     ]);
     expect(manager.latestData('nothing')).toBeNull();
   });

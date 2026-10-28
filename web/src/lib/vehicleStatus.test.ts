@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   brakeFluidLabel,
   chargePortLabel,
+  climateRunning,
+  coldRangeNote,
+  preconditioningCause,
   preconditioningLabel,
+  rangeLevel,
   securitySummary,
   twelveVoltLabel,
   vehicleActivity,
@@ -106,5 +110,59 @@ describe('dashboard warning labels', () => {
       preconditioningLabel({ cabinPreconditioningStatus: null } as unknown as VehicleState),
     ).toBe('Unknown');
     expect(preconditioningLabel(state({ cabinPreconditioningStatus: 'active' }))).toBe('Active');
+    expect(preconditioningLabel(state({ cabinPreconditioningStatus: 'complete_maintain' }))).toBe(
+      'Holding temperature',
+    );
+  });
+
+  it('counts the climate running only while preconditioning runs', () => {
+    const running = (status: string) =>
+      climateRunning(state({ cabinPreconditioningStatus: status }));
+    expect(['initiate', 'active', 'active_warning', 'complete_maintain'].every(running)).toBe(true);
+    // Legacy reports unavailable while driving.
+    expect(['undefined', 'unavailable', 'timeout_complete', 'error_soc_low'].some(running)).toBe(
+      false,
+    );
+    expect(
+      climateRunning(state({ climateOn: 'true', cabinPreconditioningStatus: 'undefined' })),
+    ).toBe(true);
+  });
+});
+
+describe('preconditioningCause', () => {
+  it('says what started preconditioning, only while it runs', () => {
+    const cause = (status: string, type: string) =>
+      preconditioningCause(
+        state({ cabinPreconditioningStatus: status, cabinPreconditioningType: type }),
+      );
+    expect(cause('active', 'SCHEDULED')).toBe('departure schedule');
+    expect(cause('complete_maintain', 'USER_SELECTED')).toBe('started by you');
+    expect(cause('undefined', 'SCHEDULED')).toBeNull();
+    expect(cause('active', 'NONE')).toBeNull();
+  });
+});
+
+describe('range notes', () => {
+  it('flags low range, and says nothing when it is normal or unknown', () => {
+    expect(rangeLevel(state({ rangeThreshold: 'low' }))).toEqual({
+      label: 'Low range',
+      level: 'warning',
+    });
+    expect(rangeLevel(state({ rangeThreshold: 'critically_low' }))).toEqual({
+      label: 'Critically low range',
+      level: 'critical',
+    });
+    expect(rangeLevel(state({ rangeThreshold: 'normal' }))).toBeNull();
+    expect(rangeLevel(undefined)).toBeNull();
+  });
+
+  it('says when the cold is affecting range', () => {
+    expect(coldRangeNote(state({ rangeTemperatureImpact: 'cold_impact' }))).toBe(
+      'Reduced by the cold',
+    );
+    expect(coldRangeNote(state({ rangeTemperatureImpact: 'cold_may_impact' }))).toBe(
+      'The cold may reduce it',
+    );
+    expect(coldRangeNote(state({ rangeTemperatureImpact: 'normal' }))).toBeNull();
   });
 });

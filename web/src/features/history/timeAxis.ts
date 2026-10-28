@@ -1,7 +1,7 @@
 const HOUR = 3600_000;
 
 /** Tick spacings to choose from, in hours. */
-const STEPS_H = [1, 2, 3, 6, 12, 24, 48, 24 * 7, 24 * 14, 24 * 30];
+const STEPS_H = [1, 2, 3, 6, 12, 24, 48, 24 * 7, 24 * 14, 24 * 30, 24 * 61];
 
 /**
  * Time-axis ticks on local hour or day boundaries, at most `maxTicks` of

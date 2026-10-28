@@ -14,22 +14,15 @@ export interface GnssReading {
   longitude: number | null;
   altitude: number | null;
   bearing: number | null;
-  /** m/s — matches what location-writer.ts/drive-detector.ts/vehicleStatus.ts expect; don't convert to km/h here. */
+  /** m/s, as VehicleState's consumers expect. */
   speedMps: number | null;
 }
 
 /**
- * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
- * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
- * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
- * 4 speed (float, m/s, as VehicleState consumers expect; proto3 leaves it
- * out at a standstill, so a fix without it is 0). Speed matched legacy
- * gnssSpeed from 0 to 22 m/s on an R1S (2026-10-13); 6, read as speed
- * before, stays 0.1–4.9 parked or moving. 10 is the fix time in GPS time
- * (ms since 1980-01-06, no leap seconds): converted to Unix time it runs a
- * median 17.8 s ahead of the message, GPS time's 18 leap seconds (R1S,
- * 2026-10-13); it isn't read. No .proto; other field numbers from a live
- * capture against a real R2 (2026-09-29/30), not community docs.
+ * `dynamics.vehicle.gnss`: 1/2 latitude/longitude, 3 altitude (m), 4 speed
+ * (m/s; left out at a standstill, so a fix without it is 0), 5 heading
+ * (-180 to 180, normalized to 0–360), 6–9 error estimates, 10 fix time (GPS
+ * time on an R1S, 18 s ahead of UTC; not read).
  */
 export function decodeGnss(payloadBase64: string): GnssReading | null {
   const m = decodePayload(payloadBase64);
@@ -59,17 +52,16 @@ export interface TireReading {
 }
 
 /**
- * `dynamics.tires.state`: repeated field 2, each a nested message with
- * 1 position (1-4 → FL/FR/RL/RR), 2 status (1=OK, else Warning), 3 pressure
- * (double, bar), 5 reading time (Unix ms; a median 0.8 s before the
- * message on an R1S, 2026-10-13, not read). Field numbers from a live
- * capture against a real R2 (2026-09-29), not community docs.
+ * `dynamics.tires.state`: repeated 2, each 1 position (1–4: FL, FR, RL,
+ * RR), 2 status (1 OK; 2–4 warnings, read as Warning), 3 pressure (bar), 4
+ * validity, 5 reading time. A tire not marked valid (0) repeats an old
+ * reading, so it's skipped rather than stamped as new.
  */
 export function decodeTires(payloadBase64: string): TireReading[] {
   const readings: TireReading[] = [];
   for (const tire of decodePayload(payloadBase64)?.repeated(2) ?? []) {
     const suffix = TIRE_POSITION_SUFFIX[tire.int(1) ?? 0];
-    if (!suffix) continue;
+    if (!suffix || (tire.int(4) ?? 0) !== 0) continue;
     const status = tire.int(2);
     readings.push({
       position: suffix,
@@ -104,7 +96,11 @@ export const gnss = defineRvm({
     '3': 'Altitude (m)',
     '4': 'Speed (m/s; left out when stopped)',
     '5': 'Heading (°, −180 to 180)',
-    '10': 'Fix time (GPS time, ms since 1980-01-06; 18 s ahead of UTC)',
+    '6': 'Position error, horizontal (m)',
+    '7': 'Position error, vertical (m)',
+    '8': 'Speed error (m/s)',
+    '9': 'Heading error (°)',
+    '10': 'Fix time (ms; GPS time on an R1S, 18 s ahead of UTC)',
   },
 });
 
@@ -136,8 +132,9 @@ export const tires = defineRvm({
   },
   fieldNames: {
     '2.1': 'Tire: position (1–4 = FL, FR, RL, RR)',
-    '2.2': 'Tire: status (1 = OK)',
+    '2.2': 'Tire: status (1 OK, 2 hard, 3 soft, 4 puncture warning)',
     '2.3': 'Tire: pressure (bar)',
+    '2.4': 'Tire: reading valid (0 valid, 1 stale)',
     '2.5': 'Tire: reading time (Unix ms)',
   },
 });
@@ -156,8 +153,7 @@ export const gear = defineRvm({
 
 /**
  * `dynamics.vehicle.odometer`: 1 odometer (whole km), as legacy
- * vehicleMileage in metres. Coarser than legacy's metres, so legacy's is
- * used wherever it has one (LEGACY_PREFERRED_FIELDS); an R2 has none.
+ * vehicleMileage in metres; legacy's is preferred where it has one.
  */
 export const odometer = defineRvm({
   rvm: RVM_ODOMETER,
@@ -173,10 +169,22 @@ export const odometer = defineRvm({
   fieldNames: { '1': 'Odometer (km)' },
 });
 
+const RANGE_THRESHOLDS: Record<number, string> = {
+  1: 'normal',
+  2: 'low',
+  3: 'red',
+  4: 'critically_low',
+};
+const RANGE_TEMPERATURE_IMPACTS: Record<number, string> = {
+  1: 'normal',
+  2: 'cold_may_impact',
+  3: 'cold_impact',
+};
+
 /**
- * `dynamics.vehicle.range`: 1 range (km), read as legacy distanceToEmpty
- * only with 2 at 1, as captured beside a matching legacy reading (282, 2
- * and 3 both 1; their meaning is unknown, and 2 may be a unit).
+ * `dynamics.vehicle.range`: 1 range (km), as legacy distanceToEmpty; 2 how
+ * low it is and 3 the cold's effect, named after the app's as legacy lacks
+ * them. A message without field 1 isn't read as 0 km.
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
@@ -186,14 +194,79 @@ export const range = defineRvm({
     readings((put) => {
       const m = fieldsOrEmpty(payload);
       const km = m?.int(1);
-      if (m?.int(2) === 1 && km != null && km >= 0 && km <= 2000) put('distanceToEmpty', km);
+      if (km != null && km >= 0 && km <= 2000) put('distanceToEmpty', km);
+      put('rangeThreshold', RANGE_THRESHOLDS[m?.int(2) ?? 0]);
+      put('rangeTemperatureImpact', RANGE_TEMPERATURE_IMPACTS[m?.int(3) ?? 0]);
     }),
   toState: stampReadings,
-  stateKeys: ['distanceToEmpty'],
+  stateKeys: ['distanceToEmpty', 'rangeThreshold', 'rangeTemperatureImpact'],
   store: true,
   fieldNames: {
     '1': 'Range (km)',
+    '2': 'Range level (1 normal, 2 low, 3 red, 4 critically low)',
+    '3': 'Cold effect (1 none, 2 may reduce range, 3 reducing range)',
   },
 });
 
-export const DYNAMICS_RVMS = [gnss, tires, gear, odometer, range] as const;
+// Probes: archived to be worked out; nothing reads them yet.
+export const driveMode = defineRvm({
+  rvm: 'dynamics.vehicle.drive_mode',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Mode (2 all-purpose, 3 snow, 8 sport, 9 conserve, 10 towing, 11–14 off-road, 15 winter…)',
+    '8': 'Acceleration limited by cold',
+    '9': 'Regen limited by cold',
+  },
+});
+
+export const knownLocation = defineRvm({
+  rvm: 'dynamics.vehicle.location',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Known place (1 none, 2 home, 3 work)' },
+});
+
+export const efficiency = defineRvm({
+  rvm: 'dynamics.vehicle.efficiency',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Efficiency (Wh/km, for range estimates)',
+    '2': 'Unknown (Wh/km)',
+    '3.1': 'History: entry (1–10)',
+    '3.2': 'History: efficiency (Wh/km)',
+  },
+});
+
+export const massEstimate = defineRvm({
+  rvm: 'dynamics.vehicle.mass_estimate',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Mass (kg)' },
+});
+
+export const brakeFluid = defineRvm({
+  rvm: 'dynamics.brakes.fluid_level',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Brake fluid low (1 no, 2 yes)' },
+});
+
+export const DYNAMICS_RVMS = [
+  gnss,
+  tires,
+  gear,
+  odometer,
+  range,
+  driveMode,
+  knownLocation,
+  efficiency,
+  massEstimate,
+  brakeFluid,
+] as const;

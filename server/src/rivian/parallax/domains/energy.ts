@@ -1,9 +1,7 @@
 /**
- * `energy.*` and `energy_edge_compute.*`: the high-voltage battery, and the
- * graphs the Rivian app draws (charging curve, session breakdown, cold
- * weather, parked energy). Field meanings come from community docs, checked
- * against live payloads next to the legacy vehicle state; each decoder notes
- * what's confirmed. Unknown fields are ignored.
+ * `energy.*` and `energy_edge_compute.*`: the batteries, and the graphs the
+ * Rivian app draws (charging curve, session breakdown, cold weather, parked
+ * energy).
  */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 import { decodePayload, f32, readProtoFields, type ProtoField } from '../wire.js';
@@ -23,6 +21,8 @@ export interface ChargingGraphBar {
   startMs: number;
   endMs: number | null;
   chargingState: number | null;
+  /** 0 a recorded bar, 1 a forecast, 2 not charging, 3 paused. */
+  context: number;
 }
 
 /** Bars plausibly from this century; guards against misreading other fields. */
@@ -39,9 +39,9 @@ const validPower = (n: number | null) =>
     : null;
 
 /**
- * `k70/g` graph bar: 1 SOC (int32), 2 power (float, kW), 3 start (int64 ms),
- * 4 end (int64 ms), 6 charging state. A missing power or SOC is unknown,
- * never 0: treating absence as zero put phantom 0 kW points on DC charges.
+ * A graph bar: 1 SOC, 2 power (kW), 3/4 start and end (ms), 5 estimate
+ * validity, 6 charging state, 7 context (0 recorded, 1 forecast, 2 not
+ * charging, 3 paused). A missing power or SOC is unknown, never 0.
  */
 export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | null {
   const fields = readProtoFields(bytes);
@@ -56,6 +56,7 @@ export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | nu
   const power = get(2);
   const end = get(4);
   const state = get(6);
+  const context = get(7);
   return {
     soc: validSoc(soc?.wire === 0 ? Number(BigInt.asIntN(32, soc.value)) : null),
     powerKw: validPower(
@@ -66,13 +67,11 @@ export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | nu
     startMs,
     endMs: end?.wire === 0 && Number(end.value) >= startMs ? Number(end.value) : null,
     chargingState: state?.wire === 0 ? Number(state.value) : null,
+    context: context?.wire === 0 ? Number(context.value) : 0,
   };
 }
 
-/**
- * `charging_graph_global` (`k70/i`): bars repeated in field 1. Other
- * embedded messages aren't bars, even when they happen to decode as one.
- */
+/** `charging_graph_global`: bars repeated in field 1; other messages aren't bars. */
 export function decodeChargingGraph(payloadBase64: string): ChargingGraphBar[] {
   if (!payloadBase64) return [];
   const fields = readProtoFields(Buffer.from(payloadBase64, 'base64'));
@@ -99,15 +98,12 @@ export interface ChargeBreakdown {
 }
 
 /**
- * `charge_session_breakdown` (`k70/b`): 1 total kWh, 2 pack kWh, 5 thermal
- * kWh, 6 minutes charging, 7 minutes remaining, 8 range added (km), 9 power
- * (kW), 10 range rate (km/h), 11 cost (money). Fields 7, 9 and 10 were
- * matched against a live L2 charge (ramping to 7.4 kW, 31 km/h, 42 min left
- * matching timeToEndOfCharge); 12 and 13 are unknown enums. Rivian keeps
- * the last session's breakdown and sends it on subscribe. Confirmed against
- * a home session: 35.8 = 34.4 + 1.4 kWh, 313 min, 162 km, matching Rivian's
- * history. Missing totals read as 0 (proto3 omits zeros); missing live
- * readings (power, range rate) are unknown, never 0.
+ * `charge_session_breakdown`: 1 total kWh, 2 pack kWh, 5 thermal kWh, 6
+ * minutes charging, 7 minutes remaining, 8 range added (km), 9 power (kW),
+ * 10 range rate (km/h), 11 cost. Field 5 is likely the vehicle's systems,
+ * not heating, which the app's schema puts in 3. Rivian resends the last
+ * session's on subscribe. Missing totals are 0; missing live readings are
+ * unknown.
  */
 export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | null {
   const m = decodePayload(payloadBase64);
@@ -139,35 +135,39 @@ export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | 
 export interface BatteryState {
   soc: number | null;
   capacityKwh: number | null;
+  /** Whether a thermal event is detected; null when not sent. */
+  thermalEvent: boolean | null;
   /** Cell temperatures, °C; only while the vehicle is awake. */
   cellTemps: { avgC: number; maxC: number; minC: number } | null;
 }
 
 /**
- * `energy.high_voltage.battery_state` (`l70/p`): 1 charge state {1 SOC %,
- * 2 pack capacity kWh}; 2 temperature state {1 avg, 2 max, 3 min °C}.
- * SOC and capacity match the legacy batteryLevel/batteryCapacity.
+ * `energy.high_voltage.battery_state`: 1 charge {1 SOC %, 2 capacity kWh},
+ * 2 cell temperatures {1 avg, 2 max, 3 min °C}, 3 thermal event {1
+ * detected, 2 spreading; empty when none}, 4 power output, 5 LFP
+ * calibration, 6 BMS state.
  */
 export function decodeBatteryState(payloadBase64: string): BatteryState | null {
   const m = decodePayload(payloadBase64);
   if (!m) return null;
   const charge = m.message(1);
   const temps = m.message(2);
+  const thermal = m.message(3);
   const avg = f32(temps?.float(1) ?? null);
   const max = f32(temps?.float(2) ?? null);
   const min = f32(temps?.float(3) ?? null);
   return {
     soc: f32(charge?.double(1) ?? null),
     capacityKwh: f32(charge?.double(2) ?? null),
+    thermalEvent: thermal ? thermal.int(1) === 1 || thermal.int(2) === 1 : null,
     cellTemps:
       avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
   };
 }
 
 /**
- * `battery_characteristics`: field 5 is the reported capacity estimate;
- * field 6 is rated capacity (both float, kWh; field 6 identified by the owner).
- * Decode independently: a missing rated value must not use the estimate.
+ * `battery_characteristics`: 5 capacity estimate, 6 rated capacity (kWh),
+ * read independently so a missing rating never falls back to the estimate.
  */
 export function decodeBatteryCharacteristics(
   payloadBase64: string,
@@ -206,12 +206,9 @@ export interface ParkedEnergyWindow {
 }
 
 /**
- * `parked_energy_distributions` (`k70/o`): repeated windows {1 total kWh,
- * 2–5 kWh by use, 6 total range km, 7–10 range by use, 11 window length in
- * minutes}. Uses: 2 climate, 3 outlets, 4 system, 5 Gear Guard. An outlet-use
- * capture on 2026-10-04 identifies field 3 (0.1 kWh), with field 5 omitted.
- * 1440- and 480-minute windows drain at the same rate, which supports
- * reading 11 as minutes.
+ * `parked_energy_distributions`: windows (1 last 24 h, 2 last 8 h, 3 this
+ * park) of {1 total kWh, 2–5 kWh by use (climate, outlets, system, Gear
+ * Guard), 6 total range km, 7–10 range by use, 11 length in minutes}.
  */
 export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] {
   const m = decodePayload(payloadBase64);
@@ -243,7 +240,9 @@ export const chargingGraph = defineRvm({
     '1.2': 'Bar: power (kW)',
     '1.3': 'Bar: start (ms since epoch)',
     '1.4': 'Bar: end (ms since epoch)',
+    '1.5': 'Bar: estimate (1 pack discharging, 2 not valid, 3 valid)',
     '1.6': 'Bar: charging state',
+    '1.7': 'Bar: context (1 forecast, 2 not charging, 3 paused)',
   },
 });
 
@@ -265,6 +264,8 @@ export const chargeBreakdown = defineRvm({
     '11.1': 'Cost: currency',
     '11.2': 'Cost: whole units',
     '11.3': 'Cost: nanos',
+    '12': 'Free session',
+    '13': 'Charging state (as the session status)',
   },
 });
 
@@ -294,6 +295,10 @@ export const parkedEnergy = defineRvm({
     '*.4': 'Window: system (kWh)',
     '*.5': 'Window: Gear Guard (kWh)',
     '*.6': 'Window: total range (km)',
+    '*.7': 'Window: climate range (km)',
+    '*.8': 'Window: outlets range (km)',
+    '*.9': 'Window: system range (km)',
+    '*.10': 'Window: Gear Guard range (km)',
     '*.11': 'Window: length (minutes)',
   },
 });
@@ -312,10 +317,14 @@ export const batteryState = defineRvm({
         if (capacityKwh != null && capacityKwh > 0 && capacityKwh <= 500) {
           put('batteryCapacity', capacityKwh);
         }
+        // Legacy's spelling for none is off; on is in its style.
+        if (battery.thermalEvent != null) {
+          put('batteryHvThermalEvent', battery.thermalEvent ? 'on' : 'off');
+        }
       }) ?? {},
       timeStamp,
     ),
-  stateKeys: ['batteryLevel', 'batteryCapacity'],
+  stateKeys: ['batteryLevel', 'batteryCapacity', 'batteryHvThermalEvent'],
   store: true,
   fieldNames: {
     '1.1': 'SOC (%)',
@@ -323,6 +332,11 @@ export const batteryState = defineRvm({
     '2.1': 'Cell temperature, average (°C)',
     '2.2': 'Cell temperature, max (°C)',
     '2.3': 'Cell temperature, min (°C)',
+    '3.1': 'Thermal event detected',
+    '3.2': 'Thermal event spreading',
+    '4': 'Power output (1 normal, 2 limited by cold)',
+    '5': 'LFP calibration needed',
+    '6': 'BMS state (4 idle, 5 discharging, 6 charging)',
   },
 });
 
@@ -333,17 +347,19 @@ export const batteryCharacteristics = defineRvm({
   decode: decodeBatteryCharacteristics,
   store: true,
   fieldNames: {
+    '1': 'Cell chemistry (1 NCA, 2 LFP, 3 NMC)',
+    '2': 'Cell type (1 50G, 2 53G, 3 G124, 4 LG 4695)',
+    '3': 'Module type',
+    '4': 'Pack (1 135, 2 150, 3 100, 4 116, 5 108, 6 88 kWh)',
     '5': 'Capacity estimate (kWh)',
     '6': 'Rated capacity (kWh)',
   },
 });
 
-const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION' };
+// Legacy's spelling for normal; low is in its style.
+const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION', 2: 'LOW' };
 
-/**
- * `energy.low_voltage.battery_state`: 1 12V battery health (1 normal, the
- * only value seen so far), as legacy twelveVoltBatteryHealth.
- */
+/** `energy.low_voltage.battery_state`: 1 12V health (1 normal, 2 low), as legacy's. */
 export const lowVoltageBattery = defineRvm({
   rvm: RVM_LOW_VOLTAGE_BATTERY,
   group: 'vehicleState',
@@ -355,7 +371,7 @@ export const lowVoltageBattery = defineRvm({
   toState: stampReadings,
   stateKeys: ['twelveVoltBatteryHealth'],
   store: true,
-  fieldNames: { '1': '12V battery health (1 normal)' },
+  fieldNames: { '1': '12V battery health (1 normal, 2 low)' },
 });
 
 export const ENERGY_RVMS = [
