@@ -1,4 +1,4 @@
-/** `body.*`: closures and locks, as legacy fields (an R2's only source of them). */
+/** `body.*`: closures, locks and washer fluid, as legacy fields (an R2's only source of them). */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 
 export const RVM_CLOSURES = 'body.closures.states';
@@ -163,6 +163,21 @@ export const locks = defineRvm({
   },
 });
 
+const WASHER_FLUID: Record<number, string> = { 1: 'normal', 2: 'low', 3: 'empty' };
+
+/** `body.wipers.fluid_level`: 2 level (1 normal, 2 low, 3 empty), as legacy wiperFluidState. */
+export const washerFluid = defineRvm({
+  rvm: 'body.wipers.fluid_level',
+  group: 'vehicleState',
+  maturity: 'partial',
+  decode: (payload) =>
+    readings((put) => put('wiperFluidState', WASHER_FLUID[fieldsOrEmpty(payload)?.int(2) ?? 0])),
+  toState: stampReadings,
+  stateKeys: ['wiperFluidState'],
+  store: true,
+  fieldNames: { '2': 'Washer fluid (1 normal, 2 low, 3 empty)' },
+});
+
 // Probes: archived to be worked out; nothing reads them yet.
 export const windowCalibration = defineRvm({
   rvm: 'body.windows.states',
@@ -184,14 +199,6 @@ export const trailer = defineRvm({
     '1': 'Trailer (1 none, 2 connected, 3 with brakes, 4 invalid)',
     '2': 'Hitch (1 none, 2 accessory, 3–5 trailer profiles)',
   },
-});
-
-export const washerFluid = defineRvm({
-  rvm: 'body.wipers.fluid_level',
-  group: 'vehicleState',
-  maturity: 'probe',
-  store: true,
-  fieldNames: { '2': 'Washer fluid (1 normal, 2 low, 3 empty)' },
 });
 
 export const BODY_RVMS = [closures, locks, windowCalibration, trailer, washerFluid] as const;

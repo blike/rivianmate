@@ -178,7 +178,7 @@ function software(state: VehicleState | undefined): HealthCheck {
   if (update) return { key: 'software', label: 'Software', level: 'info', value: update.label };
   const version = sv(state, 'otaCurrentVersion');
   if (!version) return unknown('software', 'Software');
-  // Without update reporting (an R2), nothing pending can't be told apart.
+  // Without update reporting, nothing pending can't be told apart.
   const value = reportsUpdates(state) ? 'Up to date' : version;
   return { key: 'software', label: 'Software', level: 'good', value };
 }
@@ -195,8 +195,8 @@ const CHECK_FIELDS: Record<string, readonly string[]> = {
 /**
  * Everything the vehicle reports about its own condition, in display order.
  * A check whose fields the vehicle has never sent is left out: a vehicle
- * without the legacy feed (an R2) has no fluid readings, and would
- * otherwise show them as unknown for good. The battery pack shows with a
+ * whose feeds don't carry fluid readings would otherwise show them as
+ * unknown for good. The battery pack shows with a
  * capacity against rated (`packOfRated`) as well. Before any state arrives,
  * every check is listed, as unknown.
  */

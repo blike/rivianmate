@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
-import { showLegacyOnly } from '../../lib/fieldSources';
+import { showOptional } from '../../lib/fieldSources';
 import { sv } from '../../lib/state';
 import { BatteryPanel } from './BatteryPanel';
 import { Overview } from './Overview';
@@ -44,9 +44,7 @@ export function HealthPage(props: { vehicleId: string; model?: string | null }) 
         insights={insights}
         batteryPending={batteryPending || statePending}
         insightsPending={insightsPending}
-        cellType={
-          showLegacyOnly(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined
-        }
+        cellType={showOptional(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined}
       />
 
       <TiresPanel
