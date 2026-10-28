@@ -1,5 +1,5 @@
 import { brotliCompressSync, brotliDecompressSync, constants } from 'node:zlib';
-import { and, asc, desc, eq, gte, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { parallaxArchive, parallaxChunks } from '../db/schema.js';
 import { type Logger, silentLogger } from '../logger.js';
@@ -117,6 +117,43 @@ export class ParallaxArchive {
     return entries
       .sort((a, b) => a.at - b.at)
       .map((e) => ({ at: new Date(e.at), payload: e.payload.toString('base64') }));
+  }
+
+  /**
+   * When each topic's payload was last archived for a vehicle: its last
+   * change, as repeats aren't kept. Topics never archived are left out.
+   */
+  async lastArchivedAt(vehicleId: string, rvms: readonly string[]): Promise<Map<string, Date>> {
+    const out = new Map<string, Date>();
+    const seq = await this.keys.vehicleSeq(vehicleId);
+    if (seq === null || rvms.length === 0) return out;
+    const ids = await this.keys.topicIds(rvms, false);
+    if (ids.size === 0) return out;
+    const rvmById = new Map([...ids].map(([rvm, id]) => [id, rvm]));
+    const rows = await this.db
+      .select({ topicId: parallaxArchive.topicId, at: sql<Date>`max(${parallaxArchive.at})` })
+      .from(parallaxArchive)
+      .where(
+        and(
+          eq(parallaxArchive.vehicleSeq, seq),
+          inArray(parallaxArchive.topicId, [...ids.values()]),
+        ),
+      )
+      .groupBy(parallaxArchive.topicId);
+    for (const row of rows) out.set(rvmById.get(row.topicId)!, new Date(row.at));
+    // Older than the row window: the last entry of the topic's newest chunk.
+    for (const [rvm, topicId] of ids) {
+      if (out.has(rvm)) continue;
+      const [chunk] = await this.db
+        .select({ data: parallaxChunks.data })
+        .from(parallaxChunks)
+        .where(and(eq(parallaxChunks.vehicleSeq, seq), eq(parallaxChunks.topicId, topicId)))
+        .orderBy(desc(parallaxChunks.hour))
+        .limit(1);
+      const last = chunk ? unpackChunk(chunk.data).at(-1) : undefined;
+      if (last) out.set(rvm, new Date(last.at));
+    }
+    return out;
   }
 
   /**

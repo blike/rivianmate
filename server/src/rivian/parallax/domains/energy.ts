@@ -231,7 +231,6 @@ export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] 
 
 export const chargingGraph = defineRvm({
   rvm: RVM_CHARGING_GRAPH,
-  group: 'core',
   decode: decodeChargingGraph,
   store: true,
   fieldNames: {
@@ -247,7 +246,6 @@ export const chargingGraph = defineRvm({
 
 export const chargeBreakdown = defineRvm({
   rvm: RVM_CHARGE_BREAKDOWN,
-  group: 'core',
   decode: decodeChargeBreakdown,
   store: true,
   fieldNames: {
@@ -269,7 +267,6 @@ export const chargeBreakdown = defineRvm({
 
 export const coldWeather = defineRvm({
   rvm: RVM_COLD_WEATHER,
-  group: 'core',
   decode: decodeColdWeather,
   store: true,
   fieldNames: {
@@ -281,7 +278,6 @@ export const coldWeather = defineRvm({
 
 export const parkedEnergy = defineRvm({
   rvm: RVM_PARKED_ENERGY,
-  group: 'core',
   decode: decodeParkedEnergy,
   store: true,
   fieldNames: {
@@ -302,7 +298,6 @@ export const parkedEnergy = defineRvm({
 /** SOC and pack capacity, as legacy batteryLevel and batteryCapacity. */
 export const batteryState = defineRvm({
   rvm: RVM_BATTERY_STATE,
-  group: 'core',
   decode: decodeBatteryState,
   toState: (battery, timeStamp) =>
     stampReadings(
@@ -337,7 +332,6 @@ export const batteryState = defineRvm({
 
 export const batteryCharacteristics = defineRvm({
   rvm: RVM_BATTERY_CHARACTERISTICS,
-  group: 'core',
   decode: decodeBatteryCharacteristics,
   store: true,
   fieldNames: {
@@ -356,7 +350,6 @@ const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION', 2: '
 /** `energy.low_voltage.battery_state`: 1 12V health (1 normal, 2 low), as legacy's. */
 export const lowVoltageBattery = defineRvm({
   rvm: RVM_LOW_VOLTAGE_BATTERY,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) =>
       put('twelveVoltBatteryHealth', TWELVE_VOLT_HEALTH[fieldsOrEmpty(payload)?.int(1) ?? 0]),

@@ -44,7 +44,6 @@ const temperature = (n: number | null | undefined) =>
 /** `cabin_temperatures`: 1 zones {1 seat, 2 °C}, 2 outside, 3 cabin, 4 driver setting (°C). */
 export const cabinTemperatures = defineRvm({
   rvm: RVM_CABIN_TEMPERATURES,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);
@@ -75,7 +74,6 @@ export const cabinTemperatures = defineRvm({
  */
 export const preconditioning = defineRvm({
   rvm: RVM_PRECONDITIONING,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);
@@ -94,7 +92,6 @@ export const preconditioning = defineRvm({
 /** `defrost_defog_status`: 1 status (1 defog, 2 defrost, 3 both, 4 off). */
 export const defrost = defineRvm({
   rvm: RVM_DEFROST,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);
@@ -112,7 +109,6 @@ export const defrost = defineRvm({
  */
 export const petMode = defineRvm({
   rvm: RVM_PET_MODE,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);
@@ -173,7 +169,6 @@ function surfaceLevels(payload: string): Record<string, number> {
 /** `seat_conditioning_status`: an entry per surface, 1 kind, 2 position, 3 level (0 off, 1–3). */
 export const seatConditioning = defineRvm({
   rvm: RVM_SEAT_CONDITIONING,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       for (const [field, level] of Object.entries(surfaceLevels(payload))) {
@@ -212,21 +207,18 @@ export const seatConditioning = defineRvm({
 // Probes: archived to be worked out; nothing reads them yet.
 export const hvacSettings = defineRvm({
   rvm: 'comfort.cabin.hvac_settings_status',
-  group: 'vehicleState',
   store: true,
   fieldNames: { '1': 'Target temperature (°C; 63.5 is HI, while defrosting)' },
 });
 
 export const climateHoldSetting = defineRvm({
   rvm: 'comfort.cabin.climate_hold_setting',
-  group: 'vehicleState',
   store: true,
   fieldNames: { '1': 'Hold for (s)' },
 });
 
 export const climateHoldStatus = defineRvm({
   rvm: 'comfort.cabin.climate_hold_status',
-  group: 'vehicleState',
   store: true,
   fieldNames: {
     '1': 'Status (1 unavailable, 2 off, 3 on, 4 fault)',
@@ -238,14 +230,12 @@ export const climateHoldStatus = defineRvm({
 
 export const cabinVentilation = defineRvm({
   rvm: 'comfort.cabin.cabin_ventilation_setting',
-  group: 'vehicleState',
   store: true,
   fieldNames: { '1': 'Auto cabin ventilation' },
 });
 
 export const userModes = defineRvm({
   rvm: 'comfort.user_modes.state',
-  group: 'vehicleState',
   store: true,
   fieldNames: {
     '1': 'Service mode',

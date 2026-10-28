@@ -3,7 +3,6 @@ import { defineRvm } from '../define.js';
 
 export const alarm = defineRvm({
   rvm: 'security.alarm.state',
-  group: 'vehicleState',
   store: true,
   fieldNames: {
     '1': 'Alarm sounding (1 no, 2 yes, 3 no signal)',
@@ -13,7 +12,6 @@ export const alarm = defineRvm({
 
 export const gearGuardVideo = defineRvm({
   rvm: 'security.video_monitoring.state',
-  group: 'vehicleState',
   store: true,
   fieldNames: {
     '1': 'Gear Guard video (1 disabled, 2 enabled, 3 recording, while locked, 4 faulted)',
@@ -24,7 +22,6 @@ export const gearGuardVideo = defineRvm({
 
 export const immobilizer = defineRvm({
   rvm: 'security.access.immobilizer_state',
-  group: 'vehicleState',
   store: true,
   fieldNames: { '1': 'Immobilizer (1 not authorized, 2 authorized to drive)' },
 });

@@ -69,7 +69,7 @@ export async function rivianRoutes(app: FastifyInstance, ctx: AppContext): Promi
   app.get<{ Params: { id: string } }>(
     '/api/rivian/feeds/:id/latest',
     async (request, reply): Promise<FeedLatestData | undefined> => {
-      const latest = ctx.monitor.feedLatestData(request.params.id);
+      const latest = await ctx.monitor.feedLatestData(request.params.id);
       if (!latest) return reply.code(404).send({ error: 'No such feed' });
       return latest;
     },

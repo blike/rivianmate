@@ -33,9 +33,6 @@ import {
   RVM_TRIP_INFO,
   RVM_TRIP_PROGRESS,
   RVM_WHEELS,
-  type ParallaxGroup,
-  groupOf,
-  rvmDef,
 } from './parallax/index.js';
 import { b64, double, float, int, message, string } from './parallax/encode.js';
 import { ROUTE_HOME } from './mock-route-home.js';
@@ -282,7 +279,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   private callback?: VehicleStateCallback;
   private chargingCallback?: ChargingSessionCallback;
-  private parallaxCallbacks = new Map<ParallaxGroup, ParallaxCallback>();
+  private parallaxCallback?: ParallaxCallback;
   private subscribedId = MOCK_VEHICLE_ID;
   private timer?: NodeJS.Timeout;
   private phase: Phase = 'parked';
@@ -568,11 +565,10 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   subscribeParallax(
     _vehicleId: string,
-    _rvms: readonly string[],
+    _rvms: readonly string[] | null,
     callback: ParallaxCallback,
-    group: ParallaxGroup = 'core',
   ): void {
-    this.parallaxCallbacks.set(group, callback);
+    this.parallaxCallback = callback;
   }
 
   start(): void {
@@ -625,11 +621,9 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     ]);
   }
 
-  /** Parallax topics come in as base64 protobuf, as from Rivian, on their group's subscription. */
+  /** Parallax topics come in as base64 protobuf, as from Rivian. */
   private emitParallax(rvm: string, bytes: number[]): void {
-    const def = rvmDef(rvm);
-    const callback = this.parallaxCallbacks.get(def ? groupOf(def) : 'core');
-    callback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
+    this.parallaxCallback?.(this.subscribedId, { rvm, payload: b64(bytes), timestamp: Date.now() });
   }
 
   private emitGnss(): void {

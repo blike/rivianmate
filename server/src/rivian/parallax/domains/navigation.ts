@@ -192,7 +192,6 @@ export function tripRemaining(
 
 export const tripInfo = defineRvm({
   rvm: RVM_TRIP_INFO,
-  group: 'core',
   decode: decodeTripInfo,
   store: true,
   fieldNames: {
@@ -225,7 +224,6 @@ export const tripInfo = defineRvm({
 
 export const tripProgress = defineRvm({
   rvm: RVM_TRIP_PROGRESS,
-  group: 'core',
   decode: decodeTripProgress,
   store: true,
   fieldNames: {

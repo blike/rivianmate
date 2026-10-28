@@ -1,7 +1,8 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { RivianDiagnosticsResponse } from '../../api/client';
-import { ApiConnectionsPanel } from './ApiConnectionsPanel';
+import type { FeedLatestData, RivianDiagnosticsResponse } from '../../api/client';
+import { ApiConnectionsPanel, FeedLatestBody } from './ApiConnectionsPanel';
 
 const diagnostics: RivianDiagnosticsResponse = {
   monitor: {
@@ -21,7 +22,6 @@ const diagnostics: RivianDiagnosticsResponse = {
           id: 'v',
           vehicleId: 'v1',
           kind: 'vehicleState',
-          group: null,
           domain: null,
           topics: [],
           status: 'receiving',
@@ -31,9 +31,8 @@ const diagnostics: RivianDiagnosticsResponse = {
           id: 'p',
           vehicleId: 'v1',
           kind: 'parallax',
-          group: 'core',
           domain: 'energy',
-          topics: ['energy.high_voltage.battery_state'],
+          topics: [{ rvm: 'energy.high_voltage.battery_state', kind: 'read' }],
           status: 'unsupported',
           lastMessageAt: null,
         },
@@ -41,7 +40,6 @@ const diagnostics: RivianDiagnosticsResponse = {
           id: 'c',
           vehicleId: 'v1',
           kind: 'chargingSession',
-          group: null,
           domain: null,
           topics: [],
           status: 'waiting',
@@ -83,7 +81,12 @@ describe('API connections', () => {
               ...diagnostics.monitor.subscriptions!,
               feeds: [
                 { ...feeds[0]!, status: 'empty' },
-                { ...feeds[1]!, id: 'o', domain: 'ota', topics: ['ota.deployment.state'] },
+                {
+                  ...feeds[1]!,
+                  id: 'o',
+                  domain: 'ota',
+                  topics: [{ rvm: 'ota.deployment.state', kind: 'read' }],
+                },
               ],
             },
           },
@@ -159,5 +162,50 @@ describe('API connections', () => {
     expect(html).toContain('may be out of date');
     expect(html).toContain('Paused by rate-limit cooldown');
     expect(html).toContain('Paused until');
+  });
+
+  it('lists each topic by kind: read with its fields, unkept by name and size, quiet by its archive', () => {
+    const client = new QueryClient();
+    const latest: FeedLatestData = {
+      feedId: 'parallax:v1:security',
+      messages: [
+        {
+          topic: 'security.alarm.state',
+          receivedAt: '2026-10-05T01:00:00Z',
+          fields: [{ path: '1', name: null, value: '2' }],
+        },
+        {
+          topic: 'security.access.passive_entry',
+          receivedAt: '2026-10-05T01:00:00Z',
+          count: 3,
+          bytes: 2,
+        },
+      ],
+      lastArchivedAt: {
+        'security.video_monitoring.state': '2026-09-03T10:00:00Z',
+        'security.access.immobilizer_state': null,
+      },
+    };
+    client.setQueryData(['feedLatest', latest.feedId], latest);
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <FeedLatestBody
+          feedId={latest.feedId}
+          topics={[
+            { rvm: 'security.alarm.state', kind: 'probe' },
+            { rvm: 'security.access.passive_entry', kind: 'unregistered' },
+            { rvm: 'security.video_monitoring.state', kind: 'probe' },
+            { rvm: 'security.access.immobilizer_state', kind: 'probe' },
+          ]}
+        />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('Probe');
+    expect(html).toContain('Not kept');
+    expect(html).toContain('3 messages, 2 bytes');
+    expect(html).toContain('last archived');
+    expect(html).toContain('never archived');
+    // An unkept topic has no fields to show.
+    expect(html.match(/<table/g)).toHaveLength(1);
   });
 });

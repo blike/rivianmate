@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   api,
   type FeedLatestData,
+  type FeedTopic,
   type RivianDiagnosticsResponse,
   type VehicleDto,
 } from '../../api/client';
@@ -49,13 +50,28 @@ function countedSince(since: string, now: number) {
   return now - Date.parse(since) < 24 * 3600_000 ? `since ${dateTime(since)}` : 'last 24 hours';
 }
 
+const topicKindLabels: Record<FeedTopic['kind'], string> = {
+  read: 'Read',
+  probe: 'Probe',
+  unregistered: 'Not kept',
+};
+
+/** What RivianMate does with a Parallax topic, beside its name. */
+function TopicKindTag(props: { kind: FeedTopic['kind'] }) {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full border border-(--border) px-2 text-[10.5px] leading-[14px] font-medium uppercase tracking-wide text-(--text-muted)">
+      {topicKindLabels[props.kind]}
+    </span>
+  );
+}
+
 /**
  * A feed's second line: when it last had data, and what it last received,
  * fetched when opened. Parallax feeds list each topic's raw fields.
  */
 function FeedLatest(props: {
   feedId: string;
-  topics: string[];
+  topics: FeedTopic[];
   /** When the feed last had data, on the left. */
   lastData: ReactNode;
   lastDataTitle: string;
@@ -91,7 +107,8 @@ function FeedLatest(props: {
   );
 }
 
-function FeedLatestBody(props: { feedId: string; topics: string[] }) {
+/** Exported for tests. */
+export function FeedLatestBody(props: { feedId: string; topics: FeedTopic[] }) {
   const { data, isPending, isError } = useQuery({
     queryKey: ['feedLatest', props.feedId],
     queryFn: () => api.feedLatest(props.feedId),
@@ -105,25 +122,42 @@ function FeedLatestBody(props: { feedId: string; topics: string[] }) {
   return (
     <ul className="mt-2 space-y-3">
       {topics.map((topic) => {
-        const m = byTopic.get(topic);
+        const m = byTopic.get(topic?.rvm ?? null);
+        const archived = topic ? data.lastArchivedAt?.[topic.rvm] : undefined;
         return (
-          <li key={topic ?? 'feed'}>
-            {topic && <div className="break-all font-mono text-(--text-primary)">{topic}</div>}
+          <li key={topic?.rvm ?? 'feed'}>
+            {topic && (
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 break-all font-mono text-(--text-primary)">
+                  {topic.rvm}
+                </span>
+                <TopicKindTag kind={topic.kind} />
+              </div>
+            )}
             {m ? (
               <>
                 <div className="text-(--text-muted)">
                   Received {new Date(m.receivedAt).toLocaleString()}
+                  {m.count != null &&
+                    ` · ${m.count} ${m.count === 1 ? 'message' : 'messages'}, ${m.bytes} bytes`}
                 </div>
                 {m.fields ? (
                   <RawFields fields={m.fields} />
-                ) : (
+                ) : m.count != null ? null : (
                   <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-(--surface-2) p-2 font-mono text-[11px] leading-snug">
                     {JSON.stringify(m.data, null, 2)}
                   </pre>
                 )}
               </>
             ) : (
-              <div className="text-(--text-muted)">Nothing received since the server started.</div>
+              <div className="text-(--text-muted)">
+                Nothing received since the server started
+                {archived === undefined
+                  ? '.'
+                  : archived
+                    ? ` · last archived ${new Date(archived).toLocaleString()}.`
+                    : ' · never archived.'}
+              </div>
             )}
           </li>
         );
@@ -299,7 +333,7 @@ export function ApiConnectionsPanel({
               }
               note={
                 group === 'Parallax' || !feeds.some((f) => f.domain != null)
-                  ? 'Receiving means data arrived in the last 5 minutes. Waiting is normal while the vehicle sleeps or isn’t charging. No data means Rivian accepted the subscription but has only sent empty readings, as it does for an R2. Unsupported means Rivian declined the subscription.'
+                  ? `Receiving means data arrived in the last 5 minutes. Waiting is normal while the vehicle sleeps or isn’t charging. No data means Rivian accepted the subscription but has only sent empty readings, as it does for an R2. Unsupported means Rivian declined the subscription.${group === 'Parallax' ? ' Each topic is read, a probe (archived to be worked out, nothing reads it yet), or not kept: one RivianMate doesn’t know, seen by name and size only. The archive keeps changes, so a topic’s last archived time is when it last changed.' : ''}`
                   : undefined
               }
             >

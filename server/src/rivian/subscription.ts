@@ -17,11 +17,13 @@ import {
   buildVehicleStateSubscription,
 } from './graphql.js';
 import {
-  type ParallaxGroup,
+  PARALLAX_RVMS,
   type ParallaxMessage,
   type RawField,
   describeParallax,
   domainOf,
+  isProbe,
+  rvmDef,
 } from './parallax/index.js';
 import type {
   DepartureSchedule,
@@ -48,21 +50,17 @@ export interface VehicleStateStream {
   /** Departure schedules (subscription-only in Rivian's API). */
   subscribeDepartureSchedules?(vehicleId: string, callback: DepartureSchedulesCallback): void;
   /**
-   * Parallax protobuf messages for the given topics (RVMs). Each group is
-   * its own subscription with its own rejection fate, so a vehicle refusing
-   * one group's topics keeps the others.
+   * Parallax protobuf messages: every topic the vehicle sends (`rvms`
+   * null), or the named ones (RVMs). Only topics in the registry reach the
+   * callback; the rest are counted by name, and their payloads dropped.
    */
   subscribeParallax?(
     vehicleId: string,
-    rvms: readonly string[],
+    rvms: readonly string[] | null,
     callback: ParallaxCallback,
-    group?: ParallaxGroup,
   ): void;
-  /**
-   * True once Rivian has refused an optional subscription, for one vehicle
-   * or any; for Parallax, one group or any.
-   */
-  isUnsupported?(kind: OptionalSubKind, vehicleId?: string, group?: ParallaxGroup): boolean;
+  /** True once Rivian has refused an optional subscription, for one vehicle or any. */
+  isUnsupported?(kind: OptionalSubKind, vehicleId?: string): boolean;
   /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
   readonly droppedFields?: readonly string[];
   diagnostics?(): StreamDiagnostics;
@@ -126,14 +124,24 @@ export function carriesData(value: unknown): boolean {
   return true;
 }
 
+/**
+ * What RivianMate does with a Parallax topic: read it, or archive it as a
+ * probe (both in the registry), or nothing, for one it doesn't know.
+ */
+export type TopicKind = 'read' | 'probe' | 'unregistered';
+
+export interface FeedTopic {
+  rvm: string;
+  kind: TopicKind;
+}
+
 export interface FeedDiagnostics {
   id: string;
   vehicleId: string;
   kind: SubKind;
-  /** A Parallax feed's subscription group. */
-  group: ParallaxGroup | null;
   domain: string | null;
-  topics: string[];
+  /** A Parallax feed's topics: those in the registry, and any others Rivian has sent. */
+  topics: FeedTopic[];
   /**
    * empty: a legacy feed whose messages have only ever carried nulls (and
    * the connection status), as Rivian sends an R2. Its data isn't there.
@@ -150,15 +158,26 @@ export interface FeedLatestData {
     receivedAt: string;
     /** A legacy feed's data, as Rivian sent it (vehicle state merged across messages). */
     data?: unknown;
-    /** A Parallax topic's raw fields, with RivianMate's names for those it reads. */
+    /** A registry topic's raw fields, with RivianMate's names for those it reads. */
     fields?: RawField[];
+    /** An unregistered topic's messages and last size since startup; its payload isn't kept. */
+    count?: number;
+    bytes?: number;
   }[];
+  /** When each registry topic not received since startup was last archived; null for never. */
+  lastArchivedAt?: Record<string, string | null>;
 }
 
 export interface StreamDiagnostics {
   state: 'connected' | 'connecting' | 'reconnecting' | 'stopped';
   lastMessageAt: string | null;
   feeds: FeedDiagnostics[];
+}
+
+interface TopicStats {
+  at: number;
+  count: number;
+  bytes: number;
 }
 
 interface Subscription {
@@ -169,84 +188,59 @@ interface Subscription {
   receivedOnConnection?: boolean;
   /** A legacy feed's messages have carried a reading since startup (see carriesData). */
   carriedData?: boolean;
-  topicMessages?: Map<string, number>;
+  /** Every Parallax topic received since startup, registered or not. */
+  topicStats?: Map<string, TopicStats>;
   topicsOnConnection?: Set<string>;
   errored?: boolean;
   onState?: VehicleStateCallback;
   onCharging?: ChargingSessionCallback;
   onDepartures?: DepartureSchedulesCallback;
-  rvms?: readonly string[];
-  group?: ParallaxGroup;
+  /** The topics subscribed to; null for every topic the vehicle sends. */
+  rvms?: readonly string[] | null;
   onParallax?: ParallaxCallback;
   /** The last data received, for diagnostics: the whole payload, or per Parallax topic. */
   latest?: { at: number; data: unknown };
   latestByTopic?: Map<string, { at: number; message: ParallaxMessage }>;
 }
 
-/** The feeds a subscription shows as: one, or one per Parallax domain. */
-function feedsOf(sub: Subscription): { id: string; domain: string | null; topics: string[] }[] {
-  if (!isParallax(sub.kind)) {
-    return [{ id: sub.id, domain: null, topics: [] }];
+const topicKind = (rvm: string): TopicKind => {
+  const def = rvmDef(rvm);
+  return !def ? 'unregistered' : isProbe(def) ? 'probe' : 'read';
+};
+
+/** A feed: a legacy subscription, or one Parallax domain of a vehicle's subscription. */
+interface Feed {
+  id: string;
+  vehicleId: string;
+  kind: SubKind;
+  domain: string | null;
+  topics: FeedTopic[];
+  sub: Subscription;
+}
+
+/**
+ * A subscription's feeds: one, or one per Parallax domain, with the
+ * registry's topics (or those named) and any others Rivian has sent.
+ */
+function feedsOf(sub: Subscription): Feed[] {
+  const base = { vehicleId: sub.vehicleId, kind: sub.kind, sub };
+  if (!isParallax(sub.kind)) return [{ ...base, id: sub.id, domain: null, topics: [] }];
+  const expected = sub.rvms ?? PARALLAX_RVMS.map((def) => def.rvm);
+  const rvms = new Set([...expected, ...(sub.topicStats?.keys() ?? [])]);
+  const domains = new Map<string, FeedTopic[]>();
+  for (const rvm of rvms) {
+    const domain = domainOf(rvm);
+    domains.set(domain, [...(domains.get(domain) ?? []), { rvm, kind: topicKind(rvm) }]);
   }
-  const domains = new Map<string, string[]>();
-  for (const topic of sub.rvms ?? []) {
-    const domain = domainOf(topic);
-    domains.set(domain, [...(domains.get(domain) ?? []), topic]);
-  }
-  // Keyed by vehicle and domain, not group, so a domain split across groups
-  // (dynamics: GPS and tires, and gear) shows as one feed.
   return [...domains].map(([domain, topics]) => ({
+    ...base,
     id: `parallax:${sub.vehicleId}:${domain}`,
     domain,
     topics,
   }));
 }
 
-/** A feed, and the subscriptions carrying its topics. */
-interface Feed {
-  id: string;
-  vehicleId: string;
-  kind: SubKind;
-  /** The group of the feed's first subscription. */
-  group: ParallaxGroup | null;
-  domain: string | null;
-  topics: string[];
-  parts: { sub: Subscription; topics: string[] }[];
-}
-
-/** One feed per legacy subscription, and per vehicle and Parallax domain. */
-function feedsFrom(subs: Iterable<Subscription>): Feed[] {
-  const feeds = new Map<string, Feed>();
-  for (const sub of subs) {
-    for (const { id, domain, topics } of feedsOf(sub)) {
-      const feed = feeds.get(id);
-      if (feed) {
-        feed.topics.push(...topics);
-        feed.parts.push({ sub, topics });
-      } else {
-        feeds.set(id, {
-          id,
-          vehicleId: sub.vehicleId,
-          kind: sub.kind,
-          group: sub.group ?? null,
-          domain,
-          topics: [...topics],
-          parts: [{ sub, topics }],
-        });
-      }
-    }
-  }
-  return [...feeds.values()];
-}
-
-/** A merged feed's status: errored or receiving if any part is, unsupported only if all are. */
-const FEED_STATUS_ORDER: FeedDiagnostics['status'][] = [
-  'errored',
-  'receiving',
-  'empty',
-  'waiting',
-  'unsupported',
-];
+const feedsFrom = (subs: Iterable<Subscription>): Feed[] => [...subs].flatMap(feedsOf);
 
 type DisconnectReason =
   | { kind: 'ttl' }
@@ -280,6 +274,8 @@ export class RivianSubscriptionManager implements VehicleStateStream {
    * process. Per subscription, so one vehicle's refusal leaves the others'.
    */
   private unsupported = new Set<string>();
+  /** Unregistered Parallax topics already logged, so each is logged once per run. */
+  private unregisteredLogged = new Set<string>();
   private started = false;
   private connected = false;
   private everConnected = false;
@@ -342,27 +338,24 @@ export class RivianSubscriptionManager implements VehicleStateStream {
 
   subscribeParallax(
     vehicleId: string,
-    rvms: readonly string[],
+    rvms: readonly string[] | null,
     callback: ParallaxCallback,
-    group: ParallaxGroup = 'core',
   ): void {
     this.addSubscription({
-      id: `parallax:${group}:${vehicleId}`,
+      id: `parallax:${vehicleId}`,
       kind: 'parallax',
       vehicleId,
       rvms,
-      group,
       onParallax: callback,
     });
   }
 
   /** Optional subscriptions Rivian refused, for one vehicle or any (for diagnostics/UI). */
-  isUnsupported(kind: OptionalSubKind, vehicleId?: string, group?: ParallaxGroup): boolean {
+  isUnsupported(kind: OptionalSubKind, vehicleId?: string): boolean {
     return [...this.subscriptions.values()].some(
       (sub) =>
         sub.kind === kind &&
         (vehicleId == null || sub.vehicleId === vehicleId) &&
-        (group == null || sub.group === group) &&
         this.unsupported.has(sub.id),
     );
   }
@@ -379,50 +372,47 @@ export class RivianSubscriptionManager implements VehicleStateStream {
             : 'connecting',
       lastMessageAt: this.lastMessageAt == null ? null : new Date(this.lastMessageAt).toISOString(),
       feeds: feedsFrom(this.subscriptions.values()).map((feed): FeedDiagnostics => {
-        const parts = feed.parts.map(({ sub, topics }) => {
-          const lastMessageAt =
-            feed.domain == null
-              ? sub.lastMessageAt
-              : topics.reduce<number | undefined>((latest, topic) => {
-                  const at = sub.topicMessages?.get(topic);
-                  return at == null ? latest : Math.max(latest ?? at, at);
-                }, undefined);
-          const received =
-            feed.domain == null
-              ? sub.receivedOnConnection
-              : topics.some((topic) => sub.topicsOnConnection?.has(topic));
-          const status: FeedDiagnostics['status'] = this.unsupported.has(sub.id)
-            ? 'unsupported'
-            : sub.errored && this.started
-              ? 'errored'
-              : feed.domain == null &&
-                  this.connected &&
+        const { sub } = feed;
+        // A domain's health is its registry topics', so an unregistered
+        // heartbeat can't make it look well; a domain of only unregistered
+        // topics goes by those.
+        const registered = feed.topics.filter((t) => t.kind !== 'unregistered');
+        const counted = (registered.length ? registered : feed.topics).map((t) => t.rvm);
+        const lastMessageAt =
+          feed.domain == null
+            ? sub.lastMessageAt
+            : counted.reduce<number | undefined>((latest, rvm) => {
+                const at = sub.topicStats?.get(rvm)?.at;
+                return at == null ? latest : Math.max(latest ?? at, at);
+              }, undefined);
+        const received =
+          feed.domain == null
+            ? sub.receivedOnConnection
+            : counted.some((rvm) => sub.topicsOnConnection?.has(rvm));
+        const status: FeedDiagnostics['status'] = this.unsupported.has(sub.id)
+          ? 'unsupported'
+          : sub.errored && this.started
+            ? 'errored'
+            : feed.domain == null &&
+                this.connected &&
+                this.sentIds.has(sub.id) &&
+                lastMessageAt != null &&
+                !sub.carriedData
+              ? 'empty'
+              : this.connected &&
                   this.sentIds.has(sub.id) &&
+                  received &&
                   lastMessageAt != null &&
-                  !sub.carriedData
-                ? 'empty'
-                : this.connected &&
-                    this.sentIds.has(sub.id) &&
-                    received &&
-                    lastMessageAt != null &&
-                    now - lastMessageAt < 5 * 60_000
-                  ? 'receiving'
-                  : 'waiting';
-          return { lastMessageAt, status };
-        });
-        const lastMessageAt = parts.reduce<number | undefined>(
-          (latest, p) =>
-            p.lastMessageAt == null ? latest : Math.max(latest ?? p.lastMessageAt, p.lastMessageAt),
-          undefined,
-        );
+                  now - lastMessageAt < 5 * 60_000
+                ? 'receiving'
+                : 'waiting';
         return {
           id: feed.id,
           vehicleId: feed.vehicleId,
           kind: feed.kind,
-          group: feed.group,
           domain: feed.domain,
           topics: feed.topics,
-          status: FEED_STATUS_ORDER.find((s) => parts.some((p) => p.status === s))!,
+          status,
           lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
         };
       }),
@@ -433,8 +423,9 @@ export class RivianSubscriptionManager implements VehicleStateStream {
   latestData(feedId: string): FeedLatestData | null {
     const feed = feedsFrom(this.subscriptions.values()).find((f) => f.id === feedId);
     if (!feed) return null;
+    const { sub } = feed;
     if (feed.domain == null) {
-      const latest = feed.parts[0]!.sub.latest;
+      const latest = sub.latest;
       return {
         feedId,
         messages: latest
@@ -444,19 +435,29 @@ export class RivianSubscriptionManager implements VehicleStateStream {
     }
     return {
       feedId,
-      messages: feed.parts.flatMap(({ sub, topics }) =>
-        topics.flatMap((topic) => {
-          const latest = sub.latestByTopic?.get(topic);
-          if (!latest) return [];
+      messages: feed.topics.flatMap(({ rvm, kind }): FeedLatestData['messages'] => {
+        if (kind === 'unregistered') {
+          const stats = sub.topicStats?.get(rvm);
+          if (!stats) return [];
           return [
             {
-              topic,
-              receivedAt: new Date(latest.at).toISOString(),
-              fields: describeParallax(latest.message),
+              topic: rvm,
+              receivedAt: new Date(stats.at).toISOString(),
+              count: stats.count,
+              bytes: stats.bytes,
             },
           ];
-        }),
-      ),
+        }
+        const latest = sub.latestByTopic?.get(rvm);
+        if (!latest) return [];
+        return [
+          {
+            topic: rvm,
+            receivedAt: new Date(latest.at).toISOString(),
+            fields: describeParallax(latest.message),
+          },
+        ];
+      }),
     };
   }
 
@@ -667,18 +668,32 @@ export class RivianSubscriptionManager implements VehicleStateStream {
           const m = data.parallaxMessages as Partial<Record<keyof ParallaxMessage, unknown>> | null;
           if (m && typeof m.rvm === 'string') {
             this.noteFeedMessage(sub);
-            // Only subscribed topics contribute to domain health.
-            if (sub.rvms?.includes(m.rvm)) {
-              (sub.topicMessages ??= new Map()).set(m.rvm, Date.now());
-              (sub.topicsOnConnection ??= new Set()).add(m.rvm);
+            const payload = typeof m.payload === 'string' ? m.payload : '';
+            const now = Date.now();
+            const stats = (sub.topicStats ??= new Map()).get(m.rvm);
+            sub.topicStats.set(m.rvm, {
+              at: now,
+              count: (stats?.count ?? 0) + 1,
+              bytes: Buffer.byteLength(payload, 'base64'),
+            });
+            (sub.topicsOnConnection ??= new Set()).add(m.rvm);
+            if (!rvmDef(m.rvm)) {
+              // Not in the registry: counted by name, and its payload (keys,
+              // passcodes, places…) is neither kept nor passed on.
+              if (!this.unregisteredLogged.has(m.rvm)) {
+                this.unregisteredLogged.add(m.rvm);
+                this.log.info(`parallax topic ${m.rvm} isn't in the registry; not kept`);
+              }
+              return undefined;
             }
             const timestamp = Number(m.timestamp);
             const message: ParallaxMessage = {
               rvm: m.rvm,
-              payload: typeof m.payload === 'string' ? m.payload : '',
+              payload,
               timestamp: Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null,
             };
-            (sub.latestByTopic ??= new Map()).set(m.rvm, { at: Date.now(), message });
+            sub.latestByTopic ??= new Map();
+            sub.latestByTopic.set(m.rvm, { at: now, message });
             sub.onParallax?.(sub.vehicleId, message);
           }
         }
@@ -715,9 +730,7 @@ export class RivianSubscriptionManager implements VehicleStateStream {
       // keeps its vehicle-state data; schedules show as unavailable).
       if (msg.type === 'error') {
         this.unsupported.add(sub.id);
-        this.log.warn(
-          `${sub.group ? `parallax ${sub.group}` : sub.kind} subscription rejected: ${summarize(errors)}`,
-        );
+        this.log.warn(`${sub.kind} subscription rejected: ${summarize(errors)}`);
       }
       return undefined;
     }
@@ -768,7 +781,10 @@ export class RivianSubscriptionManager implements VehicleStateStream {
                 operationName: 'ParallaxMessages',
                 query: PARALLAX_MESSAGES_SUBSCRIPTION,
                 // Parallax takes `vehicleId`, unlike the legacy `vehicleID`.
-                variables: { vehicleId: sub.vehicleId, rvms: sub.rvms ?? [] },
+                // Without `rvms`, Rivian sends every topic the vehicle has.
+                variables: sub.rvms
+                  ? { vehicleId: sub.vehicleId, rvms: sub.rvms }
+                  : { vehicleId: sub.vehicleId },
               }
             : {
                 operationName: 'vehicleDepartureSchedules',

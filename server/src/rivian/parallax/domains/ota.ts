@@ -42,7 +42,6 @@ const LAST_INSTALL: Record<number, string> = {
  */
 export const otaDeployment = defineRvm({
   rvm: RVM_OTA_DEPLOYMENT,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       for (const deployment of decodePayload(payload)?.repeated(1) ?? []) {
@@ -97,13 +96,11 @@ export const otaDeployment = defineRvm({
 // Probes: archived to be worked out; nothing reads them yet.
 export const otaState = defineRvm({
   rvm: RVM_OTA_STATE,
-  group: 'core',
   store: true,
 });
 
 export const otaConfig = defineRvm({
   rvm: RVM_OTA_CONFIG,
-  group: 'core',
   store: true,
 });
 

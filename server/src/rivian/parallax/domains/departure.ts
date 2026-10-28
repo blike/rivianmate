@@ -3,7 +3,6 @@ import { defineRvm } from '../define.js';
 
 export const departureSchedules = defineRvm({
   rvm: 'departure.schedule.schedule',
-  group: 'core',
   store: true,
   fieldNames: {
     '1.1': 'Schedule: id',

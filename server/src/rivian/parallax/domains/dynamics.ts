@@ -76,7 +76,6 @@ const GEARS: Record<number, string> = { 1: 'park', 2: 'reverse', 3: 'neutral', 4
 
 export const gnss = defineRvm({
   rvm: RVM_GNSS,
-  group: 'dynamics',
   decode: decodeGnss,
   toState(reading, timeStamp) {
     const state: VehicleState = {};
@@ -105,7 +104,6 @@ export const gnss = defineRvm({
 
 export const tires = defineRvm({
   rvm: RVM_TIRES,
-  group: 'dynamics',
   decode: decodeTires,
   toState(tires, timeStamp) {
     const state: VehicleState = {};
@@ -140,7 +138,6 @@ export const tires = defineRvm({
 /** `dynamics.vehicle.gear`: 1 gear (1 park, 2 reverse, 3 neutral, 4 drive). */
 export const gear = defineRvm({
   rvm: RVM_GEAR,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => put('gearStatus', GEARS[fieldsOrEmpty(payload)?.int(1) ?? 0])),
   toState: stampReadings,
@@ -154,7 +151,6 @@ export const gear = defineRvm({
  */
 export const odometer = defineRvm({
   rvm: RVM_ODOMETER,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       const km = fieldsOrEmpty(payload)?.int(1);
@@ -184,7 +180,6 @@ const RANGE_TEMPERATURE_IMPACTS: Record<number, string> = {
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);
@@ -225,7 +220,6 @@ const DRIVE_MODES: Record<number, string> = {
 /** `dynamics.vehicle.drive_mode`: 1 mode, as legacy driveMode. */
 export const driveMode = defineRvm({
   rvm: 'dynamics.vehicle.drive_mode',
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => put('driveMode', DRIVE_MODES[fieldsOrEmpty(payload)?.int(1) ?? 0])),
   toState: stampReadings,
@@ -243,7 +237,6 @@ const BRAKE_FLUID_LOW: Record<number, string> = { 1: 'false', 2: 'true' };
 /** `dynamics.brakes.fluid_level`: 1 low (1 no, 2 yes), as legacy brakeFluidLow. */
 export const brakeFluid = defineRvm({
   rvm: 'dynamics.brakes.fluid_level',
-  group: 'vehicleState',
   decode: (payload) =>
     readings((put) => put('brakeFluidLow', BRAKE_FLUID_LOW[fieldsOrEmpty(payload)?.int(1) ?? 0])),
   toState: stampReadings,
@@ -255,14 +248,12 @@ export const brakeFluid = defineRvm({
 // Probes: archived to be worked out; nothing reads them yet.
 export const knownLocation = defineRvm({
   rvm: 'dynamics.vehicle.location',
-  group: 'vehicleState',
   store: true,
   fieldNames: { '1': 'Known place (1 none, 2 home, 3 work)' },
 });
 
 export const efficiency = defineRvm({
   rvm: 'dynamics.vehicle.efficiency',
-  group: 'vehicleState',
   store: true,
   fieldNames: {
     '1': 'Efficiency (Wh/km, for range estimates)',
@@ -274,7 +265,6 @@ export const efficiency = defineRvm({
 
 export const massEstimate = defineRvm({
   rvm: 'dynamics.vehicle.mass_estimate',
-  group: 'vehicleState',
   store: true,
   fieldNames: { '1': 'Mass (kg)' },
 });

@@ -1,6 +1,6 @@
 /** Every Parallax topic RivianMate knows, and what's derived from them. */
 import type { VehicleState } from '../types.js';
-import type { ParallaxGroup, RvmDef } from './define.js';
+import type { RvmDef } from './define.js';
 import { BODY_RVMS } from './domains/body.js';
 import { CHARGING_RVMS } from './domains/charging.js';
 import { COMFORT_RVMS } from './domains/comfort.js';
@@ -41,32 +41,30 @@ export function vehicleSupportsParallax(
   return (supportedFeatures ?? []).includes(PARALLAX_FEATURE_FLAG);
 }
 
-export interface ParallaxGroupDef {
-  id: ParallaxGroup;
-  /** Only subscribed for vehicles with PARALLAX_FEATURE_FLAG. */
-  needsFeatureFlag: boolean;
-}
-
-/** The subscriptions, in order. `core` goes to every vehicle; the rest need the flag. */
-export const PARALLAX_GROUPS: readonly ParallaxGroupDef[] = [
-  { id: 'core', needsFeatureFlag: false },
-  { id: 'dynamics', needsFeatureFlag: true },
-  { id: 'vehicleState', needsFeatureFlag: true },
-  { id: 'probe', needsFeatureFlag: true },
-];
-
 /** Whether nothing reads a topic yet: it has no decoder. */
 export const isProbe = (def: Pick<RvmDef, 'decode'>): boolean => !def.decode;
 
-/** The subscription a topic rides on: probe until it has a decoder. */
-export function groupOf(def: Pick<RvmDef, 'group' | 'decode'>): ParallaxGroup {
-  return isProbe(def) ? 'probe' : def.group;
-}
-
-/** A group's topics; empty groups aren't subscribed. */
-export function parallaxGroupTopics(group: ParallaxGroup): string[] {
-  return PARALLAX_RVMS.filter((def) => groupOf(def) === group).map((def) => def.rvm);
-}
+/**
+ * What a vehicle without PARALLAX_FEATURE_FLAG is subscribed to, by name:
+ * charging, the battery, navigation and the network. A vehicle with it
+ * gets every topic, unnamed, so a topic it doesn't have can't refuse the
+ * rest, and Rivian's new topics arrive without being listed.
+ */
+export const PARALLAX_CORE_TOPICS: readonly string[] = [
+  'energy_edge_compute.graphs.charging_graph_global',
+  'energy_edge_compute.graphs.charge_session_breakdown',
+  'energy_edge_compute.graphs.cold_weather_soc',
+  'energy_edge_compute.graphs.parked_energy_distributions',
+  'energy.high_voltage.battery_state',
+  'energy.high_voltage.battery_characteristics',
+  'charging.session.status',
+  'charging.session.time_estimation',
+  'charging.session.soc_slider',
+  'charging.schedule.time_window',
+  'vehicle.network.state',
+  'navigation.navigation_service.trip_info',
+  'navigation.navigation_service.trip_progress',
+];
 
 /** Rivian's domain: a topic's first segment, with the edge-compute graphs under energy. */
 export function domainOf(rvm: string): string {
