@@ -107,6 +107,8 @@ describe('Parallax registry', () => {
         'gearStatus',
         'vehicleMileage',
         'distanceToEmpty',
+        'rangeThreshold',
+        'rangeTemperatureImpact',
         'batteryLevel',
         'batteryCapacity',
         'batteryLimit',

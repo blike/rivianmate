@@ -1098,6 +1098,8 @@ describe('vehicleStateFromParallax', () => {
     // Captured from an R1S beside legacy distanceToEmpty 282 and NORMAL_OPERATION.
     expect(vehicleStateFromParallax(RVM_RANGE, 'CJoCEAEYAQ==', TS)).toEqual({
       distanceToEmpty: v(282),
+      rangeThreshold: v('normal'),
+      rangeTemperatureImpact: v('normal'),
     });
     expect(vehicleStateFromParallax(RVM_LOW_VOLTAGE_BATTERY, 'CAE=', TS)).toEqual({
       twelveVoltBatteryHealth: v('NORMAL_OPERATION'),
@@ -1106,9 +1108,14 @@ describe('vehicleStateFromParallax', () => {
 
   it('reads range at every level', () => {
     // Field 2 is how low the range is, so a low battery must still update it.
-    expect(read(RVM_RANGE, [...int(1, 40), ...int(2, 2)])).toEqual({ distanceToEmpty: v(40) });
+    expect(read(RVM_RANGE, [...int(1, 40), ...int(2, 2)])).toEqual({
+      distanceToEmpty: v(40),
+      rangeThreshold: v('low'),
+    });
     expect(read(RVM_RANGE, [...int(1, 8), ...int(2, 4), ...int(3, 3)])).toEqual({
       distanceToEmpty: v(8),
+      rangeThreshold: v('critically_low'),
+      rangeTemperatureImpact: v('cold_impact'),
     });
     expect(read(RVM_RANGE, [])).toBeNull();
     expect(read(RVM_RANGE, int(1, 5000))).toBeNull();

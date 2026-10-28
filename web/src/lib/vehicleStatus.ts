@@ -54,6 +54,41 @@ export function preconditioningLabel(state: VehicleState | undefined): string {
   return PRECONDITIONING_LABELS[value] ?? titleCase(value);
 }
 
+/** What started preconditioning, while it runs; null otherwise or when unknown. */
+const PRECONDITIONING_TYPES: Record<string, string> = {
+  USER_SELECTED: 'started by you',
+  SCHEDULED: 'departure schedule',
+  SCREEN_PROTECTION: 'screen protection',
+  AUTO_CABIN_VENTILATION: 'cabin ventilation',
+};
+
+export function preconditioningCause(state: VehicleState | undefined): string | null {
+  const status = sv(state, 'cabinPreconditioningStatus');
+  if (!status || !PRECONDITIONING_RUNNING.has(status)) return null;
+  return PRECONDITIONING_TYPES[sv(state, 'cabinPreconditioningType') ?? ''] ?? null;
+}
+
+/** How low the range is, when it's low; null when normal or unknown. */
+const RANGE_LEVELS: Record<string, { label: string; level: 'warning' | 'critical' }> = {
+  low: { label: 'Low range', level: 'warning' },
+  red: { label: 'Very low range', level: 'critical' },
+  critically_low: { label: 'Critically low range', level: 'critical' },
+};
+
+export function rangeLevel(
+  state: VehicleState | undefined,
+): { label: string; level: 'warning' | 'critical' } | null {
+  return RANGE_LEVELS[sv(state, 'rangeThreshold') ?? ''] ?? null;
+}
+
+/** What the cold is doing to the range, when anything; null otherwise. */
+export function coldRangeNote(state: VehicleState | undefined): string | null {
+  const impact = sv(state, 'rangeTemperatureImpact');
+  if (impact === 'cold_impact') return 'Reduced by the cold';
+  if (impact === 'cold_may_impact') return 'The cold may reduce it';
+  return null;
+}
+
 /**
  * Whether the climate is running: TeslaMate reports it on or off; for a
  * Rivian it's running while preconditioning, not while it's unavailable

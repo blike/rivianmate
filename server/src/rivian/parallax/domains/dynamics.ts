@@ -183,12 +183,26 @@ export const odometer = defineRvm({
   fieldNames: { '1': 'Odometer (km)' },
 });
 
+const RANGE_THRESHOLDS: Record<number, string> = {
+  1: 'normal',
+  2: 'low',
+  3: 'red',
+  4: 'critically_low',
+};
+const RANGE_TEMPERATURE_IMPACTS: Record<number, string> = {
+  1: 'normal',
+  2: 'cold_may_impact',
+  3: 'cold_impact',
+};
+
 /**
  * `dynamics.vehicle.range`: 1 range (km), as legacy distanceToEmpty; 2 how
  * low it is (1 normal, 2 low, 3 red, 4 critically low) and 3 the cold's
- * effect on it (1 none, 2 may reduce it, 3 reducing it), neither read.
- * Captured beside a matching legacy reading (282, 2 and 3 both 1). Every
- * message so far had field 1, so one without it isn't read as 0 km.
+ * effect on it (1 none, 2 may reduce it, 3 reducing it), which legacy
+ * doesn't have, so they're named after the Rivian app's. Captured beside a
+ * matching legacy reading (282, 2 and 3 both 1); all 1,617 archived by
+ * 2026-10-27 had 2 and 3 at 1. Every message so far had field 1, so one
+ * without it isn't read as 0 km.
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
@@ -196,11 +210,14 @@ export const range = defineRvm({
   maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
-      const km = fieldsOrEmpty(payload)?.int(1);
+      const m = fieldsOrEmpty(payload);
+      const km = m?.int(1);
       if (km != null && km >= 0 && km <= 2000) put('distanceToEmpty', km);
+      put('rangeThreshold', RANGE_THRESHOLDS[m?.int(2) ?? 0]);
+      put('rangeTemperatureImpact', RANGE_TEMPERATURE_IMPACTS[m?.int(3) ?? 0]);
     }),
   toState: stampReadings,
-  stateKeys: ['distanceToEmpty'],
+  stateKeys: ['distanceToEmpty', 'rangeThreshold', 'rangeTemperatureImpact'],
   store: true,
   fieldNames: {
     '1': 'Range (km)',
