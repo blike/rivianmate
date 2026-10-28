@@ -56,7 +56,6 @@ export function decodeNetwork(payloadBase64: string): NetworkState | null {
 export const power = defineRvm({
   rvm: RVM_POWER,
   group: 'vehicleState',
-  maturity: 'partial',
   decode: (payload) =>
     readings((put) => put('powerState', POWER_STATES[fieldsOrEmpty(payload)?.int(1) ?? 0])),
   toState: stampReadings,
@@ -69,7 +68,6 @@ export const power = defineRvm({
 export const network = defineRvm({
   rvm: RVM_NETWORK,
   group: 'core',
-  maturity: 'confirmed',
   decode: decodeNetwork,
   store: true,
   fieldNames: {
@@ -131,7 +129,6 @@ export function decodeWheels(payloadBase64: string): WheelSet[] {
 export const wheels = defineRvm({
   rvm: RVM_WHEELS,
   group: 'vehicleState',
-  maturity: 'partial',
   decode: decodeWheels,
   store: true,
   fieldNames: {
@@ -152,7 +149,6 @@ export const wheels = defineRvm({
 export const activeProfile = defineRvm({
   rvm: 'vehicle.profiles.active_user',
   group: 'vehicleState',
-  maturity: 'probe',
   store: true,
   fieldNames: { '1': 'Active driver profile id' },
 });

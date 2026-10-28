@@ -1,6 +1,6 @@
 /** Every Parallax topic RivianMate knows, and what's derived from them. */
 import type { VehicleState } from '../types.js';
-import type { Maturity, ParallaxGroup, RvmDef } from './define.js';
+import type { ParallaxGroup, RvmDef } from './define.js';
 import { BODY_RVMS } from './domains/body.js';
 import { CHARGING_RVMS } from './domains/charging.js';
 import { COMFORT_RVMS } from './domains/comfort.js';
@@ -55,9 +55,12 @@ export const PARALLAX_GROUPS: readonly ParallaxGroupDef[] = [
   { id: 'probe', needsFeatureFlag: true },
 ];
 
-/** The subscription a topic rides on: probe until its decoding is verified. */
-export function groupOf(def: { group: RvmDef['group']; maturity: Maturity }): ParallaxGroup {
-  return def.maturity === 'probe' ? 'probe' : def.group;
+/** Whether nothing reads a topic yet: it has no decoder. */
+export const isProbe = (def: Pick<RvmDef, 'decode'>): boolean => !def.decode;
+
+/** The subscription a topic rides on: probe until it has a decoder. */
+export function groupOf(def: Pick<RvmDef, 'group' | 'decode'>): ParallaxGroup {
+  return isProbe(def) ? 'probe' : def.group;
 }
 
 /** A group's topics; empty groups aren't subscribed. */

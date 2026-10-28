@@ -105,7 +105,6 @@ export function chargerStatusFromStatus(status: ChargingStatus): string | null {
 export const chargingStatus = defineRvm({
   rvm: RVM_CHARGING_STATUS,
   group: 'core',
-  maturity: 'partial',
   decode: decodeChargingStatus,
   // Both plug and charger state, as the R2 leaves legacy's null.
   toState(status, timeStamp) {
@@ -128,7 +127,6 @@ export const chargingStatus = defineRvm({
 export const timeEstimation = defineRvm({
   rvm: RVM_TIME_ESTIMATION,
   group: 'core',
-  maturity: 'confirmed',
   decode: decodeTimeEstimation,
   store: true,
   fieldNames: {
@@ -140,7 +138,6 @@ export const timeEstimation = defineRvm({
 export const socSlider = defineRvm({
   rvm: RVM_SOC_SLIDER,
   group: 'core',
-  maturity: 'confirmed',
   decode: decodeSocSlider,
   toState: ({ limit }, timeStamp) => ({ batteryLimit: { timeStamp, value: limit } }),
   stateKeys: ['batteryLimit'],
@@ -152,7 +149,6 @@ export const socSlider = defineRvm({
 export const tripTarget = defineRvm({
   rvm: RVM_TRIP_TARGET,
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: { '2': 'Trip target SOC (%; 65535 none)' },
 });
@@ -160,7 +156,6 @@ export const tripTarget = defineRvm({
 export const chargingNotification = defineRvm({
   rvm: RVM_CHARGING_NOTIFICATION,
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: {
     '1': 'Unexpected stop reason',
@@ -242,7 +237,6 @@ export function chargingWindowSchedule(w: ChargingWindow): ChargingSchedule | nu
 export const chargingTimeWindow = defineRvm({
   rvm: RVM_CHARGING_TIME_WINDOW,
   group: 'core',
-  maturity: 'partial',
   decode: decodeChargingWindow,
   store: true,
   fieldNames: {
@@ -262,7 +256,6 @@ export const chargingTimeWindow = defineRvm({
 export const sessionPower = defineRvm({
   rvm: 'charging.session.power',
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: { '1': 'Power (kW, about every 5 s; not resent as 0 when a charge ends)' },
 });
@@ -270,7 +263,6 @@ export const sessionPower = defineRvm({
 export const remoteCommand = defineRvm({
   rvm: 'charging.session.remote_command',
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: { '1': 'Charge now available (1 no, 2 yes)' },
 });
@@ -278,7 +270,6 @@ export const remoteCommand = defineRvm({
 export const chargingEnergyState = defineRvm({
   rvm: 'charging.energy.state',
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: {
     '1': 'Charging state (as the session status)',
@@ -291,7 +282,6 @@ export const chargingEnergyState = defineRvm({
 export const smartChargingSettings = defineRvm({
   rvm: 'charging.smart_charging.settings',
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: {
     '1.1': 'Ready by: hour',
@@ -304,7 +294,6 @@ export const smartChargingSettings = defineRvm({
 export const smartChargingInfo = defineRvm({
   rvm: 'charging.smart_charging.smart_charging_info',
   group: 'core',
-  maturity: 'probe',
   store: true,
   fieldNames: {
     '1.1': 'Resumes (s since epoch)',
@@ -316,7 +305,6 @@ export const smartChargingInfo = defineRvm({
 export const chargingForecast = defineRvm({
   rvm: 'charging.smart_charging.weighted_charging_forecast',
   group: 'core',
-  maturity: 'probe',
   store: true,
 });
 

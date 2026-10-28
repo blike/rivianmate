@@ -83,9 +83,9 @@ describe('Parallax registry', () => {
     expect(subscribed).toHaveLength(PARALLAX_RVMS.length);
   });
 
-  it('subscribes unverified topics apart from the working groups', () => {
-    expect(groupOf({ group: 'vehicleState', maturity: 'probe' })).toBe('probe');
-    expect(groupOf({ group: 'vehicleState', maturity: 'partial' })).toBe('vehicleState');
+  it('subscribes topics without a decoder apart from the working groups', () => {
+    expect(groupOf({ group: 'vehicleState' })).toBe('probe');
+    expect(groupOf({ group: 'vehicleState', decode: () => null })).toBe('vehicleState');
   });
 
   it('only subscribes core for vehicles without the Parallax feature', () => {

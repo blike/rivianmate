@@ -106,7 +106,6 @@ const OPEN_CLOSED_POSITIONS = new Set([1, 2, 3, 4, 12, 13, 14, 15, 16]);
 export const closures = defineRvm({
   rvm: RVM_CLOSURES,
   group: 'vehicleState',
-  maturity: 'partial',
   decode: (payload) =>
     readings((put) => {
       for (const { position, state } of entries(payload)) {
@@ -145,7 +144,6 @@ export const closures = defineRvm({
 export const locks = defineRvm({
   rvm: RVM_LOCKS,
   group: 'vehicleState',
-  maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
       for (const { position, state } of entries(payload)) {
@@ -169,7 +167,6 @@ const WASHER_FLUID: Record<number, string> = { 1: 'normal', 2: 'low', 3: 'empty'
 export const washerFluid = defineRvm({
   rvm: 'body.wipers.fluid_level',
   group: 'vehicleState',
-  maturity: 'partial',
   decode: (payload) =>
     readings((put) => put('wiperFluidState', WASHER_FLUID[fieldsOrEmpty(payload)?.int(2) ?? 0])),
   toState: stampReadings,
@@ -182,7 +179,6 @@ export const washerFluid = defineRvm({
 export const windowCalibration = defineRvm({
   rvm: 'body.windows.states',
   group: 'vehicleState',
-  maturity: 'probe',
   store: true,
   fieldNames: {
     '1.1': 'Window (1 FL, 2 FR, 3 RL, 4 RR, 5 rear)',
@@ -193,7 +189,6 @@ export const windowCalibration = defineRvm({
 export const trailer = defineRvm({
   rvm: 'body.trailer.state',
   group: 'vehicleState',
-  maturity: 'probe',
   store: true,
   fieldNames: {
     '1': 'Trailer (1 none, 2 connected, 3 with brakes, 4 invalid)',
