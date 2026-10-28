@@ -369,14 +369,20 @@ export class TeslaMateSource {
     if (!car) return [];
     const sql = this.db();
     const rows = await q.drives(sql, car.row.id, window);
-    const open = rows.find((r) => r.ended_at == null);
-    const progress = open ? await this.progress(open.id) : null;
+    // Open drives' figures come from their positions: the one under way, and
+    // any TeslaMate abandoned (a handful, over years).
+    const open = rows.filter((r) => r.ended_at == null);
+    const progress = new Map(
+      await Promise.all(
+        open.map(async (r) => [r.id, await this.progress(r.id, r.superseded)] as const),
+      ),
+    );
     return rows.map((row) =>
       toDriveDto(row, {
         range: this.range,
         efficiency: car.row.efficiency,
         places,
-        progress: row === open ? progress : null,
+        progress: progress.get(row.id) ?? null,
         geofences: this.geofences,
       }),
     );
@@ -396,11 +402,12 @@ export class TeslaMateSource {
     const sql = this.db();
     const row = await q.drive(sql, car.row.id, driveId);
     if (!row) return null;
-    const points = await q.drivePoints(sql, driveId, MAX_DRIVE_POINTS);
+    const abandoned = row.ended_at == null && row.superseded;
+    const points = await q.drivePoints(sql, driveId, MAX_DRIVE_POINTS, abandoned);
     const progress =
       row.ended_at == null
         ? {
-            ...(await this.progress(driveId)),
+            ...(await this.progress(driveId, abandoned)),
             altitudes: points.flatMap((p) => (p.elevation != null ? [p.elevation] : [])),
           }
         : null;
@@ -423,13 +430,16 @@ export class TeslaMateSource {
     };
   }
 
-  /** A drive under way, from its positions so far. */
-  private async progress(driveId: number): Promise<DriveProgress> {
+  /**
+   * An open drive's figures from its positions: so far, for the one under
+   * way; up to where the car stopped, for one TeslaMate abandoned.
+   */
+  private async progress(driveId: number, abandoned: boolean): Promise<DriveProgress> {
     const sql = this.db();
     const [edges, latestFull, maxSpeed] = await Promise.all([
-      q.drivePositionEdges(sql, this.columns, driveId),
-      q.latestFullDrivePosition(sql, this.columns, driveId),
-      q.driveMaxSpeed(sql, driveId),
+      q.drivePositionEdges(sql, this.columns, driveId, abandoned),
+      q.latestFullDrivePosition(sql, this.columns, driveId, abandoned),
+      q.driveMaxSpeed(sql, driveId, abandoned),
     ]);
     return { ...edges, latestFull, maxSpeed };
   }

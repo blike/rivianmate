@@ -316,6 +316,8 @@ describe('toSessionDto', () => {
     latest_energy: null,
     latest_ideal_range_km: null,
     latest_rated_range_km: null,
+    latest_date: null,
+    superseded: false,
   };
   const places = {
     settings: { currency: 'CAD' },
@@ -387,6 +389,32 @@ describe('toSessionDto', () => {
       chargingSeconds: 0,
       chargingSince: '2026-10-09T20:00:00.000Z',
       avgPowerKw: null,
+    });
+  });
+
+  it('ends a session TeslaMate left open at its last reading, once a newer one exists', () => {
+    // A restart mid-charge leaves the process open for good.
+    const dto = toSessionDto(
+      {
+        ...row,
+        ended_at: null,
+        duration_min: null,
+        latest_battery_level: 55,
+        latest_energy: 9,
+        latest_rated_range_km: 270,
+        latest_date: at('2026-10-09T21:30:00Z'),
+        superseded: true,
+      },
+      { vehicleId: 'tm-1', range: 'rated', places },
+    );
+    expect(dto).toMatchObject({
+      endedAt: '2026-10-09T21:30:00.000Z',
+      chargingEndedAt: '2026-10-09T21:30:00.000Z',
+      endSoc: 55,
+      energyKwh: 9,
+      chargingSeconds: 90 * 60,
+      chargingSince: null,
+      avgPowerKw: 6,
     });
   });
 });

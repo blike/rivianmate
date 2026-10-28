@@ -132,10 +132,27 @@ export async function latestFullPosition(
   return row ?? null;
 }
 
+/**
+ * Positions up to where an abandoned drive stopped, its first gap of over
+ * 10 minutes; all of them otherwise. After a restart TeslaMate can go on
+ * attaching days of trips to the open drive.
+ */
+function upToStop(sql: Sql, driveId: number, abandoned: boolean) {
+  if (!abandoned) return sql``;
+  return sql`AND date <= (
+    SELECT p.date FROM (
+      SELECT date, lead(date) OVER (ORDER BY date) AS next FROM positions WHERE drive_id = ${driveId}
+    ) p
+    WHERE p.next IS NULL OR p.next - p.date > interval '10 minutes'
+    ORDER BY p.date LIMIT 1
+  )`;
+}
+
 export async function drivePositionEdges(
   sql: Sql,
   columns: Columns,
   driveId: number,
+  abandoned = false,
 ): Promise<{ first: PositionRow | null; latest: PositionRow | null }> {
   const [first] = await sql<PositionRow[]>`
     SELECT ${positionColumns(sql, columns)} FROM positions
@@ -143,7 +160,7 @@ export async function drivePositionEdges(
   `;
   const [latest] = await sql<PositionRow[]>`
     SELECT ${positionColumns(sql, columns)} FROM positions
-    WHERE drive_id = ${driveId} ORDER BY date DESC LIMIT 1
+    WHERE drive_id = ${driveId} ${upToStop(sql, driveId, abandoned)} ORDER BY date DESC LIMIT 1
   `;
   return { first: first ?? null, latest: latest ?? null };
 }
@@ -152,10 +169,12 @@ export async function latestFullDrivePosition(
   sql: Sql,
   columns: Columns,
   driveId: number,
+  abandoned = false,
 ): Promise<PositionRow | null> {
   const [row] = await sql<PositionRow[]>`
     SELECT ${positionColumns(sql, columns)} FROM positions
     WHERE drive_id = ${driveId} AND ideal_battery_range_km IS NOT NULL
+      ${upToStop(sql, driveId, abandoned)}
     ORDER BY date DESC LIMIT 1
   `;
   return row ?? null;
@@ -241,7 +260,12 @@ function driveSelect(sql: Sql) {
            ep.latitude::float8 AS end_lat, ep.longitude::float8 AS end_lon,
            ep.battery_level AS end_battery,
            sg.name AS start_geofence, eg.name AS end_geofence,
-           ${address(sql, 'sa')} AS start_address, ${address(sql, 'ea')} AS end_address
+           ${address(sql, 'sa')} AS start_address, ${address(sql, 'ea')} AS end_address,
+           -- TeslaMate leaves a drive open when it restarts mid-drive; one with
+           -- a newer drive after it was abandoned, not under way.
+           CASE WHEN d.end_date IS NULL THEN EXISTS (
+             SELECT 1 FROM drives n WHERE n.car_id = d.car_id AND n.start_date > d.start_date
+           ) ELSE false END AS superseded
     FROM drives d
     LEFT JOIN positions sp ON sp.id = d.start_position_id
     LEFT JOIN positions ep ON ep.id = d.end_position_id
@@ -298,17 +322,28 @@ export interface PointRow {
   elevation: number | null;
 }
 
-export function drivePoints(sql: Sql, driveId: number, limit: number): Promise<PointRow[]> {
+export function drivePoints(
+  sql: Sql,
+  driveId: number,
+  limit: number,
+  abandoned = false,
+): Promise<PointRow[]> {
   return sql<PointRow[]>`
     SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
            speed, elevation
-    FROM positions WHERE drive_id = ${driveId} ORDER BY date LIMIT ${limit}
+    FROM positions WHERE drive_id = ${driveId} ${upToStop(sql, driveId, abandoned)}
+    ORDER BY date LIMIT ${limit}
   `;
 }
 
-export async function driveMaxSpeed(sql: Sql, driveId: number): Promise<number | null> {
+export async function driveMaxSpeed(
+  sql: Sql,
+  driveId: number,
+  abandoned = false,
+): Promise<number | null> {
   const [row] = await sql<{ max: number | null }[]>`
-    SELECT MAX(speed)::int AS max FROM positions WHERE drive_id = ${driveId}
+    SELECT MAX(speed)::int AS max FROM positions
+    WHERE drive_id = ${driveId} ${upToStop(sql, driveId, abandoned)}
   `;
   return row?.max ?? null;
 }
@@ -336,7 +371,13 @@ export function chargingProcesses(
            latest.battery_level AS latest_battery_level,
            latest.charge_energy_added::float8 AS latest_energy,
            latest.ideal_battery_range_km::float8 AS latest_ideal_range_km,
-           latest.rated_battery_range_km::float8 AS latest_rated_range_km
+           latest.rated_battery_range_km::float8 AS latest_rated_range_km,
+           (latest.date AT TIME ZONE 'UTC') AS latest_date,
+           -- Left open by a restart mid-charge, as chargeIntervals explains.
+           CASE WHEN cp.end_date IS NULL THEN EXISTS (
+             SELECT 1 FROM charging_processes n
+             WHERE n.car_id = cp.car_id AND n.start_date > cp.start_date
+           ) ELSE false END AS superseded
     FROM charging_processes cp
     LEFT JOIN positions p ON p.id = cp.position_id
     LEFT JOIN addresses a ON a.id = cp.address_id
@@ -347,7 +388,7 @@ export function chargingProcesses(
       FROM charges WHERE charging_process_id = cp.id
     ) agg ON true
     LEFT JOIN LATERAL (
-      SELECT battery_level, charge_energy_added, ideal_battery_range_km, rated_battery_range_km
+      SELECT date, battery_level, charge_energy_added, ideal_battery_range_km, rated_battery_range_km
       FROM charges WHERE charging_process_id = cp.id AND cp.end_date IS NULL
       ORDER BY date DESC LIMIT 1
     ) latest ON true
