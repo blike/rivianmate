@@ -61,8 +61,6 @@ export interface VehicleStateStream {
   ): void;
   /** True once Rivian has refused an optional subscription, for one vehicle or any. */
   isUnsupported?(kind: OptionalSubKind, vehicleId?: string): boolean;
-  /** Legacy fields Rivian has rejected from the subscription (for diagnostics). */
-  readonly droppedFields?: readonly string[];
   diagnostics?(): StreamDiagnostics;
   /** What a feed last received, for diagnostics. */
   latestData?(feedId: string): FeedLatestData | null;
@@ -133,7 +131,13 @@ export type TopicKind = 'read' | 'probe' | 'unregistered';
 export interface FeedTopic {
   rvm: string;
   kind: TopicKind;
+  /** When it last arrived since startup; null if it hasn't. */
+  lastMessageAt: string | null;
+  /** Messages since startup. */
+  count: number;
 }
+
+type TopicRef = Pick<FeedTopic, 'rvm' | 'kind'>;
 
 export interface FeedDiagnostics {
   id: string;
@@ -214,7 +218,7 @@ interface Feed {
   vehicleId: string;
   kind: SubKind;
   domain: string | null;
-  topics: FeedTopic[];
+  topics: TopicRef[];
   sub: Subscription;
 }
 
@@ -227,7 +231,7 @@ function feedsOf(sub: Subscription): Feed[] {
   if (!isParallax(sub.kind)) return [{ ...base, id: sub.id, domain: null, topics: [] }];
   const expected = sub.rvms ?? PARALLAX_RVMS.map((def) => def.rvm);
   const rvms = new Set([...expected, ...(sub.topicStats?.keys() ?? [])]);
-  const domains = new Map<string, FeedTopic[]>();
+  const domains = new Map<string, TopicRef[]>();
   for (const rvm of rvms) {
     const domain = domainOf(rvm);
     domains.set(domain, [...(domains.get(domain) ?? []), { rvm, kind: topicKind(rvm) }]);
@@ -411,7 +415,15 @@ export class RivianSubscriptionManager implements VehicleStateStream {
           vehicleId: feed.vehicleId,
           kind: feed.kind,
           domain: feed.domain,
-          topics: feed.topics,
+          topics: feed.topics.map(({ rvm, kind }) => {
+            const stats = sub.topicStats?.get(rvm);
+            return {
+              rvm,
+              kind,
+              lastMessageAt: stats ? new Date(stats.at).toISOString() : null,
+              count: stats?.count ?? 0,
+            };
+          }),
           status,
           lastMessageAt: lastMessageAt == null ? null : new Date(lastMessageAt).toISOString(),
         };

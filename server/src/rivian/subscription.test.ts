@@ -275,11 +275,12 @@ describe('RivianSubscriptionManager', () => {
     expect(server.subscribes(server.conns[0]!)[0]!.payload!.variables).toEqual({ vehicleId: 'v1' });
     const feed = (domain: string) => manager.diagnostics().feeds.find((f) => f.domain === domain);
     // Every registry topic shows before any arrives, by its kind.
-    expect(feed('dynamics')!.topics).toContainEqual({ rvm: 'dynamics.vehicle.gear', kind: 'read' });
-    expect(feed('security')!.topics).toContainEqual({
-      rvm: 'security.alarm.state',
-      kind: 'probe',
-    });
+    expect(feed('dynamics')!.topics).toContainEqual(
+      expect.objectContaining({ rvm: 'dynamics.vehicle.gear', kind: 'read' }),
+    );
+    expect(feed('security')!.topics).toContainEqual(
+      expect.objectContaining({ rvm: 'security.alarm.state', kind: 'probe' }),
+    );
     expect(feed('device_table')).toBeUndefined();
 
     const send = (rvm: string, payload: string) =>
@@ -299,14 +300,19 @@ describe('RivianSubscriptionManager', () => {
 
     expect(received).toEqual(['dynamics.vehicle.gear']);
     expect(feed('device_table')).toMatchObject({
-      topics: [{ rvm: 'device_table.vas_keyper.devices', kind: 'unregistered' }],
+      topics: [
+        expect.objectContaining({
+          rvm: 'device_table.vas_keyper.devices',
+          kind: 'unregistered',
+          count: 2,
+        }),
+      ],
       status: 'receiving',
     });
     // An unregistered topic doesn't make a domain of registry topics look well.
-    expect(feed('security')!.topics).toContainEqual({
-      rvm: 'security.access.passive_entry',
-      kind: 'unregistered',
-    });
+    expect(feed('security')!.topics).toContainEqual(
+      expect.objectContaining({ rvm: 'security.access.passive_entry', kind: 'unregistered' }),
+    );
     expect(feed('security')!.status).toBe('waiting');
     expect(manager.latestData('parallax:v1:device_table')!.messages).toEqual([
       {

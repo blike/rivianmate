@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   api,
   type FeedLatestData,
@@ -7,12 +7,14 @@ import {
   type RivianDiagnosticsResponse,
   type VehicleDto,
 } from '../../api/client';
-import { Dot } from '../../components/Dot';
-import { LoadingScope, Skeleton } from '../../components/LoadingState';
-import { Row } from '../../components/Panel';
+import { Skeleton } from '../../components/LoadingState';
+import { StatTiles } from '../../components/StatTiles';
 import { relativeTime } from '../../lib/freshness';
 import { dateTime } from '../../lib/format';
-import { SettingsGroup, SettingsHero } from './SettingsControls';
+import { SegmentedControl, SettingsGroup, SettingsHero } from './SettingsControls';
+
+type Feed = NonNullable<RivianDiagnosticsResponse['monitor']['subscriptions']>['feeds'][number];
+type FeedState = Feed['status'];
 
 const feedNames = {
   vehicleState: 'Vehicle state',
@@ -22,20 +24,25 @@ const feedNames = {
 };
 const pollingLabels = {
   stopped: 'Stopped',
-  standby: 'Off · live stream connected',
-  waiting: 'Waiting for stream recovery',
-  fallback: 'Fallback polling active',
+  standby: 'Off',
+  waiting: 'Waiting',
+  fallback: 'Polling',
+};
+const pollingDetails = {
+  stopped: 'Monitoring is stopped',
+  standby: 'Live stream connected',
+  waiting: 'For the stream to recover',
+  fallback: 'Every 5 min awake, 30 asleep',
 };
 
 /** Parallax domains that aren't simply capitalized. */
-const domainNames: Record<string, string> = { ota: 'OTA' };
+const domainNames: Record<string, string> = { ota: 'OTA', device_table: 'Devices' };
 
-/** A feed's row name: its Parallax domain, or the legacy subscription's name. */
-function feedName(feed: { domain: string | null; kind: keyof typeof feedNames }) {
-  return feed.domain ? (domainNames[feed.domain] ?? feed.domain) : feedNames[feed.kind];
-}
+const domainName = (domain: string) =>
+  domainNames[domain] ?? (domain.charAt(0).toUpperCase() + domain.slice(1)).replaceAll('_', ' ');
 
-type FeedState = 'receiving' | 'empty' | 'waiting' | 'unsupported' | 'errored';
+/** A topic's name within its domain: `charging.session.status` is `session.status`. */
+const shortTopic = (rvm: string) => rvm.slice(rvm.indexOf('.') + 1);
 
 function receivedAt(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : 'Not yet recorded';
@@ -50,128 +57,166 @@ function countedSince(since: string, now: number) {
   return now - Date.parse(since) < 24 * 3600_000 ? `since ${dateTime(since)}` : 'last 24 hours';
 }
 
-const topicKindLabels: Record<FeedTopic['kind'], string> = {
+/** The current time, ticking with the 10-second diagnostics refresh. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+const feedStatus: Record<FeedState, { label: string; color: string; help: string }> = {
+  receiving: {
+    label: 'Receiving',
+    color: 'var(--status-good)',
+    help: 'Data arrived in the last 5 minutes.',
+  },
+  waiting: {
+    label: 'Waiting',
+    color: 'var(--text-secondary)',
+    help: 'Nothing in the last 5 minutes: normal while the vehicle sleeps or isn’t charging.',
+  },
+  empty: {
+    label: 'No data',
+    color: 'var(--text-muted)',
+    help: 'Rivian accepted the subscription but only sends empty readings.',
+  },
+  unsupported: {
+    label: 'Unsupported',
+    color: 'var(--text-muted)',
+    help: 'Rivian declined the subscription for this vehicle.',
+  },
+  errored: {
+    label: 'Errored',
+    color: 'var(--status-critical)',
+    help: 'Rivian reported an error on its last message.',
+  },
+};
+
+function FeedStatus({ status }: { status: FeedState }) {
+  const s = feedStatus[status];
+  return (
+    <span className="shrink-0 text-xs font-medium" style={{ color: s.color }} title={s.help}>
+      {s.label}
+    </span>
+  );
+}
+
+type TopicFilter = 'all' | FeedTopic['kind'] | 'quiet';
+
+const topicFilters: { value: TopicFilter; label: string; help: string }[] = [
+  { value: 'all', label: 'All', help: 'Every topic' },
+  { value: 'read', label: 'Read', help: 'Topics RivianMate uses' },
+  {
+    value: 'probe',
+    label: 'Probe',
+    help: 'Archived to be worked out; nothing reads them yet',
+  },
+  {
+    value: 'unregistered',
+    label: 'Not kept',
+    help: 'Sent by Rivian but unknown to RivianMate: seen by name and size, never stored',
+  },
+  {
+    value: 'quiet',
+    label: 'Quiet',
+    help: 'Known topics that haven’t arrived since the server started',
+  },
+];
+
+const kindLabels: Record<FeedTopic['kind'], string> = {
   read: 'Read',
   probe: 'Probe',
   unregistered: 'Not kept',
 };
 
+const filterHelp = (value: TopicFilter) => topicFilters.find((f) => f.value === value)!.help;
+
+/** Whether a topic shows under a filter. */
+export function matchesFilter(topic: FeedTopic, filter: TopicFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'quiet') return topic.kind !== 'unregistered' && topic.lastMessageAt == null;
+  return topic.kind === filter;
+}
+
 /** What RivianMate does with a Parallax topic, beside its name. */
-function TopicKindTag(props: { kind: FeedTopic['kind'] }) {
+function KindTag(props: { kind: FeedTopic['kind'] }) {
   return (
-    <span className="inline-flex shrink-0 items-center rounded-full border border-(--border) px-2 text-[10.5px] leading-[14px] font-medium uppercase tracking-wide text-(--text-muted)">
-      {topicKindLabels[props.kind]}
+    <span
+      className="inline-flex shrink-0 items-center rounded-full border border-(--border) px-2 text-[11px] leading-4 font-medium text-(--text-muted)"
+      title={filterHelp(props.kind)}
+    >
+      {kindLabels[props.kind]}
     </span>
   );
 }
 
 /**
- * A feed's second line: when it last had data, and what it last received,
- * fetched when opened. Parallax feeds list each topic's raw fields.
+ * A row's last column, the same width in every row and centered in it, so
+ * the times before it line up whatever status or tag it holds.
  */
-function FeedLatest(props: {
-  feedId: string;
-  topics: FeedTopic[];
-  /** When the feed last had data, on the left. */
-  lastData: ReactNode;
-  lastDataTitle: string;
-}) {
+function EndSlot(props: { children: ReactNode }) {
+  return <span className="flex w-24 shrink-0 justify-center">{props.children}</span>;
+}
+
+/** When a row last had data, in a centered column of its own; sentence case, like the labels. */
+function TimeSlot(props: { title: string; children: string }) {
+  const text = props.children;
+  return (
+    <span className="w-20 shrink-0 text-center text-xs text-(--text-muted)" title={props.title}>
+      {text.charAt(0).toUpperCase() + text.slice(1)}
+    </span>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden
+      className="h-3 w-3 shrink-0 text-(--text-muted) transition-transform group-open/row:rotate-90"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A row that opens to show more; its body mounts only once opened. */
+function ExpandRow(props: { summary: ReactNode; children: () => ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <details
-      className="group/latest text-xs text-(--text-secondary)"
+      className={`group/row ${props.className ?? ''}`}
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
-      <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0 truncate text-(--text-muted)" title={props.lastDataTitle}>
-          {props.lastData}
-        </span>
-        <span className="inline-flex shrink-0 items-center gap-1 text-(--text-muted) group-hover/latest:text-(--text-secondary)">
-          Latest data
-          {props.topics.length > 0 &&
-            ` · ${props.topics.length} ${props.topics.length === 1 ? 'topic' : 'topics'}`}
-          <svg
-            viewBox="0 0 16 16"
-            aria-hidden
-            className="h-3 w-3 transition-transform group-open/latest:rotate-90"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-2.5 hover:bg-(--surface-2) focus-visible:bg-(--surface-2) focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+        <Chevron />
+        {props.summary}
       </summary>
-      {open && <FeedLatestBody feedId={props.feedId} topics={props.topics} />}
+      {open && props.children()}
     </details>
   );
 }
 
-/** Exported for tests. */
-export function FeedLatestBody(props: { feedId: string; topics: FeedTopic[] }) {
-  const { data, isPending, isError } = useQuery({
-    queryKey: ['feedLatest', props.feedId],
-    queryFn: () => api.feedLatest(props.feedId),
+function useFeedLatest(feedId: string) {
+  return useQuery({
+    queryKey: ['feedLatest', feedId],
+    queryFn: () => api.feedLatest(feedId),
     refetchInterval: 10_000,
   });
-  if (isPending) return <p className="mt-2 text-(--text-muted)">Loading…</p>;
-  if (isError)
-    return <p className="mt-2 text-(--status-critical)">Couldn’t load the latest data.</p>;
-  const byTopic = new Map(data.messages.map((m) => [m.topic, m]));
-  const topics = props.topics.length > 0 ? props.topics : [null];
-  return (
-    <ul className="mt-2 space-y-3">
-      {topics.map((topic) => {
-        const m = byTopic.get(topic?.rvm ?? null);
-        const archived = topic ? data.lastArchivedAt?.[topic.rvm] : undefined;
-        return (
-          <li key={topic?.rvm ?? 'feed'}>
-            {topic && (
-              <div className="flex items-start justify-between gap-2">
-                <span className="min-w-0 break-all font-mono text-(--text-primary)">
-                  {topic.rvm}
-                </span>
-                <TopicKindTag kind={topic.kind} />
-              </div>
-            )}
-            {m ? (
-              <>
-                <div className="text-(--text-muted)">
-                  Received {new Date(m.receivedAt).toLocaleString()}
-                  {m.count != null &&
-                    ` · ${m.count} ${m.count === 1 ? 'message' : 'messages'}, ${m.bytes} bytes`}
-                </div>
-                {m.fields ? (
-                  <RawFields fields={m.fields} />
-                ) : m.count != null ? null : (
-                  <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-(--surface-2) p-2 font-mono text-[11px] leading-snug">
-                    {JSON.stringify(m.data, null, 2)}
-                  </pre>
-                )}
-              </>
-            ) : (
-              <div className="text-(--text-muted)">
-                Nothing received since the server started
-                {archived === undefined
-                  ? '.'
-                  : archived
-                    ? ` · last archived ${new Date(archived).toLocaleString()}.`
-                    : ' · never archived.'}
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
 
 /** A Parallax message's fields as Rivian sent them, with RivianMate's reading of each. */
 function RawFields(props: { fields: NonNullable<FeedLatestData['messages'][number]['fields']> }) {
   if (props.fields.length === 0)
-    return <div className="mt-1 text-(--text-muted)">Empty message.</div>;
+    return <div className="text-(--text-muted)">Empty message: every field is zero.</div>;
   return (
-    <div className="mt-1 max-h-64 overflow-auto rounded-md bg-(--surface-2)">
+    <div className="max-h-64 overflow-auto rounded-md bg-(--surface-2)">
       <table className="w-full text-left text-[11px] leading-snug">
         <thead className="sticky top-0 bg-(--surface-2) text-(--text-muted)">
           <tr>
@@ -198,40 +243,271 @@ function RawFields(props: { fields: NonNullable<FeedLatestData['messages'][numbe
   );
 }
 
-/** The current time, ticking with the 10-second diagnostics refresh. */
-function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 10_000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
+/** A legacy subscription: its status, and what it last sent when opened. */
+function LegacyFeedRow(props: { feed: Feed; now: number }) {
+  const { feed } = props;
+  return (
+    <ExpandRow
+      summary={
+        <>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {feedNames[feed.kind]}
+          </span>
+          <TimeSlot title={receivedAt(feed.lastMessageAt)}>
+            {ago(feed.lastMessageAt, props.now)}
+          </TimeSlot>
+          <EndSlot>
+            <FeedStatus status={feed.status} />
+          </EndSlot>
+        </>
+      }
+    >
+      {() => <LegacyFeedBody feedId={feed.id} />}
+    </ExpandRow>
+  );
 }
 
-const feedStatusLabels: Record<FeedState, string> = {
-  receiving: 'Receiving',
-  empty: 'No data',
-  waiting: 'Waiting',
-  unsupported: 'Unsupported',
-  errored: 'Errored',
-};
-
-function FeedStatus({ status }: { status: FeedState }) {
-  const colors = {
-    receiving: 'var(--status-good)',
-    empty: 'var(--text-muted)',
-    waiting: 'var(--text-secondary)',
-    unsupported: 'var(--text-muted)',
-    errored: 'var(--status-critical)',
-  };
+function LegacyFeedBody(props: { feedId: string }) {
+  const { data, isPending, isError } = useFeedLatest(props.feedId);
+  const m = data?.messages[0];
   return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium"
-      style={{ color: colors[status] }}
+    <div className="px-4 pb-3 pl-10 text-xs">
+      {isPending ? (
+        <p className="text-(--text-muted)">Loading…</p>
+      ) : isError ? (
+        <p className="text-(--status-critical)">Couldn’t load the latest data.</p>
+      ) : !m ? (
+        <p className="text-(--text-muted)">Nothing received since the server started.</p>
+      ) : (
+        <>
+          <p className="mb-1 text-(--text-muted)">
+            Latest, received {new Date(m.receivedAt).toLocaleString()}
+          </p>
+          <pre className="max-h-64 overflow-auto rounded-md bg-(--surface-2) p-2 font-mono text-[11px] leading-snug">
+            {JSON.stringify(m.data, null, 2)}
+          </pre>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A Parallax domain: its topics matching the filter, listed once opened. */
+function DomainRow(props: { feed: Feed; topics: FeedTopic[]; filtered: boolean; now: number }) {
+  const { feed, topics } = props;
+  const notKept = topics.filter((t) => t.kind === 'unregistered').length;
+  const onlyNotKept = feed.topics.every((t) => t.kind === 'unregistered');
+  const count = props.filtered
+    ? `${topics.length} of ${feed.topics.length} topics`
+    : `${topics.length} ${topics.length === 1 ? 'topic' : 'topics'}`;
+  return (
+    <ExpandRow
+      summary={
+        <>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{domainName(feed.domain!)}</span>
+            <span className="block truncate text-xs text-(--text-muted)">
+              {count}
+              {!props.filtered && notKept > 0 && !onlyNotKept && ` · ${notKept} not kept`}
+            </span>
+          </span>
+          <TimeSlot title={receivedAt(feed.lastMessageAt)}>
+            {ago(feed.lastMessageAt, props.now)}
+          </TimeSlot>
+          <EndSlot>
+            {onlyNotKept ? <KindTag kind="unregistered" /> : <FeedStatus status={feed.status} />}
+          </EndSlot>
+        </>
+      }
     >
-      <Dot color={colors[status]} />
-      {feedStatusLabels[status]}
-    </span>
+      {() => <DomainTopics feedId={feed.id} topics={topics} now={props.now} />}
+    </ExpandRow>
+  );
+}
+
+/** A domain's topics, each opening to what it last sent. */
+function DomainTopics(props: { feedId: string; topics: FeedTopic[]; now: number }) {
+  const { data, isPending, isError } = useFeedLatest(props.feedId);
+  const byTopic = new Map(data?.messages.map((m) => [m.topic, m]));
+  if (isError)
+    return (
+      <p className="px-4 pb-3 pl-10 text-xs text-(--status-critical)">
+        Couldn’t load the latest data.
+      </p>
+    );
+  return (
+    <ul className="pb-1.5 pl-6">
+      {props.topics.map((topic) => (
+        <li key={topic.rvm}>
+          <ExpandRow
+            summary={
+              <>
+                <span
+                  className="min-w-0 flex-1 truncate font-mono text-xs text-(--text-primary)"
+                  title={topic.rvm}
+                >
+                  {shortTopic(topic.rvm)}
+                </span>
+                <TimeSlot title={receivedAt(topic.lastMessageAt)}>
+                  {topic.lastMessageAt == null ? 'Quiet' : ago(topic.lastMessageAt, props.now)}
+                </TimeSlot>
+                <EndSlot>
+                  <KindTag kind={topic.kind} />
+                </EndSlot>
+              </>
+            }
+          >
+            {() => (
+              <TopicDetail
+                topic={topic}
+                message={byTopic.get(topic.rvm)}
+                archived={isPending ? undefined : (data?.lastArchivedAt?.[topic.rvm] ?? null)}
+              />
+            )}
+          </ExpandRow>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * What a topic last sent: its fields, or for one not kept how often it
+ * came, or for a quiet one when it last changed (`archived` undefined while
+ * that's loading). Exported for tests.
+ */
+export function TopicDetail(props: {
+  topic: FeedTopic;
+  message: FeedLatestData['messages'][number] | undefined;
+  archived: string | null | undefined;
+}) {
+  const { topic, message: m, archived } = props;
+  return (
+    <div className="space-y-1 px-4 pb-3 pl-10 text-xs text-(--text-muted)">
+      <p className="break-all font-mono">{topic.rvm}</p>
+      {topic.kind === 'unregistered' ? (
+        <p>
+          Seen {topic.count} {topic.count === 1 ? 'time' : 'times'}
+          {m?.bytes != null && `, ${m.bytes} bytes last`} since the server started. RivianMate
+          doesn’t know this topic, so its contents are never kept.
+        </p>
+      ) : topic.lastMessageAt == null ? (
+        <p>
+          Nothing since the server started.{' '}
+          {archived === undefined
+            ? ''
+            : archived
+              ? `Last changed ${new Date(archived).toLocaleString()}.`
+              : 'Never archived: this vehicle may not send it.'}
+        </p>
+      ) : (
+        <>
+          <p>
+            {topic.count} {topic.count === 1 ? 'message' : 'messages'} since the server started
+            {m && `, the latest ${new Date(m.receivedAt).toLocaleString()}`}.
+          </p>
+          {m?.fields ? <RawFields fields={m.fields} /> : <p>Loading…</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What each status and topic label means, once, under the feeds. */
+function LabelKey() {
+  return (
+    <section aria-label="Legend" className="px-1">
+      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-(--text-muted)">
+        Legend
+      </h3>
+      <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+        <div>
+          <h4 className="mb-2 text-xs font-medium text-(--text-secondary)">Feeds</h4>
+          <dl className="space-y-1.5 text-xs">
+            {(Object.keys(feedStatus) as FeedState[]).map((status) => (
+              <div key={status} className="flex items-baseline gap-3">
+                <dt className="w-24 shrink-0">
+                  <FeedStatus status={status} />
+                </dt>
+                <dd className="text-(--text-muted)">{feedStatus[status].help}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div>
+          <h4 className="mb-2 text-xs font-medium text-(--text-secondary)">Parallax topics</h4>
+          <dl className="space-y-1.5 text-xs">
+            {(['read', 'probe', 'unregistered'] as const).map((kind) => (
+              <div key={kind} className="flex items-baseline gap-3">
+                <dt className="w-24 shrink-0">
+                  <KindTag kind={kind} />
+                </dt>
+                <dd className="text-(--text-muted)">{filterHelp(kind)}.</dd>
+              </div>
+            ))}
+            <div className="flex items-baseline gap-3">
+              <dt className="w-24 shrink-0 text-(--text-secondary)">Quiet</dt>
+              <dd className="text-(--text-muted)">{filterHelp('quiet')}.</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Parallax, by domain, narrowed to one kind of topic or the quiet ones. */
+function ParallaxTopics(props: { feeds: Feed[]; now: number }) {
+  const [filter, setFilter] = useState<TopicFilter>('all');
+  const all = props.feeds.flatMap((f) => f.topics);
+  const counts = Object.fromEntries(
+    topicFilters.map((f) => [f.value, all.filter((t) => matchesFilter(t, f.value)).length]),
+  ) as Record<TopicFilter, number>;
+  const domains = props.feeds
+    .map((feed) => ({ feed, topics: feed.topics.filter((t) => matchesFilter(t, filter)) }))
+    .filter((d) => d.topics.length > 0)
+    .sort((a, b) => domainName(a.feed.domain!).localeCompare(domainName(b.feed.domain!)));
+  const receiving = props.feeds.filter((f) => f.status === 'receiving').length;
+  return (
+    <SettingsGroup
+      ariaLabel="Parallax feeds"
+      title="Parallax"
+      action={
+        <span className="text-xs text-(--text-muted)">
+          {receiving} of {props.feeds.length} domains receiving
+        </span>
+      }
+    >
+      <div role="radiogroup" aria-label="Show topics" className="flex flex-wrap gap-1.5 px-4 py-3">
+        {topicFilters.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            role="radio"
+            aria-checked={f.value === filter}
+            title={f.help}
+            disabled={counts[f.value] === 0 && f.value !== filter}
+            onClick={() => setFilter(f.value)}
+            className={`rounded-full px-2.5 py-0.5 text-xs transition-colors disabled:opacity-40 ${
+              f.value === filter
+                ? 'bg-(--accent) font-medium text-(--on-accent)'
+                : 'bg-(--surface-2) text-(--text-secondary) hover:text-(--text-primary)'
+            }`}
+          >
+            {f.label} <span className="tabular-nums opacity-75">{counts[f.value]}</span>
+          </button>
+        ))}
+      </div>
+      {domains.map(({ feed, topics }) => (
+        <DomainRow
+          key={feed.id}
+          feed={feed}
+          topics={topics}
+          filtered={filter !== 'all'}
+          now={props.now}
+        />
+      ))}
+    </SettingsGroup>
   );
 }
 
@@ -250,15 +526,19 @@ export function ApiConnectionsPanel({
 }) {
   const now = useNow();
   const stream = diagnostics?.monitor.subscriptions;
-  const cooldown = diagnostics?.traffic.cooldownUntil;
-  const coolingDown = cooldown != null;
-  const counted = diagnostics ? countedSince(diagnostics.traffic.since, now) : '';
-  const feeds = stream?.feeds ?? [];
+  const feeds = useMemo(() => stream?.feeds ?? [], [stream]);
+  const feedVehicles = [...new Set(feeds.map((f) => f.vehicleId))];
+  const [chosen, setChosen] = useState<string | null>(null);
+  const vehicleId = chosen && feedVehicles.includes(chosen) ? chosen : (feedVehicles[0] ?? null);
   const vehicleName = (id: string) => {
     const vehicle = vehicles.find((v) => v.id === id);
     return vehicle?.name ?? vehicle?.model ?? 'Vehicle';
   };
-  const receiving = feeds.filter((f) => f.status === 'receiving').length;
+  const mine = feeds.filter((f) => f.vehicleId === vehicleId);
+  const legacy = mine
+    .filter((f) => f.domain == null)
+    .sort((a, b) => feedNames[a.kind].localeCompare(feedNames[b.kind]));
+  const parallax = mine.filter((f) => f.domain != null);
   const lastData =
     feeds
       .map((f) => f.lastMessageAt)
@@ -282,13 +562,9 @@ export function ApiConnectionsPanel({
           <Skeleton className="w-[16em]" />
         </section>
       ) : (
-        <SettingsHero
-          {...connectionSummary(diagnostics, mockMode, now, {
-            receiving,
-            total: feeds.length,
-            lastData,
-          })}
-        />
+        <SettingsHero {...connectionSummary(diagnostics, mockMode, lastData, now)}>
+          {diagnostics && !mockMode && <HealthTiles diagnostics={diagnostics} now={now} />}
+        </SettingsHero>
       )}
 
       {loading ? (
@@ -312,138 +588,80 @@ export function ApiConnectionsPanel({
           </p>
         </SettingsGroup>
       ) : (
-        (['Legacy', 'Parallax'] as const).map((group) => {
-          const list = feeds
-            .filter((feed) => (group === 'Legacy' ? feed.domain == null : feed.domain != null))
-            .sort(
-              (a, b) =>
-                feedName(a).localeCompare(feedName(b)) ||
-                vehicleName(a.vehicleId).localeCompare(vehicleName(b.vehicleId)),
-            );
-          if (!list.length) return null;
-          return (
+        <>
+          {feedVehicles.length > 1 && vehicleId && (
+            <div className="overflow-x-auto">
+              <SegmentedControl
+                label="Vehicle"
+                value={vehicleId}
+                options={feedVehicles.map((id) => ({ value: id, label: vehicleName(id) }))}
+                onChange={setChosen}
+              />
+            </div>
+          )}
+          {legacy.length > 0 && (
             <SettingsGroup
-              key={group}
-              ariaLabel={`${group} feeds`}
-              title={`${group} feeds`}
+              ariaLabel="Legacy feeds"
+              title="Legacy API"
               action={
                 <span className="text-xs text-(--text-muted)">
-                  {list.filter((f) => f.status === 'receiving').length} of {list.length} receiving
+                  {legacy.filter((f) => f.status === 'receiving').length} of {legacy.length}{' '}
+                  receiving
                 </span>
               }
-              note={
-                group === 'Parallax' || !feeds.some((f) => f.domain != null)
-                  ? `Receiving means data arrived in the last 5 minutes. Waiting is normal while the vehicle sleeps or isn’t charging. No data means Rivian accepted the subscription but has only sent empty readings, as it does for an R2. Unsupported means Rivian declined the subscription.${group === 'Parallax' ? ' Each topic is read, a probe (archived to be worked out, nothing reads it yet), or not kept: one RivianMate doesn’t know, seen by name and size only. The archive keeps changes, so a topic’s last archived time is when it last changed.' : ''}`
-                  : undefined
-              }
             >
-              {list.map((feed) => (
-                <div key={feed.id} className="space-y-0.5 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0 truncate text-sm font-medium capitalize">
-                      {feedName(feed)}
-                    </div>
-                    <FeedStatus status={feed.status} />
-                  </div>
-                  <FeedLatest
-                    feedId={feed.id}
-                    topics={feed.topics}
-                    lastDataTitle={receivedAt(feed.lastMessageAt)}
-                    lastData={
-                      <>
-                        {vehicles.length > 1 && `${vehicleName(feed.vehicleId)} · `}
-                        Last data: {ago(feed.lastMessageAt, now)}
-                      </>
-                    }
-                  />
-                </div>
+              {legacy.map((feed) => (
+                <LegacyFeedRow key={feed.id} feed={feed} now={now} />
               ))}
             </SettingsGroup>
-          );
-        })
+          )}
+          {parallax.length > 0 && <ParallaxTopics feeds={parallax} now={now} />}
+          <LabelKey />
+        </>
       )}
-
-      <Disclosure title="Connection details">
-        <LoadingScope loading={loading}>
-          <h4 className="mb-2 text-xs uppercase tracking-wide text-(--text-muted)">Requests</h4>
-          <dl className="space-y-2 text-sm">
-            <Row
-              label="Vehicle-state polling"
-              value={
-                diagnostics
-                  ? coolingDown && diagnostics.monitor.running
-                    ? 'Paused by rate-limit cooldown'
-                    : pollingLabels[diagnostics.monitor.pollingStatus]
-                  : '—'
-              }
-            />
-            <Row
-              label="Last successful request"
-              value={diagnostics ? receivedAt(diagnostics.traffic.lastSuccessfulRequestAt) : '—'}
-            />
-            <Row
-              label="Rate-limit cooldown"
-              value={
-                !diagnostics ? '—' : coolingDown ? `Paused until ${receivedAt(cooldown)}` : 'None'
-              }
-            />
-          </dl>
-
-          <h4 className="mb-2 mt-5 text-xs uppercase tracking-wide text-(--text-muted)">
-            Live stream
-          </h4>
-          <dl className="space-y-2 text-sm">
-            <Row
-              label="WebSocket"
-              value={
-                !diagnostics ? (
-                  '—'
-                ) : mockMode ? (
-                  'Simulated'
-                ) : stream ? (
-                  <span className="capitalize">{stream.state}</span>
-                ) : diagnostics.monitor.running ? (
-                  'Starting'
-                ) : (
-                  'Stopped'
-                )
-              }
-            />
-            <Row
-              label="Last message received"
-              value={diagnostics ? receivedAt(stream?.lastMessageAt) : '—'}
-            />
-            <Row
-              label={`Dropped connections · ${counted}`}
-              value={diagnostics ? diagnostics.traffic.last24h.wsDrops : '—'}
-            />
-          </dl>
-
-          {diagnostics &&
-            (Object.keys(diagnostics.traffic.requestsByOperation24h).length > 0 ||
-              diagnostics.monitor.parallaxDroppedFields.length > 0) && (
-              <>
-                <h4 className="mb-2 mt-5 text-xs uppercase tracking-wide text-(--text-muted)">
-                  Requests by operation · {counted}
-                </h4>
-                <dl className="space-y-2 text-sm">
-                  {Object.entries(diagnostics.traffic.requestsByOperation24h)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([op, n]) => (
-                      <Row key={op} label={op} value={n} />
-                    ))}
-                  {diagnostics.monitor.parallaxDroppedFields.length > 0 && (
-                    <Row
-                      label="Fields Rivian rejected"
-                      value={diagnostics.monitor.parallaxDroppedFields.join(', ')}
-                    />
-                  )}
-                </dl>
-              </>
-            )}
-        </LoadingScope>
-      </Disclosure>
     </>
+  );
+}
+
+/** The stream's health at a glance, under the headline. */
+function HealthTiles(props: { diagnostics: RivianDiagnosticsResponse; now: number }) {
+  const { monitor, traffic } = props.diagnostics;
+  const stream = monitor.subscriptions;
+  const paused = traffic.cooldownUntil != null && monitor.running;
+  return (
+    <StatTiles
+      columns="sm:grid-cols-4"
+      tiles={[
+        {
+          label: 'Live stream',
+          value: (
+            <span className="capitalize">
+              {stream ? stream.state : monitor.running ? 'Starting' : 'Stopped'}
+            </span>
+          ),
+          sub: `Last message ${ago(stream?.lastMessageAt, props.now)}`,
+        },
+        {
+          label: 'Dropped connections',
+          value: traffic.last24h.wsDrops,
+          sub: countedSince(traffic.since, props.now),
+        },
+        {
+          label: 'Fallback polling',
+          value: paused ? 'Paused' : pollingLabels[monitor.pollingStatus],
+          sub: paused ? 'By rate-limit cooldown' : pollingDetails[monitor.pollingStatus],
+        },
+        {
+          label: 'Last request',
+          value: traffic.lastSuccessfulRequestAt
+            ? ago(traffic.lastSuccessfulRequestAt, props.now)
+            : '—',
+          sub: traffic.cooldownUntil
+            ? `Paused until ${new Date(traffic.cooldownUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+            : 'No rate limit',
+        },
+      ]}
+    />
   );
 }
 
@@ -451,8 +669,8 @@ export function ApiConnectionsPanel({
 function connectionSummary(
   diagnostics: RivianDiagnosticsResponse | undefined,
   mockMode: boolean,
+  feedData: string | null,
   now: number,
-  feeds: { receiving: number; total: number; lastData: string | null },
 ): {
   tone: 'good' | 'warning' | 'critical' | 'muted' | 'accent';
   pulse?: boolean;
@@ -476,7 +694,7 @@ function connectionSummary(
     };
   const { monitor, traffic } = diagnostics;
   const stream = monitor.subscriptions;
-  const lastData = feeds.lastData ?? stream?.lastMessageAt ?? null;
+  const lastData = feedData ?? stream?.lastMessageAt ?? null;
   if (traffic.cooldownUntil) {
     return {
       tone: 'critical',
@@ -498,7 +716,7 @@ function connectionSummary(
       pulse: true,
       eyebrow: 'Live',
       headline: 'Streaming from Rivian',
-      detail: `Last data ${ago(lastData, now)}${feeds.total ? ` · ${feeds.receiving} of ${feeds.total} feeds receiving` : ''}`,
+      detail: `Last data ${ago(lastData, now)}`,
     };
   }
   if (monitor.fallbackPolling) {
@@ -516,25 +734,4 @@ function connectionSummary(
     headline: stream?.state === 'connecting' ? 'Connecting to Rivian' : 'Reconnecting to Rivian',
     detail: `Last data ${ago(lastData, now)}`,
   };
-}
-
-function Disclosure(props: { title: string; children: ReactNode }) {
-  return (
-    <details className="card group">
-      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
-        {props.title}
-        <svg
-          viewBox="0 0 12 12"
-          className="h-3 w-3 text-(--text-muted) transition-transform group-open:rotate-180"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden
-        >
-          <path d="M2.5 4.5 6 8l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </summary>
-      <div className="border-t border-(--border) p-4">{props.children}</div>
-    </details>
-  );
 }

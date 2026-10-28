@@ -86,8 +86,6 @@ export interface MonitorDiagnostics {
   /** Whether any monitored vehicle supports dynamics Parallax. */
   parallaxMode: 'classic' | 'parallax';
   parallaxModes: Record<string, 'classic' | 'parallax'>;
-  /** Legacy fields Rivian has rejected from the subscription (e.g. gnssLocation). */
-  parallaxDroppedFields: readonly string[];
 }
 
 export interface MonitoredVehicle {
@@ -217,7 +215,6 @@ export class VehicleMonitor {
           vehicleSupportsParallax(v.supportedFeatures) ? 'parallax' : 'classic',
         ]),
       ),
-      parallaxDroppedFields: this.connection?.stream.droppedFields ?? [],
     };
   }
 
