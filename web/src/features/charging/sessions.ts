@@ -11,6 +11,10 @@ import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
 /** When a session started charging; the plug-in time when that wasn't recorded. */
 export const chargeStart = (s: ChargingSessionDto) => s.chargingStartedAt ?? s.startedAt;
 
+/** Plugged in but not charging yet, so it has no charging curve to show. */
+export const notStarted = (s: ChargingSessionDto) =>
+  !s.endedAt && s.chargingStartedAt == null && s.chargingSince == null;
+
 /** "12.4 kWh · ≈ $1.61" */
 export function dayTotals(sessions: ChargingSessionDto[]): string {
   const totals = sessionTotals(sessions);

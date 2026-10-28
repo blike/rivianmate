@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
@@ -15,6 +15,7 @@ import { LiveCard } from './LiveCard';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
+import { notStarted } from './sessions';
 import { WallboxPanel } from './WallboxPanel';
 
 export function ChargingPage(props: { vehicleId: string }) {
@@ -62,8 +63,12 @@ export function ChargingPage(props: { vehicleId: string }) {
     queryFn: () => api.chargingCurve(props.vehicleId, session!.id),
     enabled: session != null,
     refetchInterval: session && !session.endedAt ? 30_000 : false,
-    // Keep the previous curve on screen (dimmed) while the next one loads.
-    placeholderData: keepPreviousData,
+    // Keep the previous curve on screen (dimmed) while the next one loads,
+    // unless it was hidden because that session hadn't started charging.
+    placeholderData: (previous, previousQuery) => {
+      const shown = sessions?.find((s) => s.id === previousQuery?.queryKey[2]);
+      return shown && notStarted(shown) ? undefined : previous;
+    },
   });
 
   if (!sessionsPending && !sessions?.length) {
@@ -111,12 +116,7 @@ export function ChargingPage(props: { vehicleId: string }) {
             curve={curve}
             limit={session?.socLimit}
             loading={sessionsPending || (session != null && curvePending)}
-            notStarted={
-              session != null &&
-              !session.endedAt &&
-              session.chargingStartedAt == null &&
-              session.chargingSince == null
-            }
+            notStarted={session != null && notStarted(session)}
           />
           {session && <EnergySplit session={session} />}
         </Panel>
