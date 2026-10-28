@@ -19,6 +19,7 @@ import type {
   StateSpanDto,
   StatusResponse,
   TirePressurePointDto,
+  TireRotationDto,
   LookupSettings,
   UnitPreferences,
   VehicleDto,
@@ -230,6 +231,8 @@ export const api = {
   otaTimeline: (vehicleId: string) => request<OtaTimelineDto>(`/api/vehicles/${vehicleId}/ota`),
   tirePressures: (vehicleId: string, days: number) =>
     request<TirePressurePointDto[]>(`/api/vehicles/${vehicleId}/health/tires?days=${days}`),
+  tireRotation: (vehicleId: string) =>
+    request<TireRotationDto | null>(`/api/vehicles/${vehicleId}/health/tire-rotation`),
   batteryHealth: (vehicleId: string) =>
     request<BatteryHealthDto>(`/api/vehicles/${vehicleId}/health/battery`),
   chargingCurve: (vehicleId: string, sessionId: number) =>

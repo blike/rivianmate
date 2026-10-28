@@ -29,6 +29,7 @@ import {
   decodeColdWeather,
   decodeGnss,
   decodeNetwork,
+  decodeWheels,
   decodeParkedEnergy,
   decodeSocSlider,
   decodeTimeEstimation,
@@ -323,6 +324,47 @@ describe('decodeParkedEnergy', () => {
       'CiENZ2YGQBXNzMw+JZuZ2T81oFEiQT3PV/c/TaZmA0FYoAsSIQ3OzEw/Fc3MzD0lNDMzPzXQV3dAPc9X9z5N1mxYQFjgAxoCWB0=',
     );
     expect(day?.uses).toEqual({ climate: 0.4, system: 1.7, gearGuard: 0, outlets: 0 });
+  });
+});
+
+describe('decodeWheels', () => {
+  it('reads the rotation reminder from a captured R1S payload', () => {
+    expect(decodeWheels('ChcIAxABIAEwgIX0BjgBQgYIkKqI1QZICQ==')).toEqual([
+      {
+        installed: true,
+        odometerAtLastRotationM: 1,
+        rotationIntervalM: 14_484_096,
+        odometerM: null,
+        updatedAt: '2026-09-10T02:25:20.000Z',
+      },
+    ]);
+  });
+
+  it('reads each wheel set, a set not fitted and a reminder left off as 0', () => {
+    const payload = b64([
+      ...message(1, [...int(4, 5_000_000), ...int(7, 1), ...int(10, 9_000_000)]),
+      ...message(1, [...int(1, 2), ...int(5, 300)]),
+    ]);
+    expect(decodeWheels(payload)).toEqual([
+      {
+        installed: true,
+        odometerAtLastRotationM: 5_000_000,
+        rotationIntervalM: 0,
+        odometerM: 9_000_000,
+        updatedAt: null,
+      },
+      {
+        installed: false,
+        odometerAtLastRotationM: 0,
+        rotationIntervalM: 0,
+        odometerM: null,
+        updatedAt: null,
+      },
+    ]);
+  });
+
+  it('reads an empty payload as no wheel sets', () => {
+    expect(decodeWheels('')).toEqual([]);
   });
 });
 

@@ -41,6 +41,7 @@ describe('Parallax registry', () => {
         'dynamics.vehicle.range',
         'energy.low_voltage.battery_state',
         'ota.deployment.state',
+        'vehicle.wheels.vehicle_wheels',
       ]),
     );
     expect(parallaxGroupTopics('core')).toHaveLength(13);
@@ -71,7 +72,6 @@ describe('Parallax registry', () => {
         'body.trailer.state',
         'body.wipers.fluid_level',
         'vehicle.profiles.active_user',
-        'vehicle.wheels.vehicle_wheels',
         'security.alarm.state',
         'security.video_monitoring.state',
         'security.access.immobilizer_state',

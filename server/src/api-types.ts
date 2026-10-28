@@ -262,6 +262,17 @@ export interface BatteryHealthDto {
   ratedCapacity: { kwh: number; at: string } | null;
 }
 
+/** The fitted wheel set's rotation reminder, from Parallax vehicle_wheels; distances in km. */
+export interface TireRotationDto {
+  odometerAtLastRotationKm: number;
+  /** 0 when the reminder is off. */
+  intervalKm: number;
+  /** The vehicle's odometer now; null when it hasn't reported one. */
+  odometerKm: number | null;
+  /** When the reading arrived. */
+  at: string;
+}
+
 export interface ChargingCurvePointDto {
   ts: string;
   powerKw: number | null;

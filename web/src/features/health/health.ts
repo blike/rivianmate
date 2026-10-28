@@ -1,4 +1,4 @@
-import type { BatteryHealthDto, VehicleState } from '@server/api-types';
+import type { BatteryHealthDto, TireRotationDto, VehicleState } from '@server/api-types';
 import { lastInstallFailed, reportsUpdates, softwareUpdate } from '../../lib/ota';
 import { reportsBrakeFluid } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
@@ -108,6 +108,41 @@ function tires(state: VehicleState | undefined): HealthCheck {
   }
   if (levels.every((t) => t.level === 'unknown')) return unknown('tires', 'Tires');
   return { key: 'tires', label: 'Tires', level: 'good', value: 'Normal' };
+}
+
+/** Within this of the due point a rotation is coming up: about 500 mi. */
+const ROTATION_SOON_KM = 800;
+
+export type TireRotation =
+  | { off: true; sinceKm: number | null }
+  | {
+      off: false;
+      /** info when it's coming up, attention once it's due. */
+      level: CheckLevel;
+      sinceKm: number | null;
+      intervalKm: number;
+      dueAtKm: number;
+      /** Negative once it's overdue; null without an odometer reading. */
+      remainingKm: number | null;
+    };
+
+/** Where the fitted wheels are against their rotation reminder; null with no reading. */
+export function tireRotation(r: TireRotationDto | null | undefined): TireRotation | null {
+  if (!r) return null;
+  const sinceKm =
+    r.odometerKm != null ? Math.max(0, r.odometerKm - r.odometerAtLastRotationKm) : null;
+  if (r.intervalKm <= 0) return { off: true, sinceKm };
+  const dueAtKm = r.odometerAtLastRotationKm + r.intervalKm;
+  const remainingKm = r.odometerKm != null ? dueAtKm - r.odometerKm : null;
+  const level: CheckLevel =
+    remainingKm == null
+      ? 'unknown'
+      : remainingKm <= 0
+        ? 'attention'
+        : remainingKm <= ROTATION_SOON_KM
+          ? 'info'
+          : 'good';
+  return { off: false, level, sinceKm, intervalKm: r.intervalKm, dueAtKm, remainingKm };
 }
 
 /** Usable capacity below this share of rated needs a look. */
