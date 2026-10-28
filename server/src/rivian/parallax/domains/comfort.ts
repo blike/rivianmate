@@ -239,10 +239,71 @@ export const seatConditioning = defineRvm({
   },
 });
 
+// Probes: subscribed and archived, so their fields can be checked against
+// live data before anything reads them. Field meanings are the Rivian
+// app's, not yet seen.
+export const hvacSettings = defineRvm({
+  rvm: 'comfort.cabin.hvac_settings_status',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Target temperature (°C; 63.5 is HI, while defrosting)' },
+});
+
+export const climateHoldSetting = defineRvm({
+  rvm: 'comfort.cabin.climate_hold_setting',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Hold for (s)' },
+});
+
+export const climateHoldStatus = defineRvm({
+  rvm: 'comfort.cabin.climate_hold_status',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Status (1 unavailable, 2 off, 3 on, 4 fault)',
+    '2': 'Availability (1 available, 2 controllable, 3 unavailable)',
+    '3': 'Unavailable because (2 battery low, 3 fault)',
+    '4.1': 'Ends (s since epoch)',
+  },
+});
+
+export const cabinVentilation = defineRvm({
+  rvm: 'comfort.cabin.cabin_ventilation_setting',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Auto cabin ventilation' },
+});
+
+export const userModes = defineRvm({
+  rvm: 'comfort.user_modes.state',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Service mode',
+    '2': 'Car wash mode',
+    '3': 'Pet mode',
+    '4': 'Camp mode',
+    '5': 'Transport mode',
+    '6': 'Climate keep',
+    '7': 'Factory mode',
+  },
+});
+
 export const COMFORT_RVMS = [
   cabinTemperatures,
   preconditioning,
   defrost,
   petMode,
   seatConditioning,
+  hvacSettings,
+  climateHoldSetting,
+  climateHoldStatus,
+  cabinVentilation,
+  userModes,
 ] as const;

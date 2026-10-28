@@ -209,4 +209,67 @@ export const range = defineRvm({
   },
 });
 
-export const DYNAMICS_RVMS = [gnss, tires, gear, odometer, range] as const;
+// Probes: subscribed and archived, so their fields can be checked against
+// live data before anything reads them. Field meanings are the Rivian
+// app's, not yet seen.
+export const driveMode = defineRvm({
+  rvm: 'dynamics.vehicle.drive_mode',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Mode (2 all-purpose, 3 snow, 8 sport, 9 conserve, 10 towing, 11–14 off-road, 15 winter…)',
+    '8': 'Acceleration limited by cold',
+    '9': 'Regen limited by cold',
+  },
+});
+
+export const knownLocation = defineRvm({
+  rvm: 'dynamics.vehicle.location',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Known place (1 none, 2 home, 3 work)' },
+});
+
+export const efficiency = defineRvm({
+  rvm: 'dynamics.vehicle.efficiency',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Efficiency (Wh/km, for range estimates)',
+    '2': 'Unknown (Wh/km)',
+    '3.1': 'History: entry (1–10)',
+    '3.2': 'History: efficiency (Wh/km)',
+  },
+});
+
+export const massEstimate = defineRvm({
+  rvm: 'dynamics.vehicle.mass_estimate',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Mass (kg)' },
+});
+
+export const brakeFluid = defineRvm({
+  rvm: 'dynamics.brakes.fluid_level',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Brake fluid low (1 no, 2 yes)' },
+});
+
+export const DYNAMICS_RVMS = [
+  gnss,
+  tires,
+  gear,
+  odometer,
+  range,
+  driveMode,
+  knownLocation,
+  efficiency,
+  massEstimate,
+  brakeFluid,
+] as const;

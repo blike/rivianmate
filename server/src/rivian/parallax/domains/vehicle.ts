@@ -100,4 +100,31 @@ export const network = defineRvm({
   },
 });
 
-export const VEHICLE_RVMS = [power, network] as const;
+// Probes: subscribed and archived, so their fields can be checked against
+// live data before anything reads them. Field meanings are the Rivian
+// app's, not yet seen.
+export const activeProfile = defineRvm({
+  rvm: 'vehicle.profiles.active_user',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Active driver profile id' },
+});
+
+export const wheels = defineRvm({
+  rvm: 'vehicle.wheels.vehicle_wheels',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1.1': 'Wheels: package',
+    '1.2': 'Wheels: tire distance (m)',
+    '1.4': 'Wheels: odometer at last rotation (m)',
+    '1.6': 'Wheels: rotate every (m)',
+    '1.7': 'Wheels: fitted',
+    '1.9': 'Wheels: tires',
+    '1.10': 'Wheels: odometer (m)',
+  },
+});
+
+export const VEHICLE_RVMS = [power, network, activeProfile, wheels] as const;

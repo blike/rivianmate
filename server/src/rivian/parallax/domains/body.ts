@@ -183,4 +183,37 @@ export const locks = defineRvm({
   },
 });
 
-export const BODY_RVMS = [closures, locks] as const;
+// Probes: subscribed and archived, so their fields can be checked against
+// live data before anything reads them. Field meanings are the Rivian
+// app's, not yet seen.
+export const windowCalibration = defineRvm({
+  rvm: 'body.windows.states',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1.1': 'Window (1 FL, 2 FR, 3 RL, 4 RR, 5 rear)',
+    '1.2': 'Window: calibrated (1 yes, 2 no)',
+  },
+});
+
+export const trailer = defineRvm({
+  rvm: 'body.trailer.state',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Trailer (1 none, 2 connected, 3 with brakes, 4 invalid)',
+    '2': 'Hitch (1 none, 2 accessory, 3–5 trailer profiles)',
+  },
+});
+
+export const washerFluid = defineRvm({
+  rvm: 'body.wipers.fluid_level',
+  group: 'vehicleState',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '2': 'Washer fluid (1 normal, 2 low, 3 empty)' },
+});
+
+export const BODY_RVMS = [closures, locks, windowCalibration, trailer, washerFluid] as const;

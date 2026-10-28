@@ -281,6 +281,70 @@ export const chargingTimeWindow = defineRvm({
   },
 });
 
+// Probes: subscribed and archived, so their fields can be checked against
+// live data before anything reads them. Field meanings are the Rivian
+// app's, not yet seen.
+export const sessionPower = defineRvm({
+  rvm: 'charging.session.power',
+  group: 'core',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Power (kW, about every 5 s; not resent as 0 when a charge ends)' },
+});
+
+export const remoteCommand = defineRvm({
+  rvm: 'charging.session.remote_command',
+  group: 'core',
+  maturity: 'probe',
+  store: true,
+  fieldNames: { '1': 'Charge now available (1 no, 2 yes)' },
+});
+
+export const chargingEnergyState = defineRvm({
+  rvm: 'charging.energy.state',
+  group: 'core',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1': 'Charging state (as the session status)',
+    '2': 'Plug (1 unplugged, 2 plugged in, 3 charging)',
+    '4': 'Power (kW)',
+    '11': 'Plug connection (as the session status)',
+  },
+});
+
+export const smartChargingSettings = defineRvm({
+  rvm: 'charging.smart_charging.settings',
+  group: 'core',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1.1': 'Ready by: hour',
+    '1.2': 'Ready by: minute',
+    '1.3': 'Ready by: days (1 Monday … 7 Sunday)',
+    '2': 'Clean energy',
+  },
+});
+
+export const smartChargingInfo = defineRvm({
+  rvm: 'charging.smart_charging.smart_charging_info',
+  group: 'core',
+  maturity: 'probe',
+  store: true,
+  fieldNames: {
+    '1.1': 'Resumes (s since epoch)',
+    '2': 'Notice (1 clean energy, 2 paused, 3 not enough time, 4 no forecast)',
+    '3': 'Schedule type',
+  },
+});
+
+export const chargingForecast = defineRvm({
+  rvm: 'charging.smart_charging.weighted_charging_forecast',
+  group: 'core',
+  maturity: 'probe',
+  store: true,
+});
+
 export const CHARGING_RVMS = [
   chargingStatus,
   timeEstimation,
@@ -288,4 +352,10 @@ export const CHARGING_RVMS = [
   tripTarget,
   chargingNotification,
   chargingTimeWindow,
+  sessionPower,
+  remoteCommand,
+  chargingEnergyState,
+  smartChargingSettings,
+  smartChargingInfo,
+  chargingForecast,
 ] as const;

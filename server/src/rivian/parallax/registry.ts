@@ -8,10 +8,12 @@ import type { Maturity, ParallaxGroup, RvmDef } from './define.js';
 import { BODY_RVMS } from './domains/body.js';
 import { CHARGING_RVMS } from './domains/charging.js';
 import { COMFORT_RVMS } from './domains/comfort.js';
+import { DEPARTURE_RVMS } from './domains/departure.js';
 import { DYNAMICS_RVMS } from './domains/dynamics.js';
 import { ENERGY_RVMS } from './domains/energy.js';
 import { NAVIGATION_RVMS } from './domains/navigation.js';
 import { OTA_RVMS } from './domains/ota.js';
+import { SECURITY_RVMS } from './domains/security.js';
 import { VEHICLE_RVMS } from './domains/vehicle.js';
 import type { ParallaxMessage } from './wire.js';
 
@@ -24,6 +26,8 @@ export const PARALLAX_RVMS: readonly RvmDef[] = [
   ...VEHICLE_RVMS,
   ...NAVIGATION_RVMS,
   ...OTA_RVMS,
+  ...SECURITY_RVMS,
+  ...DEPARTURE_RVMS,
 ];
 
 const BY_RVM = new Map(PARALLAX_RVMS.map((def) => [def.rvm, def]));
