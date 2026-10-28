@@ -5,7 +5,7 @@ import { decodePayload } from '../wire.js';
 export const RVM_POWER = 'vehicle.power.state';
 export const RVM_NETWORK = 'vehicle.network.state';
 
-// Legacy's spellings; ota_update is as legacy sent it, the others after the app's.
+// Legacy's spellings; 5 and 7 are the app's names in its style.
 const POWER_STATES: Record<number, string> = {
   1: 'sleep',
   2: 'standby',
@@ -22,15 +22,9 @@ export interface NetworkState {
 }
 
 /**
- * `vehicle.network.state`: 1 the link in use (1 Wi-Fi, 2 cellular), 3 its
- * signal bars, 4 Wi-Fi {3 SSID, 8 RSSI dBm, 10 frequency MHz}, 5 cellular
- * {1 carrier, 2 technology}. A Wi-Fi block without an SSID means not
- * connected. Also in the Wi-Fi block, not read: 1 WPA state (2 connected),
- * 2 connection check (2 succeeded), 7 bars, 9 link speed, 11 channel width
- * (MHz; always 80 at 5240 MHz and 20 at 2427 MHz), 12 security (1 open, 4
- * WPA2 personal…) and 13 secured (2 yes, 1 no); 1, 12 and 13 followed the
- * SSID in all 283 messages (R1S, 2026-10-13). A signal of -255 is no
- * reading.
+ * `vehicle.network.state`: 4 Wi-Fi {3 SSID, 8 signal dBm, 10 frequency
+ * MHz}, 5 cellular {1 carrier, 2 technology}. Wi-Fi without an SSID is not
+ * connected; a signal of -255 is no reading.
  */
 export function decodeNetwork(payloadBase64: string): NetworkState | null {
   const m = decodePayload(payloadBase64);
@@ -100,9 +94,7 @@ export const network = defineRvm({
   },
 });
 
-// Probes: subscribed and archived, so their fields can be checked against
-// live data before anything reads them. Field meanings are the Rivian
-// app's, not yet seen.
+// Probes: archived to be worked out; nothing reads them yet.
 export const activeProfile = defineRvm({
   rvm: 'vehicle.profiles.active_user',
   group: 'vehicleState',

@@ -1,7 +1,4 @@
-/**
- * `charging.*`: the session the vehicle is running. Most of these are
- * logged in full while their formats are worked out.
- */
+/** `charging.*`: the session the vehicle is running, and its charging schedule. */
 import type { ChargingSchedule } from '../../types.js';
 import { defineRvm } from '../define.js';
 import { decodePayload } from '../wire.js';
@@ -14,18 +11,13 @@ export const RVM_CHARGING_NOTIFICATION = 'charging.session.notification';
 export const RVM_CHARGING_TIME_WINDOW = 'charging.schedule.time_window';
 
 export interface ChargingStatus {
-  /** Raw enum values; see decodeChargingStatus for those observed. */
+  /** Raw enums: see chargerStatusFromStatus and chargerStateFromStatus. */
   plugConnection: number;
   displayStatus: number;
   evseType: number;
 }
 
-/**
- * `charging.session.status` (`f70/v`): 1 plug connection status, 2 display
- * status, 3 EVSE type, all enums. Proto3 omits zeros, so missing reads as 0.
- * Seen on a home L2 charger: plug 1 unplugged, 2 plugged in; display
- * statuses as chargerStateFromStatus reads them; EVSE type 1.
- */
+/** `charging.session.status`: 1 plug, 2 charging state, 3 EVSE type; missing reads as 0. */
 export function decodeChargingStatus(payloadBase64: string): ChargingStatus | null {
   const m = decodePayload(payloadBase64);
   if (!m) return null;
@@ -37,10 +29,8 @@ export function decodeChargingStatus(payloadBase64: string): ChargingStatus | nu
 }
 
 /**
- * `charging.session.time_estimation` (`g70/e0`): 1 whether the estimate
- * holds (1 valid, 2 not, 3 the pack is discharging; 0 none), 2 minutes
- * remaining. Field 2 matched vehicle state's timeToEndOfCharge on a live
- * charge. Empty when not charging.
+ * `charging.session.time_estimation`: 1 validity (1 valid, 2 not, 3 pack
+ * discharging), 2 minutes to the limit. Empty when not charging.
  */
 export function decodeTimeEstimation(
   payloadBase64: string,
@@ -60,11 +50,8 @@ export function decodeSocSlider(payloadBase64: string): { limit: number } | null
 }
 
 /**
- * Display statuses as legacy chargerState: 2 connecting, 3 charging, 4
- * complete (October 2, 2026), 5 scheduled, 8 stopped from the app, each
- * seen beside legacy; 2 and 8 matched it each time on an R1S (2 of 2,
- * 2026-10-13). The rest haven't been sent yet, so they're named after the
- * Rivian app's states in legacy's style.
+ * Charging states as legacy chargerState. 2–5 and 8 are legacy's own
+ * spellings; the rest are the app's names in its style.
  */
 const CHARGER_STATES: Record<number, string> = {
   2: 'charging_connecting',
@@ -94,11 +81,8 @@ const CHARGER_STATES: Record<number, string> = {
 };
 
 /**
- * The legacy chargerState matching a status's display status (see
- * CHARGER_STATES). 1 is ready only while unplugged, as legacy reports it:
- * sent just after plugging in, legacy says connecting or scheduled instead,
- * so it's left unread then. Null for other values. Parallax reports these
- * about 30 s before vehicle state does.
+ * A status's legacy chargerState. 1 is ready only while unplugged: just
+ * after plugging in, legacy says connecting or scheduled instead.
  */
 export function chargerStateFromStatus(status: ChargingStatus): string | null {
   if (status.displayStatus === 1) return status.plugConnection === 1 ? 'charging_ready' : null;
@@ -106,11 +90,9 @@ export function chargerStateFromStatus(status: ChargingStatus): string | null {
 }
 
 /**
- * The legacy chargerStatus matching a status's plug connection: 1 unplugged
- * (sent as an R2 was unplugged on October 8, 2026), 2 plugged in. Null for
- * the others, 3 a connection error and 4 a vehicle-to-load adapter: legacy
- * has no value for either, and plugged in would start a charging session.
- * The R2 leaves legacy chargerStatus null, so this is its only plug state.
+ * A status's legacy chargerStatus: plug 1 unplugged, 2 plugged in. 3 (an
+ * error) and 4 (vehicle-to-load) aren't read: legacy has no value for them,
+ * and plugged in would start a charging session.
  */
 export function chargerStatusFromStatus(status: ChargingStatus): string | null {
   if (status.plugConnection === 1) return 'chrgr_sts_not_connected';
@@ -166,7 +148,7 @@ export const socSlider = defineRvm({
   fieldNames: { '1': 'Charge limit (%)' },
 });
 
-// Logged for decoding; nothing reads these yet.
+// Probes: archived to be worked out; nothing reads them yet.
 export const tripTarget = defineRvm({
   rvm: RVM_TRIP_TARGET,
   group: 'core',
@@ -205,14 +187,10 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 const WEEK = 7 * 24 * 60;
 
 /**
- * `charging.schedule.time_window`: the next charging window, sent again as
- * each one ends. 1 whether a schedule is set (always 1 so far; empty with
- * none); 2 is the window: 1 start minute (proto3 leaves out midnight), 2 end
- * minute, 3 length in minutes (10080 for a window covering the whole week),
- * 4 amps, 5 location {1 lat, 2 long}, 6/7 start and end day (1 Sunday … 7
- * Saturday). From an R1S whose schedule (0:00–6:00 weekdays, 0:00–14:00
- * weekends) it matched for two weeks (2026-10-13); a 1:30–6:00 window then
- * came as 1 90, 2 360, 3 270.
+ * `charging.schedule.time_window`: the next charging window, resent as each
+ * ends. 1 schedule set; 2 the window: 1/2 start and end minute (proto3
+ * leaves out midnight), 3 length (10080 all week), 4 amps, 5 location {1
+ * lat, 2 lon}, 6/7 start and end day (1 Sunday … 7 Saturday).
  */
 export function decodeChargingWindow(payloadBase64: string): ChargingWindow | null {
   const window = decodePayload(payloadBase64)?.message(2);
@@ -233,9 +211,8 @@ export function decodeChargingWindow(payloadBase64: string): ChargingWindow | nu
 }
 
 /**
- * A window as a one-day schedule, for where legacy's schedules aren't
- * available. A window covering the whole week, whose start and end are the
- * same, is charging all day, every day.
+ * A window as a one-day schedule, where legacy's aren't available. One
+ * covering the whole week is all day, every day.
  */
 export function chargingWindowSchedule(w: ChargingWindow): ChargingSchedule | null {
   const location = { latitude: w.latitude, longitude: w.longitude };
@@ -281,9 +258,7 @@ export const chargingTimeWindow = defineRvm({
   },
 });
 
-// Probes: subscribed and archived, so their fields can be checked against
-// live data before anything reads them. Field meanings are the Rivian
-// app's, not yet seen.
+// Probes: archived to be worked out; nothing reads them yet.
 export const sessionPower = defineRvm({
   rvm: 'charging.session.power',
   group: 'core',

@@ -1,9 +1,4 @@
-/**
- * `departure.*`: departure (precondition) schedules, as a probe:
- * subscribed and archived, so its fields can be checked against legacy's
- * departure schedules before anything reads it. Field meanings are the
- * Rivian app's, not yet seen.
- */
+/** `departure.*`: departure (precondition) schedules; a probe, nothing reads it yet. */
 import { defineRvm } from '../define.js';
 
 export const departureSchedules = defineRvm({

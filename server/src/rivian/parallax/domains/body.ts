@@ -1,21 +1,13 @@
-/**
- * `body.*`: closures and locks, read as the legacy fields they stand in
- * for. The R2 leaves those legacy fields null, so these are its only source.
- */
+/** `body.*`: closures and locks, as legacy fields (an R2's only source of them). */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 
 export const RVM_CLOSURES = 'body.closures.states';
 export const RVM_LOCKS = 'body.locks.states';
 
 /**
- * `body.closures.states` positions, as the Rivian app numbers them, from
- * community captures. 10 is the charge port; 16 is the R2's rear drop
- * glass, which has no legacy field, so it's named here in legacy's style;
- * 10000 ends every frame, stateless on an R2. On an R1S it has a state:
- * "any window open", 2 when all four windows are closed (198 of 198) and 1
- * when any is open (116 of 117), with 5 following the windows' 5
- * (2026-10-13); it isn't read. An R2 reports 1–5, 7 and 12–15, all closed
- * so far, so which position is which door isn't confirmed on it yet.
+ * `body.closures.states` positions. 10 is the charge port, 16 the R2's rear
+ * glass (no legacy field, so named in its style), and 10000 all windows
+ * together (not read).
  */
 const CLOSURE_FIELDS: Record<number, string> = {
   1: 'doorFrontLeftClosed',
@@ -59,10 +51,7 @@ const POSITION_LABELS: Record<number, string> = {
 
 /**
  * `body.locks.states` positions: the closures' numbering up to 9, then
- * their own. 14 and 15 matched legacy gearGuardLocked and
- * closureTonneauLocked on an R1S, which sends both: each of 284 changes
- * came within 30 s of legacy's (2026-10-27). 10–13 haven't been sent, so
- * they're named in legacy's style.
+ * their own. 10–13 have no legacy fields, so they're named in its style.
  */
 const LOCK_FIELDS: Record<number, string> = {
   1: 'doorFrontLeftLocked',
@@ -110,15 +99,10 @@ function entries(payloadBase64: string) {
   }));
 }
 
-/** Doors and windows, which have only ever been seen open or closed. */
+/** Doors and windows: read only as open or closed, all they've ever sent. */
 const OPEN_CLOSED_POSITIONS = new Set([1, 2, 3, 4, 12, 13, 14, 15, 16]);
 
-/**
- * Closures: 1 open, 2 closed, 3 ajar, 4 opening, 5 closing (the Rivian
- * app's names); 0 or missing means not fitted. Doors and windows are read
- * only as open or closed, until one sends anything else. Entries with an
- * unknown position or state are skipped.
- */
+/** Closures: 1 open, 2 closed, 3 ajar, 4 opening, 5 closing; 0 or missing is not fitted. */
 export const closures = defineRvm({
   rvm: RVM_CLOSURES,
   group: 'vehicleState',
@@ -140,8 +124,7 @@ export const closures = defineRvm({
   toState: stampReadings,
   stateKeys: [...Object.values(CLOSURE_FIELDS), 'chargePortState'],
   entryLabels: { field: 1, key: 1, labels: POSITION_LABELS },
-  // 3–11 aren't read: legacy has no fields for them. The charge port's next
-  // action says when a plug is in (9), sooner than its state (R1S, 2026-10-27).
+  // 3–11 aren't read: legacy has no fields for them.
   fieldNames: {
     '1.1': 'Closure: position',
     '1.2': 'Closure: state (1 open, 2 closed, 3 ajar, 4 opening, 5 closing)',
@@ -158,10 +141,7 @@ export const closures = defineRvm({
   },
 });
 
-/**
- * Locks: 1 locked, 2 unlocked, 3 partly unlocked (not sent yet), which
- * reads as unlocked: legacy has only the two, and partly isn't locked.
- */
+/** Locks: 1 locked, 2 unlocked, 3 partly unlocked, read as unlocked (legacy has only two). */
 export const locks = defineRvm({
   rvm: RVM_LOCKS,
   group: 'vehicleState',
@@ -183,9 +163,7 @@ export const locks = defineRvm({
   },
 });
 
-// Probes: subscribed and archived, so their fields can be checked against
-// live data before anything reads them. Field meanings are the Rivian
-// app's, not yet seen.
+// Probes: archived to be worked out; nothing reads them yet.
 export const windowCalibration = defineRvm({
   rvm: 'body.windows.states',
   group: 'vehicleState',

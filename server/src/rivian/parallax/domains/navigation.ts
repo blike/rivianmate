@@ -50,24 +50,15 @@ function waypoint(w: Fields) {
 }
 
 /**
- * `trip_info` (`t70/v`), the active navigation route; empty when not
- * navigating. Resent as the prediction changes, and recalculated from the
- * vehicle's position on a reroute, so the totals cover what's left from
- * there. 2 origin {1 location, 5 start time, Unix ms}; 3 route {1 distance
- * m, 2 duration s (driving only, without time spent charging), 3 stops, in
- * order, each 1 a place {1 location {1 lat, 2 lon}, 4 address, 5 place id,
- * 7 arrival SOC %, 8 arrival range m, 9 {1 arrival, s since epoch}} or 2 a
- * charging stop the planner added {2 label, 3 location, 6 arrival SOC %, 7
- * arrival range m, 11 {1 arrival}}, 4 legs, one to each stop {1 distance m,
- * 2 duration s, 3 main road, 4 polyline}, 6 arrival SOC %, 7 arrival range
- * m, 10 polyline}; 4 route preferences; 5 SOC % at the start; 6 {1 the next
- * stop's arrival, or its departure for a charging stop, s since epoch}.
- * The destination is the last stop. Polylines are Google's encoding at 5
- * decimal places. On an R1S (2026-10-14), 3.6 predicted 57.5% and legacy
- * read 57.7% a kilometre out; an earlier capture had arrival SOC and range
- * at the top level, in 6 and 7, so those are read too. All 503 routes
- * archived by 2026-10-27 had a single stop, so the charging stop's fields
- * are from the Rivian app's schema, not captures.
+ * `trip_info`: the active route, empty when not navigating; recalculated
+ * from the vehicle's position on a reroute. 3 route {1 distance m, 2
+ * duration s (driving only), 3 stops in order, each 1 a place {1 location,
+ * 4 address, 7 arrival SOC %, 8 arrival range m, 9 {1 arrival s}} or 2 a
+ * charging stop the planner added {2 label, 3 location, 6 SOC, 7 range, 11
+ * {1 arrival}}, 4 legs, one to each stop {1 m, 2 s, 3 road, 4 polyline}, 6
+ * arrival SOC, 7 arrival range, 10 polyline}; 6 {1 the next stop's time}.
+ * The destination is the last stop. Older messages put arrival SOC and
+ * range at the top level, in 6 and 7.
  */
 export function decodeTripInfo(payloadBase64: string): TripInfo | null {
   const m = decodePayload(payloadBase64);
@@ -145,16 +136,11 @@ export interface TripProgress {
 }
 
 /**
- * `trip_progress` (`t70/x`), sent every few seconds while navigating: 1
- * {1 ETA at the next stop, s since epoch}, 2 {1 ETA at the destination;
- * missing for a message after the stops change}, 3 the next stop's index,
- * 4 distance (m) and 5 time (s) to the next stop, 6 the vehicle's fix {1
- * {1 lat, 2 lon}, 2 speed m/s, 3 heading 0–360°, 5 time, Unix ms}. With a
- * single stop, 1 and 2 matched in all 2,856 messages archived by
- * 2026-10-27. Field 6 matched legacy GPS on an R1S (2026-10-14): position
- * within about 2 s of travel, speed and heading alike. It isn't read.
- * Rivian keeps the last progress after a trip ends, so it only means
- * anything alongside a trip_info.
+ * `trip_progress`, every few seconds while navigating: 1 {1 ETA at the next
+ * stop, s}, 2 {1 ETA at the destination}, 3 the next stop's index, 4/5
+ * distance (m) and time (s) to the next stop, 6 the vehicle's fix (not
+ * read). Rivian keeps the last after a trip ends, so it only counts beside
+ * a trip_info.
  */
 export function decodeTripProgress(payloadBase64: string): TripProgress | null {
   const m = decodePayload(payloadBase64);
@@ -174,9 +160,8 @@ export function decodeTripProgress(payloadBase64: string): TripProgress | null {
 }
 
 /**
- * The ETA and what's left to the destination: progress's, which counts to
- * the next stop, plus the legs after it; the route's own figures, from
- * planning, without progress or where a leg's length is missing.
+ * The ETA and what's left to the destination: progress's to the next stop
+ * plus the legs after it, or the route's own where that can't be worked out.
  */
 export function tripRemaining(
   trip: TripInfo,

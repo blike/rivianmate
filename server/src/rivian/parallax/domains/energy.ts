@@ -1,9 +1,7 @@
 /**
- * `energy.*` and `energy_edge_compute.*`: the high-voltage battery, and the
- * graphs the Rivian app draws (charging curve, session breakdown, cold
- * weather, parked energy). Field meanings come from community docs, checked
- * against live payloads next to the legacy vehicle state; each decoder notes
- * what's confirmed. Unknown fields are ignored.
+ * `energy.*` and `energy_edge_compute.*`: the batteries, and the graphs the
+ * Rivian app draws (charging curve, session breakdown, cold weather, parked
+ * energy).
  */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 import { decodePayload, f32, readProtoFields, type ProtoField } from '../wire.js';
@@ -41,13 +39,9 @@ const validPower = (n: number | null) =>
     : null;
 
 /**
- * `k70/g` graph bar: 1 SOC (int32), 2 power (float, kW), 3 start (int64 ms),
- * 4 end (int64 ms), 5 estimate validity, 6 charging state, 7 context (0 or
- * missing recorded, 1 forecast, 2 not charging, 3 paused). In the archive
- * (2026-10-27) every bar with power was recorded, 3,135 were forecasts, and
- * the powerless bars beside a charge were "not charging". A missing power
- * or SOC is unknown, never 0: treating absence as zero put phantom 0 kW
- * points on DC charges.
+ * A graph bar: 1 SOC, 2 power (kW), 3/4 start and end (ms), 5 estimate
+ * validity, 6 charging state, 7 context (0 recorded, 1 forecast, 2 not
+ * charging, 3 paused). A missing power or SOC is unknown, never 0.
  */
 export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | null {
   const fields = readProtoFields(bytes);
@@ -77,10 +71,7 @@ export function decodeChargingGraphBar(bytes: Uint8Array): ChargingGraphBar | nu
   };
 }
 
-/**
- * `charging_graph_global` (`k70/i`): bars repeated in field 1. Other
- * embedded messages aren't bars, even when they happen to decode as one.
- */
+/** `charging_graph_global`: bars repeated in field 1; other messages aren't bars. */
 export function decodeChargingGraph(payloadBase64: string): ChargingGraphBar[] {
   if (!payloadBase64) return [];
   const fields = readProtoFields(Buffer.from(payloadBase64, 'base64'));
@@ -107,15 +98,12 @@ export interface ChargeBreakdown {
 }
 
 /**
- * `charge_session_breakdown` (`k70/b`): 1 total kWh, 2 pack kWh, 5 thermal
- * kWh, 6 minutes charging, 7 minutes remaining, 8 range added (km), 9 power
- * (kW), 10 range rate (km/h), 11 cost (money). Fields 7, 9 and 10 were
- * matched against a live L2 charge (ramping to 7.4 kW, 31 km/h, 42 min left
- * matching timeToEndOfCharge); 12 and 13 are unknown enums. Rivian keeps
- * the last session's breakdown and sends it on subscribe. Confirmed against
- * a home session: 35.8 = 34.4 + 1.4 kWh, 313 min, 162 km, matching Rivian's
- * history. Missing totals read as 0 (proto3 omits zeros); missing live
- * readings (power, range rate) are unknown, never 0.
+ * `charge_session_breakdown`: 1 total kWh, 2 pack kWh, 5 thermal kWh, 6
+ * minutes charging, 7 minutes remaining, 8 range added (km), 9 power (kW),
+ * 10 range rate (km/h), 11 cost. Field 5 is likely the vehicle's systems,
+ * not heating, which the app's schema puts in 3. Rivian resends the last
+ * session's on subscribe. Missing totals are 0; missing live readings are
+ * unknown.
  */
 export function decodeChargeBreakdown(payloadBase64: string): ChargeBreakdown | null {
   const m = decodePayload(payloadBase64);
@@ -154,13 +142,10 @@ export interface BatteryState {
 }
 
 /**
- * `energy.high_voltage.battery_state` (`l70/p`): 1 charge state {1 SOC %,
- * 2 pack capacity kWh}; 2 temperature state {1 avg, 2 max, 3 min °C}; 3
- * thermal event {1 detected, 2 spreading}; 4 power output (2 limited by
- * cold); 5 LFP calibration needed; 6 BMS state (4 idle, 5 discharging, 6
- * charging). SOC and capacity match the legacy batteryLevel/batteryCapacity.
- * An R1S sends 3 empty, as legacy reports batteryHvThermalEvent off, and
- * never 4–6 (2026-10-27).
+ * `energy.high_voltage.battery_state`: 1 charge {1 SOC %, 2 capacity kWh},
+ * 2 cell temperatures {1 avg, 2 max, 3 min °C}, 3 thermal event {1
+ * detected, 2 spreading; empty when none}, 4 power output, 5 LFP
+ * calibration, 6 BMS state.
  */
 export function decodeBatteryState(payloadBase64: string): BatteryState | null {
   const m = decodePayload(payloadBase64);
@@ -181,9 +166,8 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
 }
 
 /**
- * `battery_characteristics`: field 5 is the reported capacity estimate;
- * field 6 is rated capacity (both float, kWh; field 6 identified by the owner).
- * Decode independently: a missing rated value must not use the estimate.
+ * `battery_characteristics`: 5 capacity estimate, 6 rated capacity (kWh),
+ * read independently so a missing rating never falls back to the estimate.
  */
 export function decodeBatteryCharacteristics(
   payloadBase64: string,
@@ -222,12 +206,9 @@ export interface ParkedEnergyWindow {
 }
 
 /**
- * `parked_energy_distributions` (`k70/o`): repeated windows {1 total kWh,
- * 2–5 kWh by use, 6 total range km, 7–10 range by use, 11 window length in
- * minutes}. Uses: 2 climate, 3 outlets, 4 system, 5 Gear Guard. An outlet-use
- * capture on 2026-10-04 identifies field 3 (0.1 kWh), with field 5 omitted.
- * 1440- and 480-minute windows drain at the same rate, which supports
- * reading 11 as minutes.
+ * `parked_energy_distributions`: windows (1 last 24 h, 2 last 8 h, 3 this
+ * park) of {1 total kWh, 2–5 kWh by use (climate, outlets, system, Gear
+ * Guard), 6 total range km, 7–10 range by use, 11 length in minutes}.
  */
 export function decodeParkedEnergy(payloadBase64: string): ParkedEnergyWindow[] {
   const m = decodePayload(payloadBase64);
@@ -375,14 +356,10 @@ export const batteryCharacteristics = defineRvm({
   },
 });
 
-// Legacy's spelling for normal; low hasn't been seen from legacy, so it's
-// named in the same style.
+// Legacy's spelling for normal; low is in its style.
 const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION', 2: 'LOW' };
 
-/**
- * `energy.low_voltage.battery_state`: 1 12V battery health (1 normal, 2
- * low; only 1 seen so far), as legacy twelveVoltBatteryHealth.
- */
+/** `energy.low_voltage.battery_state`: 1 12V health (1 normal, 2 low), as legacy's. */
 export const lowVoltageBattery = defineRvm({
   rvm: RVM_LOW_VOLTAGE_BATTERY,
   group: 'vehicleState',

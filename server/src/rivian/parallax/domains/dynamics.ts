@@ -14,24 +14,15 @@ export interface GnssReading {
   longitude: number | null;
   altitude: number | null;
   bearing: number | null;
-  /** m/s — matches what location-writer.ts/drive-detector.ts/vehicleStatus.ts expect; don't convert to km/h here. */
+  /** m/s, as VehicleState's consumers expect. */
   speedMps: number | null;
 }
 
 /**
- * `dynamics.vehicle.gnss`: 1/2 latitude/longitude (double, degrees), 3
- * altitude (double, meters), 5 heading (float, signed -180..180 — a raw
- * -80.6 doesn't fit 0-360, so normalized to a 0-360 compass bearing here),
- * 4 speed (float, m/s, as VehicleState consumers expect; proto3 leaves it
- * out at a standstill, so a fix without it is 0). Speed matched legacy
- * gnssSpeed from 0 to 22 m/s on an R1S (2026-10-13). 6–9 are the fix's
- * error estimates: horizontal and vertical position (m), speed (m/s) and
- * heading (°); 6, read as speed before, stays 0.1–4.9 parked or moving. 10
- * is the fix time, which an R1S sends in GPS time (ms since 1980-01-06, no
- * leap seconds; converted to Unix time it runs a median 17.8 s ahead of the
- * message, GPS time's 18 leap seconds, 2026-10-13) and other vehicles may
- * send in Unix time; it isn't read. No .proto; other field numbers from a live
- * capture against a real R2 (2026-09-29/30), not community docs.
+ * `dynamics.vehicle.gnss`: 1/2 latitude/longitude, 3 altitude (m), 4 speed
+ * (m/s; left out at a standstill, so a fix without it is 0), 5 heading
+ * (-180 to 180, normalized to 0–360), 6–9 error estimates, 10 fix time (GPS
+ * time on an R1S, 18 s ahead of UTC; not read).
  */
 export function decodeGnss(payloadBase64: string): GnssReading | null {
   const m = decodePayload(payloadBase64);
@@ -61,14 +52,10 @@ export interface TireReading {
 }
 
 /**
- * `dynamics.tires.state`: repeated field 2, each a nested message with
- * 1 position (1-4 → FL/FR/RL/RR), 2 status (1 OK; 2–4 hard, soft and
- * puncture warnings, read as Warning), 3 pressure (double, bar), 4 validity
- * (0 valid, 1 not), 5 reading time (Unix ms, not read). A tire marked not
- * valid repeats an old reading: on an R1S, valid readings were 1–2 s old
- * and the 300 others a median 22 minutes (up to 4.75 hours) old, so they're
- * skipped rather than stamped as new (2026-10-27). Field numbers from a
- * live capture against a real R2 (2026-09-29), not community docs.
+ * `dynamics.tires.state`: repeated 2, each 1 position (1–4: FL, FR, RL,
+ * RR), 2 status (1 OK; 2–4 warnings, read as Warning), 3 pressure (bar), 4
+ * validity, 5 reading time. A tire not marked valid (0) repeats an old
+ * reading, so it's skipped rather than stamped as new.
  */
 export function decodeTires(payloadBase64: string): TireReading[] {
   const readings: TireReading[] = [];
@@ -166,8 +153,7 @@ export const gear = defineRvm({
 
 /**
  * `dynamics.vehicle.odometer`: 1 odometer (whole km), as legacy
- * vehicleMileage in metres. Coarser than legacy's metres, so legacy's is
- * used wherever it has one (LEGACY_PREFERRED_FIELDS); an R2 has none.
+ * vehicleMileage in metres; legacy's is preferred where it has one.
  */
 export const odometer = defineRvm({
   rvm: RVM_ODOMETER,
@@ -197,12 +183,8 @@ const RANGE_TEMPERATURE_IMPACTS: Record<number, string> = {
 
 /**
  * `dynamics.vehicle.range`: 1 range (km), as legacy distanceToEmpty; 2 how
- * low it is (1 normal, 2 low, 3 red, 4 critically low) and 3 the cold's
- * effect on it (1 none, 2 may reduce it, 3 reducing it), which legacy
- * doesn't have, so they're named after the Rivian app's. Captured beside a
- * matching legacy reading (282, 2 and 3 both 1); all 1,617 archived by
- * 2026-10-27 had 2 and 3 at 1. Every message so far had field 1, so one
- * without it isn't read as 0 km.
+ * low it is and 3 the cold's effect, named after the app's as legacy lacks
+ * them. A message without field 1 isn't read as 0 km.
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
@@ -226,9 +208,7 @@ export const range = defineRvm({
   },
 });
 
-// Probes: subscribed and archived, so their fields can be checked against
-// live data before anything reads them. Field meanings are the Rivian
-// app's, not yet seen.
+// Probes: archived to be worked out; nothing reads them yet.
 export const driveMode = defineRvm({
   rvm: 'dynamics.vehicle.drive_mode',
   group: 'vehicleState',

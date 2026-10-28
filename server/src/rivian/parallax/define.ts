@@ -2,26 +2,17 @@ import type { VehicleState } from '../types.js';
 import { fieldsOf } from './wire.js';
 
 /**
- * The Parallax subscriptions a vehicle gets. Each has its own id, so a
- * vehicle refusing one topic loses only that group: `core` (energy,
- * charging, navigation, network), `dynamics` (GPS, tires), `vehicleState`
- * (gear, power, closures, cabin) and `probe` (topics still being worked out,
- * kept apart so they can't take a working group down with them).
+ * The Parallax subscriptions. A vehicle that refuses one topic refuses its
+ * whole subscription, so topics are split: `core`, `dynamics` (GPS, tires),
+ * `vehicleState`, and `probe` for topics not yet verified.
  */
 export type ParallaxGroup = 'core' | 'dynamics' | 'vehicleState' | 'probe';
 
 /**
- * How far a topic's decoding is trusted. `confirmed`: checked against live
- * payloads. `partial`: some fields confirmed, or only recorded so far.
- * `probe`: unverified, so it's subscribed in the probe group.
- */
-/**
- * How far a topic is trusted, from Parallax validation against legacy:
- * - confirmed: every field the app reads has matched legacy at every value
- *   seen in use (or, with no legacy equivalent, matched captures).
- * - partial: read by the app, with values still to be seen matching legacy.
- * - probe: only logged for decoding; nothing stores or shows it. Probes
- *   ride their own subscription, so one a vehicle rejects can't stop the rest.
+ * How far a topic is trusted:
+ * - confirmed: every field read has matched legacy (or captures) at every value seen.
+ * - partial: read, with some values not yet seen matching.
+ * - probe: archived only, on its own subscription; nothing reads it.
  */
 export type Maturity = 'confirmed' | 'partial' | 'probe';
 
@@ -37,17 +28,13 @@ export interface RvmDef<T = unknown> {
   toState?(value: T, timeStamp: string): VehicleState;
   /** Every field toState can write; these merge newest-wins with legacy. */
   readonly stateKeys?: readonly string[];
-  /**
-   * Keeps the newest payload for quick reads. Every distinct payload of
-   * every topic is archived regardless (ParallaxArchive).
-   */
+  /** Keeps the newest payload for quick reads; every topic is archived regardless. */
   readonly store?: boolean;
   /** What each field path is read as, for the feed viewer ("3.1" is field 1 in field 3). */
   readonly fieldNames?: Readonly<Record<string, string>>;
   /**
-   * For the feed viewer: names each entry of a repeated field after a field
-   * inside it, e.g. a closure by its position. Within the entry, a name's
-   * "Closure:" prefix becomes the entry's label.
+   * For the feed viewer: labels a repeated field's entries by a field inside
+   * them, e.g. a closure by its position, replacing a name's "Closure:" prefix.
    */
   readonly entryLabels?: {
     readonly field: number;

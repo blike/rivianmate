@@ -1,7 +1,4 @@
-/**
- * `comfort.*`: cabin temperatures, preconditioning, defrost, pet mode and
- * seat and steering wheel heat and vents, as legacy fields.
- */
+/** `comfort.*`: cabin temperatures, preconditioning, defrost, pet mode and surface heat, as legacy fields. */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 import { f32 } from '../wire.js';
 
@@ -12,9 +9,7 @@ export const RVM_PET_MODE = 'comfort.cabin.pet_mode_status';
 export const RVM_SEAT_CONDITIONING = 'comfort.cabin.seat_conditioning_status';
 
 // Legacy's spellings: preconditioning off is the literal "undefined", and
-// defrost is capitalized. Preconditioning values legacy hasn't been seen
-// sending (initiate, active_warning and the timeouts and errors) are named
-// in its style, after the Rivian app's.
+// defrost is capitalized. Values legacy hasn't sent are named in its style.
 const PRECONDITIONING_STATUSES: Record<number, string> = {
   0: 'undefined',
   1: 'initiate',
@@ -46,11 +41,7 @@ const PET_MODE_STATUSES: Record<number, string> = {
 const temperature = (n: number | null | undefined) =>
   n != null && Number.isFinite(n) && n >= -80 && n <= 100 ? f32(n) : null;
 
-/**
- * `cabin_temperatures`: 1 zones {1 seat, 2 °C}, 2 outside, 3 cabin, 4
- * driver setting (float, °C). An R1S sends neither 1 nor 2 (2026-10-27);
- * outside is read for those that do.
- */
+/** `cabin_temperatures`: 1 zones {1 seat, 2 °C}, 2 outside, 3 cabin, 4 driver setting (°C). */
 export const cabinTemperatures = defineRvm({
   rvm: RVM_CABIN_TEMPERATURES,
   group: 'vehicleState',
@@ -80,11 +71,8 @@ export const cabinTemperatures = defineRvm({
 /**
  * `cabin_preconditioning_status`: 1 status (1 initiate, 2 active, 3 active
  * with a warning, 4 complete and holding, 5–7 and 9 timeouts and errors, 8
- * unavailable), 2 type (1 user selected, 2 screen protection, 3 scheduled, 4
- * auto cabin ventilation). Proto3 leaves a zero out, so an empty message is
- * off. Against legacy on an R1S: 2 with type 1 came as it reported active
- * and USER_SELECTED (2026-10-18), 4 as it reported complete_maintain
- * (2026-10-16), and 8 each of 95 times it reported unavailable.
+ * unavailable), 2 type (1 user, 2 screen protection, 3 scheduled, 4 auto
+ * ventilation). An empty message is off.
  */
 export const preconditioning = defineRvm({
   rvm: RVM_PRECONDITIONING,
@@ -121,13 +109,9 @@ export const defrost = defineRvm({
 });
 
 /**
- * `pet_mode_status`: 1 status (1 on, 2 disabled, 3 faulty), 2 temperature status (1
- * cold, 2 hot, 3 faulty), 3 cabin climate (1 cold, 2 hot). Proto3 leaves a
- * zero out, so an empty message is off, and a temperature or climate left
- * out is the default (legacy's petModeTemperatureStatus "Default"). Seen
- * switching with legacy's petModeStatus on an R1S (2026-10-18). 2 hasn't
- * been sent, and 3 came as "hot" in 418 messages with pet mode disabled,
- * so neither is read.
+ * `pet_mode_status`: 1 status (1 on, 2 disabled, 3 faulty); an empty
+ * message is off. 2 (temperature) and 3 (cabin climate) aren't read: 3
+ * says "hot" while pet mode is disabled, so its meaning is unclear.
  */
 export const petMode = defineRvm({
   rvm: RVM_PET_MODE,
@@ -148,12 +132,10 @@ export const petMode = defineRvm({
 });
 
 /**
- * `seat_conditioning_status` surfaces' legacy fields, by entry kind (1)
- * and position (2: 1 heat, 2 vent). Kinds: 1 steering wheel, 2 rear glass,
- * 3 windshield, 4 side mirrors, 5–7 front row, 8–10 second, 11–13 third
- * (left, middle, right), 14 wiper area. Legacy has the front row's and the
- * outer second row's heat, so the rest are named in its style; an R1S
- * sends only those and the third row's outer seats (2026-10-27).
+ * Surfaces' legacy fields, by kind and position (1 heat, 2 vent). Kinds: 1
+ * steering wheel, 2 rear glass, 3 windshield, 4 mirrors, 5–7 front row,
+ * 8–10 second, 11–13 third (left, middle, right), 14 wiper area. Those
+ * legacy lacks are named in its style.
  */
 const SURFACE_FIELDS: Record<string, string> = {
   '1/1': 'steeringWheelHeat',
@@ -192,14 +174,7 @@ function surfaceLevels(payload: string): Record<string, number> {
   return levels;
 }
 
-/**
- * `seat_conditioning_status`: an entry per heated or ventilated surface,
- * 1 kind (which seat, or 1 the steering wheel), 2 position (1 heat, 2
- * vent) and 3 level (0 off, 1–3), in legacy's spellings. Each surface was
- * seen switching with its legacy field on an R1S (2026-10-18), the third
- * row by hand; levels 1–3 were seen on the front left seat's heat and
- * assumed for the rest.
- */
+/** `seat_conditioning_status`: an entry per surface, 1 kind, 2 position, 3 level (0 off, 1–3). */
 export const seatConditioning = defineRvm({
   rvm: RVM_SEAT_CONDITIONING,
   group: 'vehicleState',
@@ -239,9 +214,7 @@ export const seatConditioning = defineRvm({
   },
 });
 
-// Probes: subscribed and archived, so their fields can be checked against
-// live data before anything reads them. Field meanings are the Rivian
-// app's, not yet seen.
+// Probes: archived to be worked out; nothing reads them yet.
 export const hvacSettings = defineRvm({
   rvm: 'comfort.cabin.hvac_settings_status',
   group: 'vehicleState',

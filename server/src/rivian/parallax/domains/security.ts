@@ -1,8 +1,4 @@
-/**
- * `security.*`: the alarm and Gear Guard video, as probes: subscribed and
- * archived, so their fields can be checked against live data before
- * anything reads them. Field meanings are the Rivian app's, not yet seen.
- */
+/** `security.*`: the alarm, Gear Guard video and immobilizer; probes, nothing reads them yet. */
 import { defineRvm } from '../define.js';
 
 export const alarm = defineRvm({
