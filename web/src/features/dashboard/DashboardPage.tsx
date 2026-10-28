@@ -6,7 +6,7 @@ import { LoadingScope } from '../../components/LoadingState';
 import { PageHeader, SectionRule } from '../../components/PageHeader';
 import { Panel, Row } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
-import { showLegacyOnly } from '../../lib/fieldSources';
+import { showOptional } from '../../lib/fieldSources';
 import { sv, titleCase } from '../../lib/state';
 import { brakeFluidLabel, chargePortLabel, twelveVoltLabel } from '../../lib/vehicleStatus';
 import { ClimatePanel } from './ClimatePanel';
@@ -84,16 +84,16 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
                       <Row label="12V battery" value={twelveVoltLabel(state)} />
                       <Row label="Charge port" value={chargePortLabel(state)} />
                       <ConnectivityRows insights={insights} />
-                      {showLegacyOnly(state, 'brakeFluidLow') && (
+                      {showOptional(state, 'brakeFluidLow') && (
                         <Row label="Brake fluid" value={brakeFluidLabel(state)} />
                       )}
-                      {showLegacyOnly(state, 'wiperFluidState') && (
+                      {showOptional(state, 'wiperFluidState') && (
                         <Row label="Wiper fluid" value={titleCase(sv(state, 'wiperFluidState'))} />
                       )}
-                      {showLegacyOnly(state, 'driveMode') && (
+                      {showOptional(state, 'driveMode') && (
                         <Row label="Drive mode" value={titleCase(sv(state, 'driveMode'))} />
                       )}
-                      {showLegacyOnly(state, 'gearGuardLocked') && (
+                      {showOptional(state, 'gearGuardLocked') && (
                         <Row label="Gear Guard" value={titleCase(sv(state, 'gearGuardLocked'))} />
                       )}
                     </dl>

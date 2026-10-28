@@ -1131,8 +1131,15 @@ describe('vehicleStateFromParallax', () => {
   it('reads the installed software version from deployment state', () => {
     // Captured from an R1S 15 s after legacy reported 2026.36.0 installed.
     const installed = 'CjQIARIaCgkyMDI2LjM2LjAY6g8gJDIIZDJmNzM0NzQiFCoSCAEQARoCEAAiAhAAKgAweEAC';
+    // Legacy, alongside: Idle, Install_Success, nothing on offer (0.0.0).
     expect(vehicleStateFromParallax(RVM_OTA_DEPLOYMENT, installed, TS)).toEqual({
       otaCurrentVersion: v('2026.36.0'),
+      otaAvailableVersion: v('0.0.0'),
+      otaStatus: v('Idle'),
+      otaCurrentStatus: v('Install_Success'),
+      otaDownloadProgress: v(0),
+      otaInstallProgress: v(0),
+      otaInstallDuration: v(0),
     });
   });
 
@@ -1164,5 +1171,76 @@ describe('chargerStatusFromStatus', () => {
     expect(chargerStatusFromStatus(status(2, 2))).toBe('chrgr_sts_connected_no_chrg');
     expect(chargerStatusFromStatus(status(2, 4))).toBe('chrgr_sts_connected_no_chrg');
     expect(chargerStatusFromStatus(status(0, 0))).toBeNull();
+  });
+});
+
+describe('legacy fields from Parallax', () => {
+  const TS = '2026-10-12T05:04:00.000Z';
+  const stamped = (values: Record<string, string | number>) =>
+    Object.fromEntries(Object.entries(values).map(([k, value]) => [k, { timeStamp: TS, value }]));
+
+  /** A firmware deployment: installed version, and the update on offer. */
+  const deployment = (installed: string, update: number[]) =>
+    b64(message(1, [...int(1, 1), ...message(2, string(1, installed)), ...message(4, update)]));
+
+  it('reads an update in progress as legacy spells it', () => {
+    const update = [
+      ...string(1, 'a1b2c3d4-0000-0000-0000-000000000000'),
+      ...message(2, string(1, '2026.36.0')),
+      ...message(5, [
+        ...int(1, 7), // downloading
+        ...int(2, 1),
+        ...message(3, int(2, 42)),
+        ...message(4, []),
+        ...int(9, 25),
+      ]),
+    ];
+    expect(
+      vehicleStateFromParallax('ota.deployment.state', deployment('2026.31.0', update), TS),
+    ).toEqual(
+      stamped({
+        otaCurrentVersion: '2026.31.0',
+        otaAvailableVersion: '2026.36.0',
+        otaStatus: 'Downloading',
+        otaCurrentStatus: 'Install_Success',
+        otaDownloadProgress: 42,
+        otaInstallProgress: 0,
+        otaInstallDuration: 25,
+      }),
+    );
+  });
+
+  it('reads only the firmware deployment', () => {
+    const maps = b64(
+      message(1, [...int(1, 2), ...message(2, string(1, '2026.1.0')), ...message(4, [])]),
+    );
+    expect(vehicleStateFromParallax('ota.deployment.state', maps, TS)).toBeNull();
+  });
+
+  it('reads drive mode, washer fluid and brake fluid', () => {
+    expect(vehicleStateFromParallax('dynamics.vehicle.drive_mode', b64(int(1, 2)), TS)).toEqual(
+      stamped({ driveMode: 'everyday' }),
+    );
+    expect(vehicleStateFromParallax('dynamics.vehicle.drive_mode', b64(int(1, 9)), TS)).toEqual(
+      stamped({ driveMode: 'distance' }),
+    );
+    expect(vehicleStateFromParallax('body.wipers.fluid_level', b64(int(2, 1)), TS)).toEqual(
+      stamped({ wiperFluidState: 'normal' }),
+    );
+    expect(vehicleStateFromParallax('body.wipers.fluid_level', b64(int(2, 2)), TS)).toEqual(
+      stamped({ wiperFluidState: 'low' }),
+    );
+    expect(vehicleStateFromParallax('dynamics.brakes.fluid_level', b64(int(1, 1)), TS)).toEqual(
+      stamped({ brakeFluidLow: 'false' }),
+    );
+    expect(vehicleStateFromParallax('dynamics.brakes.fluid_level', b64(int(1, 2)), TS)).toEqual(
+      stamped({ brakeFluidLow: 'true' }),
+    );
+  });
+
+  it('reads an unknown or unavailable value as nothing', () => {
+    expect(vehicleStateFromParallax('dynamics.vehicle.drive_mode', '', TS)).toBeNull();
+    expect(vehicleStateFromParallax('body.wipers.fluid_level', b64(int(2, 9)), TS)).toBeNull();
+    expect(vehicleStateFromParallax('dynamics.brakes.fluid_level', '', TS)).toBeNull();
   });
 });
