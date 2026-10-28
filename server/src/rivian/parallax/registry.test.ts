@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PARALLAX_GROUPS,
+  PARALLAX_CORE_TOPICS,
   PARALLAX_RVMS,
   PARALLAX_STATE_FIELDS,
   PARALLAX_STORED_RVMS,
   domainOf,
-  groupOf,
-  parallaxGroupTopics,
+  isProbe,
+  rvmDef,
 } from './index.js';
 
 describe('Parallax registry', () => {
@@ -22,39 +22,13 @@ describe('Parallax registry', () => {
     }
   });
 
-  it('subscribes each group to the topics it always has', () => {
-    expect(new Set(parallaxGroupTopics('dynamics'))).toEqual(
-      new Set(['dynamics.vehicle.gnss', 'dynamics.tires.state']),
-    );
-    expect(new Set(parallaxGroupTopics('vehicleState'))).toEqual(
-      new Set([
-        'vehicle.power.state',
-        'dynamics.vehicle.gear',
-        'dynamics.vehicle.odometer',
-        'body.closures.states',
-        'body.locks.states',
-        'comfort.cabin.cabin_temperatures',
-        'comfort.cabin.cabin_preconditioning_status',
-        'comfort.cabin.defrost_defog_status',
-        'comfort.cabin.pet_mode_status',
-        'comfort.cabin.seat_conditioning_status',
-        'dynamics.vehicle.range',
-        'energy.low_voltage.battery_state',
-        'ota.deployment.state',
-        'vehicle.wheels.vehicle_wheels',
-        'dynamics.vehicle.drive_mode',
-        'dynamics.brakes.fluid_level',
-        'body.wipers.fluid_level',
-      ]),
-    );
-    expect(parallaxGroupTopics('core')).toHaveLength(13);
-    expect(new Set(parallaxGroupTopics('probe'))).toEqual(
+  it('archives the topics without a decoder as probes, nothing reading them', () => {
+    expect(new Set(PARALLAX_RVMS.filter(isProbe).map((def) => def.rvm))).toEqual(
       new Set([
         'charging.session.trip_target',
         'charging.session.notification',
         'ota.ota_state.vehicle_ota_state',
         'ota.user_schedule.ota_config',
-        // Topics the app has that nothing reads yet, archived to be worked out.
         'charging.session.power',
         'charging.session.remote_command',
         'charging.energy.state',
@@ -78,18 +52,16 @@ describe('Parallax registry', () => {
         'departure.schedule.schedule',
       ]),
     );
-    // Every topic is subscribed in some group.
-    const subscribed = PARALLAX_GROUPS.flatMap((g) => parallaxGroupTopics(g.id));
-    expect(subscribed).toHaveLength(PARALLAX_RVMS.length);
+    expect(isProbe({})).toBe(true);
+    expect(isProbe({ decode: () => null })).toBe(false);
   });
 
-  it('subscribes unverified topics apart from the working groups', () => {
-    expect(groupOf({ group: 'vehicleState', maturity: 'probe' })).toBe('probe');
-    expect(groupOf({ group: 'vehicleState', maturity: 'partial' })).toBe('vehicleState');
-  });
-
-  it('only subscribes core for vehicles without the Parallax feature', () => {
-    expect(PARALLAX_GROUPS.filter((g) => !g.needsFeatureFlag).map((g) => g.id)).toEqual(['core']);
+  it('names only read topics for vehicles without the Parallax feature', () => {
+    expect(PARALLAX_CORE_TOPICS).toHaveLength(13);
+    for (const rvm of PARALLAX_CORE_TOPICS) {
+      const def = rvmDef(rvm);
+      expect(def && !isProbe(def), rvm).toBe(true);
+    }
   });
 
   it('merges every legacy field Parallax supplies by timestamp', () => {

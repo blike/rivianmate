@@ -70,6 +70,29 @@ describe.skipIf(!url)('ParallaxArchive with Postgres', () => {
     expect(await handle.db.select().from(parallaxArchive)).toHaveLength(3);
   });
 
+  it("finds each topic's last archived change, in rows or chunks", async () => {
+    const a = archive();
+    await a.ingest('v1', msg('dynamics.tires.state', [1], '2026-09-01T10:05:00Z'));
+    await a.ingest('v1', msg('dynamics.tires.state', [2], '2026-09-01T10:40:00Z'));
+    await a.ingest('v1', msg('body.locks.states', [1], '2026-10-13T11:00:00Z'));
+    await a.ingest('v1', msg('body.locks.states', [1], '2026-10-13T11:30:00Z'));
+    clock = Date.parse('2026-09-01T12:00:00Z') + ARCHIVE_ROWS_MS;
+    await a.rollUp();
+    expect(await handle.db.select().from(parallaxChunks)).toHaveLength(1);
+
+    const last = await a.lastArchivedAt('v1', [
+      'dynamics.tires.state',
+      'body.locks.states',
+      'never.seen.topic',
+    ]);
+    expect(Object.fromEntries([...last].map(([rvm, at]) => [rvm, at.toISOString()]))).toEqual({
+      'dynamics.tires.state': '2026-09-01T10:40:00.000Z',
+      // A repeat isn't archived, so this is the last change, not the last message.
+      'body.locks.states': '2026-10-13T11:00:00.000Z',
+    });
+    expect(await a.lastArchivedAt('unknown-vehicle', ['body.locks.states'])).toEqual(new Map());
+  });
+
   it('keeps distinct payloads stamped in the same second', async () => {
     const a = archive();
     await a.ingest('v1', msg('body.locks.states', [1], '2026-10-13T11:00:00Z'));

@@ -7,11 +7,10 @@ import type { VehicleStateStream } from '../rivian/subscription.js';
 import { CORE_VEHICLE_STATE_PROPERTIES } from '../rivian/graphql.js';
 import {
   LEGACY_PREFERRED_FIELDS,
-  PARALLAX_GROUPS,
+  PARALLAX_CORE_TOPICS,
   PARALLAX_STATE_FIELDS,
   chargingTimeWindow,
   chargingWindowSchedule,
-  parallaxGroupTopics,
   tripInfo,
   vehicleSupportsParallax,
 } from '../rivian/parallax/index.js';
@@ -87,8 +86,6 @@ export interface MonitorDiagnostics {
   /** Whether any monitored vehicle supports dynamics Parallax. */
   parallaxMode: 'classic' | 'parallax';
   parallaxModes: Record<string, 'classic' | 'parallax'>;
-  /** Legacy fields Rivian has rejected from the subscription (e.g. gnssLocation). */
-  parallaxDroppedFields: readonly string[];
 }
 
 export interface MonitoredVehicle {
@@ -218,13 +215,30 @@ export class VehicleMonitor {
           vehicleSupportsParallax(v.supportedFeatures) ? 'parallax' : 'classic',
         ]),
       ),
-      parallaxDroppedFields: this.connection?.stream.droppedFields ?? [],
     };
   }
 
-  /** What a feed last received since startup; null for an unknown feed. */
-  feedLatestData(feedId: string): FeedLatestData | null {
-    return this.connection?.stream.latestData?.(feedId) ?? null;
+  /**
+   * What a feed last received since startup, and when its registry topics
+   * that haven't come since were last archived; null for an unknown feed.
+   */
+  async feedLatestData(feedId: string): Promise<FeedLatestData | null> {
+    const stream = this.connection?.stream;
+    const latest = stream?.latestData?.(feedId) ?? null;
+    const feed = stream?.diagnostics?.().feeds.find((f) => f.id === feedId);
+    if (!latest || !feed || feed.domain == null) return latest;
+    const received = new Set(latest.messages.map((m) => m.topic));
+    const quiet = feed.topics
+      .filter((t) => t.kind !== 'unregistered' && !received.has(t.rvm))
+      .map((t) => t.rvm);
+    if (quiet.length === 0) return latest;
+    const archived = await this.parallaxArchive.lastArchivedAt(feed.vehicleId, quiet);
+    return {
+      ...latest,
+      lastArchivedAt: Object.fromEntries(
+        quiet.map((rvm) => [rvm, archived.get(rvm)?.toISOString() ?? null]),
+      ),
+    };
   }
 
   /** Start monitoring if usable stored credentials exist. */
@@ -398,19 +412,13 @@ export class VehicleMonitor {
       stream.subscribeCharging?.(vehicle.id, (_vehicleId, session) => {
         void chargingMonitor.ingest(vehicle.id, session);
       });
-      // One subscription per group, each with its own id and rejection fate,
-      // so a vehicle refusing one topic (an R1 refuses GPS) keeps the rest.
-      for (const group of PARALLAX_GROUPS) {
-        if (group.needsFeatureFlag && !parallaxActive) continue;
-        const topics = parallaxGroupTopics(group.id);
-        if (topics.length === 0) continue;
-        stream.subscribeParallax?.(
-          vehicle.id,
-          topics,
-          (_vehicleId, message) => parallax.dispatch(vehicle.id, message),
-          group.id,
-        );
-      }
+      // Every topic the vehicle sends; without the Parallax feature, only
+      // the core ones, by name.
+      stream.subscribeParallax?.(
+        vehicle.id,
+        parallaxActive ? null : PARALLAX_CORE_TOPICS,
+        (_vehicleId, message) => parallax.dispatch(vehicle.id, message),
+      );
       stream.subscribeDepartureSchedules?.(vehicle.id, (_vehicleId, departures) => {
         const entry = this.scheduleEntry(vehicle.id);
         entry.departures = departures;

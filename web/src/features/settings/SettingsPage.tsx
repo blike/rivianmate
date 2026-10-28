@@ -76,37 +76,44 @@ export function SettingsPage() {
 
   return (
     <div className="grid items-start gap-6 md:grid-cols-[12rem_minmax(0,1fr)] md:gap-10">
-      <nav
-        aria-label="Settings"
-        className="-mx-4 flex gap-1 overflow-x-auto px-4 md:sticky md:top-4 md:mx-0 md:flex-col md:overflow-visible md:px-0"
-      >
-        {sections.map((item) => {
-          const nextParams = new URLSearchParams(params);
-          nextParams.set('section', item.id);
-          const active = section.id === item.id;
-          return (
-            <Link
-              key={item.id}
-              ref={active ? activeLink : undefined}
-              to={{ search: `?${nextParams}` }}
-              aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors ${
-                active
-                  ? 'bg-(--surface-2) font-medium text-(--text-primary)'
-                  : 'text-(--text-secondary) hover:bg-(--surface-2) hover:text-(--text-primary)'
-              }`}
-            >
-              <span className={active ? 'text-(--accent)' : 'text-(--text-muted)'}>
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="md:sticky md:top-4">
+        <div className="mb-2 text-[0.8125rem] font-semibold uppercase tracking-[0.1em] text-(--text-secondary) md:px-3">
+          Settings
+        </div>
+        <nav
+          aria-label="Settings"
+          className="-mx-4 flex gap-1 overflow-x-auto px-4 md:mx-0 md:flex-col md:overflow-visible md:px-0"
+        >
+          {sections.map((item) => {
+            const nextParams = new URLSearchParams(params);
+            nextParams.set('section', item.id);
+            const active = section.id === item.id;
+            return (
+              <Link
+                key={item.id}
+                ref={active ? activeLink : undefined}
+                to={{ search: `?${nextParams}` }}
+                aria-current={active ? 'page' : undefined}
+                className={`flex items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors ${
+                  active
+                    ? 'bg-(--surface-2) font-medium text-(--text-primary)'
+                    : 'text-(--text-secondary) hover:bg-(--surface-2) hover:text-(--text-primary)'
+                }`}
+              >
+                <span className={active ? 'text-(--accent)' : 'text-(--text-muted)'}>
+                  {item.icon}
+                </span>
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
       <section aria-label={section.label} className="min-w-0 max-w-3xl space-y-6">
         <header>
-          <h2 className="text-xl font-semibold tracking-tight">{section.label}</h2>
+          <h1 className="text-[1.75rem] leading-tight font-semibold tracking-[-0.02em] sm:text-[2rem]">
+            {section.label}
+          </h1>
           <p className="mt-1 text-sm text-(--text-secondary)">
             {section.description}
             {section.id === 'logs' && logLevel && <> {logLevel.toUpperCase()}</>}

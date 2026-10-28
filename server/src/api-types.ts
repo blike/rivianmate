@@ -10,7 +10,7 @@ import type {
   VehicleState,
   VehicleView,
 } from './rivian/types.js';
-import type { FeedLatestData } from './rivian/subscription.js';
+import type { FeedLatestData, FeedTopic, TopicKind } from './rivian/subscription.js';
 import type { SavedLocation } from './services/locations.js';
 import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
@@ -18,7 +18,9 @@ export type {
   ChargingSchedule,
   DepartureSchedule,
   FeedLatestData,
+  FeedTopic,
   LiveSessionData,
+  TopicKind,
   VehicleState,
   VehicleView,
 };

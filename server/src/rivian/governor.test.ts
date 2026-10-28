@@ -80,7 +80,7 @@ describe('RivianGovernor', () => {
     expect(gov.noteRateLimited()).toBe(60 * 60_000);
   });
 
-  it('counts requests per operation over a rolling 24h window', async () => {
+  it('counts requests over a rolling 24h window', async () => {
     const clock = fakeClock();
     const gov = new RivianGovernor({ minSpacingMs: 0, ...clock });
     await gov.schedule('GetVehicleState', async () => {});
@@ -91,15 +91,10 @@ describe('RivianGovernor', () => {
     let snap = gov.snapshot();
     expect(snap.last24h.httpRequests).toBe(3);
     expect(snap.last24h.wsConnects).toBe(1);
-    expect(snap.requestsByOperation24h).toEqual({
-      GetVehicleState: 2,
-      getUserInfo: 1,
-    });
 
     clock.advance(25 * 60 * 60_000);
     snap = gov.snapshot();
     expect(snap.last24h.httpRequests).toBe(0);
-    expect(snap.requestsByOperation24h).toEqual({});
   });
 
   it('keeps the queue moving when a request fails', async () => {

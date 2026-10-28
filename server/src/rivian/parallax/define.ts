@@ -2,26 +2,11 @@ import type { VehicleState } from '../types.js';
 import { fieldsOf } from './wire.js';
 
 /**
- * The Parallax subscriptions. A vehicle that refuses one topic refuses its
- * whole subscription, so topics are split: `core`, `dynamics` (GPS, tires),
- * `vehicleState`, and `probe` for topics not yet verified.
+ * One Parallax topic: how to read it, keep it and use it. A topic without
+ * `decode` is a probe: archived to be worked out, with nothing reading it.
  */
-export type ParallaxGroup = 'core' | 'dynamics' | 'vehicleState' | 'probe';
-
-/**
- * How far a topic is trusted:
- * - confirmed: every field read has matched legacy (or captures) at every value seen.
- * - partial: read, with some values not yet seen matching.
- * - probe: archived only, on its own subscription; nothing reads it.
- */
-export type Maturity = 'confirmed' | 'partial' | 'probe';
-
-/** One Parallax topic: how to subscribe to it, read it, keep it and use it. */
 export interface RvmDef<T = unknown> {
   readonly rvm: string;
-  /** The subscription it rides on, unless its maturity is `probe`. */
-  readonly group: Exclude<ParallaxGroup, 'probe'>;
-  readonly maturity: Maturity;
   /** Payload to typed value; null when it can't be read. Never throws. */
   decode?(payload: string): T | null;
   /** The legacy VehicleState fields the value stands in for, in legacy's values. */

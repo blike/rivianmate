@@ -66,15 +66,7 @@ function Shell() {
           {vehiclesPending || unitsPending ? null : (
             <Routes>
               {/* Settings needs no vehicle, so a broken connection can always be fixed. */}
-              <Route
-                path="/settings"
-                element={
-                  <>
-                    <PageHeader title="Settings" />
-                    <SettingsPage />
-                  </>
-                }
-              />
+              <Route path="/settings" element={<SettingsPage />} />
               {vehicleId ? (
                 <>
                   <Route

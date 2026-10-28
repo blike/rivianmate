@@ -11,7 +11,6 @@
     "lint": "eslint src",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "parallax:capture": "node --env-file-if-exists=../.env --import tsx scripts/parallax-capture.ts",
     "demo:scene": "node --env-file-if-exists=../.env --import tsx scripts/demo-scene.ts"
   },
   "dependencies": {

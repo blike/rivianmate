@@ -37,7 +37,6 @@ export type RivianTrafficCounter =
 export interface RivianTrafficSnapshot {
   since: string;
   last24h: Record<RivianTrafficCounter, number>;
-  requestsByOperation24h: Record<string, number>;
   cooldownUntil: string | null;
   lastRateLimitedAt: string | null;
   lastSuccessfulRequestAt: string | null;
@@ -46,7 +45,6 @@ export interface RivianTrafficSnapshot {
 interface HourBucket {
   hour: number;
   counters: Partial<Record<RivianTrafficCounter, number>>;
-  operations: Record<string, number>;
 }
 
 export interface GovernorOptions {
@@ -88,7 +86,6 @@ export class RivianGovernor {
     this.queue = turn.catch(() => {});
     await turn;
     this.count('httpRequests');
-    this.countOperation(operation);
     return fn();
   }
 
@@ -141,13 +138,9 @@ export class RivianGovernor {
       wsMessages: 0,
       wsAuthFailures: 0,
     };
-    const requestsByOperation24h: Record<string, number> = {};
     for (const bucket of this.buckets) {
       for (const [key, value] of Object.entries(bucket.counters)) {
         last24h[key as RivianTrafficCounter] += value ?? 0;
-      }
-      for (const [op, value] of Object.entries(bucket.operations)) {
-        requestsByOperation24h[op] = (requestsByOperation24h[op] ?? 0) + value;
       }
     }
     return {
@@ -157,7 +150,6 @@ export class RivianGovernor {
           ? null
           : new Date(this.lastSuccessfulRequestAt).toISOString(),
       last24h,
-      requestsByOperation24h,
       cooldownUntil:
         this.cooldownUntil > this.now() ? new Date(this.cooldownUntil).toISOString() : null,
       lastRateLimitedAt:
@@ -190,16 +182,11 @@ export class RivianGovernor {
     }
   }
 
-  private countOperation(operation: string): void {
-    const bucket = this.currentBucket();
-    bucket.operations[operation] = (bucket.operations[operation] ?? 0) + 1;
-  }
-
   private currentBucket(): HourBucket {
     const hour = Math.floor(this.now() / HOUR_MS);
     const last = this.buckets[this.buckets.length - 1];
     if (last && last.hour === hour) return last;
-    const bucket: HourBucket = { hour, counters: {}, operations: {} };
+    const bucket: HourBucket = { hour, counters: {} };
     this.buckets.push(bucket);
     this.prune();
     return bucket;

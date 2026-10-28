@@ -9,6 +9,7 @@ import type {
   DriveDetailDto,
   DriveDto,
   FeedLatestData,
+  FeedTopic,
   HistoryMetric,
   HistoryPoint,
   LocationPointDto,
@@ -39,6 +40,7 @@ import type {
 
 export type {
   FeedLatestData,
+  FeedTopic,
   TeslaMateSettingsDto,
   ChargingSettings,
   GeocodeResultDto,

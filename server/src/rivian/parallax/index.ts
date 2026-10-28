@@ -7,8 +7,9 @@
  * - domains/: each topic's decoder and definition, by Rivian domain
  * - registry.ts: every definition, and what's derived from them
  *
- * To add a topic, define it in its domain file and list it there, as
- * `maturity: 'probe'` until it's checked against a real vehicle.
+ * To add a topic, define it in its domain file and list it there, without
+ * a decoder (a probe, archived only) until it's checked against a real
+ * vehicle; giving it one makes it read.
  *
  * Conventions:
  * - Topics that are only legacy fields decode inline (`readings`,
