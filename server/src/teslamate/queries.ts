@@ -257,12 +257,15 @@ function startedIn(sql: Sql, column: string, window: ListWindow) {
   return sql`
     ${window.from ? sql`AND ${sql(column)} >= ${at(sql, window.from)}` : sql``}
     ${window.to ? sql`AND ${sql(column)} <= ${at(sql, window.to)}` : sql``}
+    ${window.before ? sql`AND ${sql(column)} < ${at(sql, window.before)}` : sql``}
   `;
 }
 
 export interface ListWindow {
   from?: Date;
   to?: Date;
+  /** Only those that started before this: the next page. */
+  before?: Date;
   limit: number;
 }
 

@@ -128,21 +128,22 @@ export function activityBands(
 }
 
 /**
- * Distance driven per local day (or hour), every bucket in the window
- * included so quiet days show as gaps. A drive counts toward the bucket it
- * started in.
+ * Distance driven per local day, or week from Monday, every bucket in the
+ * window included so quiet days show as gaps. A drive counts toward the
+ * bucket it started in.
  */
 export function distanceByPeriod(
   drives: readonly PeriodDrive[],
   from: number,
   to: number,
-  unit: 'day' | 'hour',
+  unit: 'day' | 'week',
 ): { ts: number; km: number }[] {
   const start = new Date(from);
-  if (unit === 'day') start.setHours(0, 0, 0, 0);
-  else start.setMinutes(0, 0, 0);
-  const step = (d: Date) =>
-    unit === 'day' ? d.setDate(d.getDate() + 1) : d.setHours(d.getHours() + 1);
+  start.setHours(0, 0, 0, 0);
+  if (unit === 'week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const days = unit === 'week' ? 7 : 1;
+  // setDate steps by calendar day, so DST weeks keep their Monday midnight.
+  const step = (d: Date) => d.setDate(d.getDate() + days);
 
   const buckets: { ts: number; km: number }[] = [];
   for (const d = new Date(start); d.getTime() <= to; step(d))

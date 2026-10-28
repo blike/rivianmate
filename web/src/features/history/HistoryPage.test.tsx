@@ -10,7 +10,7 @@ import { RANGES } from './options';
 function render(battery?: object) {
   const client = new QueryClient();
   // Drives and sessions are listed from the start of the default 7-day window.
-  const { from, to } = rangeWindow(RANGES[1].hours, new Date());
+  const { from, to } = rangeWindow(RANGES[0].hours, new Date());
   const since = from.toISOString();
   client.setQueryData(['drives', ID, since], drives);
   client.setQueryData(['chargingSessions', ID, since], sessions);

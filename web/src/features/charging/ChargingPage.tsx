@@ -2,8 +2,9 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useState } from 'react';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
-import { useChargingSessions, useLiveCharging, useVehicleState } from '../../api/hooks';
+import { useChargingPages, useLiveCharging, useVehicleState } from '../../api/hooks';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
+import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
 import { lastChargedTo } from '../../lib/charging';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
@@ -21,7 +22,9 @@ export function ChargingPage(props: { vehicleId: string }) {
   const { data: live } = useLiveCharging(props.vehicleId);
   const { data: state } = useVehicleState(props.vehicleId);
 
-  const { data: sessions, isPending: sessionsPending } = useChargingSessions(props.vehicleId);
+  const pages = useChargingPages(props.vehicleId);
+  const { items: sessions, isPending: sessionsPending } = pages;
+  const older = { has: pages.hasOlder, loading: pages.loadingOlder, load: pages.loadOlder };
   // TeslaMate is read-only, and schedules and wallboxes are Rivian's.
   const teslamate = isTeslaMateVehicle(props.vehicleId);
 
@@ -84,6 +87,7 @@ export function ChargingPage(props: { vehicleId: string }) {
           sessions={sessions}
           selectedId={session?.id ?? null}
           onSelect={setSelectedSessionId}
+          older={older}
         />
       )}
       <div className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}>
@@ -125,11 +129,20 @@ export function ChargingPage(props: { vehicleId: string }) {
                   <SkeletonRows rows={8} />
                 </div>
               ) : (
-                <SessionList
-                  sessions={sessions!}
-                  selectedId={session?.id ?? null}
-                  onSelect={setSelectedSessionId}
-                />
+                <>
+                  <SessionList
+                    sessions={sessions!}
+                    selectedId={session?.id ?? null}
+                    onSelect={setSelectedSessionId}
+                  />
+                  {older.has && (
+                    <LoadOlder
+                      label="Show older sessions"
+                      loading={older.loading}
+                      onLoad={older.load}
+                    />
+                  )}
+                </>
               )}
             </div>
           </div>

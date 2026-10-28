@@ -60,16 +60,19 @@ export interface TireReading {
 
 /**
  * `dynamics.tires.state`: repeated field 2, each a nested message with
- * 1 position (1-4 → FL/FR/RL/RR), 2 status (1=OK, else Warning), 3 pressure
- * (double, bar), 5 reading time (Unix ms; a median 0.8 s before the
- * message on an R1S, 2026-10-13, not read). Field numbers from a live
- * capture against a real R2 (2026-09-29), not community docs.
+ * 1 position (1-4 → FL/FR/RL/RR), 2 status (1 OK; 2–4 hard, soft and
+ * puncture warnings, read as Warning), 3 pressure (double, bar), 4 validity
+ * (0 valid, 1 not), 5 reading time (Unix ms, not read). A tire marked not
+ * valid repeats an old reading: on an R1S, valid readings were 1–2 s old
+ * and the 300 others a median 22 minutes (up to 4.75 hours) old, so they're
+ * skipped rather than stamped as new (2026-10-27). Field numbers from a
+ * live capture against a real R2 (2026-09-29), not community docs.
  */
 export function decodeTires(payloadBase64: string): TireReading[] {
   const readings: TireReading[] = [];
   for (const tire of decodePayload(payloadBase64)?.repeated(2) ?? []) {
     const suffix = TIRE_POSITION_SUFFIX[tire.int(1) ?? 0];
-    if (!suffix) continue;
+    if (!suffix || (tire.int(4) ?? 0) !== 0) continue;
     const status = tire.int(2);
     readings.push({
       position: suffix,
@@ -136,8 +139,9 @@ export const tires = defineRvm({
   },
   fieldNames: {
     '2.1': 'Tire: position (1–4 = FL, FR, RL, RR)',
-    '2.2': 'Tire: status (1 = OK)',
+    '2.2': 'Tire: status (1 OK, 2 hard, 3 soft, 4 puncture warning)',
     '2.3': 'Tire: pressure (bar)',
+    '2.4': 'Tire: reading valid (0 valid, 1 stale)',
     '2.5': 'Tire: reading time (Unix ms)',
   },
 });
@@ -174,9 +178,11 @@ export const odometer = defineRvm({
 });
 
 /**
- * `dynamics.vehicle.range`: 1 range (km), read as legacy distanceToEmpty
- * only with 2 at 1, as captured beside a matching legacy reading (282, 2
- * and 3 both 1; their meaning is unknown, and 2 may be a unit).
+ * `dynamics.vehicle.range`: 1 range (km), as legacy distanceToEmpty; 2 how
+ * low it is (1 normal, 2 low, 3 red, 4 critically low) and 3 the cold's
+ * effect on it (1 none, 2 may reduce it, 3 reducing it), neither read.
+ * Captured beside a matching legacy reading (282, 2 and 3 both 1). Every
+ * message so far had field 1, so one without it isn't read as 0 km.
  */
 export const range = defineRvm({
   rvm: RVM_RANGE,
@@ -184,15 +190,16 @@ export const range = defineRvm({
   maturity: 'confirmed',
   decode: (payload) =>
     readings((put) => {
-      const m = fieldsOrEmpty(payload);
-      const km = m?.int(1);
-      if (m?.int(2) === 1 && km != null && km >= 0 && km <= 2000) put('distanceToEmpty', km);
+      const km = fieldsOrEmpty(payload)?.int(1);
+      if (km != null && km >= 0 && km <= 2000) put('distanceToEmpty', km);
     }),
   toState: stampReadings,
   stateKeys: ['distanceToEmpty'],
   store: true,
   fieldNames: {
     '1': 'Range (km)',
+    '2': 'Range level (1 normal, 2 low, 3 red, 4 critically low)',
+    '3': 'Cold effect (1 none, 2 may reduce range, 3 reducing range)',
   },
 });
 

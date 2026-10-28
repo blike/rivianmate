@@ -12,15 +12,30 @@ export const RVM_PET_MODE = 'comfort.cabin.pet_mode_status';
 export const RVM_SEAT_CONDITIONING = 'comfort.cabin.seat_conditioning_status';
 
 // Legacy's spellings: preconditioning off is the literal "undefined", and
-// defrost is capitalized.
+// defrost is capitalized. Preconditioning values legacy hasn't been seen
+// sending (initiate, active_warning and the timeouts and errors) are named
+// in its style, after the Rivian app's.
 const PRECONDITIONING_STATUSES: Record<number, string> = {
   0: 'undefined',
   1: 'initiate',
-  2: 'initiate',
-  3: 'undefined',
-  4: 'active',
+  2: 'active',
+  3: 'active_warning',
+  4: 'complete_maintain',
+  5: 'timeout_temperature_not_achieved',
+  6: 'error_soc_low',
+  7: 'error_system_fault',
+  8: 'unavailable',
+  9: 'timeout_complete',
 };
-const DEFROST_STATUSES: Record<number, string> = { 0: 'Off', 1: 'Off', 2: 'On', 4: 'Off' };
+const PRECONDITIONING_TYPES: Record<number, string> = {
+  0: 'NONE',
+  1: 'USER_SELECTED',
+  2: 'SCREEN_PROTECTION',
+  3: 'SCHEDULED',
+  4: 'AUTO_CABIN_VENTILATION',
+};
+// Defog, defrost, or both, are all on.
+const DEFROST_STATUSES: Record<number, string> = { 0: 'Off', 1: 'On', 2: 'On', 3: 'On', 4: 'Off' };
 const PET_MODE_STATUSES: Record<number, string> = { 0: 'Off', 1: 'On', 2: 'Disabled' };
 
 const temperature = (n: number | null | undefined) =>
@@ -43,10 +58,13 @@ export const cabinTemperatures = defineRvm({
 });
 
 /**
- * `cabin_preconditioning_status`: 1 status (1–2 initiate, 4 active, 0 or 3
- * off). Proto3 leaves a zero out, so an empty message is off. 8 is sent
- * just as legacy reports "unavailable" (9 of 9 times on an R1S, 2026-10-13);
- * it isn't read, so the last status holds.
+ * `cabin_preconditioning_status`: 1 status (1 initiate, 2 active, 3 active
+ * with a warning, 4 complete and holding, 5–7 and 9 timeouts and errors, 8
+ * unavailable), 2 type (1 user selected, 2 screen protection, 3 scheduled, 4
+ * auto cabin ventilation). Proto3 leaves a zero out, so an empty message is
+ * off. Against legacy on an R1S: 2 with type 1 came as it reported active
+ * and USER_SELECTED (2026-10-18), 4 as it reported complete_maintain
+ * (2026-10-16), and 8 each of 95 times it reported unavailable.
  */
 export const preconditioning = defineRvm({
   rvm: RVM_PRECONDITIONING,
@@ -55,14 +73,19 @@ export const preconditioning = defineRvm({
   decode: (payload) =>
     readings((put) => {
       const m = fieldsOrEmpty(payload);
-      if (m) put('cabinPreconditioningStatus', PRECONDITIONING_STATUSES[m.int(1) ?? 0]);
+      if (!m) return;
+      put('cabinPreconditioningStatus', PRECONDITIONING_STATUSES[m.int(1) ?? 0]);
+      put('cabinPreconditioningType', PRECONDITIONING_TYPES[m.int(2) ?? 0]);
     }),
   toState: stampReadings,
-  stateKeys: ['cabinPreconditioningStatus'],
-  fieldNames: { '1': 'Status (1–2 starting, 4 active, 0/3 off)' },
+  stateKeys: ['cabinPreconditioningStatus', 'cabinPreconditioningType'],
+  fieldNames: {
+    '1': 'Status (1 starting, 2 active, 3 warning, 4 holding, 8 unavailable)',
+    '2': 'Type (1 user, 2 screen protection, 3 scheduled, 4 auto ventilation)',
+  },
 });
 
-/** `defrost_defog_status`: 1 status (2 on; 0, 1 and 4 off). */
+/** `defrost_defog_status`: 1 status (1 defog, 2 defrost, 3 both, 4 off). */
 export const defrost = defineRvm({
   rvm: RVM_DEFROST,
   group: 'vehicleState',
@@ -74,7 +97,7 @@ export const defrost = defineRvm({
     }),
   toState: stampReadings,
   stateKeys: ['defrostDefogStatus'],
-  fieldNames: { '1': 'Status (2 on)' },
+  fieldNames: { '1': 'Status (1 defog, 2 defrost, 3 both, 4 off)' },
 });
 
 /**

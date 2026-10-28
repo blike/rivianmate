@@ -9,6 +9,7 @@ const window = (amps = 32, endMinute = 360): ChargingWindow => ({
   startMinute: 0,
   endDay: 4,
   endMinute,
+  minutes: endMinute,
   amps,
   latitude: 33.07,
   longitude: -117.26,

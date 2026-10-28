@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   brakeFluidLabel,
   chargePortLabel,
+  climateRunning,
   preconditioningLabel,
   securitySummary,
   twelveVoltLabel,
@@ -106,5 +107,21 @@ describe('dashboard warning labels', () => {
       preconditioningLabel({ cabinPreconditioningStatus: null } as unknown as VehicleState),
     ).toBe('Unknown');
     expect(preconditioningLabel(state({ cabinPreconditioningStatus: 'active' }))).toBe('Active');
+    expect(preconditioningLabel(state({ cabinPreconditioningStatus: 'complete_maintain' }))).toBe(
+      'Holding temperature',
+    );
+  });
+
+  it('counts the climate running only while preconditioning runs', () => {
+    const running = (status: string) =>
+      climateRunning(state({ cabinPreconditioningStatus: status }));
+    expect(['initiate', 'active', 'active_warning', 'complete_maintain'].every(running)).toBe(true);
+    // Legacy reports unavailable while driving.
+    expect(['undefined', 'unavailable', 'timeout_complete', 'error_soc_low'].some(running)).toBe(
+      false,
+    );
+    expect(
+      climateRunning(state({ climateOn: 'true', cabinPreconditioningStatus: 'undefined' })),
+    ).toBe(true);
   });
 });

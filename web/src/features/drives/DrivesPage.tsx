@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { useDrive, useDrives, useInsights, useUnits, useVehicleState } from '../../api/hooks';
+import { useDrive, useDrivePages, useInsights, useUnits, useVehicleState } from '../../api/hooks';
 import {
   ContentFrame,
   LoadingScope,
   SkeletonBlock,
   SkeletonRows,
 } from '../../components/LoadingState';
+import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { VehicleMap } from '../../components/VehicleMap';
@@ -21,7 +22,9 @@ export function DrivesPage(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const u = useUnits();
 
-  const { data: drives, isPending: drivesPending } = useDrives(props.vehicleId);
+  const pages = useDrivePages(props.vehicleId);
+  const { items: drives, isPending: drivesPending } = pages;
+  const older = { has: pages.hasOlder, loading: pages.loadingOlder, load: pages.loadOlder };
   // The newest drive until one is picked.
   const driveId = selectedId ?? drives?.[0]?.id ?? null;
 
@@ -85,7 +88,7 @@ export function DrivesPage(props: { vehicleId: string }) {
   return (
     <div className="space-y-4">
       {drives && drives.length > 1 && (
-        <DrivePicker drives={drives} selectedId={driveId} onSelect={setSelectedId} />
+        <DrivePicker drives={drives} selectedId={driveId} onSelect={setSelectedId} older={older} />
       )}
       <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
         <LoadingScope loading={loading}>
@@ -167,7 +170,16 @@ export function DrivesPage(props: { vehicleId: string }) {
                   <SkeletonRows rows={8} />
                 </div>
               ) : (
-                <DriveList drives={drives!} selectedId={driveId} onSelect={setSelectedId} />
+                <>
+                  <DriveList drives={drives!} selectedId={driveId} onSelect={setSelectedId} />
+                  {older.has && (
+                    <LoadOlder
+                      label="Show older drives"
+                      loading={older.loading}
+                      onLoad={older.load}
+                    />
+                  )}
+                </>
               )}
             </div>
           </div>

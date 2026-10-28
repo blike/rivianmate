@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, lte, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
@@ -55,6 +55,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
             eq(chargingSessions.vehicleId, request.params.id),
             q.from ? gte(chargingSessions.startedAt, q.from) : undefined,
             q.to ? lte(chargingSessions.startedAt, q.to) : undefined,
+            q.before ? lt(chargingSessions.startedAt, q.before) : undefined,
           ),
         )
         .orderBy(desc(chargingSessions.startedAt))

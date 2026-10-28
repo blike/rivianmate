@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { InProgressTag } from './InProgressTag';
+import { LoadOlder } from './LoadOlder';
 
 export interface PickerItem {
   id: number;
@@ -28,13 +29,15 @@ export interface PickerGroup {
  * Picks one record (a drive, a session) from a list grouped by day, for
  * screens too narrow to show the list beside the details. Arrows step
  * through the list in its order (newest first): right moves down it, to
- * older records; the middle opens the list.
+ * older records; the middle opens the list. With `older`, the list is read a
+ * page at a time: its end, and stepping past the last record, read the next.
  */
 export function RecordPicker(props: {
   label: string;
   groups: PickerGroup[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  older?: { has: boolean; loading: boolean; load: () => void };
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -50,6 +53,7 @@ export function RecordPicker(props: {
   const current = flat[index];
   const newer = index > 0 ? flat[index - 1] : undefined;
   const older = index >= 0 ? flat[index + 1] : undefined;
+  const moreOlder = props.older?.has ?? false;
 
   const show = () => {
     setActive(Math.max(index, 0));
@@ -137,7 +141,7 @@ export function RecordPicker(props: {
             <span className="min-w-0 flex-1">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-(--text-muted)">
                 {current
-                  ? `${current.day} at ${current.time} · ${index + 1} of ${flat.length}`
+                  ? `${current.day} at ${current.time} · ${index + 1} of ${flat.length}${moreOlder ? '+' : ''}`
                   : props.label}
               </span>
               <span className="block truncate text-sm font-medium">
@@ -157,8 +161,8 @@ export function RecordPicker(props: {
           </button>
           <StepButton
             label={`Older ${props.label.toLowerCase()}`}
-            disabled={!older}
-            onClick={() => older && props.onSelect(older.id)}
+            disabled={!older && (!moreOlder || props.older!.loading)}
+            onClick={() => (older ? props.onSelect(older.id) : props.older?.load())}
           >
             <path d="M6 3.5 10.5 8 6 12.5" />
           </StepButton>
@@ -229,6 +233,13 @@ export function RecordPicker(props: {
                 })}
               </div>
             ))}
+            {moreOlder && (
+              <LoadOlder
+                label={`Show older ${props.label.toLowerCase()}s`}
+                loading={props.older!.loading}
+                onLoad={props.older!.load}
+              />
+            )}
           </div>
         )}
       </div>

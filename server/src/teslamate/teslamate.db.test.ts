@@ -222,6 +222,13 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(recent.map((d) => d.id)).toEqual([2]);
     const older = await source.drives('tm-1', home, { to: day, limit: 200 });
     expect(older.map((d) => d.id)).toEqual([1]);
+    // The next page: those that started before the oldest so far.
+    const [newest] = await source.drives('tm-1', home, { limit: 1 });
+    const next = await source.drives('tm-1', home, {
+      before: new Date(newest!.startedAt),
+      limit: 1,
+    });
+    expect([newest!.id, next.map((d) => d.id)]).toEqual([2, [1]]);
     const coverage = await source.driveCoverage('tm-1');
     expect(Date.parse(coverage.since!)).toBeLessThan(day.getTime());
   });

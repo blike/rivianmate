@@ -165,6 +165,8 @@ export interface ChargingWindow {
   startMinute: number;
   endDay: number;
   endMinute: number;
+  /** Its length, as Rivian sends it; a week (or more) for a window that never closes. */
+  minutes: number | null;
   amps: number | null;
   latitude: number | null;
   longitude: number | null;
@@ -175,12 +177,13 @@ const WEEK = 7 * 24 * 60;
 
 /**
  * `charging.schedule.time_window`: the next charging window, sent again as
- * each one ends. 2 is the window: 1 start minute (proto3 leaves out
- * midnight), 2 end minute, 3 length in minutes, 4 amps, 5 location {1 lat,
- * 2 long}, 6/7 start and end day (1 Sunday … 7 Saturday). From an R1S whose
- * schedule (0:00–6:00 weekdays, 0:00–14:00 weekends) it matched for two
- * weeks (2026-10-13); a 1:30–6:00 window then came as 1 90, 2 360, 3 270.
- * 1 was always 1.
+ * each one ends. 1 whether a schedule is set (always 1 so far; empty with
+ * none); 2 is the window: 1 start minute (proto3 leaves out midnight), 2 end
+ * minute, 3 length in minutes (10080 for a window covering the whole week),
+ * 4 amps, 5 location {1 lat, 2 long}, 6/7 start and end day (1 Sunday … 7
+ * Saturday). From an R1S whose schedule (0:00–6:00 weekdays, 0:00–14:00
+ * weekends) it matched for two weeks (2026-10-13); a 1:30–6:00 window then
+ * came as 1 90, 2 360, 3 270.
  */
 export function decodeChargingWindow(payloadBase64: string): ChargingWindow | null {
   const window = decodePayload(payloadBase64)?.message(2);
@@ -193,14 +196,30 @@ export function decodeChargingWindow(payloadBase64: string): ChargingWindow | nu
     startMinute: window.int(1) ?? 0,
     endDay: endDay >= 1 && endDay <= 7 ? endDay : startDay,
     endMinute: window.int(2) ?? 0,
+    minutes: window.int(3),
     amps: window.int(4),
     latitude: location?.double(1) ?? null,
     longitude: location?.double(2) ?? null,
   };
 }
 
-/** A window as a one-day schedule, for where legacy's schedules aren't available. */
+/**
+ * A window as a one-day schedule, for where legacy's schedules aren't
+ * available. A window covering the whole week, whose start and end are the
+ * same, is charging all day, every day.
+ */
 export function chargingWindowSchedule(w: ChargingWindow): ChargingSchedule | null {
+  const location = { latitude: w.latitude, longitude: w.longitude };
+  if (w.minutes != null && w.minutes >= WEEK) {
+    return {
+      enabled: true,
+      startTime: 0,
+      duration: 24 * 60,
+      amperage: w.amps,
+      weekDays: [...DAY_NAMES],
+      location,
+    };
+  }
   const minutes =
     (((w.endDay - w.startDay + 7) % 7) * 24 * 60 + w.endMinute - w.startMinute + WEEK) % WEEK;
   if (minutes === 0) return null;
@@ -210,7 +229,7 @@ export function chargingWindowSchedule(w: ChargingWindow): ChargingSchedule | nu
     duration: minutes,
     amperage: w.amps,
     weekDays: [DAY_NAMES[w.startDay - 1]!],
-    location: { latitude: w.latitude, longitude: w.longitude },
+    location,
   };
 }
 
@@ -221,10 +240,10 @@ export const chargingTimeWindow = defineRvm({
   decode: decodeChargingWindow,
   store: true,
   fieldNames: {
-    '1': 'Unknown (1 so far)',
+    '1': 'Schedule set',
     '2.1': 'Window: start minute',
     '2.2': 'Window: end minute',
-    '2.3': 'Window: length (minutes)',
+    '2.3': 'Window: length (minutes; 10080 all week)',
     '2.4': 'Window: amps',
     '2.5.1': 'Window: latitude',
     '2.5.2': 'Window: longitude',

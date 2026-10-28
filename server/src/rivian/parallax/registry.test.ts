@@ -92,6 +92,7 @@ describe('Parallax registry', () => {
         'cabinClimateInteriorTemperature',
         'cabinClimateDriverTemperature',
         'cabinPreconditioningStatus',
+        'cabinPreconditioningType',
         'defrostDefogStatus',
         'petModeStatus',
         'steeringWheelHeat',

@@ -91,7 +91,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-const sinceQuery = (since?: Date) => (since ? `?from=${since.toISOString()}` : '');
+/** A listing's window: everything since `from`, or the page started before `before`. */
+const listQuery = (q: { from?: Date; before?: Date }) => {
+  const params = new URLSearchParams();
+  if (q.from) params.set('from', q.from.toISOString());
+  if (q.before) params.set('before', q.before.toISOString());
+  const query = params.toString();
+  return query ? `?${query}` : '';
+};
 
 export const api = {
   status: () => request<StatusResponse>('/api/status'),
@@ -189,9 +196,12 @@ export const api = {
     request<LocationPointDto[]>(
       `/api/vehicles/${id}/locations?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
-  /** The newest drives, or with `since`, every drive that started after it. */
-  drives: (id: string, since?: Date) =>
-    request<DriveDto[]>(`/api/vehicles/${id}/drives${sinceQuery(since)}`),
+  /**
+   * The newest drives; with `from`, every drive that started after it; with
+   * `before`, the next page of those that started before it.
+   */
+  drives: (id: string, q: { from?: Date; before?: Date } = {}) =>
+    request<DriveDto[]>(`/api/vehicles/${id}/drives${listQuery(q)}`),
   batteryWindow: (id: string, from: Date, to: Date) =>
     request<BatteryWindowDto>(
       `/api/vehicles/${id}/battery-window?from=${from.toISOString()}&to=${to.toISOString()}`,
@@ -199,9 +209,9 @@ export const api = {
   driveCoverage: (id: string) => request<DriveCoverageDto>(`/api/vehicles/${id}/drive-coverage`),
   drive: (vehicleId: string, driveId: number) =>
     request<DriveDetailDto>(`/api/vehicles/${vehicleId}/drives/${driveId}`),
-  /** The newest sessions, or with `since`, every session that started after it. */
-  chargingSessions: (id: string, since?: Date) =>
-    request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${sinceQuery(since)}`),
+  /** As `drives`, for charging sessions. */
+  chargingSessions: (id: string, q: { from?: Date; before?: Date } = {}) =>
+    request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${listQuery(q)}`),
   updateSessionCost: (sessionId: number, cost: string | null) =>
     request<ChargingSessionDto>(`/api/charging-sessions/${sessionId}`, {
       method: 'PATCH',

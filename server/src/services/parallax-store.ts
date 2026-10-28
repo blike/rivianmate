@@ -18,6 +18,7 @@ import {
   parkedEnergy,
   tripInfo,
   tripProgress,
+  tripRemaining,
 } from '../rivian/parallax/index.js';
 
 /** Suffix for the last battery state that carried cell temperatures. */
@@ -109,11 +110,9 @@ export class ParallaxStore {
       connectivity: net ? { ...net.value, at: net.at } : null,
       navigation: trip
         ? {
-            ...tripWithoutArrival(trip.value),
-            // Progress updates the ETA as the drive goes; the route's own is from planning.
-            etaAt: etaIso(progress?.value.etaMs ?? trip.value.arrivalAtMs),
-            remainingKm: progress?.value.remainingKm ?? trip.value.totalDistanceKm,
-            remainingS: progress?.value.remainingS ?? trip.value.totalDurationS,
+            ...tripSummary(trip.value),
+            // Progress updates these as the drive goes; the route's own are from planning.
+            ...remaining(tripRemaining(trip.value, progress?.value ?? null)),
             at: progress?.at ?? trip.at,
           }
         : null,
@@ -121,5 +120,8 @@ export class ParallaxStore {
   }
 }
 
-const tripWithoutArrival = ({ arrivalAtMs: _, ...trip }: TripInfo) => trip;
-const etaIso = (ms: number | null) => (ms != null ? new Date(ms).toISOString() : null);
+const tripSummary = ({ arrivalAtMs: _a, stops: _s, legs: _l, ...trip }: TripInfo) => trip;
+const remaining = ({ etaMs, ...rest }: ReturnType<typeof tripRemaining>) => ({
+  etaAt: etaMs != null ? new Date(etaMs).toISOString() : null,
+  ...rest,
+});

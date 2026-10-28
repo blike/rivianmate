@@ -338,11 +338,13 @@ export const batteryCharacteristics = defineRvm({
   },
 });
 
-const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION' };
+// Legacy's spelling for normal; low hasn't been seen from legacy, so it's
+// named in the same style.
+const TWELVE_VOLT_HEALTH: Record<number, string> = { 1: 'NORMAL_OPERATION', 2: 'LOW' };
 
 /**
- * `energy.low_voltage.battery_state`: 1 12V battery health (1 normal, the
- * only value seen so far), as legacy twelveVoltBatteryHealth.
+ * `energy.low_voltage.battery_state`: 1 12V battery health (1 normal, 2
+ * low; only 1 seen so far), as legacy twelveVoltBatteryHealth.
  */
 export const lowVoltageBattery = defineRvm({
   rvm: RVM_LOW_VOLTAGE_BATTERY,
@@ -355,7 +357,7 @@ export const lowVoltageBattery = defineRvm({
   toState: stampReadings,
   stateKeys: ['twelveVoltBatteryHealth'],
   store: true,
-  fieldNames: { '1': '12V battery health (1 normal)' },
+  fieldNames: { '1': '12V battery health (1 normal, 2 low)' },
 });
 
 export const ENERGY_RVMS = [
