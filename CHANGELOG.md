@@ -1,5 +1,112 @@
 # Changelog
 
+## v0.9.0 — 2026-10-29
+
+RivianMate `v0.9.0` brings a **redesigned dashboard**, **TeslaMate vehicles** alongside your
+Rivians, **weather on every drive**, **Grafana dashboards**, and many more readings from Parallax,
+so an R2 shows nearly everything an R1 does.
+
+### New features
+
+#### Dashboard
+
+- A new dashboard with side navigation: the map, a top-down plan of the vehicle, a charge gauge,
+  recent activity (the current or last drive, the last charge and this week) and schedules. Phones
+  get a top bar with a menu. #59
+- History gains efficiency, energy, places, rhythm and state panels; pack details move to Health.
+  #59
+- A route with stops names the next stop, with "+N stops" after it. The progress bar and the map
+  number each stop, and the drive card shows the next stop's arrival and time left beside the
+  destination's. Stops and destinations take the names of saved locations. #75
+- The Tires panel counts down to the next tire rotation. #70
+
+#### Drive weather and outside services
+
+- Each drive records the temperature, conditions and wind along it, from Open-Meteo, including
+  drives recorded before this release. #59
+- The address (Nominatim) and weather (Open-Meteo) lookups can each be turned off in **Settings →
+  General → Outside services**, so drive coordinates never leave the server. Existing installs keep
+  both on; new installs choose during setup. #62
+
+#### Grafana
+
+- 15 Grafana dashboards in `contrib/grafana/`, with a read-only database role and a setup guide in
+  [docs/GRAFANA.md](docs/GRAFANA.md). Every dashboard has a Vehicle drop-down. Thanks @edasque! #58
+  #72
+
+#### TeslaMate vehicles
+
+- Add a TeslaMate database under **Settings → Accounts** to show its cars on every page, with a
+  vehicle picker grouped by source. The connection is read-only and nothing is copied. #59
+
+### Improvements
+
+- More readings come from Parallax, so they show on vehicles without the legacy feed (R2): software
+  update status, drive mode, washer and brake fluid, pet mode, and seat and steering wheel heat and
+  vents. #57 #69
+- Parallax is one subscription per vehicle, covering every topic. Only known topics are stored;
+  others, such as phone keys and saved places, are dropped on arrival. #71
+- The charging curve is drawn from the app's own sample each minute while charging, instead of
+  Rivian's bars of up to 32 minutes. #65
+- Departure schedules show every seat and the steering wheel, not just the driver's seat. #57
+- The Drives and Charging pages page back through all history, not just the newest 200. History
+  swaps 24 hours for 365 days. #68
+- **Settings → API & Feeds** is reworked around the stream's health, with Parallax topics grouped by
+  domain. #71
+- The charging chart's axes fit their labels, and switching sessions keeps the previous curve until
+  the new one loads. #67
+
+### Fixes
+
+- While driving, the live trail follows the road as GPS points arrive, instead of drawing a straight
+  line to each new point first. #75
+- Range from Parallax no longer freezes when the battery runs low. The climate counts as running
+  only while preconditioning actually runs. #68
+- The charging curve's battery line starts at the level the charge began from. #56
+- Charging power shows from the start of a charge, not hours in. #61
+- Brake fluid reads "Normal" from either feed. #69
+- Text on the dashboard and charging pages wraps on phones instead of being cut off, and Settings no
+  longer scrolls sideways. #61 #73
+- Rivian sign-in errors say what's wrong instead of "Invalid request". #62
+- TeslaMate drives and charges left open by a restart end at their last reading. #68
+
+### Security
+
+- Sessions are checked against the matched route, so an encoded path such as `/%61pi/...` can't
+  reach the API without signing in. Failed password attempts are limited per address. #59
+- vite, zod, fastify and fast-uri are updated to patched releases. #66 #74
+
+### Migrations
+
+This release includes one database migration, which runs automatically on startup:
+
+- `0018_drive_weather`: adds weather columns to drives
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and database volume, then run
+`docker compose pull && docker compose up -d`.
+
+### API
+
+- New: `GET /api/vehicles/:id/battery-window`, `GET /api/vehicles/:id/drive-coverage`,
+  `GET /api/vehicles/:id/health/tire-rotation` and `GET /api/vehicles/:id/render/:view`. #59 #70
+- New: `GET`/`PUT /api/settings/lookups` for the outside services, and
+  `GET`/`PUT`/`DELETE /api/settings/teslamate`. #59 #62
+- Drive and charging session lists take a `before` cursor to page back. #68
+- Drives include their weather; charging sessions include `lossKwh`; navigation includes `stops`.
+  #59 #64 #75
+- API & Feeds no longer reports per-operation request counts, rejected fields or topic maturity. #71
+
+### Updates
+
+- The Docker image builds without QEMU. #63
+
+### Thanks
+
+@edasque
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.8.0...v0.9.0](https://github.com/blike/rivianmate/compare/v0.8.0...v0.9.0)
+
 ## v0.8.0 — 2026-10-18
 
 RivianMate `v0.8.0` adds a **vehicle state history** and a **trip-frequency map** to the History
