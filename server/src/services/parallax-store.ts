@@ -18,6 +18,7 @@ import {
   parkedEnergy,
   tripInfo,
   tripProgress,
+  stopsAhead,
   tripRemaining,
 } from '../rivian/parallax/index.js';
 
@@ -113,6 +114,7 @@ export class ParallaxStore {
             ...tripSummary(trip.value),
             // Progress updates these as the drive goes; the route's own are from planning.
             ...remaining(tripRemaining(trip.value, progress?.value ?? null)),
+            stops: stopsAhead(trip.value, progress?.value ?? null).map(remaining),
             at: progress?.at ?? trip.at,
           }
         : null,
@@ -121,7 +123,7 @@ export class ParallaxStore {
 }
 
 const tripSummary = ({ arrivalAtMs: _a, stops: _s, legs: _l, ...trip }: TripInfo) => trip;
-const remaining = ({ etaMs, ...rest }: ReturnType<typeof tripRemaining>) => ({
+const remaining = <T extends { etaMs: number | null }>({ etaMs, ...rest }: T) => ({
   etaAt: etaMs != null ? new Date(etaMs).toISOString() : null,
   ...rest,
 });

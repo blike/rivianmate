@@ -1,6 +1,7 @@
 import type { ActivityKind } from '../../lib/vehicleStatus';
 import { clock, shortDate } from '../../lib/format';
 import { haversineKm } from '../../lib/geo';
+import { moreStops } from '../../lib/navigation';
 
 /** Farther than this from where the last drive ended, it has moved since. */
 const MOVED_KM = 0.3;
@@ -45,8 +46,10 @@ export function statusSentence(i: {
   place: string | null;
   /** When it arrived or plugged in (ms). */
   since: number | null;
-  /** Navigation's destination while driving. */
+  /** Where navigation is headed next while driving. */
   destination?: string | null;
+  /** Navigation's stops after that one. */
+  stopsAfter?: number;
   /** Formatted speed while driving. */
   speed?: string | null;
   now: number;
@@ -58,7 +61,9 @@ export function statusSentence(i: {
       return {
         kind: i.kind,
         headline: i.destination ? `Driving to ${i.destination}` : 'Driving',
-        detail: i.speed ?? null,
+        detail:
+          [i.destination && moreStops(i.stopsAfter ?? 0), i.speed].filter(Boolean).join(' · ') ||
+          null,
       };
     case 'charging':
       return { kind: i.kind, headline: at('Charging'), detail: since };

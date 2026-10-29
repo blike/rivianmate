@@ -6,6 +6,8 @@ import { vehicles } from '../db/schema.js';
 import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 import { NO_SCHEDULES } from '../teslamate/source.js';
+import { placeContext } from './charging.js';
+import { drivePlace } from './history.js';
 
 /** The views a vehicle has a render for. */
 const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
@@ -82,7 +84,7 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
     async (request): Promise<VehicleInsightsDto> =>
       isTeslaMateVehicle(request.params.id)
         ? ctx.teslamate.insights(request.params.id)
-        : ctx.monitor.getInsights(request.params.id),
+        : withSavedNames(ctx, await ctx.monitor.getInsights(request.params.id)),
   );
 
   /** SSE stream of merged full-state updates + live charging session. */
@@ -127,4 +129,22 @@ export function vehicleState(ctx: AppContext, vehicleId: string) {
   return isTeslaMateVehicle(vehicleId)
     ? ctx.teslamate.getState(vehicleId)
     : ctx.monitor.getState(vehicleId);
+}
+
+/** Navigation's stops by the saved location they're in ("Home" near a wallbox), where they are. */
+export async function withSavedNames(
+  ctx: AppContext,
+  insights: VehicleInsightsDto,
+): Promise<VehicleInsightsDto> {
+  const nav = insights.navigation;
+  if (!nav) return insights;
+  const places = await placeContext(ctx);
+  const named = <T extends { name: string | null; lat: number; lon: number }>(stop: T): T => {
+    const place = drivePlace(stop.lat, stop.lon, null, null, places);
+    return place && !place.unnamed ? { ...stop, name: place.label } : stop;
+  };
+  return {
+    ...insights,
+    navigation: { ...nav, destination: named(nav.destination), stops: nav.stops.map(named) },
+  };
 }

@@ -14,6 +14,15 @@ const PLAN_END = 'plan-end';
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** Puck with a heading arrow and a soft pulse; rotation is applied by MapLibre. */
+/** A numbered stop on the planned route, as on the drive's bar. */
+function stopElement(number: number, name: string | null): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = 'rm-stop';
+  el.textContent = String(number);
+  if (name) el.title = name;
+  return el;
+}
+
 function vehicleElement(): HTMLDivElement {
   const el = document.createElement('div');
   el.className = 'rm-vehicle';
@@ -153,12 +162,20 @@ function routeBounds(trail: [number, number][] | undefined): LngLatBoundsLike | 
   ];
 }
 
+/** Navigation's planned route and destination, as [lat, lon]. */
+type Plan = {
+  route: [number, number][] | null;
+  /** With stops on the way, every stop to number, the destination last. */
+  stops?: { at: [number, number]; name: string | null }[];
+  destination: [number, number];
+};
+
 /** A fixed route's frame: the driven trail, plus where navigation plans to go. */
 function framing(props: {
   follow?: boolean;
   trail?: [number, number][];
   trips?: [number, number][][];
-  plan?: { route: [number, number][] | null; destination: [number, number] } | null;
+  plan?: Plan | null;
 }): LngLatBoundsLike | null {
   if (props.follow !== false) return null;
   const plan = props.plan ? (props.plan.route ?? [props.plan.destination]) : [];
@@ -180,12 +197,14 @@ export function VehicleMap(props: {
   stale?: boolean;
   /** [lat, lon] to mark on the route, e.g. the point hovered on a chart. */
   highlight?: [number, number] | null;
-  /** Navigation's planned route and destination, as [lat, lon]. */
-  plan?: { route: [number, number][] | null; destination: [number, number] } | null;
+  /** Navigation's planned route, stops and destination. */
+  plan?: Plan | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
+  const stopMarkersRef = useRef<Marker[]>([]);
+  const maplibreRef = useRef<Awaited<ReturnType<typeof loadMaplibre>> | null>(null);
   const [ready, setReady] = useState(false);
 
   // The latest props, readable from the one-time map setup below.
@@ -204,6 +223,7 @@ export function VehicleMap(props: {
 
     void loadMaplibre().then((maplibre) => {
       if (cancelled) return;
+      maplibreRef.current = maplibre;
       const { lat, lon } = latest.current;
       // A fixed route starts framed, rather than at the vehicle and then jumping out.
       const bounds = framing(latest.current);
@@ -256,6 +276,7 @@ export function VehicleMap(props: {
       map?.remove();
       mapRef.current = null;
       markerRef.current = null;
+      stopMarkersRef.current = [];
     };
   }, []);
 
@@ -353,17 +374,19 @@ export function VehicleMap(props: {
   // The planned route, redrawn when navigation recalculates it.
   const plan = props.plan;
   const planKey = plan
-    ? `${plan.destination}|${plan.route?.length}|${plan.route?.[0]}|${plan.route?.at(-1)}`
+    ? `${plan.destination}|${plan.stops?.map((s) => `${s.at}:${s.name}`).join(';')}|${plan.route?.length}|${plan.route?.[0]}|${plan.route?.at(-1)}`
     : '';
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const p = latest.current.plan;
-    const point = (at: [number, number]): FeatureCollection => ({
+    const points = (at: [number, number][]): FeatureCollection => ({
       type: 'FeatureCollection',
-      features: [
-        { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: toLngLat(at) } },
-      ],
+      features: at.map((p) => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Point', coordinates: toLngLat(p) },
+      })),
     });
     (map.getSource(PLAN) as GeoJSONSource | undefined)?.setData(
       p?.route && p.route.length > 1
@@ -379,9 +402,20 @@ export function VehicleMap(props: {
           }
         : EMPTY,
     );
+    // Numbered stops take the destination's place, so it isn't marked twice.
+    const stops = p?.stops ?? [];
     (map.getSource(PLAN_END) as GeoJSONSource | undefined)?.setData(
-      p ? point(p.destination) : EMPTY,
+      p && stops.length === 0 ? points([p.destination]) : EMPTY,
     );
+    for (const marker of stopMarkersRef.current) marker.remove();
+    const maplibre = maplibreRef.current;
+    stopMarkersRef.current = maplibre
+      ? stops.map((stop, i) =>
+          new maplibre.Marker({ element: stopElement(i + 1, stop.name) })
+            .setLngLat(toLngLat(stop.at))
+            .addTo(map),
+        )
+      : [];
     const route = framing(latest.current);
     if (route) map.fitBounds(route, { ...FIT, duration: 0 });
   }, [planKey, ready]);
