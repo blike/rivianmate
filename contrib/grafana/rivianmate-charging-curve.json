@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -119,7 +119,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, power_kw AS \"Power (kW)\", soc AS \"SoC %\" FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) AND source = COALESCE((SELECT source FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) ORDER BY (source='graph') DESC, (source='observed') DESC LIMIT 1), 'graph') ORDER BY ts",
+          "rawSql": "SELECT ts AS time, power_kw AS \"Power (kW)\", soc AS \"SoC %\" FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=${vehicle:sqlstring} AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) AND source = COALESCE((SELECT source FROM charging_curve_points WHERE session_id = (SELECT cs.id FROM charging_sessions cs WHERE cs.vehicle_id=${vehicle:sqlstring} AND EXISTS (SELECT 1 FROM charging_curve_points ccp WHERE ccp.session_id = cs.id) ORDER BY cs.started_at DESC LIMIT 1) ORDER BY (source='graph') DESC, (source='observed') DESC LIMIT 1), 'graph') ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -160,7 +160,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT id AS \"Session ID\", started_at AS \"Started\", ended_at AS \"Ended\", source AS \"Source\", (SELECT count(*) FROM charging_curve_points WHERE session_id = charging_sessions.id) AS \"Curve Points\" FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) ORDER BY started_at DESC LIMIT 20",
+          "rawSql": "SELECT id AS \"Session ID\", started_at AS \"Started\", ended_at AS \"Ended\", source AS \"Source\", (SELECT count(*) FROM charging_curve_points WHERE session_id = charging_sessions.id) AS \"Curve Points\" FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring} ORDER BY started_at DESC LIMIT 20",
           "refId": "A"
         }
       ],
@@ -185,6 +185,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

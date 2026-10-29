@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -421,7 +421,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, battery_level AS \"SoC (%)\" FROM (SELECT v.id AS vehicle_id, t.at AS ts, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLevel') ORDER BY c.at DESC LIMIT 1) AS battery_level, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit') ORDER BY c.at DESC LIMIT 1) AS battery_limit, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'distanceToEmpty') ORDER BY c.at DESC LIMIT 1) AS range_km, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'vehicleMileage') ORDER BY c.at DESC LIMIT 1) AS mileage_m, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'powerState') ORDER BY c.at DESC LIMIT 1) AS power_state, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'chargerStatus') ORDER BY c.at DESC LIMIT 1) AS charger_status, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'cabinClimateInteriorTemperature') ORDER BY c.at DESC LIMIT 1) AS cabin_temp FROM vehicles v CROSS JOIN LATERAL (SELECT h.at FROM state_heartbeats h WHERE h.vehicle_seq = v.seq UNION SELECT c.at FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.field_id IN (SELECT id FROM state_fields WHERE name IN ('batteryLevel', 'batteryLimit', 'distanceToEmpty', 'vehicleMileage', 'powerState', 'chargerStatus', 'cabinClimateInteriorTemperature'))) t) AS vehicle_state_snapshots WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND ts BETWEEN (SELECT started_at FROM charging_sessions WHERE id=$charge_id) AND (SELECT COALESCE(ended_at, now()) FROM charging_sessions WHERE id=$charge_id) ORDER BY ts",
+          "rawSql": "SELECT ts AS time, battery_level AS \"SoC (%)\" FROM (SELECT v.id AS vehicle_id, t.at AS ts, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLevel') ORDER BY c.at DESC LIMIT 1) AS battery_level, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'batteryLimit') ORDER BY c.at DESC LIMIT 1) AS battery_limit, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'distanceToEmpty') ORDER BY c.at DESC LIMIT 1) AS range_km, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'vehicleMileage') ORDER BY c.at DESC LIMIT 1) AS mileage_m, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'powerState') ORDER BY c.at DESC LIMIT 1) AS power_state, (SELECT c.value FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'chargerStatus') ORDER BY c.at DESC LIMIT 1) AS charger_status, (SELECT c.num FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.at <= t.at AND c.field_id = (SELECT id FROM state_fields WHERE name = 'cabinClimateInteriorTemperature') ORDER BY c.at DESC LIMIT 1) AS cabin_temp FROM vehicles v CROSS JOIN LATERAL (SELECT h.at FROM state_heartbeats h WHERE h.vehicle_seq = v.seq UNION SELECT c.at FROM state_changes c WHERE c.vehicle_seq = v.seq AND c.field_id IN (SELECT id FROM state_fields WHERE name IN ('batteryLevel', 'batteryLimit', 'distanceToEmpty', 'vehicleMileage', 'powerState', 'chargerStatus', 'cabinClimateInteriorTemperature'))) t WHERE v.id = ${vehicle:sqlstring}) AS vehicle_state_snapshots WHERE vehicle_id=${vehicle:sqlstring} AND ts BETWEEN (SELECT started_at FROM charging_sessions WHERE id=$charge_id) AND (SELECT COALESCE(ended_at, now()) FROM charging_sessions WHERE id=$charge_id) ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -548,12 +548,32 @@
           "type": "grafana-postgresql-datasource",
           "uid": "${datasource}"
         },
-        "definition": "SELECT id AS __value, to_char(started_at,'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(energy_kwh::numeric,1)::text,'?') || ' kWh' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND COALESCE(energy_kwh,0) > 0 ORDER BY started_at DESC",
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, to_char(started_at,'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(energy_kwh::numeric,1)::text,'?') || ' kWh' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(energy_kwh,0) > 0 ORDER BY started_at DESC",
         "includeAll": false,
         "label": "Session",
         "multi": false,
         "name": "charge_id",
-        "query": "SELECT id AS __value, to_char(started_at,'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(energy_kwh::numeric,1)::text,'?') || ' kWh' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM charging_sessions WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND COALESCE(energy_kwh,0) > 0 ORDER BY started_at DESC",
+        "query": "SELECT id AS __value, to_char(started_at,'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(energy_kwh::numeric,1)::text,'?') || ' kWh' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM charging_sessions WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(energy_kwh,0) > 0 ORDER BY started_at DESC",
         "refresh": 1,
         "sort": 0,
         "type": "query"

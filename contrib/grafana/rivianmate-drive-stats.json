@@ -5,7 +5,7 @@
     {
       "asDropdown": true,
       "icon": "external link",
-      "includeVars": false,
+      "includeVars": true,
       "keepTime": true,
       "tags": ["rivianmate"],
       "targetBlank": false,
@@ -69,7 +69,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT SUM(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -128,7 +128,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT COUNT(*) AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -188,7 +188,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT AVG(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -248,7 +248,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now())-started_at)))/3600.0 AS value FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now())-started_at)))/3600.0 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -298,7 +298,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(distance_km)*0.621371 AS \"Distance (mi)\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(distance_km)*0.621371 AS \"Distance (mi)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -347,7 +347,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, COUNT(*) AS \"Drives\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, COUNT(*) AS \"Drives\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -397,7 +397,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=(SELECT id FROM vehicles LIMIT 1) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -433,6 +433,26 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Vehicle",
+        "multi": false,
+        "name": "vehicle",
+        "options": [],
+        "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
       }
     ]
   }

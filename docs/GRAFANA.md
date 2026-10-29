@@ -3,8 +3,8 @@
 RivianMate's web interface covers live status and history. If you already run Grafana, this
 repository also ships a set of dashboards that read RivianMate's PostgreSQL database directly:
 battery health, vampire drain, charging curves, drive and charge statistics, location maps and more.
-They are optional, they change nothing in RivianMate, and Grafana itself is not part of RivianMate:
-you bring your own.
+Each dashboard shows one vehicle at a time, picked from a drop-down at the top. They are optional,
+they change nothing in RivianMate, and Grafana itself is not part of RivianMate: you bring your own.
 
 The dashboards are in [`contrib/grafana/`](../contrib/grafana/).
 
@@ -131,10 +131,16 @@ saved over from the interface; use **Save as** to keep a changed copy.
 `contrib/grafana/`. Put them in one folder; the navigation menu at the top of each dashboard links
 the others by tag.
 
-## Choosing the data source
+## Choosing the data source and vehicle
 
 Each dashboard has a **Datasource** drop-down at the top. It selects your first PostgreSQL data
 source; if you have several, pick the RivianMate one.
+
+Next to it, the **Vehicle** drop-down lists every vehicle on your account by its name, or by its
+model year and model if it has no name. It starts on the vehicle RivianMate added first. Every
+panel, including the Location and Visited maps, shows only the vehicle you pick. The vehicle stays
+selected when you move to another dashboard from the **RivianMate Dashboards** menu or open a drive
+from the Drives table, and it is part of the page address, so a bookmark keeps it.
 
 ## Notes
 
@@ -142,9 +148,7 @@ source; if you have several, pick the RivianMate one.
   temperatures in °C. To change a unit, edit the query behind the panel.
 - Vehicles do not all report the same fields. A panel for something yours does not report shows "Not
   reported" or "No data".
-- **The dashboards show one vehicle**: the first one in the database, and there is no vehicle picker
-  yet. If your account has several vehicles, the others do not appear, except on the Location and
-  Visited maps, which draw the points of every vehicle.
+- Saved locations, such as Home, belong to the account, so every vehicle's maps show the same ones.
 - The dashboards follow RivianMate's database schema. After updating RivianMate, check the release
   notes, and if a panel shows a query error, update to the matching version of the dashboards. The
   database role in step 2 may need to be run again.
