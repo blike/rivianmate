@@ -501,7 +501,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT name || ' (' || model_year || ' ' || model || ')' AS value FROM vehicles WHERE id = ${vehicle:sqlstring}",
+          "rawSql": "SELECT concat_ws(' ', NULLIF(name, ''), '(' || NULLIF(concat_ws(' ', model_year, model), '') || ')') AS value FROM vehicles WHERE id = ${vehicle:sqlstring}",
           "refId": "A"
         }
       ],
