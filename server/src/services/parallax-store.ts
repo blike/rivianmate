@@ -114,7 +114,7 @@ export class ParallaxStore {
             ...tripSummary(trip.value),
             // Progress updates these as the drive goes; the route's own are from planning.
             ...remaining(tripRemaining(trip.value, progress?.value ?? null)),
-          stops: stopsAhead(trip.value, progress?.value ?? null).map(remaining),
+            stops: stopsAhead(trip.value, progress?.value ?? null).map(remaining),
             at: progress?.at ?? trip.at,
           }
         : null,
