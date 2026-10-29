@@ -5,8 +5,15 @@ import { decodePayload, type Fields } from '../wire.js';
 export const RVM_TRIP_INFO = 'navigation.navigation_service.trip_info';
 export const RVM_TRIP_PROGRESS = 'navigation.navigation_service.trip_progress';
 
+/** A stop on the route: a place, or a charging stop the route planner added. */
+export interface TripStop {
+  name: string | null;
+  lat: number;
+  lon: number;
+}
+
 export interface TripInfo {
-  destination: { name: string | null; lat: number; lon: number };
+  destination: TripStop;
   totalDistanceKm: number | null;
   totalDurationS: number | null;
   /** Battery % and range the navigation predicts on arrival. */
@@ -16,8 +23,8 @@ export interface TripInfo {
   arrivalAtMs: number | null;
   /** The planned route, as [lat, lon] points; null when it isn't sent. */
   route: [number, number][] | null;
-  /** How many stops the route has, the destination included. */
-  stops: number;
+  /** Each stop in order, the destination last; null where one has no location. */
+  stops: ((TripStop & { arrivalAtMs: number | null }) | null)[];
   /** Each leg's length, in order: leg i ends at stop i. */
   legs: { distanceKm: number | null; durationS: number | null }[];
 }
@@ -77,7 +84,17 @@ export function decodeTripInfo(payloadBase64: string): TripInfo | null {
     arrivalRangeKm: rangeM != null ? rangeM / 1000 : null,
     arrivalAtMs: arrivalS && arrivalS > 0 ? arrivalS * 1000 : null,
     route: routeLine(route),
-    stops: waypoints.length,
+    stops: waypoints.map((w) => {
+      const stop = waypoint(w);
+      return (
+        stop && {
+          name: stop.name,
+          lat: stop.lat,
+          lon: stop.lon,
+          arrivalAtMs: stop.arrivalS && stop.arrivalS > 0 ? stop.arrivalS * 1000 : null,
+        }
+      );
+    }),
     legs: (route?.repeated(4) ?? []).map((leg) => {
       const distanceM = leg.double(1);
       return { distanceKm: distanceM != null ? distanceM / 1000 : null, durationS: leg.double(2) };
@@ -173,13 +190,14 @@ export function tripRemaining(
     remainingS: trip.totalDurationS,
   };
   if (!progress) return planned;
-  const lastLeg = progress.nextStopIndex >= trip.stops - 1;
+  const lastLeg = progress.nextStopIndex >= trip.stops.length - 1;
   const ahead = trip.legs.slice(progress.nextStopIndex + 1);
   const plus = (now: number | null, leg: (l: TripInfo['legs'][number]) => number | null) => {
     if (now == null) return null;
     if (lastLeg) return now;
     const rest = ahead.map(leg);
-    return ahead.length === trip.stops - progress.nextStopIndex - 1 && rest.every((x) => x != null)
+    return ahead.length === trip.stops.length - progress.nextStopIndex - 1 &&
+      rest.every((x) => x != null)
       ? rest.reduce((sum: number, x) => sum + x!, now)
       : null;
   };
@@ -188,6 +206,41 @@ export function tripRemaining(
     remainingKm: plus(progress.remainingKm, (l) => l.distanceKm) ?? planned.remainingKm,
     remainingS: plus(progress.remainingS, (l) => l.durationS) ?? planned.remainingS,
   };
+}
+
+export interface StopAhead extends TripStop {
+  /** Distance and driving time left to it. */
+  remainingKm: number | null;
+  remainingS: number | null;
+  /** Estimated arrival (ms since epoch): progress's for the next stop and the destination, else planned. */
+  etaMs: number | null;
+}
+
+/**
+ * The stops still ahead, the next first and the destination last, each with
+ * what's left to it: progress's to the next stop, plus the legs between.
+ */
+export function stopsAhead(trip: TripInfo, progress: TripProgress | null): StopAhead[] {
+  const next = Math.min(progress?.nextStopIndex ?? 0, trip.stops.length - 1);
+  const last = trip.stops.length - 1;
+  // Leg i ends at stop i only when there's one leg per stop.
+  const leg = (i: number) => (trip.legs.length === trip.stops.length ? trip.legs[i] : undefined);
+  const ahead: StopAhead[] = [];
+  let km = progress ? progress.remainingKm : (leg(next)?.distanceKm ?? null);
+  let s = progress ? progress.remainingS : (leg(next)?.durationS ?? null);
+  for (let i = next; i < trip.stops.length; i++) {
+    if (i > next) {
+      const { distanceKm = null, durationS = null } = leg(i) ?? {};
+      km = km != null && distanceKm != null ? km + distanceKm : null;
+      s = s != null && durationS != null ? s + durationS : null;
+    }
+    const stop = trip.stops[i];
+    if (!stop) continue;
+    const { arrivalAtMs, ...place } = stop;
+    const live = i === next ? progress?.nextEtaMs : i === last ? progress?.finalEtaMs : null;
+    ahead.push({ ...place, remainingKm: km, remainingS: s, etaMs: live ?? arrivalAtMs });
+  }
+  return ahead;
 }
 
 export const tripInfo = defineRvm({

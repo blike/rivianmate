@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 
@@ -83,6 +83,8 @@ export function ActivityBar(props: {
   segments: BarSegment[];
   tick?: number | null;
   dot?: { at: number; color: string } | null;
+  /** A route's numbered stops, as how far along the bar (0–100). */
+  stops?: { at: number; name: string | null; number: number }[];
   left: ReactNode;
   right?: ReactNode;
   label?: string;
@@ -117,6 +119,16 @@ export function ActivityBar(props: {
             style={{ left: `calc(${clamp(props.tick)}% - 1px)` }}
           />
         )}
+        {!loading &&
+          props.stops?.map((stop) => (
+            <StopNumber
+              key={stop.number}
+              number={stop.number}
+              title={stop.name ?? undefined}
+              className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-[9px]"
+              style={{ left: `${clamp(stop.at)}%` }}
+            />
+          ))}
         {props.dot && !loading && (
           <span
             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-(--surface-1)"
@@ -141,12 +153,12 @@ export function ActivityBar(props: {
 }
 
 /** Three figures. Labels load too, since which figures show depends on the data. */
-export function ActivityStats(props: { items: { label: string; value: ReactNode }[] }) {
+export function ActivityStats(props: { items: { label: ReactNode; value: ReactNode }[] }) {
   const loading = useLoading();
   return (
     <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-(--hairline) pt-4">
-      {props.items.map((i) => (
-        <div key={i.label}>
+      {props.items.map((i, n) => (
+        <div key={n}>
           <dt className="text-[11px] text-(--text-muted)">
             {loading ? <Skeleton className="w-[6em]" /> : i.label}
           </dt>
@@ -156,5 +168,23 @@ export function ActivityStats(props: { items: { label: string; value: ReactNode 
         </div>
       ))}
     </dl>
+  );
+}
+
+/** A route's stop number in a ring, as on its bar and the map; sized by the caller. */
+export function StopNumber(props: {
+  number: number;
+  title?: string;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      title={props.title}
+      className={`inline-grid place-items-center rounded-full border-[1.5px] border-(--accent) bg-(--surface-1) leading-none font-semibold tabular-nums text-(--accent) ${props.className ?? ''}`}
+      style={props.style}
+    >
+      {props.number}
+    </span>
   );
 }

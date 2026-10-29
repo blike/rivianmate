@@ -13,6 +13,7 @@ import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingSta
 import { VehicleMap } from '../../components/VehicleMap';
 import { chargeOutlook, chargerLabel, lastChargedTo } from '../../lib/charging';
 import { locationIsBehind } from '../../lib/freshness';
+import { nextStop, routePlan } from '../../lib/navigation';
 import { isActivePhase, softwareUpdate } from '../../lib/ota';
 import { fmt, fmtSeconds, location, nv, sv } from '../../lib/state';
 import {
@@ -81,14 +82,10 @@ export function Overview(props: {
   const speedMps = nv(state, 'gnssSpeed');
   const loc = location(state);
   const locBehind = locationIsBehind(state);
-  const trail = useActiveDriveTrail(props.vehicleId, loc);
+  const trail = useActiveDriveTrail(props.vehicleId);
   const navigation = insights?.navigation;
-  const plan = navigation
-    ? {
-        route: navigation.route,
-        destination: [navigation.destination.lat, navigation.destination.lon] as [number, number],
-      }
-    : null;
+  const plan = navigation ? routePlan(navigation) : null;
+  const next = navigation ? nextStop(navigation) : null;
   const security = securitySummary(state, vehicle?.model);
   // TeslaMate doesn't log doors or windows, so "all closed" would be a guess.
   const closuresKnown = !isTeslaMateVehicle(props.vehicleId);
@@ -139,7 +136,8 @@ export function Overview(props: {
           : lastDrive
             ? Date.parse(lastDrive.endedAt!)
             : null,
-        destination: navigation?.destination.name,
+        destination: next?.name,
+        stopsAfter: next?.after,
         speed: speedMps != null && speedMps > 1 ? u.formatSpeed(speedMps * 3.6) : null,
         now,
       })

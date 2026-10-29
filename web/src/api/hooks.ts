@@ -8,6 +8,7 @@ import {
 import { useEffect, useMemo } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
+import { location } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
@@ -49,6 +50,14 @@ export function useLiveState(vehicleId: string | undefined) {
     source.addEventListener('state', (event) => {
       const state = JSON.parse((event as MessageEvent).data) as VehicleState;
       queryClient.setQueryData(['vehicleState', vehicleId], state);
+      // Kept as they arrive, not as pages redraw: updates that come together
+      // (or in a background tab) are drawn once, which would skip a fix.
+      const fix = location(state);
+      if (fix) {
+        queryClient.setQueryData<LiveFix[]>(['liveFixes', vehicleId], (fixes = []) =>
+          withFix(fixes, fix),
+        );
+      }
     });
     source.addEventListener('charging', (event) => {
       const session = JSON.parse((event as MessageEvent).data) as LiveSessionData | null;
@@ -56,6 +65,29 @@ export function useLiveState(vehicleId: string | undefined) {
     });
     return () => source.close();
   }, [vehicleId, queryClient]);
+}
+
+export type LiveFix = NonNullable<ReturnType<typeof location>>;
+
+/** How long live GPS fixes are kept: well past the drive's refresh, which stores them. */
+const FIXES_KEPT_MS = 10 * 60_000;
+
+/** The fixes kept with a new one from the stream: a repeat isn't added, and old ones go. */
+export function withFix(fixes: LiveFix[], fix: LiveFix): LiveFix[] {
+  if (fixes.at(-1)?.ts === fix.ts) return fixes;
+  const from = Date.parse(fix.ts) - FIXES_KEPT_MS;
+  return [...fixes.filter((f) => Date.parse(f.ts) > from), fix];
+}
+
+/** The GPS fixes the live stream has sent recently, oldest first. */
+export function useLiveFixes(vehicleId: string): LiveFix[] {
+  const { data } = useQuery<LiveFix[]>({
+    queryKey: ['liveFixes', vehicleId],
+    queryFn: () => [],
+    enabled: false,
+    staleTime: Infinity,
+  });
+  return data ?? [];
 }
 
 export function useLiveCharging(vehicleId: string | undefined) {

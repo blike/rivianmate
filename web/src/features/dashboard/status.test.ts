@@ -43,6 +43,22 @@ describe('statusSentence', () => {
     expect(s.detail).toBe('54 mph');
   });
 
+  it('counts the stops after the next one while driving', () => {
+    const s = (stopsAfter: number) =>
+      statusSentence({
+        kind: 'driving',
+        place: null,
+        since: null,
+        destination: "Menchie's",
+        stopsAfter,
+        speed: '31 mph',
+        now,
+      });
+    expect(s(1)).toMatchObject({ headline: "Driving to Menchie's", detail: '+1 stop · 31 mph' });
+    expect(s(2).detail).toBe('+2 stops · 31 mph');
+    expect(s(0).detail).toBe('31 mph');
+  });
+
   it('names the charger while charging', () => {
     const s = statusSentence({ kind: 'charging', place: 'Rivian', since: null, now });
     expect(s.headline).toBe('Charging at Rivian');

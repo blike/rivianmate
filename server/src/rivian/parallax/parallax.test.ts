@@ -37,6 +37,7 @@ import {
   decodePolyline,
   decodeTripInfo,
   decodeTripProgress,
+  stopsAhead,
   tripRemaining,
   describeParallax,
   fieldsOf,
@@ -428,7 +429,7 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       arrivalRangeKm: 339.4403,
       arrivalAtMs: null,
       route: null,
-      stops: 1,
+      stops: [{ name: '100 Main St', lat: 40.4842, lon: -88.9937, arrivalAtMs: null }],
       legs: [{ distanceKm: null, durationS: null }],
     });
   });
@@ -474,7 +475,14 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       arrivalRangeKm: 308.5773,
       arrivalAtMs: 1792020295000,
       route: points,
-      stops: 1,
+      stops: [
+        {
+          name: 'El Camino Creek Elementary',
+          lat: 33.0758654,
+          lon: -117.2598958,
+          arrivalAtMs: 1792020295000,
+        },
+      ],
       legs: [],
     });
   });
@@ -515,7 +523,15 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       destination: { name: 'Lone Pine', lat: 36.6, lon: -118.1 },
       arrivalSoc: 41,
       arrivalAtMs: 1792010000000,
-      stops: 2,
+      stops: [
+        {
+          name: 'Rivian Adventure Network [RAN]',
+          lat: 35.1,
+          lon: -117.9,
+          arrivalAtMs: 1792000000000,
+        },
+        { name: 'Lone Pine', lat: 36.6, lon: -118.1, arrivalAtMs: 1792010000000 },
+      ],
       legs: [
         { distanceKm: 250, durationS: 9000 },
         { distanceKm: 150, durationS: 6000 },
@@ -602,6 +618,42 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       remainingKm: 400,
       remainingS: 15_000,
     });
+  });
+
+  it('lists the stops ahead, with what is left to each', () => {
+    const trip = decodeTripInfo(roadTrip)!;
+    const progress = (fields: number[]) => decodeTripProgress(b64(fields))!;
+    const charger = { name: 'Rivian Adventure Network [RAN]', lat: 35.1, lon: -117.9 };
+    const lonePine = { name: 'Lone Pine', lat: 36.6, lon: -118.1 };
+    // Before progress, the planned legs and arrivals.
+    expect(stopsAhead(trip, null)).toEqual([
+      { ...charger, remainingKm: 250, remainingS: 9_000, etaMs: 1792000000000 },
+      { ...lonePine, remainingKm: 400, remainingS: 15_000, etaMs: 1792010000000 },
+    ]);
+    // Driving to the charger: progress's remainder and ETAs, then the leg after it.
+    expect(
+      stopsAhead(
+        trip,
+        progress([
+          ...message(1, int(1, 1791999000)),
+          ...message(2, int(1, 1792009000)),
+          ...double(4, 100_000),
+          ...double(5, 4_000),
+        ]),
+      ),
+    ).toEqual([
+      { ...charger, remainingKm: 100, remainingS: 4_000, etaMs: 1791999000000 },
+      { ...lonePine, remainingKm: 250, remainingS: 10_000, etaMs: 1792009000000 },
+    ]);
+    // Past the charger, only the destination is left.
+    expect(
+      stopsAhead(trip, progress([...int(3, 1), ...double(4, 20_000), ...double(5, 900)])),
+    ).toEqual([{ ...lonePine, remainingKm: 20, remainingS: 900, etaMs: 1792010000000 }]);
+    // Without a leg per stop, what's left to the later stops can't be worked out.
+    expect(stopsAhead({ ...trip, legs: [] }, progress(double(4, 100_000)))).toMatchObject([
+      { ...charger, remainingKm: 100 },
+      { ...lonePine, remainingKm: null, remainingS: null },
+    ]);
   });
 
   it('gives a single-stop route exactly what progress says', () => {

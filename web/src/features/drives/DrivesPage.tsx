@@ -11,8 +11,9 @@ import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { VehicleMap } from '../../components/VehicleMap';
 import { driveProfile, minuteTicks, profilePosition } from '../../lib/drives';
-import { isPosition } from '../../lib/geo';
-import { location, nv } from '../../lib/state';
+import { useLiveTrail } from '../../lib/liveTrail';
+import { routePlan } from '../../lib/navigation';
+import { nv } from '../../lib/state';
 import { DriveCard } from './DriveCard';
 import { DriveList } from './DriveList';
 import { DrivePicker } from './DrivePicker';
@@ -42,26 +43,9 @@ export function DrivesPage(props: { vehicleId: string }) {
   const { data: state } = useVehicleState(props.vehicleId);
   const navigation = insights?.navigation;
   const underWay = detail != null && !detail.endedAt && detail.id === drives?.[0]?.id;
-  const live = underWay ? location(state) : null;
-  const liveLat = live?.lat;
-  const liveLon = live?.lon;
-
-  const trail = useMemo(() => {
-    const points = (detail?.points ?? [])
-      .filter((p) => isPosition(p.lat, p.lon))
-      .map((p) => [p.lat, p.lon] as [number, number]);
-    return liveLat != null && liveLon != null
-      ? [...points, [liveLat, liveLon] as [number, number]]
-      : points;
-  }, [detail, liveLat, liveLon]);
+  const trail = useLiveTrail(props.vehicleId, underWay ? detail : null, detail?.points ?? []);
   const lastPoint = trail.at(-1);
-  const plan =
-    underWay && navigation
-      ? {
-          route: navigation.route,
-          destination: [navigation.destination.lat, navigation.destination.lon] as [number, number],
-        }
-      : null;
+  const plan = underWay && navigation ? routePlan(navigation) : null;
 
   const profile = useMemo(() => {
     if (!detail) return [];

@@ -407,6 +407,15 @@ export interface VehicleInsightsDto {
     route: [number, number][] | null;
     remainingKm: number | null;
     remainingS: number | null;
+    /** The stops still ahead, the next first and the destination last, with what's left to each. */
+    stops: {
+      name: string | null;
+      lat: number;
+      lon: number;
+      remainingKm: number | null;
+      remainingS: number | null;
+      etaAt: string | null;
+    }[];
     at: string;
   } | null;
   connectivity: {
