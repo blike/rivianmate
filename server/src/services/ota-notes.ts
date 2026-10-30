@@ -86,6 +86,7 @@ export class OtaNotesStore {
   connect(api: RivianApi | undefined): void {
     this.api = api;
     this.checked.clear();
+    this.unsupported = false;
   }
 
   /** Saves notes for the vehicle's installed and pending versions if missing. */
@@ -142,6 +143,13 @@ export class OtaNotesStore {
           .insert(otaReleaseNotes)
           .values({ vehicleId, version, pdf })
           .onConflictDoNothing();
+      }
+      // Notes can lag a new version; leave it unchecked so the next request retries.
+      const saved = await this.storedVersions(vehicleId);
+      const missing = versions.filter((v) => !saved.has(v));
+      if (missing.length > 0) {
+        this.checked.delete(vehicleId);
+        this.log.info({ vehicleId, missing }, 'release notes not offered yet; will retry');
       }
     } catch (err) {
       if (isGraphqlValidationError(err)) {
