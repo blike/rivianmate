@@ -225,6 +225,33 @@ export interface OtaTimelineDto {
    * it. hasNotes is true once its release notes are saved.
    */
   versions: { version: string; firstSeen: string; hasNotes: boolean }[];
+  /** The update under way; null with nothing pending. */
+  pending: OtaPendingDto | null;
+  /** How the most recent tracked update went. */
+  lastInstall: OtaInstallDto | null;
+}
+
+export interface OtaPendingDto {
+  version: string;
+  offeredAt: string;
+  /** Time spent downloading so far, across any interruptions. */
+  downloadMinutes: number | null;
+  /** The latest otaStatus and when it began. */
+  status: string | null;
+  since: string | null;
+  /** Download progress (%) when the status began. */
+  progressAtStart: number | null;
+}
+
+export interface OtaInstallDto {
+  version: string;
+  installedAt: string;
+  /** Time spent downloading, across any interruptions. */
+  downloadMinutes: number | null;
+  /** From Installing until the install finished. */
+  installMinutes: number | null;
+  /** The vehicle's install-time estimate. */
+  estimatedMinutes: number | null;
 }
 
 /** Average tire pressures per time bucket, in bar. */
