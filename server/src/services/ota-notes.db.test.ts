@@ -68,4 +68,17 @@ describe.skipIf(!url)('OtaNotesStore with Postgres', () => {
     expect(getOtaUpdateDetails).toHaveBeenCalledTimes(1);
     expect(await store.pdf('v1', '2026.31.0')).not.toBeNull();
   });
+
+  it('retries a version whose notes Rivian had not offered yet', async () => {
+    const { store, getOtaUpdateDetails } = setup();
+    getOtaUpdateDetails.mockResolvedValueOnce({
+      current: notes('2026.31.0'),
+      available: { url: null, version: '2026.36.0', locale: null },
+    } as never);
+    await store.capture('v1', state('2026.31.0', '2026.36.0'));
+    expect(await store.pdf('v1', '2026.36.0')).toBeNull();
+    await store.capture('v1', state('2026.31.0', '2026.36.0'));
+    expect(getOtaUpdateDetails).toHaveBeenCalledTimes(2);
+    expect(await store.pdf('v1', '2026.36.0')).not.toBeNull();
+  });
 });
