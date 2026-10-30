@@ -1,4 +1,4 @@
-import type { VehicleState } from '@server/api-types';
+import type { OtaInstallDto, OtaPendingDto, VehicleState } from '@server/api-types';
 import { nv, sv, titleCase } from './state';
 
 export type OtaPhase =
@@ -31,17 +31,32 @@ const PHASE_LABEL: Record<OtaPhase, string> = {
 /**
  * otaStatus values seen through one update, in order: Idle,
  * Ready_To_Download, Connection_Lost (hours, while driving), Downloading,
- * Preparing, Ready_To_Install, Awaiting_Install (install tapped), Installing.
+ * Preparing, Ready_To_Install, Install_Countdown (two minutes),
+ * Awaiting_Install (install tapped), Installing. A failed download or
+ * install leaves the update waiting, and lastInstallFailed says so.
  */
 const STATUS_PHASE: Record<string, OtaPhase> = {
   ready_to_download: 'available',
   connection_lost: 'waiting',
   downloading: 'downloading',
+  download_failed: 'available',
   preparing: 'preparing',
   ready_to_install: 'ready',
+  scheduled_to_install: 'ready',
+  install_countdown: 'installing',
   awaiting_install: 'installing',
   installing: 'installing',
+  install_failed: 'available',
 };
+
+/** Statuses worded apart from their phase, while no progress is reported. */
+const STATUS_LABEL: Record<string, string> = {
+  scheduled_to_install: 'Install scheduled',
+  install_countdown: 'Starting install',
+  awaiting_install: 'Starting install',
+};
+
+const FAILED = new Set(['download_failed', 'install_failed']);
 
 /** Phases where the vehicle is working on the update, with or without a version. */
 const ACTIVE: ReadonlySet<OtaPhase> = new Set(['downloading', 'preparing', 'installing']);
@@ -63,24 +78,31 @@ export function reportsUpdates(state: VehicleState | undefined): boolean {
 /**
  * A software update that's pending or under way, if any. Progress
  * percentages and the vehicle's ota_update power state win over the status,
- * and unknown statuses fall back to matching words in them.
+ * except a lost connection or a failure: a paused or failed download keeps
+ * reporting its last percentage. Unknown statuses fall back to matching
+ * words in them.
  */
 export function softwareUpdate(state: VehicleState | undefined): SoftwareUpdate | null {
   const current = sv(state, 'otaCurrentVersion');
   const availableRaw = sv(state, 'otaAvailableVersion');
-  // Once the pending version is installed, the vehicle keeps reporting the
-  // install's last status and progress (observed: Installing, 99%).
-  if (current && availableRaw === current) return null;
-  const available = availableRaw && !NO_VERSION.has(availableRaw) ? availableRaw : null;
   const status = (sv(state, 'otaStatus') ?? '').toLowerCase();
+  // Once the pending version is installed, the vehicle keeps reporting the
+  // install's last status and progress (observed: Installing, 99%). It names
+  // the new version a couple of minutes before the install ends, though, so
+  // it's installing for as long as its power state says so.
+  const done = (current && availableRaw === current) || status === 'install_success';
+  if (done && sv(state, 'powerState') !== 'ota_update') return null;
+  const available = availableRaw && !NO_VERSION.has(availableRaw) ? availableRaw : null;
   const download = nv(state, 'otaDownloadProgress');
   const install = nv(state, 'otaInstallProgress');
 
+  const failed = FAILED.has(status);
+
   let phase: OtaPhase | null = null;
   let progress: number | null = null;
-  if (inProgress(install) || sv(state, 'powerState') === 'ota_update') {
+  if (!failed && (inProgress(install) || sv(state, 'powerState') === 'ota_update')) {
     phase = 'installing';
-  } else if (inProgress(download)) {
+  } else if (!failed && inProgress(download) && status !== 'connection_lost') {
     phase = 'downloading';
   } else if (status in STATUS_PHASE) {
     phase = STATUS_PHASE[status]!;
@@ -94,10 +116,9 @@ export function softwareUpdate(state: VehicleState | undefined): SoftwareUpdate 
   // A waiting or ready status with nothing pending is left over from the last update.
   if (!phase || (!available && !ACTIVE.has(phase))) return null;
   if (phase === 'installing' && inProgress(install)) progress = install;
-  if (phase === 'downloading' && inProgress(download)) progress = download;
+  if ((phase === 'downloading' || phase === 'waiting') && inProgress(download)) progress = download;
 
-  const label =
-    status === 'awaiting_install' && progress == null ? 'Starting install' : PHASE_LABEL[phase];
+  const label = (progress == null && STATUS_LABEL[status]) || PHASE_LABEL[phase];
   const duration = nv(state, 'otaInstallDuration');
   const type = sv(state, 'otaInstallType');
   return {
@@ -110,17 +131,91 @@ export function softwareUpdate(state: VehicleState | undefined): SoftwareUpdate 
   };
 }
 
-/** True when the vehicle reports the last install didn't succeed. */
+/** True when the vehicle reports the last install, or the pending download, didn't succeed. */
 export function lastInstallFailed(state: VehicleState | undefined): boolean {
-  return /fail|error/i.test(sv(state, 'otaCurrentStatus') ?? '');
+  return (
+    /fail|error/i.test(sv(state, 'otaCurrentStatus') ?? '') ||
+    FAILED.has((sv(state, 'otaStatus') ?? '').toLowerCase())
+  );
 }
 
-/** "65 min" → "About 1 hr 5 min". */
-export function installTimeLabel(minutes: number): string {
+/** 65 → "1 hr 5 min"; two days or more → "3 days". */
+export function durationLabel(minutes: number): string {
   const m = Math.round(minutes);
-  if (m < 60) return `About ${m} min`;
+  if (m < 1) return 'under a minute';
+  if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
-  return `About ${h} hr${m % 60 ? ` ${m % 60} min` : ''}`;
+  if (h >= 48) return `${Math.round(h / 24)} days`;
+  return `${h} hr${m % 60 ? ` ${m % 60} min` : ''}`;
+}
+
+/** Minutes in the current status, if the history's status is still the live one. */
+export function phaseMinutes(
+  pending: OtaPendingDto | null | undefined,
+  state: VehicleState | undefined,
+  now: number,
+): number | null {
+  if (!pending?.since || pending.status !== sv(state, 'otaStatus')) return null;
+  return Math.max(0, (now - Date.parse(pending.since)) / 60_000);
+}
+
+/** Minutes until the download finishes, at its pace since this stretch began. */
+export function downloadMinutesLeft(
+  pending: OtaPendingDto | null | undefined,
+  state: VehicleState | undefined,
+  now: number,
+): number | null {
+  const elapsed = phaseMinutes(pending, state, now);
+  const progress = nv(state, 'otaDownloadProgress');
+  if (pending?.status !== 'Downloading' || elapsed == null || elapsed < 1 || progress == null)
+    return null;
+  const gained = progress - (pending.progressAtStart ?? 0);
+  if (gained < 2 || progress >= 100) return null;
+  return ((100 - progress) * elapsed) / gained;
+}
+
+/** Phases that come after the download has finished. */
+const DOWNLOADED: ReadonlySet<OtaPhase> = new Set(['preparing', 'ready', 'installing']);
+
+/**
+ * The pending update's details: time in an active phase (or the download's
+ * time left), how long the download took, the install estimate and type.
+ */
+export function pendingFacts(
+  update: SoftwareUpdate,
+  pending: OtaPendingDto | null | undefined,
+  state: VehicleState | undefined,
+  now: number,
+): string[] {
+  const facts: string[] = [];
+  if (update.phase === 'waiting' || isActivePhase(update.phase)) {
+    const left = downloadMinutesLeft(pending, state, now);
+    const elapsed = phaseMinutes(pending, state, now);
+    if (left != null) facts.push(`About ${durationLabel(left)} left`);
+    else if (elapsed != null) facts.push(`Started ${durationLabel(elapsed)} ago`);
+  }
+  const thisUpdate = pending && pending.version === update.version ? pending : null;
+  if (thisUpdate?.downloadMinutes != null && DOWNLOADED.has(update.phase))
+    facts.push(`Downloaded in ${durationLabel(thisUpdate.downloadMinutes)}`);
+  if (update.installMinutes != null)
+    facts.push(`${durationLabel(update.installMinutes)} estimated install`);
+  if (update.type) facts.push(`${update.type} update`);
+  return facts;
+}
+
+/** "Downloaded in 15 min · Installed in 33 min (estimated 1 hr 5 min)". */
+export function installRecap(install: OtaInstallDto): string | null {
+  const parts = [
+    install.downloadMinutes != null && `downloaded in ${durationLabel(install.downloadMinutes)}`,
+    install.installMinutes != null &&
+      `Installed in ${durationLabel(install.installMinutes)}` +
+        (install.estimatedMinutes != null
+          ? ` (estimated ${durationLabel(install.estimatedMinutes)})`
+          : ''),
+  ].filter((p): p is string => typeof p === 'string');
+  if (parts.length === 0) return null;
+  const text = parts.join(' · ');
+  return text[0]!.toUpperCase() + text.slice(1);
 }
 
 /** Server route serving the saved copy of Rivian's release notes. */

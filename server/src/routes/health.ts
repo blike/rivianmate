@@ -25,6 +25,7 @@ import { chargingSessions, drives, parallaxLatest } from '../db/schema.js';
 import { stateString } from '../services/state-utils.js';
 import { type BusySpan, drainSnapshots, parkedLoss, phantomDrain } from '../services/health.js';
 import { stampedAt } from '../services/charging-time.js';
+import { OTA_HISTORY_FIELDS, otaHistory } from '../services/ota-history.js';
 import type { VehicleState } from '../rivian/types.js';
 import {
   END_OF_TIME,
@@ -179,11 +180,12 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
       const changes = await changesBetween(
         ctx.db,
         vehicleId,
-        ['otaCurrentVersion'],
+        OTA_HISTORY_FIELDS,
         new Date(0),
         END_OF_TIME,
       );
-      for (const { value, at } of changes) {
+      for (const { field, value, at } of changes) {
+        if (field !== 'otaCurrentVersion') continue;
         const version = value == null ? '' : String(value);
         if (version === '' || version === '0.0.0' || firstSeen.has(version)) continue;
         firstSeen.set(version, at);
@@ -211,7 +213,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext): Promi
           hasNotes: withNotes.has(current),
         });
       }
-      return { current, available, versions };
+      return { current, available, versions, ...otaHistory(changes) };
     },
   );
 

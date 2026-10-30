@@ -651,7 +651,8 @@ export class TeslaMateSource {
 
   async ota(vehicleId: string): Promise<OtaTimelineDto> {
     const car = this.need(vehicleId);
-    if (!car) return { current: null, available: null, versions: [] };
+    if (!car)
+      return { current: null, available: null, versions: [], pending: null, lastInstall: null };
     const rows = await q.versions(this.db(), car.row.id);
     // Builds of one version ("2024.26.7 a1b2…", "2024.26.7 c3d4…") count once.
     const seen = new Map<string, Date>();
@@ -668,6 +669,12 @@ export class TeslaMateSource {
         firstSeen: firstSeen.toISOString(),
         hasNotes: false,
       }));
-    return { current: versions[0]?.version ?? null, available: null, versions };
+    return {
+      current: versions[0]?.version ?? null,
+      available: null,
+      versions,
+      pending: null,
+      lastInstall: null,
+    };
   }
 }

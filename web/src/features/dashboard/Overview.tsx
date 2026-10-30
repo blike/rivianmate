@@ -266,11 +266,6 @@ export function Overview(props: {
                 {ota.label}
                 {ota.version && <span className="text-(--text-muted)"> · {ota.version}</span>}
               </span>
-              {ota.progress != null && (
-                <span className="tabular-nums text-(--text-secondary)">
-                  {fmt(ota.progress, 0)}%
-                </span>
-              )}
             </div>
           )}
 

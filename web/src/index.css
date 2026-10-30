@@ -371,6 +371,22 @@ body {
   }
 }
 
+/* On phones the track runs down, so the bar does too (Tailwind's max-sm). */
+@media (width < 40rem) {
+  .ota-progress--indeterminate {
+    animation-name: ota-indeterminate-down;
+  }
+}
+
+@keyframes ota-indeterminate-down {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(340%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ota-progress {
     transition: none;
