@@ -206,6 +206,24 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     expect(await handle.db.select().from(stateChanges)).toHaveLength(0);
   });
 
+  it('imports a move too short for the drive list without counting it', async () => {
+    const csv = csvOf([
+      awake('2026-10-29 09:00:00', { odometer: 5000 }),
+      awake('2026-10-29 09:01:00', { shift_state: 'D', odometer: 5000 }),
+      awake('2026-10-29 09:02:00', { odometer: 5000.03 }),
+      awake('2026-10-29 09:06:00', { odometer: 5000.03 }),
+      ...driveRows(),
+    ]);
+    const { id } = await upload(csv);
+    const preview = await imports.preview(id, selection);
+    expect(preview.drivesNew).toBe(1);
+    expect(preview.drives).toHaveLength(1);
+
+    const batch = await importCsv(csv);
+    expect(batch.counts).toMatchObject({ drives: 1 });
+    expect(await handle.db.select().from(drives)).toHaveLength(2);
+  });
+
   it('lists each drive and charge with what would happen to it', async () => {
     await handle.db.insert(savedLocations).values({
       name: 'Home',

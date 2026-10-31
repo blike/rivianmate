@@ -293,7 +293,7 @@ describe('planning', () => {
       now,
     );
     expect(plan.drives).toHaveLength(0);
-    expect(plan.drivesRecorded).toBe(1);
+    expect(plan.driveDecisions.map((d) => d.status)).toEqual(['recorded']);
     expect(plan.scope.includes(at('2026-10-30T12:58:00Z'))).toBe(false);
   });
 

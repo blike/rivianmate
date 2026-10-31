@@ -7,6 +7,10 @@
  */
 export const MIN_DRIVE_KM = 0.1;
 
+/** Whether a finished drive shows in the drive list; one with no distance still does. */
+export const isListedDrive = (distanceKm: number | null) =>
+  distanceKm == null || distanceKm >= MIN_DRIVE_KM;
+
 /**
  * Elevation gain/loss with hysteresis: GPS altitude jitters by a few metres,
  * so only count a climb or descent once it moves past `thresholdM` from the

@@ -31,6 +31,7 @@ import {
 import { type Logger, silentLogger } from '../../logger.js';
 import { isTeslaMateVehicle } from '../../teslamate/ids.js';
 import type { VehicleState } from '../../rivian/types.js';
+import { isListedDrive } from '../drive-metrics.js';
 import type { HistoryKeys } from '../history-keys.js';
 import { MIN_MOVE_KM } from '../location-writer.js';
 import {
@@ -415,7 +416,7 @@ export class ElectraFiImports {
   ): Promise<ImportCounts> {
     const counts = emptyCounts();
     const driveIds = await this.insertDrives(id, selection.vehicleId, plan);
-    counts.drives = plan.drives.length;
+    counts.drives = plan.drives.filter((d) => isListedDrive(d.distanceKm)).length;
     await this.writeCharges(id, selection.vehicleId, plan.charges, counts);
 
     const writer = new RowWriter(

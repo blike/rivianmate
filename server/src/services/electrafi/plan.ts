@@ -4,6 +4,7 @@ import type {
   ImportPreviewDto,
   ImportSessionAddition,
 } from '../../api-types.js';
+import { isListedDrive } from '../drive-metrics.js';
 import { type Spot, nearbySpot } from '../locations.js';
 import {
   type ChargeSegment,
@@ -61,7 +62,6 @@ export interface Plan {
   from: number;
   to: number;
   drives: DriveSegment[];
-  drivesRecorded: number;
   charges: PlannedCharge[];
   scope: RowScope;
   /** Each drive and charge starting in the range, and what happens to it. */
@@ -192,7 +192,6 @@ export function buildPlan(
     from: range.from,
     to: range.to,
     drives,
-    drivesRecorded: driveDecisions.filter((d) => d.status === 'recorded').length,
     charges,
     driveDecisions,
     chargeDecisions,
@@ -312,6 +311,8 @@ export function previewOf(
   const fits = (reading: Scan['firstMileage']) =>
     reading == null || odometerFits(existing.mileage, reading);
   const iso = (at: number) => new Date(at).toISOString();
+  // Too short for the drive list are still imported, but aren't counted as drives.
+  const drives = plan.driveDecisions.filter((d) => isListedDrive(d.segment.distanceKm));
   const charges = plan.chargeDecisions.map(({ segment: c, status, sessionId }) => {
     const adds = sessionId == null ? [] : [...(context.additions.get(sessionId) ?? [])];
     const chargeStatus: ImportChargePreview['status'] =
@@ -340,9 +341,9 @@ export function previewOf(
     lastDate: scan.lastAt == null ? null : clock.dateOf(scan.lastAt),
     rows: scan.rows,
     unreadableRows: scan.unreadable,
-    drivesNew: plan.drives.length,
-    drivesRecorded: plan.drivesRecorded,
-    drivesNewer: plan.driveDecisions.filter((d) => d.status === 'newer').length,
+    drivesNew: drives.filter((d) => d.status === 'new').length,
+    drivesRecorded: drives.filter((d) => d.status === 'recorded').length,
+    drivesNewer: drives.filter((d) => d.status === 'newer').length,
     sessionsNew: charges.filter((c) => c.status === 'new').length,
     sessionsEnriched: charges.filter((c) => c.status === 'enrich').length,
     readingsNew: counted.readingsNew,
@@ -353,7 +354,7 @@ export function previewOf(
         ? (['future'] as const)
         : []),
     ],
-    drives: plan.driveDecisions.map(({ segment: d, status }) => ({
+    drives: drives.map(({ segment: d, status }) => ({
       startedAt: iso(d.startedAt),
       endedAt: iso(d.endedAt),
       status,
