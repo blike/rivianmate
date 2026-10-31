@@ -75,6 +75,22 @@ describe('decodeBatteryCharacteristics', () => {
       expect(decodeBatteryCharacteristics(payload)).toBeNull();
     }
   });
+  it('uses the published usable capacity when field 6 repeats the estimate', () => {
+    const repeated = (pack: number) =>
+      b64([...int(4, pack), ...float(5, 122.985), ...float(6, 122.985)]);
+    expect(decodeBatteryCharacteristics(repeated(1))).toEqual({
+      capacityKwh: 122.985,
+      ratedCapacityKwh: 131,
+    });
+    expect(decodeBatteryCharacteristics(repeated(4))).toEqual({
+      capacityKwh: 122.985,
+      ratedCapacityKwh: null,
+    });
+    expect(
+      decodeBatteryCharacteristics(b64([...int(4, 1), ...float(5, 122.985), ...float(6, 130)])),
+    ).toEqual({ capacityKwh: 122.985, ratedCapacityKwh: 130 });
+  });
+
   it('does not replace missing or invalid rated capacity with the reported estimate', () => {
     for (const value of [0, -1, NaN, Infinity, 501]) {
       expect(decodeBatteryCharacteristics(b64([...float(5, 111), ...float(6, value)]))).toEqual({
