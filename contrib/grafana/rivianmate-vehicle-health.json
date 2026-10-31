@@ -870,7 +870,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'otaCurrentVersion'->>'value' AS \"Current Version\", data->'otaAvailableVersion'->>'value' AS \"Available Version\", data->'otaInstallProgress'->>'value' AS \"Install Progress %\", data->'otaStatus'->>'value' AS \"Status\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
+          "rawSql": "SELECT data->'otaCurrentVersion'->>'value' AS \"Current Version\", COALESCE(NULLIF(NULLIF(data->'otaAvailableVersion'->>'value', ''), '0.0.0'), 'none') AS \"Available Version\", data->'otaInstallProgress'->>'value' AS \"Install Progress %\", data->'otaStatus'->>'value' AS \"Status\" FROM (SELECT jsonb_object_agg(f.name, jsonb_build_object('value', COALESCE(to_jsonb(l.num), to_jsonb(l.value)), 'timeStamp', l.at)) AS data FROM state_fields f JOIN (SELECT DISTINCT ON (c.field_id) c.field_id, c.num, c.value, c.at FROM state_changes c WHERE c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicle:sqlstring}) ORDER BY c.field_id, c.at DESC) l ON l.field_id = f.id) s",
           "refId": "A"
         }
       ],
@@ -1060,7 +1060,7 @@
   "timezone": "browser",
   "title": "RivianMate - Vehicle Health",
   "uid": "rivianmate-vehicle-health",
-  "version": 1,
+  "version": 2,
   "id": null,
   "templating": {
     "list": [
