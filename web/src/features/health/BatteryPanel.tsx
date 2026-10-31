@@ -97,7 +97,7 @@ export function BatteryPanel(props: {
               <p className="mt-2 text-sm text-(--text-secondary)">
                 {rated != null
                   ? `Rated ${fmt(rated, 1)} kWh`
-                  : 'Shown once the vehicle reports its rated capacity.'}
+                  : 'No rated capacity is available for this vehicle yet.'}
               </p>
             </div>
           </LoadingScope>
