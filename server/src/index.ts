@@ -16,6 +16,7 @@ import { seedAppPassword } from './routes/auth.js';
 import { getLookupSettings } from './routes/settings.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
 import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
+import { ElectraFiImports } from './services/electrafi/imports.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { LoginThrottle } from './services/login-throttle.js';
@@ -103,6 +104,11 @@ async function main(): Promise<void> {
   );
   notifications.start(bus);
 
+  const imports = new ElectraFiImports(db, historyKeys, logger.child({ component: 'import' }), () =>
+    monitor.queueDriveLookups(),
+  );
+  await imports.recover();
+
   const ctx: AppContext = {
     config: {
       ...config,
@@ -119,6 +125,7 @@ async function main(): Promise<void> {
     notifications,
     rivianFactory,
     teslamate,
+    imports,
     governor,
     // Searches are typed by the user, so they run in mock mode too.
     searchPlaces: nominatimSearch(userAgent),

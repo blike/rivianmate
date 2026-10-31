@@ -12,6 +12,14 @@ import type {
   FeedTopic,
   HistoryMetric,
   HistoryPoint,
+  ImportBatchDto,
+  ImportChargePreview,
+  ImportDraftDto,
+  ImportDrivePreview,
+  ImportPreviewDto,
+  ImportSelection,
+  ImportSessionAddition,
+  ImportsDto,
   LocationPointDto,
   RivianDiagnosticsResponse,
   OtaTimelineDto,
@@ -39,6 +47,14 @@ import type {
 } from '@server/api-types';
 
 export type {
+  ImportBatchDto,
+  ImportChargePreview,
+  ImportDraftDto,
+  ImportDrivePreview,
+  ImportPreviewDto,
+  ImportSelection,
+  ImportSessionAddition,
+  ImportsDto,
   FeedLatestData,
   FeedTopic,
   TeslaMateSettingsDto,
@@ -241,6 +257,27 @@ export const api = {
     request<ChargingCurvePointDto[]>(
       `/api/vehicles/${vehicleId}/charging-sessions/${sessionId}/curve`,
     ),
+  imports: () => request<ImportsDto>('/api/imports'),
+  /** Sent as is, gzipped or not: the server works out which. */
+  uploadImportFile: (file: File, draftId: string | undefined) => {
+    const params = new URLSearchParams({ name: file.name });
+    if (draftId) params.set('draft', draftId);
+    return request<ImportDraftDto>(`/api/imports/files?${params}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+  },
+  discardImportDraft: (id: string) =>
+    request<void>(`/api/imports/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  previewImport: (input: ImportSelection & { draftId: string }) =>
+    request<ImportPreviewDto>('/api/imports/preview', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  startImport: (input: ImportSelection & { draftId: string }) =>
+    request<ImportBatchDto>('/api/imports', { method: 'POST', body: JSON.stringify(input) }),
+  undoImport: (id: number) => request<void>(`/api/imports/${id}`, { method: 'DELETE' }),
   teslamate: () => request<TeslaMateSettingsDto>('/api/settings/teslamate'),
   setTeslamate: (url: string) =>
     request<TeslaMateSettingsDto>('/api/settings/teslamate', {

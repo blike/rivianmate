@@ -4,7 +4,7 @@ import { drives, locationPoints } from '../db/schema.js';
 import type { TimeStampedValue, VehicleState } from '../rivian/types.js';
 import { haversineKm, stateLocation, stateNumber } from './state-utils.js';
 
-const MIN_MOVE_KM = 0.015;
+export const MIN_MOVE_KM = 0.015;
 /** Speed, heading and altitude count for a fix only if stamped this close to it. */
 const SAME_FIX_MS = 60_000;
 /** A fix this recent with no drive around it belongs to the drive under way. */

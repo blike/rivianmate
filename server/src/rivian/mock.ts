@@ -44,6 +44,7 @@ export const mockGeocode = async (lat: number, lon: number) => {
   return {
     place: `${number} Prairie Road, Normal`,
     address: `${number} Prairie Road, Normal, Illinois, United States`,
+    area: 'Normal, IL',
   };
 };
 

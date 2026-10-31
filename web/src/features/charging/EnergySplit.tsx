@@ -42,7 +42,9 @@ export function EnergySplit(props: {
       ? s.isPublic
         ? 'Not measured for DC fast charging'
         : 'TeslaMate didn’t record the energy drawn for this session'
-      : 'Rivian didn’t report a breakdown for this session';
+      : s.source === 'electrafi'
+        ? 'ElectraFi exports don’t include a breakdown'
+        : 'Rivian didn’t report a breakdown for this session';
   return (
     <div className="mt-4 space-y-2 border-t border-(--border) pt-4">
       <div className="flex items-baseline justify-between gap-4 text-sm">

@@ -211,6 +211,25 @@ TeslaMate doesn't log some things Rivian reports, such as locks, doors, the char
 software updates, so those parts of the pages are left out for Tesla vehicles, and notifications
 only cover Rivian vehicles.
 
+### ElectraFi
+
+Used [ElectraFi](https://www.electrafi.com/) before RivianMate? Bring your data across in two steps:
+
+1. In ElectraFi, go to **Settings → Account → Advanced → Download Data** and choose **Download
+   All**.
+2. In RivianMate, go to **Settings → Import Data** and upload the `.csv` or `.csv.gz` files you
+   downloaded. Choose the Rivian they're for, the time zone the export is in and the dates you want,
+   and check the preview before importing.
+
+- It adds drives, routes, vehicle history and charging sessions. A session Rivian's history already
+  has keeps its own figures and only gets what it's missing, such as charging time and a curve.
+- Anything RivianMate already recorded stays as it is, so importing the same file again adds
+  nothing.
+- **Undo** removes everything an import added, apart from blanks it filled on existing sessions.
+- Uploads stay on your server and are deleted once the import finishes. Addresses and weather for
+  imported drives are then looked up like any others, if those lookups are on, and so is the city of
+  a charge away from your saved locations and wall chargers.
+
 ## Updating
 
 To update RivianMate to the latest version, run the following commands from your installation

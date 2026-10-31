@@ -180,6 +180,16 @@ export class VehicleMonitor {
     this.driveWeather?.setEnabled(lookups.weather);
   }
 
+  /**
+   * Drives and charges were added outside the monitor (an import): look up
+   * their places. These don't involve Rivian, so it needn't be connected.
+   */
+  queueDriveLookups(): void {
+    void this.drivePlaces
+      ?.start()
+      .catch((err: unknown) => this.log.warn({ err }, 'could not list drives for place lookups'));
+  }
+
   get isRunning(): boolean {
     return this.running;
   }

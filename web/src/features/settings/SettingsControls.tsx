@@ -1,4 +1,11 @@
-import type { ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { Dot } from '../../components/Dot';
 
 /**
@@ -137,29 +144,126 @@ export function SegmentedControl<T extends string>(props: {
   );
 }
 
-/** A dropdown sized and colored like SegmentedControl, with the app's chevron in place of the native one. */
+type SelectOption<T extends string> = T | { value: T; label: string };
+
+const optionOf = <T extends string>(o: SelectOption<T>) =>
+  typeof o === 'string' ? { value: o, label: o } : o;
+
+/** Options matching typed text, ignoring case and the underscores in names like Los_Angeles. */
+export function matchOptions<T extends string>(
+  options: readonly { value: T; label: string }[],
+  query: string,
+) {
+  const plain = (text: string) => text.toLowerCase().replaceAll('_', ' ');
+  const wanted = plain(query.trim());
+  return wanted ? options.filter((o) => plain(o.label).includes(wanted)) : options;
+}
+
+/** Longer lists get a search box: nobody scrolls through every time zone. */
+const SEARCH_FROM = 13;
+
+/**
+ * A dropdown sized and colored like SegmentedControl, drawn by the app like
+ * VehicleMenu rather than by the browser. Arrows move through the list, Enter
+ * picks, Escape or a click elsewhere closes it.
+ */
 export function Select<T extends string>(props: {
   id?: string;
+  /** Names the list for screen readers. */
+  label?: string;
   value: T;
-  options: readonly T[];
+  /** Each shown as its value, unless it has a label of its own. */
+  options: readonly SelectOption<T>[];
   disabled?: boolean;
   onChange: (value: T) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+
+  const options = props.options.map(optionOf);
+  const searchable = options.length >= SEARCH_FROM;
+  const shown = matchOptions(options, query);
+  const current = options.find((o) => o.value === props.value);
+
+  const show = () => {
+    setQuery('');
+    setActive(
+      Math.max(
+        options.findIndex((o) => o.value === props.value),
+        0,
+      ),
+    );
+    setOpen(true);
+  };
+  const close = (refocus = false) => {
+    setOpen(false);
+    if (refocus) triggerRef.current?.focus();
+  };
+  const choose = (value: T) => {
+    close(true);
+    if (value !== props.value) props.onChange(value);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) (searchRef.current ?? listRef.current)?.focus({ preventScroll: true });
+  }, [open]);
+
+  // Keeps the chosen or highlighted option in view in a long list.
+  useEffect(() => {
+    if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' });
+  }, [open, active, listId]);
+
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowDown') setActive((i) => Math.min(i + 1, shown.length - 1));
+    else if (e.key === 'ArrowUp') setActive((i) => Math.max(i - 1, 0));
+    else if (e.key === 'Enter' || (e.key === ' ' && !searchable)) {
+      if (shown[active]) choose(shown[active].value);
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
+      if (e.key === 'Escape') e.stopPropagation();
+      close(e.key === 'Escape');
+      return;
+    } else if (!searchable && e.key === 'Home') setActive(0);
+    else if (!searchable && e.key === 'End') setActive(shown.length - 1);
+    else return;
+    e.preventDefault();
+  };
+
   return (
-    <div className="relative">
-      <select
+    <div ref={rootRef} className="relative max-w-full">
+      <button
+        ref={triggerRef}
         id={props.id}
-        value={props.value}
+        type="button"
         disabled={props.disabled}
-        onChange={(e) => props.onChange(e.target.value as T)}
-        className="appearance-none rounded-lg bg-(--surface-2) py-1.5 pr-8 pl-3 text-sm font-medium outline-none transition-colors hover:text-(--text-primary) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-60"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => (open ? close() : show())}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            show();
+          }
+        }}
+        className="block max-w-full truncate rounded-lg bg-(--surface-2) py-1.5 pr-8 pl-3 text-left text-sm font-medium outline-none transition-colors hover:text-(--text-primary) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) disabled:opacity-60"
       >
-        {props.options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
+        {current?.label ?? props.value}
+      </button>
       <svg
         viewBox="0 0 12 12"
         className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 text-(--text-muted)"
@@ -170,6 +274,78 @@ export function Select<T extends string>(props: {
       >
         <path d="M2.5 4.5 6 8l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
+
+      {open && (
+        <div
+          onKeyDown={onKey}
+          className="card absolute top-full right-0 z-1100 mt-2 w-max max-w-[min(20rem,calc(100vw-2rem))] min-w-full overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+        >
+          {searchable && (
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              placeholder="Search"
+              aria-label={`Search ${props.label ?? 'options'}`}
+              aria-controls={listId}
+              aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
+              className="w-full border-b border-(--hairline) bg-transparent px-3 py-2 text-sm outline-none"
+            />
+          )}
+          <div
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            tabIndex={-1}
+            aria-label={props.label}
+            aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
+            className="max-h-[min(50vh,20rem)] overflow-auto py-1 outline-none"
+          >
+            {shown.length === 0 && (
+              <div className="px-3 py-2 text-sm text-(--text-muted)">No matches</div>
+            )}
+            {shown.map((o, i) => {
+              const selected = o.value === props.value;
+              return (
+                <div
+                  key={o.value}
+                  id={`${listId}-${i}`}
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => choose(o.value)}
+                  onPointerMove={() => setActive(i)}
+                  className={`relative flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm ${
+                    i === active ? 'bg-(--surface-2)' : ''
+                  }`}
+                >
+                  {selected && (
+                    <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-(--accent)" />
+                  )}
+                  <span className={`truncate ${selected ? 'font-medium' : ''}`}>{o.label}</span>
+                  {selected && (
+                    <svg
+                      viewBox="0 0 16 16"
+                      className="h-3.5 w-3.5 shrink-0 text-(--accent)"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden
+                    >
+                      <path d="m3.5 8.5 3 3 6-7" />
+                    </svg>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

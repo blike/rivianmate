@@ -21,6 +21,7 @@ describe('formatNominatim', () => {
       place: '306 West Willow Street, Normal',
       address:
         'Sigma Sigma Sigma Sorority, 306, West Willow Street, Normal, McLean County, Illinois, 61761, United States',
+      area: 'Normal, Illinois',
     });
   });
 
@@ -69,5 +70,27 @@ describe('nominatimSearch', () => {
     expect(url.searchParams.get('q')).toBe('illinois state');
     expect(url.searchParams.get('viewbox')).toBe('-89.5,41,-88.5,40');
     expect(url.searchParams.has('bounded')).toBe(false);
+  });
+});
+
+describe('formatNominatim area', () => {
+  const area = (address: Record<string, string>) =>
+    formatNominatim({ display_name: 'Somewhere', address })?.area;
+
+  it('gives a US town and state code', () => {
+    expect(
+      area({ city: 'Austin', state: 'Texas', 'ISO3166-2-lvl4': 'US-TX', country_code: 'us' }),
+    ).toBe('Austin, TX');
+  });
+
+  it('spells out the region where codes are not the norm', () => {
+    expect(
+      area({ town: 'Bath', state: 'England', 'ISO3166-2-lvl4': 'GB-ENG', country_code: 'gb' }),
+    ).toBe('Bath, England');
+  });
+
+  it('makes do with what there is', () => {
+    expect(area({ state: 'Texas' })).toBe('Texas');
+    expect(area({})).toBeNull();
   });
 });

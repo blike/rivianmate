@@ -369,9 +369,9 @@ export interface ChargingSessionDto {
   socLimit: number | null;
   /**
    * live = recorded by RivianMate; rivian = imported from Rivian's history;
-   * teslamate = read from TeslaMate.
+   * electrafi = imported from an ElectraFi export; teslamate = read from TeslaMate.
    */
-  source: 'live' | 'rivian' | 'live+rivian' | 'teslamate';
+  source: 'live' | 'rivian' | 'live+rivian' | 'electrafi' | 'teslamate';
   vendor: string | null;
   city: string | null;
   isPublic: boolean | null;
@@ -557,4 +557,108 @@ export interface TeslaMateSettingsDto {
 export interface TeslaMateSettingsUpdate {
   /** A Postgres connection URL for TeslaMate's database. */
   url: string;
+}
+
+/** What an import added, or enriched for existing charging sessions. */
+export interface ImportCounts {
+  drives: number;
+  sessions: number;
+  sessionsEnriched: number;
+  locationPoints: number;
+  stateChanges: number;
+}
+
+/** An ElectraFi upload waiting to be imported. */
+export interface ImportDraftDto {
+  id: string;
+  files: string[];
+}
+
+export interface ImportSelection {
+  vehicleId: string;
+  /** IANA time zone the export's local times are in. */
+  timeZone: string;
+  /** Both included, as YYYY-MM-DD in `timeZone`. */
+  from: string;
+  to: string;
+}
+
+/**
+ * What an import would do with a drive or charge starting in the chosen dates.
+ * new = adds it; recorded = already stored, so it's left alone; newer = past
+ * what live recording last reported, so it's left for live data.
+ */
+export type ImportItemStatus = 'new' | 'recorded' | 'newer';
+
+export interface ImportDrivePreview {
+  startedAt: string;
+  endedAt: string;
+  status: ImportItemStatus;
+  distanceKm: number | null;
+  startBattery: number | null;
+  endBattery: number | null;
+  /** Saved locations it starts and ends at. */
+  startPlace: string | null;
+  endPlace: string | null;
+}
+
+/** What a charge can add to a session that's missing it. */
+export type ImportSessionAddition =
+  'chargingTime' | 'batteryLevels' | 'energy' | 'range' | 'power' | 'location' | 'curve';
+
+export interface ImportChargePreview {
+  startedAt: string;
+  endedAt: string;
+  /** enrich = adds `adds` to the existing session it overlaps. */
+  status: ImportItemStatus | 'enrich';
+  adds: ImportSessionAddition[];
+  chargingSeconds: number;
+  startSoc: number | null;
+  endSoc: number | null;
+  energyKwh: number | null;
+  maxPowerKw: number | null;
+  place: string | null;
+}
+
+/** What an import of the current selection would do. */
+export interface ImportPreviewDto {
+  /** The uploaded files' dates, in the chosen time zone. */
+  firstDate: string | null;
+  lastDate: string | null;
+  rows: number;
+  /** Rows without a readable date. */
+  unreadableRows: number;
+  drivesNew: number;
+  drivesRecorded: number;
+  /** Past what live recording last reported. */
+  drivesNewer: number;
+  sessionsNew: number;
+  sessionsEnriched: number;
+  readingsNew: number;
+  readingsRecorded: number;
+  warnings: ('odometer' | 'future')[];
+  /** Everything starting in the chosen dates, in time order. */
+  drives: ImportDrivePreview[];
+  charges: ImportChargePreview[];
+}
+
+export interface ImportBatchDto {
+  id: number;
+  vehicleId: string;
+  files: string[];
+  timeZone: string;
+  from: string;
+  to: string;
+  status: 'running' | 'done' | 'failed';
+  counts: ImportCounts | null;
+  /** Share of the rows handled so far (0–1), while running. */
+  progress: number | null;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export interface ImportsDto {
+  draft: ImportDraftDto | null;
+  batches: ImportBatchDto[];
 }

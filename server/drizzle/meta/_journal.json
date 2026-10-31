@@ -134,6 +134,13 @@
       "when": 1792367397898,
       "tag": "0018_drive_weather",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793395780430,
+      "tag": "0019_electrafi_import",
+      "breakpoints": true
     }
   ]
 }

@@ -320,3 +320,26 @@ describe('minuteSamples', () => {
     expect(stale.map((s) => s.powerKw)).toEqual([7.3, 7.3, 7.3, 7.3, 7.3, 7.3]);
   });
 });
+
+describe('curveForDisplay with an ElectraFi series', () => {
+  const series = (source: CurvePoint['source'], powerKw: number): CurvePoint[] =>
+    [0, 60_000, 120_000].map((offset, i) => ({
+      source,
+      ts: new Date(Date.parse('2026-05-01T10:00:00Z') + offset),
+      powerKw,
+      soc: 50 + i,
+    }));
+
+  it('draws it when nothing better was recorded', () => {
+    expect(curveForDisplay(series('electrafi', 6)).map((p) => p.source)).toEqual([
+      'electrafi',
+      'electrafi',
+      'electrafi',
+    ]);
+  });
+
+  it("prefers the vehicle's own graph", () => {
+    const curve = curveForDisplay([...series('electrafi', 6), ...series('graph', 7)]);
+    expect(new Set(curve.map((p) => p.source))).toEqual(new Set(['graph']));
+  });
+});

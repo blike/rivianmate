@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chargeOutlook,
   chargerLabel,
+  sessionCity,
   lastChargedTo,
   chargingSecondsNow,
   rateLabel,
@@ -128,6 +129,34 @@ describe('chargerLabel', () => {
     const work = { id: 2, name: 'Work', isHome: false };
     expect(chargerLabel({ ...base, vendor: 'CHARGEPOINT', location: work })).toBe('Work');
     expect(chargerLabel({ ...base, chargerType: 'rivian_charger', location: work })).toBe('Work');
+  });
+});
+
+describe('chargerLabel without a charger', () => {
+  const base = { chargerType: null, isHome: false, vendor: null, chargerId: null, location: null };
+
+  it('names an imported charge by its city', () => {
+    expect(chargerLabel({ ...base, city: 'Austin, TX' })).toBe('Austin, TX');
+  });
+
+  it('keeps the charger when there is one', () => {
+    expect(chargerLabel({ ...base, vendor: 'CHARGEPOINT', city: 'Austin, TX' })).toBe(
+      'Chargepoint',
+    );
+    expect(chargerLabel({ ...base, chargerType: 'other', city: 'Austin, TX' })).toBe('Other');
+  });
+});
+
+describe('sessionCity', () => {
+  const base = { chargerType: null, isHome: false, vendor: null, chargerId: null, location: null };
+
+  it('sits beside a network, but not a label that already is the city', () => {
+    expect(sessionCity({ ...base, vendor: 'CHARGEPOINT', city: 'Austin' })).toBe('Austin');
+    expect(sessionCity({ ...base, city: 'Austin, TX' })).toBeNull();
+  });
+
+  it('stays out of home and saved places', () => {
+    expect(sessionCity({ ...base, isHome: true, city: 'Austin' })).toBeNull();
   });
 });
 

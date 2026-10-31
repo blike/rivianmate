@@ -9,6 +9,7 @@ import {
   chargerLabel,
   chargingSecondsNow,
   formatMoney,
+  sessionCity,
   sessionCost,
   socRange,
 } from '../../lib/charging';
@@ -94,6 +95,9 @@ export function SessionCard(props: {
             <>
               <TimeRange session={s} />
               {s.source === 'rivian' && <SourceBadge />}
+              {s.source === 'electrafi' && (
+                <SourceBadge label="ElectraFi" title="Imported from an ElectraFi export" />
+              )}
               {s.source === 'teslamate' && (
                 <SourceBadge label="TeslaMate" title="Read from TeslaMate" />
               )}
@@ -114,7 +118,7 @@ export function SessionCard(props: {
                 <PlaceIcon isHome={s.isHome} saved={s.location != null} />
                 {chargerLabel(s)}
               </span>
-              {s.city && !s.isHome && !s.location && (
+              {sessionCity(s) && (
                 <span className="text-base font-normal text-(--text-secondary)">{s.city}</span>
               )}
             </>

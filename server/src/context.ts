@@ -7,6 +7,7 @@ import type { RivianApi } from './rivian/client.js';
 import type { RivianGovernor } from './rivian/governor.js';
 import type { RivianTokens } from './rivian/types.js';
 import type { PlaceSearch } from './services/drive-places.js';
+import type { ElectraFiImports } from './services/electrafi/imports.js';
 import type { LiveBus } from './services/live-bus.js';
 import type { LoginThrottle } from './services/login-throttle.js';
 import type { NotificationService } from './services/notifications.js';
@@ -44,6 +45,8 @@ export interface AppContext {
   rivianFactory: RivianFactory;
   /** Vehicles read from a TeslaMate database, when one is set up. */
   teslamate: TeslaMateSource;
+  /** Uploads and runs ElectraFi imports. */
+  imports: ElectraFiImports;
   /** Shared throttle/cooldown/counters for all Rivian traffic. */
   governor: RivianGovernor;
   /** Address search for placing saved locations. */
