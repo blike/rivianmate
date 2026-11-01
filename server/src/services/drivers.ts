@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { drivers, drives } from '../db/schema.js';
 import { type Logger, silentLogger } from '../logger.js';
@@ -20,6 +20,22 @@ const NAME_SETTLE_MS = 15_000;
 const BACKLOG_BATCH = 200;
 
 export type DriverSource = 'profile' | 'manual' | 'none';
+
+/**
+ * Each of a vehicle's drivers by id, as shown: the user's name for them,
+ * else the one the vehicle reported, else "Driver N", numbered in the
+ * order they were first seen.
+ */
+export async function driverNames(db: Db, vehicleId: string): Promise<Map<number, string>> {
+  const rows = await db
+    .select({ id: drivers.id, name: drivers.name, reportedName: drivers.reportedName })
+    .from(drivers)
+    .where(eq(drivers.vehicleId, vehicleId))
+    .orderBy(asc(drivers.createdAt), asc(drivers.id));
+  return new Map(
+    rows.map((r, i) => [r.id, r.name?.trim() || r.reportedName?.trim() || `Driver ${i + 1}`]),
+  );
+}
 
 interface ActiveProfile {
   profileId: string | null;

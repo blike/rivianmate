@@ -15,6 +15,7 @@ import type {
 import type { AppContext } from '../context.js';
 import { drives, locationPoints } from '../db/schema.js';
 import { driveElevation, maxSpeeds, mileageDistanceKm } from '../services/drive-detector.js';
+import { driverNames } from '../services/drivers.js';
 import { MIN_DRIVE_KM, driveEnergyKwh } from '../services/drive-metrics.js';
 import type { VehicleState } from '../rivian/types.js';
 import { stateNumber } from '../services/state-utils.js';
@@ -247,8 +248,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
       );
       const state = ctx.monitor.getState(request.params.id);
       const places = await placeContext(ctx);
+      const names = await driverNames(ctx.db, request.params.id);
       return rows.map((row) =>
-        toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, places),
+        toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, places, names),
       );
     },
   );
@@ -302,7 +304,14 @@ async function rivianDriveDetail(
     drive.elevationLossM = elevation?.lossM ?? null;
   }
   return {
-    ...toDriveDto(drive, fallback, speed, state, await placeContext(ctx)),
+    ...toDriveDto(
+      drive,
+      fallback,
+      speed,
+      state,
+      await placeContext(ctx),
+      await driverNames(ctx.db, drive.vehicleId),
+    ),
     points: points.map(toLocationDto),
   };
 }
@@ -318,6 +327,8 @@ function toDriveDto(
   maxSpeedKmh: number | null,
   current: VehicleState | undefined,
   places: PlaceContext,
+  /** The vehicle's drivers' names, by id. */
+  driverNames: ReadonlyMap<number, string>,
 ): DriveDto {
   // A drive in progress shows its figures so far, from the latest state.
   const live = row.endedAt == null && current ? current : null;
@@ -364,7 +375,17 @@ function toDriveDto(
         : null,
     start: drivePlace(row.startLat, row.startLon, row.startPlace, row.startAddress, places),
     end: live ? null : drivePlace(row.endLat, row.endLon, row.endPlace, row.endAddress, places),
+    driver: driveDriver(row, driverNames),
   };
+}
+
+function driveDriver(
+  row: typeof drives.$inferSelect,
+  names: ReadonlyMap<number, string>,
+): DriveDto['driver'] {
+  const name = row.driverId == null ? undefined : names.get(row.driverId);
+  if (name === undefined || row.driverSource == null || row.driverSource === 'none') return null;
+  return { id: row.driverId!, name, source: row.driverSource };
 }
 
 /** A saved location's name, "Home" near a wallbox, else the looked-up address; null until known. */

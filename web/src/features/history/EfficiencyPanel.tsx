@@ -8,6 +8,7 @@ import {
   type EfficiencyFactor,
   FEW_DRIVES,
   type WeatherLookups,
+  driverFactor,
   efficiencyFactors,
   efficiencyValue,
   isWeatherFactor,
@@ -20,9 +21,11 @@ const CHART_HEIGHT = 144;
 /**
  * How the average card spans the grid so the charts beside it fill it, by
  * how many charts there are: four sit in a 2×2 beside it (xl) or under it
- * (md); three sit in a row under it (xl). Five fill the grid as they are.
+ * (md); three sit in a row under it (xl). Five fill the grid as they are;
+ * six sit in rows of three (xl) or two (md) under it.
  */
 const AVERAGE_SPAN: Record<number, string> = {
+  6: 'md:col-span-2 xl:col-span-3',
   4: 'md:col-span-2 xl:col-span-1 xl:row-span-2',
   3: 'xl:col-span-3',
 };
@@ -41,10 +44,12 @@ export function EfficiencyPanel(props: {
   const unit = miles ? 'mi/kWh' : 'kWh/100 km';
   const digits = miles ? 2 : 1;
 
-  const factors = useMemo(
-    () => shownFactors(efficiencyFactors(props.drives ?? [], u), props.weather),
-    [props.drives, u, props.weather],
-  );
+  const factors = useMemo(() => {
+    const drives = props.drives ?? [];
+    const byDriver = driverFactor(drives);
+    const shown = shownFactors(efficiencyFactors(drives, u), props.weather);
+    return byDriver ? [...shown, byDriver] : shown;
+  }, [props.drives, u, props.weather]);
   // Lookups off, what's shown comes from drives looked up before.
   const partialWeather = props.weather === 'off' && factors.some((f) => isWeatherFactor(f.key));
   const overall = useMemo(() => overallEfficiency(props.drives ?? []), [props.drives]);
@@ -173,7 +178,7 @@ function FactorChart(props: {
           return (
             // The whole column is the hover target, not just the bar.
             <div
-              key={b.label}
+              key={i}
               role="img"
               aria-label={describe(b)}
               className="flex h-full flex-1 items-end"
@@ -195,8 +200,9 @@ function FactorChart(props: {
       <div className="mt-2 flex gap-2">
         {buckets.map((b, i) => (
           <span
-            key={b.label}
-            className={`min-w-0 flex-1 text-center text-[11px] leading-tight tabular-nums ${
+            key={i}
+            title={b.label}
+            className={`min-w-0 flex-1 text-center break-words text-[11px] leading-tight tabular-nums ${
               hover === i ? 'text-(--text-primary)' : 'text-(--text-muted)'
             }`}
           >

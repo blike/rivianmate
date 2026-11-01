@@ -571,6 +571,8 @@ export function toDriveDto(
       : live
         ? null
         : drivePlace(row.end_geofence, row.end_address, row.end_lat, row.end_lon, opts.places),
+    // TeslaMate doesn't record who drove.
+    driver: null,
   };
 }
 

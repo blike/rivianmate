@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ChargingSessionDto, DriveCoverageDto, DriveDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { createDb, runMigrations } from '../db/client.js';
-import { chargingSessions, drives, vehicles } from '../db/schema.js';
+import { chargingSessions, drivers, drives, vehicles } from '../db/schema.js';
 import { chargingRoutes } from './charging.js';
 import { historyRoutes } from './history.js';
 
@@ -122,5 +122,46 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     expect(await get<DriveCoverageDto>('/api/vehicles/v1/drive-coverage')).toEqual({
       since: day(3).toISOString(),
     });
+  });
+
+  it("names each drive's driver: the user's name, the reported one, else by number", async () => {
+    const ids = (
+      await handle.db
+        .insert(drivers)
+        .values([
+          { vehicleId: 'v1', profileId: 'p1', reportedName: 'Alex' },
+          { vehicleId: 'v1', profileId: 'p2' },
+          { vehicleId: 'v1', profileId: 'p3', name: 'Sam', reportedName: 'Driver' },
+        ])
+        .returning({ id: drivers.id })
+    ).map((r) => r.id);
+    const drive = (minutes: number, driverId: number | null, driverSource: string | null) => ({
+      vehicleId: 'v1',
+      startedAt: new Date(day(10).getTime() + minutes * 60_000),
+      endedAt: new Date(day(10).getTime() + minutes * 60_000 + 30_000),
+      distanceKm: 5,
+      driverId,
+      driverSource: driverSource as 'profile' | 'manual' | 'none' | null,
+    });
+    await handle.db
+      .insert(drives)
+      .values([
+        drive(0, ids[0]!, 'profile'),
+        drive(1, ids[1]!, 'profile'),
+        drive(2, ids[2]!, 'manual'),
+        drive(3, null, 'none'),
+        drive(4, null, null),
+      ]);
+
+    const listed = await get<DriveDto[]>('/api/vehicles/v1/drives');
+    expect(listed.map((d) => d.driver)).toEqual([
+      null,
+      null,
+      { id: ids[2], name: 'Sam', source: 'manual' },
+      { id: ids[1], name: 'Driver 2', source: 'profile' },
+      { id: ids[0], name: 'Alex', source: 'profile' },
+    ]);
+    const one = await get<DriveDto>(`/api/vehicles/v1/drives/${listed[4]!.id}`);
+    expect(one.driver).toEqual({ id: ids[0], name: 'Alex', source: 'profile' });
   });
 });

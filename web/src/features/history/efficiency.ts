@@ -182,6 +182,31 @@ export function efficiencyFactors(drives: readonly DriveDto[], u: Units): Effici
 }
 
 /**
+ * Efficiency by who drove: a bar per driver, most driven first, and drives
+ * nobody is known for last. Null when no drive has a driver.
+ */
+export function driverFactor(drives: readonly DriveDto[]): EfficiencyFactor | null {
+  const counted = drives.filter(usable);
+  if (!counted.some((d) => d.driver)) return null;
+  const byDriver = new Map<number | null, EfficiencyBucket>();
+  for (const d of counted) {
+    const key = d.driver?.id ?? null;
+    let b = byDriver.get(key);
+    if (!b) {
+      const label = d.driver?.name ?? 'Unknown';
+      byDriver.set(key, (b = { label, short: label, drives: 0, km: 0, kwh: 0 }));
+    }
+    b.drives++;
+    b.km += d.distanceKm!;
+    b.kwh += d.energyKwh!;
+  }
+  const unknown = byDriver.get(null);
+  byDriver.delete(null);
+  const buckets = [...byDriver.values()].sort((a, b) => b.km - a.km);
+  return { key: 'driver', title: 'Driver', buckets: unknown ? [...buckets, unknown] : buckets };
+}
+
+/**
  * Weather lookups for the drives: on, turned off in Settings, or none
  * (TeslaMate's drives, whose temperatures come from the car).
  */

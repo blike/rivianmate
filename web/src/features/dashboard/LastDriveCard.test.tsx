@@ -53,11 +53,11 @@ const navigation: Navigation = {
   at: '2026-10-28T21:40:00Z',
 };
 
-const render = (nav: Navigation) =>
+const render = (nav: Navigation, d: DriveDto = drive) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <LastDriveCard drive={drive} now={now} speedMps={14} navigation={nav} navigationLoaded />
+        <LastDriveCard drive={d} now={now} speedMps={14} navigation={nav} navigationLoaded />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -83,5 +83,14 @@ describe('LastDriveCard', () => {
     expect(html).toContain('>Arrival battery<');
     expect(html).not.toContain('to next');
     expect(html).not.toContain('+1 stop');
+  });
+
+  it('names the driver when one is known', () => {
+    expect(render(navigation)).not.toContain('title="Driver"');
+    const html = render(navigation, {
+      ...drive,
+      driver: { id: 3, name: 'Sam', source: 'profile' },
+    });
+    expect(html).toContain('title="Driver">Sam<');
   });
 });
