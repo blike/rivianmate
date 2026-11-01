@@ -45,7 +45,6 @@ describe('Parallax registry', () => {
         'dynamics.vehicle.mass_estimate',
         'body.windows.states',
         'body.trailer.state',
-        'vehicle.profiles.active_user',
         'security.alarm.state',
         'security.video_monitoring.state',
         'security.access.immobilizer_state',
