@@ -118,6 +118,9 @@ export function TextField(props: {
   autoComplete?: string;
   inputMode?: 'text' | 'numeric' | 'email';
   hint?: ReactNode;
+  readOnly?: boolean;
+  /** A button inside the field, e.g. to unlock a read-only value. */
+  action?: { label: string; ariaLabel: string; onClick: () => void };
 }) {
   const [revealed, setRevealed] = useState(false);
   const isPassword = props.type === 'password';
@@ -133,8 +136,9 @@ export function TextField(props: {
           autoFocus={props.autoFocus}
           autoComplete={props.autoComplete}
           inputMode={props.inputMode}
-          className={`h-11 w-full rounded-lg border border-(--border) bg-(--surface-0) px-3 text-(--text-primary) outline-none transition placeholder:text-(--text-muted) hover:border-[#4a4a45] focus:border-(--series-1) focus:ring-3 focus:ring-[color-mix(in_srgb,var(--series-1)_25%,transparent)] ${
-            isPassword ? 'pr-16' : ''
+          readOnly={props.readOnly}
+          className={`h-11 w-full rounded-lg border border-(--border) bg-(--surface-0) px-3 text-(--text-primary) outline-none transition placeholder:text-(--text-muted) hover:border-[#4a4a45] focus:border-(--series-1) focus:ring-3 focus:ring-[color-mix(in_srgb,var(--series-1)_25%,transparent)] read-only:text-(--text-secondary) read-only:hover:border-(--border) ${
+            isPassword || props.action ? 'pr-16' : ''
           }`}
         />
         {isPassword && (
@@ -145,6 +149,16 @@ export function TextField(props: {
             className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-(--text-muted) hover:text-(--text-primary)"
           >
             {revealed ? 'Hide' : 'Show'}
+          </button>
+        )}
+        {props.action && (
+          <button
+            type="button"
+            onClick={props.action.onClick}
+            aria-label={props.action.ariaLabel}
+            className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-(--text-muted) hover:text-(--text-primary)"
+          >
+            {props.action.label}
           </button>
         )}
       </span>

@@ -56,7 +56,7 @@ describe.skipIf(!url)('auth with Postgres', () => {
       crypto: new TokenCrypto('a'.repeat(32)),
       loginThrottle: new LoginThrottle(Date.now, 3),
       tokenStore: {
-        load: async () => ({ email: 'owner@example.com', authState: 'ok', tokens: {} }),
+        summary: async () => ({ email: 'owner@example.com', authState: 'ok' }),
       },
       monitor: { isRunning: true, setLookups: () => {} },
       teslamate: { configured: false },

@@ -51,7 +51,7 @@ describe.skipIf(!url)('lookup settings with Postgres', () => {
       db: handle.db,
       crypto: new TokenCrypto('a'.repeat(32)),
       loginThrottle: new LoginThrottle(),
-      tokenStore: { load: async () => null },
+      tokenStore: { summary: async () => null },
       monitor: { isRunning: true, setLookups: (l: LookupSettings) => applied.push(l) },
       teslamate: { configured: false },
     } as unknown as AppContext;

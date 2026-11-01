@@ -67,4 +67,33 @@ describe('App during first-run setup', () => {
     expect(html).toContain('Welcome back');
     expect(html).not.toContain('Step 1 of 4');
   });
+
+  it('shows connecting Rivian as step 2', () => {
+    const html = render('/', { teslamateConfigured: false, needsLookupChoice: true });
+    expect(html).toContain('Connect your Rivian account');
+    expect(html).toContain('Step 2 of 4');
+  });
+});
+
+describe('App after setup', () => {
+  it('connects a new Rivian account without setup steps', () => {
+    const html = render('/', { teslamateConfigured: false });
+    expect(html).toContain('Connect your Rivian account');
+    expect(html).not.toContain('aria-label="Change email"');
+    expect(html).not.toContain('of 4');
+  });
+
+  it('reconnects a known account with its email locked until changed', () => {
+    const html = render('/', {
+      teslamateConfigured: false,
+      rivianAuthState: 'unauthenticated',
+      rivianEmail: 'owner@example.com',
+    });
+    expect(html).toContain('Reconnect your Rivian account');
+    const input = html.match(/<input[^>]*type="email"[^>]*>/)?.[0];
+    expect(input).toContain('value="owner@example.com"');
+    expect(input).toMatch(/readonly/i);
+    expect(html).toContain('aria-label="Change email"');
+    expect(html).not.toContain('of 4');
+  });
 });
