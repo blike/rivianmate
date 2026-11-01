@@ -166,8 +166,17 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
 }
 
 /**
- * `battery_characteristics`: 5 capacity estimate, 6 rated capacity (kWh),
- * read independently so a missing rating never falls back to the estimate.
+ * Usable kWh Rivian publishes for a field 4 pack code. Codes 3 (100) and 4 (116)
+ * are left out: no published pack lines up with them.
+ * https://rivian.com/support/article/what-is-the-usable-kwh-capacity-of-your-batteries
+ */
+const PUBLISHED_USABLE_KWH: Record<number, number> = { 1: 131, 2: 141, 5: 108, 6: 88 };
+
+/**
+ * `battery_characteristics`: 4 pack code, 5 capacity estimate, 6 rated capacity
+ * (kWh). Some vehicles repeat the estimate in 6, which isn't a rating, so a
+ * missing or repeated 6 falls back to the pack's published usable capacity,
+ * never to the estimate.
  */
 export function decodeBatteryCharacteristics(
   payloadBase64: string,
@@ -178,7 +187,11 @@ export function decodeBatteryCharacteristics(
     return value != null && Number.isFinite(value) && value > 0 && value <= 500 ? f32(value) : null;
   };
   const capacityKwh = capacity(5);
-  const ratedCapacityKwh = capacity(6);
+  const reportedRating = capacity(6);
+  const ratedCapacityKwh =
+    reportedRating != null && reportedRating !== capacityKwh
+      ? reportedRating
+      : (PUBLISHED_USABLE_KWH[fields?.int(4) ?? 0] ?? null);
   return capacityKwh != null || ratedCapacityKwh != null ? { capacityKwh, ratedCapacityKwh } : null;
 }
 
@@ -340,7 +353,7 @@ export const batteryCharacteristics = defineRvm({
     '3': 'Module type',
     '4': 'Pack (1 135, 2 150, 3 100, 4 116, 5 108, 6 88 kWh)',
     '5': 'Capacity estimate (kWh)',
-    '6': 'Rated capacity (kWh)',
+    '6': 'Rated capacity (kWh; some vehicles repeat field 5)',
   },
 });
 

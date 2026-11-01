@@ -287,7 +287,7 @@ export interface BatteryHealthDto {
   latest: { kwh: number; at: string } | null;
   /** Last recorded vehicle reading per UTC day, not a daily maximum. */
   reported: { day: string; at: string; kwh: number }[];
-  /** Rated pack capacity from Parallax battery_characteristics field 6. */
+  /** Parallax battery_characteristics field 6, or the pack's published usable capacity. */
   ratedCapacity: { kwh: number; at: string } | null;
 }
 
