@@ -166,6 +166,8 @@ export interface DriveDto {
   startRangeKm: number | null;
   endRangeKm: number | null;
   maxSpeedKmh: number | null;
+  /** Time spent moving, leaving out stops; null without route points to tell from. */
+  movingSeconds: number | null;
   /** Average outside temperature along the route (°C), from weather model data; null until the drive ends. */
   outsideTempC: number | null;
   /** The weather over the drive, looked up once it ends; null until then or without data. */

@@ -47,16 +47,13 @@ export function profilePosition(
   return null;
 }
 
-/** Average speed over the whole drive, stops included (km/h). */
-export function averageSpeedKmh(
+/** Average speed leaving out stops (km/h); null when it can't be worked out. */
+export function movingSpeedKmh(
   distanceKm: number | null,
-  startedAt: string,
-  endedAt: string | null,
-  now = Date.now(),
+  movingSeconds: number | null,
 ): number | null {
-  const hours = ((endedAt ? Date.parse(endedAt) : now) - Date.parse(startedAt)) / 3_600_000;
-  if (distanceKm == null || !(hours > 0)) return null;
-  return distanceKm / hours;
+  if (distanceKm == null || movingSeconds == null || !(movingSeconds > 0)) return null;
+  return distanceKm / (movingSeconds / 3600);
 }
 
 /** Range the vehicle's estimate dropped by; negative if it rose, null if unknown. */

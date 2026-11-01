@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ChargingSessionDto, DriveCoverageDto, DriveDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { createDb, runMigrations } from '../db/client.js';
-import { chargingSessions, drivers, drives, vehicles } from '../db/schema.js';
+import { chargingSessions, drivers, drives, locationPoints, vehicles } from '../db/schema.js';
 import { chargingRoutes } from './charging.js';
 import { historyRoutes } from './history.js';
 
@@ -122,6 +122,29 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     expect(await get<DriveCoverageDto>('/api/vehicles/v1/drive-coverage')).toEqual({
       since: day(3).toISOString(),
     });
+  });
+
+  it('counts time moving, leaving out stops even between readings at speed', async () => {
+    const [row] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: 'v1', startedAt: day(10), endedAt: day(11), distanceKm: 22 })
+      .returning({ id: drives.id });
+    const point = (minutes: number, lat: number) => ({
+      vehicleId: 'v1',
+      driveId: row!.id,
+      ts: new Date(day(10).getTime() + minutes * 60_000),
+      lat,
+      lon: -117,
+      speedKmh: 40,
+    });
+    await handle.db
+      .insert(locationPoints)
+      .values([point(0, 33), point(10, 33.1), point(40, 33.1), point(50, 33.2)]);
+
+    const [listed] = await get<DriveDto[]>('/api/vehicles/v1/drives');
+    expect(listed!.movingSeconds).toBe(1200);
+    const one = await get<DriveDto>(`/api/vehicles/v1/drives/${row!.id}`);
+    expect(one.movingSeconds).toBe(1200);
   });
 
   it("names each drive's driver: the user's name, the reported one, else by number", async () => {

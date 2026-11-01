@@ -57,6 +57,7 @@ export const drives: DriveDto[] = [
     startRangeKm: null,
     endRangeKm: null,
     maxSpeedKmh: null,
+    movingSeconds: null,
     outsideTempC: null,
     weather: null,
     driveMode: null,

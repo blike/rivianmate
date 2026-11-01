@@ -95,7 +95,6 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
           </span>
           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">
             {!d.endedAt && <InProgressTag className="mr-1.5" />}
-            {d.driver && <span className="text-(--text-secondary)">{d.driver.name} · </span>}
             {driveFacts(d, u)}
           </span>
         </span>

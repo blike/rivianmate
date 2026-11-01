@@ -186,10 +186,16 @@ function FactorChart(props: {
             >
               {v != null && (
                 <div
-                  className="w-full rounded-t-[4px] bg-(--series-1) transition-opacity"
+                  className="w-full rounded-t-[4px] transition-[height,background-color] duration-300"
                   style={{
                     height: `${height(v)}%`,
-                    opacity: b.drives < FEW_DRIVES ? 0.35 : hover == null || hover === i ? 1 : 0.6,
+                    background:
+                      hover === i
+                        ? 'var(--accent)'
+                        : hover == null
+                          ? 'color-mix(in srgb, var(--accent) 78%, var(--surface-3))'
+                          : 'color-mix(in srgb, var(--accent) 40%, var(--surface-3))',
+                    opacity: b.drives < FEW_DRIVES ? 0.35 : 1,
                   }}
                 />
               )}

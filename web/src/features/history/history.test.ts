@@ -45,7 +45,12 @@ const session = (
 describe('periodSummary', () => {
   it('totals what started in the window', () => {
     const s = periodSummary(
-      [drive(-5, -4, 100), drive(2, 3, 40, 10), drive(10, 10.5, 20), drive(47, null, 5)],
+      [
+        drive(-5, -4, 100),
+        { ...drive(2, 3, 40, 10), movingSeconds: 3000 },
+        drive(10, 10.5, 20),
+        drive(47, null, 5),
+      ],
       [session(-2, 1, 30, '9.00'), session(20, 26, 50, null, '6.50'), session(30, 31, 20, '4.25')],
       from,
       to,
@@ -54,6 +59,9 @@ describe('periodSummary', () => {
       distanceKm: 65,
       drives: 3,
       drivingSeconds: 3600 + 1800 + 3600,
+      // Only the drive with a moving time counts toward its average.
+      movingSeconds: 3000,
+      movingDistanceKm: 40,
       // Only the drive with an energy figure counts toward efficiency.
       energyKwh: 10,
       energyDistanceKm: 40,

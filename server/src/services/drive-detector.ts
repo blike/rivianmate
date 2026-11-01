@@ -600,6 +600,42 @@ export async function driveElevation(
   return elevationChange(rows.map((r) => r.altitude).filter((a): a is number => a != null));
 }
 
+/** Slower than this between two points (km/h) counts as stopped. */
+export const STOPPED_KMH = 5;
+
+/**
+ * Time spent moving per drive (seconds). Stops are found from how far the
+ * vehicle went between points, not its speed readings: it reports little
+ * while stopped, so a long stop can sit between two readings at speed.
+ */
+export async function movingSeconds(db: Db, driveIds: number[]): Promise<Map<number, number>> {
+  if (driveIds.length === 0) return new Map();
+  const rows = await db.execute<{ drive_id: number; seconds: number | null }>(sql`
+    WITH points AS (
+      SELECT drive_id, ts, lat::float8 AS lat, lon::float8 AS lon,
+             lag(ts) OVER w AS prev_ts, lag(lat::float8) OVER w AS prev_lat,
+             lag(lon::float8) OVER w AS prev_lon
+      FROM location_points
+      WHERE ${inArray(locationPoints.driveId, driveIds)}
+        AND (abs(lat) > 1e-4 OR abs(lon) > 1e-4)
+      WINDOW w AS (PARTITION BY drive_id ORDER BY ts)
+    ),
+    segments AS (
+      SELECT drive_id, EXTRACT(EPOCH FROM ts - prev_ts)::float8 AS seconds,
+             2 * 6371 * asin(least(1, sqrt(
+               sin(radians(lat - prev_lat) / 2) ^ 2 +
+               cos(radians(lat)) * cos(radians(prev_lat)) * sin(radians(lon - prev_lon) / 2) ^ 2
+             ))) AS km
+      FROM points WHERE ts > prev_ts
+    )
+    SELECT drive_id, SUM(seconds) FILTER (WHERE km * 3600 > ${STOPPED_KMH} * seconds) AS seconds
+    FROM segments GROUP BY drive_id
+  `);
+  return new Map(
+    [...rows].flatMap((r) => (r.seconds == null ? [] : [[Number(r.drive_id), Number(r.seconds)]])),
+  ) as Map<number, number>;
+}
+
 /** Fastest recorded speed per drive (km/h). */
 export async function maxSpeeds(db: Db, driveIds: number[]): Promise<Map<number, number>> {
   if (driveIds.length === 0) return new Map();

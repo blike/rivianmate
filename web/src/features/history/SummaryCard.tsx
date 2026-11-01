@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useUnits } from '../../api/hooks';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { formatMoney } from '../../lib/charging';
+import { movingSpeedKmh } from '../../lib/drives';
 import { shortDate } from '../../lib/format';
 import { fmt, fmtSeconds } from '../../lib/state';
 import { distanceByPeriod, periodSummary } from './history';
@@ -20,6 +21,7 @@ export function SummaryCard(props: {
   const u = useUnits();
   const loading = useLoading();
   const s = props.summary;
+  const movingSpeed = movingSpeedKmh(s.movingDistanceKm, s.movingSeconds);
   // A bar a day, until there are too many to see: a year is a bar a week.
   const unit = props.hours > 24 * 90 ? 'week' : 'day';
   const buckets = useMemo(
@@ -64,7 +66,8 @@ export function SummaryCard(props: {
             ) : (
               <>
                 {s.drives} drive{s.drives === 1 ? '' : 's'} · {fmtSeconds(s.drivingSeconds)} behind
-                the wheel · {u.formatSpeed(s.distanceKm / (s.drivingSeconds / 3600))} average
+                the wheel
+                {movingSpeed != null && ` · ${u.formatSpeed(movingSpeed)} avg moving`}
               </>
             )}
           </p>

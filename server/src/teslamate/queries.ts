@@ -5,6 +5,7 @@
  * to float8 so they arrive as numbers.
  */
 import type postgres from 'postgres';
+import { STOPPED_KMH } from '../services/drive-detector.js';
 import type {
   ActivityInterval,
   ActiveChargeRow,
@@ -334,6 +335,57 @@ export function drivePoints(
     FROM positions WHERE drive_id = ${driveId} ${upToStop(sql, driveId, abandoned)}
     ORDER BY date LIMIT ${limit}
   `;
+}
+
+/**
+ * Time spent moving (seconds), from how far the car went between positions,
+ * as for Rivian drives. Positions come often enough for GPS drift at a stop
+ * to look like movement, so a stretch reading 0 at both ends is a stop.
+ */
+async function movingSeconds(sql: Sql, where: ReturnType<Sql>): Promise<Map<number, number>> {
+  const rows = await sql<{ drive_id: number; seconds: number | null }[]>`
+    WITH points AS (
+      SELECT drive_id, date, latitude::float8 AS lat, longitude::float8 AS lon, speed,
+             lag(date) OVER w AS prev_date, lag(latitude::float8) OVER w AS prev_lat,
+             lag(longitude::float8) OVER w AS prev_lon, lag(speed) OVER w AS prev_speed
+      FROM positions WHERE ${where}
+      WINDOW w AS (PARTITION BY drive_id ORDER BY date)
+    ),
+    segments AS (
+      SELECT drive_id, EXTRACT(EPOCH FROM date - prev_date)::float8 AS seconds,
+             2 * 6371 * asin(least(1, sqrt(
+               sin(radians(lat - prev_lat) / 2) ^ 2 +
+               cos(radians(lat)) * cos(radians(prev_lat)) * sin(radians(lon - prev_lon) / 2) ^ 2
+             ))) AS km,
+             COALESCE(speed, 1) > 0 OR COALESCE(prev_speed, 1) > 0 AS rolling
+      FROM points WHERE date > prev_date
+    )
+    SELECT drive_id::int AS drive_id,
+           SUM(seconds) FILTER (WHERE rolling AND km * 3600 > ${STOPPED_KMH} * seconds) AS seconds
+    FROM segments GROUP BY drive_id
+  `;
+  return new Map(
+    rows.flatMap((r) => (r.seconds == null ? [] : [[r.drive_id, Number(r.seconds)]])),
+  ) as Map<number, number>;
+}
+
+/** Each finished drive's time spent moving, by drive. */
+export function drivesMovingSeconds(sql: Sql, driveIds: number[]): Promise<Map<number, number>> {
+  if (driveIds.length === 0) return Promise.resolve(new Map());
+  return movingSeconds(sql, sql`drive_id IN ${sql(driveIds)}`);
+}
+
+/** One drive's time spent moving; an abandoned one's up to where the car stopped. */
+export async function driveMovingSeconds(
+  sql: Sql,
+  driveId: number,
+  abandoned = false,
+): Promise<number | null> {
+  const moving = await movingSeconds(
+    sql,
+    sql`drive_id = ${driveId} ${upToStop(sql, driveId, abandoned)}`,
+  );
+  return moving.get(driveId) ?? null;
 }
 
 export async function driveMaxSpeed(

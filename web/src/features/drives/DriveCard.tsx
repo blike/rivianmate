@@ -4,7 +4,7 @@ import { InProgressTag } from '../../components/InProgressTag';
 import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
-import { averageSpeedKmh, rangeUsedKm } from '../../lib/drives';
+import { movingSpeedKmh, rangeUsedKm } from '../../lib/drives';
 import { clock, longDay } from '../../lib/format';
 import { fmt, fmtDuration, titleCase } from '../../lib/state';
 import { WeatherIcon, WindArrow } from '../../components/WeatherIcon';
@@ -17,7 +17,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
   const d = props.drive;
   const live = d != null && !d.endedAt;
   const rangeUsed = d ? rangeUsedKm(d.startRangeKm, d.endRangeKm) : null;
-  const avgSpeed = d ? averageSpeedKmh(d.distanceKm, d.startedAt, d.endedAt) : null;
+  const movingSpeed = d ? movingSpeedKmh(d.distanceKm, d.movingSeconds) : null;
   const to =
     d?.end?.label ?? (live && d?.destination?.name ? `Navigating to ${d.destination.name}` : null);
 
@@ -33,7 +33,7 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
     {
       label: 'Duration',
       value: d ? fmtDuration(d.startedAt, d.endedAt) : '—',
-      sub: avgSpeed != null ? `${u.formatSpeed(avgSpeed)} average` : undefined,
+      sub: movingSpeed != null ? `${u.formatSpeed(movingSpeed)} avg moving` : undefined,
     },
     {
       label: 'Efficiency',
@@ -75,6 +75,12 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
                 <span>
                   {longDay(d.startedAt)} · {clock(d.startedAt)}
                   {d.endedAt ? ` – ${clock(d.endedAt)}` : ' – now'}
+                  {d.driver && (
+                    <>
+                      {' · '}
+                      <span className="text-(--text-secondary)">{d.driver.name}</span>
+                    </>
+                  )}
                 </span>
                 {live && <InProgressTag />}
               </>

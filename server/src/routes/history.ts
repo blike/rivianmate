@@ -14,7 +14,12 @@ import type {
 } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { drives, locationPoints } from '../db/schema.js';
-import { driveElevation, maxSpeeds, mileageDistanceKm } from '../services/drive-detector.js';
+import {
+  driveElevation,
+  maxSpeeds,
+  mileageDistanceKm,
+  movingSeconds,
+} from '../services/drive-detector.js';
 import { driverNames } from '../services/drivers.js';
 import { MIN_DRIVE_KM, driveEnergyKwh } from '../services/drive-metrics.js';
 import type { VehicleState } from '../rivian/types.js';
@@ -242,15 +247,22 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
         }
       }
       const fallback = await latestCapacityKwh(ctx, request.params.id);
-      const speeds = await maxSpeeds(
-        ctx.db,
-        rows.map((r) => r.id),
-      );
+      const ids = rows.map((r) => r.id);
+      const speeds = await maxSpeeds(ctx.db, ids);
+      const moving = await movingSeconds(ctx.db, ids);
       const state = ctx.monitor.getState(request.params.id);
       const places = await placeContext(ctx);
       const names = await driverNames(ctx.db, request.params.id);
       return rows.map((row) =>
-        toDriveDto(row, fallback, speeds.get(row.id) ?? null, state, places, names),
+        toDriveDto(
+          row,
+          fallback,
+          speeds.get(row.id) ?? null,
+          moving.get(row.id) ?? null,
+          state,
+          places,
+          names,
+        ),
       );
     },
   );
@@ -296,6 +308,7 @@ async function rivianDriveDetail(
     .limit(10_000);
   const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
   const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
+  const moving = (await movingSeconds(ctx.db, [drive.id])).get(drive.id) ?? null;
   const state = ctx.monitor.getState(drive.vehicleId);
   if (!drive.endedAt) {
     // Elevation is stored when a drive ends; until then, from points so far.
@@ -308,6 +321,7 @@ async function rivianDriveDetail(
       drive,
       fallback,
       speed,
+      moving,
       state,
       await placeContext(ctx),
       await driverNames(ctx.db, drive.vehicleId),
@@ -325,6 +339,7 @@ function toDriveDto(
   row: typeof drives.$inferSelect,
   fallbackCapacityKwh: number | null,
   maxSpeedKmh: number | null,
+  movingSeconds: number | null,
   current: VehicleState | undefined,
   places: PlaceContext,
   /** The vehicle's drivers' names, by id. */
@@ -357,6 +372,7 @@ function toDriveDto(
     startRangeKm: row.startRangeKm,
     endRangeKm: live ? stateNumber(live, 'distanceToEmpty') : row.endRangeKm,
     maxSpeedKmh,
+    movingSeconds,
     outsideTempC: row.avgOutsideTempC,
     weather:
       row.minOutsideTempC != null && row.maxOutsideTempC != null

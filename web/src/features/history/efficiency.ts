@@ -1,4 +1,5 @@
 import type { DriveDto } from '@server/api-types';
+import { movingSpeedKmh } from '../../lib/drives';
 import type { unitFormatter } from '../../lib/units';
 
 type Units = ReturnType<typeof unitFormatter>;
@@ -106,12 +107,8 @@ function factorSpecs(u: Units): FactorSpec[] {
     },
     {
       key: 'speed',
-      title: 'Average speed',
-      // Over the whole drive, stops included.
-      value: (d, km) => {
-        const hours = d.endedAt ? (Date.parse(d.endedAt) - Date.parse(d.startedAt)) / 3600_000 : 0;
-        return hours > 0 ? u.distance(km / hours) : null;
-      },
+      title: 'Avg moving speed',
+      value: (d, km) => u.distance(movingSpeedKmh(km, d.movingSeconds)),
       unit: u.speedUnit,
     },
     {

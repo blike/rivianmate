@@ -24,6 +24,7 @@ function drive(km: number, kwh: number, minutes: number, extra: Partial<DriveDto
     endedAt: new Date(START + minutes * 60_000).toISOString(),
     distanceKm: km,
     energyKwh: kwh,
+    movingSeconds: minutes * 60,
     ...extra,
   };
 }
@@ -90,7 +91,7 @@ describe('efficiencyFactors', () => {
     expect(t.buckets.reduce((sum, b) => sum + b.drives, 0)).toBe(11);
   });
 
-  it('takes average speed over the whole drive, and net climb per distance', () => {
+  it('takes average speed while moving, and net climb per distance', () => {
     // 80 km in an hour is 49.7 mph; 10 km in 15 minutes, 24.9 mph.
     const fs = efficiencyFactors(
       [

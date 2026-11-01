@@ -377,12 +377,23 @@ export class TeslaMateSource {
         open.map(async (r) => [r.id, await this.progress(r.id, r.superseded)] as const),
       ),
     );
+    const moving = await q.drivesMovingSeconds(
+      sql,
+      rows.filter((r) => r.ended_at != null).map((r) => r.id),
+    );
+    await Promise.all(
+      open.map(async (r) => {
+        const seconds = await q.driveMovingSeconds(sql, r.id, r.superseded);
+        if (seconds != null) moving.set(r.id, seconds);
+      }),
+    );
     return rows.map((row) =>
       toDriveDto(row, {
         range: this.range,
         efficiency: car.row.efficiency,
         places,
         progress: progress.get(row.id) ?? null,
+        movingSeconds: moving.get(row.id) ?? null,
         geofences: this.geofences,
       }),
     );
@@ -404,6 +415,7 @@ export class TeslaMateSource {
     if (!row) return null;
     const abandoned = row.ended_at == null && row.superseded;
     const points = await q.drivePoints(sql, driveId, MAX_DRIVE_POINTS, abandoned);
+    const movingSeconds = await q.driveMovingSeconds(sql, driveId, abandoned);
     const progress =
       row.ended_at == null
         ? {
@@ -417,6 +429,7 @@ export class TeslaMateSource {
         efficiency: car.row.efficiency,
         places,
         progress,
+        movingSeconds,
         geofences: this.geofences,
       }),
       points: points.map((p) => ({
