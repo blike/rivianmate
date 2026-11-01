@@ -9,8 +9,10 @@ import {
   LEGACY_PREFERRED_FIELDS,
   PARALLAX_CORE_TOPICS,
   PARALLAX_STATE_FIELDS,
+  activeProfile,
   chargingTimeWindow,
   chargingWindowSchedule,
+  messageTime,
   tripInfo,
   vehicleSupportsParallax,
 } from '../rivian/parallax/index.js';
@@ -27,6 +29,7 @@ import {
 import { ChargeHistoryImporter } from './charge-history.js';
 import { ChargingMonitor } from './charging-monitor.js';
 import { DriveDetector } from './drive-detector.js';
+import { Drivers } from './drivers.js';
 import { HistoryKeys } from './history-keys.js';
 import type { DrivePlaces } from './drive-places.js';
 import type { DriveWeather } from './drive-weather.js';
@@ -116,6 +119,7 @@ export class VehicleMonitor {
   private locationWriter: LocationWriter;
   private stateHistory: StateHistoryRecorder;
   private driveDetector: DriveDetector;
+  private readonly drivers: Drivers;
   private chargingMonitor?: ChargingMonitor;
   private readonly otaNotes: OtaNotesStore;
   private readonly parallaxStore: ParallaxStore;
@@ -161,15 +165,21 @@ export class VehicleMonitor {
     this.parallaxStore = new ParallaxStore(db, logger.child({ component: 'parallax' }));
     this.parallaxArchive = new ParallaxArchive(db, keys, logger.child({ component: 'parallax' }));
     this.otaNotes = new OtaNotesStore(db, logger.child({ component: 'ota' }));
+    this.drivers = new Drivers(db, this.parallaxArchive, logger.child({ component: 'drivers' }));
     this.driveDetector = new DriveDetector(db, (vehicleId, driveId) => {
       this.locationWriter.setCurrentDrive(vehicleId, driveId);
-      // Name the start while the drive is under way.
-      if (driveId != null) this.drivePlaces?.enqueue(driveId);
+      // Name the start and the driver while the drive is under way.
+      if (driveId != null) {
+        this.drivePlaces?.enqueue(driveId);
+        this.drivers.enqueue(driveId);
+      }
     });
-    // Weather waits for the end, when the whole route is in.
+    // Weather waits for the end, when the whole route is in; the driver is
+    // looked at again for a profile picked just after the start.
     this.driveDetector.onDriveEnded = (driveId) => {
       this.drivePlaces?.enqueue(driveId);
       this.driveWeather?.enqueue(driveId);
+      this.drivers.enqueue(driveId);
     };
     this.driveDetector.log = logger.child({ component: 'drive' });
   }
@@ -335,6 +345,7 @@ export class VehicleMonitor {
     }
 
     await this.driveDetector.closeDanglingDrives(this.vehicles.map((v) => v.id));
+    this.drivers.start();
     void this.drivePlaces
       ?.start()
       .catch((err: unknown) => this.log.error({ err }, 'drive place lookups failed to start'));
@@ -398,6 +409,13 @@ export class VehicleMonitor {
       .onTopic(chargingTimeWindow, (vehicleId, window) =>
         this.scheduleRefresh.noteWindow(vehicleId, window),
       )
+      .onTopic(activeProfile, (vehicleId, profileId, message) =>
+        this.drivers.noteProfile(
+          vehicleId,
+          profileId,
+          messageTime(message.timestamp) ?? new Date(),
+        ),
+      )
       .onTopic(tripInfo, (vehicleId, trip) =>
         this.driveDetector.noteDestination(vehicleId, trip?.destination ?? null),
       )
@@ -458,6 +476,7 @@ export class VehicleMonitor {
     this.scheduleTimer = undefined;
     this.scheduleRefresh.stop();
     this.driveDetector.stop();
+    this.drivers.stop();
     this.drivePlaces?.stop();
     this.driveWeather?.stop();
     this.clearFallbackTimers();
@@ -527,6 +546,10 @@ export class VehicleMonitor {
 
     if (changed.includes('otaCurrentVersion') || changed.includes('otaAvailableVersion')) {
       void this.otaNotes.capture(vehicleId, cached);
+    }
+
+    if (changed.includes('activeDriverName')) {
+      this.drivers.noteName(vehicleId, stateString(cached, 'activeDriverName'));
     }
 
     if (CHARGING_FIELDS.some((f) => changed.includes(f))) {

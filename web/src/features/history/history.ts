@@ -5,6 +5,7 @@ export interface PeriodDrive {
   endedAt: string | null;
   distanceKm: number | null;
   energyKwh: number | null;
+  movingSeconds?: number | null;
 }
 
 export interface PeriodSession {
@@ -21,6 +22,9 @@ export interface PeriodSummary {
   distanceKm: number;
   drives: number;
   drivingSeconds: number;
+  /** Time moving on drives with a known figure, and the distance those covered. */
+  movingSeconds: number;
+  movingDistanceKm: number;
   /** Energy used on drives with a known figure, and the distance those covered. */
   energyKwh: number;
   energyDistanceKm: number;
@@ -63,6 +67,8 @@ export function periodSummary(
     distanceKm: 0,
     drives: 0,
     drivingSeconds: 0,
+    movingSeconds: 0,
+    movingDistanceKm: 0,
     energyKwh: 0,
     energyDistanceKm: 0,
     chargedKwh: 0,
@@ -77,6 +83,10 @@ export function periodSummary(
     summary.distanceKm += d.distanceKm ?? 0;
     const end = d.endedAt ? Date.parse(d.endedAt) : now;
     summary.drivingSeconds += Math.max(0, end - Date.parse(d.startedAt)) / 1000;
+    if (d.movingSeconds != null && d.movingSeconds > 0 && d.distanceKm != null) {
+      summary.movingSeconds += d.movingSeconds;
+      summary.movingDistanceKm += d.distanceKm;
+    }
     if (d.energyKwh != null && d.energyKwh > 0 && d.distanceKm != null && d.distanceKm > 0) {
       summary.energyKwh += d.energyKwh;
       summary.energyDistanceKm += d.distanceKm;

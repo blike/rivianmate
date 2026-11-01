@@ -198,6 +198,7 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
       startBattery: 70,
       endBattery: 69,
       maxSpeedKmh: 80,
+      movingSeconds: 570,
       start: { label: 'Home', isHome: true },
       end: null,
     });
@@ -210,6 +211,7 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
       startRangeKm: 400,
       endRangeKm: 375,
       maxSpeedKmh: 95,
+      movingSeconds: 1800,
       start: { label: 'Home', isHome: true },
       end: { label: 'Acme HQ, Shelbyville', isHome: false },
     });

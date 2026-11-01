@@ -28,6 +28,7 @@ import {
   decodeChargingWindow,
   decodeColdWeather,
   decodeGnss,
+  decodeActiveProfile,
   decodeNetwork,
   decodeWheels,
   decodeParkedEnergy,
@@ -382,6 +383,15 @@ describe('decodeWheels', () => {
 
   it('reads an empty payload as no wheel sets', () => {
     expect(decodeWheels('')).toEqual([]);
+  });
+});
+
+describe('decodeActiveProfile', () => {
+  it('reads the profile id, and no profile as null', () => {
+    const id = '6f1c2a9e-4b7d-4e2a-9c51-3d8e0b7a2f64';
+    expect(decodeActiveProfile(b64(string(1, id)))).toBe(id);
+    expect(decodeActiveProfile('')).toBeNull();
+    expect(decodeActiveProfile(b64(string(1, '')))).toBeNull();
   });
 });
 

@@ -57,12 +57,14 @@ export const drives: DriveDto[] = [
     startRangeKm: null,
     endRangeKm: null,
     maxSpeedKmh: null,
+    movingSeconds: null,
     outsideTempC: null,
     weather: null,
     driveMode: null,
     destination: null,
     start: { label: 'Work', address: null, isHome: false, locationId: 2, unnamed: false },
     end: { label: 'Home', address: null, isHome: true, locationId: 1, unnamed: false },
+    driver: { id: 1, name: 'Alex', source: 'profile' },
   },
 ];
 

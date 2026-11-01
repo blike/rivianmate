@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  averageSpeedKmh,
   driveProfile,
   drivesByDay,
   minuteTicks,
+  movingSpeedKmh,
   profilePosition,
   rangeUsedKm,
 } from './drives';
@@ -64,13 +64,12 @@ describe('profilePosition', () => {
   });
 });
 
-describe('averageSpeedKmh / rangeUsedKm', () => {
-  it('averages over the drive, running to now while in progress', () => {
-    expect(averageSpeedKmh(30, '2026-10-01T15:00:00Z', '2026-10-01T15:30:00Z')).toBe(60);
-    expect(
-      averageSpeedKmh(10, '2026-10-01T15:00:00Z', null, Date.parse('2026-10-01T15:15:00Z')),
-    ).toBe(40);
-    expect(averageSpeedKmh(null, '2026-10-01T15:00:00Z', null)).toBeNull();
+describe('movingSpeedKmh / rangeUsedKm', () => {
+  it('averages over the time spent moving, unknown without distance or movement', () => {
+    expect(movingSpeedKmh(30, 1800)).toBe(60);
+    expect(movingSpeedKmh(null, 1800)).toBeNull();
+    expect(movingSpeedKmh(30, null)).toBeNull();
+    expect(movingSpeedKmh(30, 0)).toBeNull();
   });
 
   it('reports range used, negative when it rose', () => {

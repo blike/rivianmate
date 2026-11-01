@@ -22,6 +22,7 @@ import {
   Wallbox,
 } from './types.js';
 import {
+  RVM_ACTIVE_PROFILE,
   RVM_BATTERY_STATE,
   RVM_CHARGE_BREAKDOWN,
   RVM_COLD_WEATHER,
@@ -608,6 +609,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
     this.emitParallax(RVM_WHEELS, [
       ...message(1, [...int(1, 3), ...int(4, 6_000_000), ...int(6, 14_484_096), ...int(7, 1)]),
     ]);
+    this.emitParallax(RVM_ACTIVE_PROFILE, [...string(1, '6f1c2a9e-4b7d-4e2a-9c51-3d8e0b7a2f64')]);
     this.emitBatteryState();
     this.emitGnss();
     if (this.phase === 'driving') this.emitTripInfo();
@@ -864,6 +866,7 @@ export class MockRivian implements RivianApi, VehicleStateStream {
       tirePressureStatusRearLeft: v('OK'),
       tirePressureStatusRearRight: v('OK'),
       tirePressureFrontLeft: v(3.2),
+      activeDriverName: v('Alex'),
       tirePressureFrontRight: v(3.2),
       tirePressureRearLeft: v(3.1),
       tirePressureRearRight: v(3.2),

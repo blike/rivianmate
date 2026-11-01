@@ -1,4 +1,5 @@
 import type { DriveDto } from '@server/api-types';
+import { movingSpeedKmh } from '../../lib/drives';
 import type { unitFormatter } from '../../lib/units';
 
 type Units = ReturnType<typeof unitFormatter>;
@@ -106,12 +107,8 @@ function factorSpecs(u: Units): FactorSpec[] {
     },
     {
       key: 'speed',
-      title: 'Average speed',
-      // Over the whole drive, stops included.
-      value: (d, km) => {
-        const hours = d.endedAt ? (Date.parse(d.endedAt) - Date.parse(d.startedAt)) / 3600_000 : 0;
-        return hours > 0 ? u.distance(km / hours) : null;
-      },
+      title: 'Avg moving speed',
+      value: (d, km) => u.distance(movingSpeedKmh(km, d.movingSeconds)),
       unit: u.speedUnit,
     },
     {
@@ -179,6 +176,31 @@ export function efficiencyFactors(drives: readonly DriveDto[], u: Units): Effici
       buckets: spec.names ? buckets.filter((b) => b.drives > 0) : buckets,
     };
   });
+}
+
+/**
+ * Efficiency by who drove: a bar per driver, most driven first, and drives
+ * nobody is known for last. Null when no drive has a driver.
+ */
+export function driverFactor(drives: readonly DriveDto[]): EfficiencyFactor | null {
+  const counted = drives.filter(usable);
+  if (!counted.some((d) => d.driver)) return null;
+  const byDriver = new Map<number | null, EfficiencyBucket>();
+  for (const d of counted) {
+    const key = d.driver?.id ?? null;
+    let b = byDriver.get(key);
+    if (!b) {
+      const label = d.driver?.name ?? 'Unknown';
+      byDriver.set(key, (b = { label, short: label, drives: 0, km: 0, kwh: 0 }));
+    }
+    b.drives++;
+    b.km += d.distanceKm!;
+    b.kwh += d.energyKwh!;
+  }
+  const unknown = byDriver.get(null);
+  byDriver.delete(null);
+  const buckets = [...byDriver.values()].sort((a, b) => b.km - a.km);
+  return { key: 'driver', title: 'Driver', buckets: unknown ? [...buckets, unknown] : buckets };
 }
 
 /**

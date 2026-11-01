@@ -93,6 +93,29 @@ describe.skipIf(!url)('ParallaxArchive with Postgres', () => {
     expect(await a.lastArchivedAt('unknown-vehicle', ['body.locks.states'])).toEqual(new Map());
   });
 
+  it('finds the latest payload at or before a time, in rows or chunks', async () => {
+    const a = archive();
+    const rvm = 'vehicle.profiles.active_user';
+    await a.ingest('v1', msg(rvm, [1], '2026-09-01T10:05:00Z'));
+    await a.ingest('v1', msg(rvm, [2], '2026-09-01T10:40:00Z'));
+    await a.ingest('v1', msg(rvm, [3], '2026-09-01T11:20:00Z'));
+    await a.ingest('v1', msg(rvm, [4], '2026-10-13T11:00:00Z'));
+    clock = Date.parse('2026-09-01T12:00:00Z') + ARCHIVE_ROWS_MS;
+    await a.rollUp();
+    expect(await handle.db.select().from(parallaxChunks)).toHaveLength(2);
+
+    const at = async (iso: string) =>
+      (await a.latestAtOrBefore('v1', rvm, new Date(iso)))?.payload ?? null;
+    expect(await at('2026-09-01T10:00:00Z')).toBeNull();
+    expect(await at('2026-09-01T10:05:00Z')).toBe('AQ==');
+    expect(await at('2026-09-01T10:39:59Z')).toBe('AQ==');
+    // In the 11:00 hour, but before its only entry: the 10:00 hour's last.
+    expect(await at('2026-09-01T11:10:00Z')).toBe('Ag==');
+    expect(await at('2026-10-01T00:00:00Z')).toBe('Aw==');
+    expect(await at('2026-10-13T11:00:00Z')).toBe('BA==');
+    expect(await a.latestAtOrBefore('v1', 'never.seen', new Date())).toBeNull();
+  });
+
   it('keeps distinct payloads stamped in the same second', async () => {
     const a = archive();
     await a.ingest('v1', msg('body.locks.states', [1], '2026-10-13T11:00:00Z'));

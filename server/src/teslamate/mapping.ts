@@ -500,6 +500,7 @@ export function toDriveDto(
     efficiency: number | null;
     places: Pick<Places, 'locations' | 'wallboxes'>;
     progress?: DriveProgress | null;
+    movingSeconds?: number | null;
     geofences?: readonly GeofenceRow[];
   },
 ): DriveDto {
@@ -544,6 +545,7 @@ export function toDriveDto(
     startRangeKm: startRange,
     endRangeKm: endRange,
     maxSpeedKmh: live ? live.maxSpeed : row.speed_max,
+    movingSeconds: opts.movingSeconds ?? null,
     // TeslaMate averages the car's own reading once the drive ends.
     outsideTempC: live ? null : row.outside_temp_avg,
     weather: null,
@@ -571,6 +573,8 @@ export function toDriveDto(
       : live
         ? null
         : drivePlace(row.end_geofence, row.end_address, row.end_lat, row.end_lon, opts.places),
+    // TeslaMate doesn't record who drove.
+    driver: null,
   };
 }
 

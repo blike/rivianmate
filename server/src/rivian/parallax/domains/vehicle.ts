@@ -1,10 +1,11 @@
-/** `vehicle.*`: power state, connectivity and wheel sets. */
+/** `vehicle.*`: power state, connectivity, wheel sets and the active driver profile. */
 import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
 import { decodePayload } from '../wire.js';
 
 export const RVM_POWER = 'vehicle.power.state';
 export const RVM_NETWORK = 'vehicle.network.state';
 export const RVM_WHEELS = 'vehicle.wheels.vehicle_wheels';
+export const RVM_ACTIVE_PROFILE = 'vehicle.profiles.active_user';
 
 // Legacy's spellings; 5 and 7 are the app's names in its style.
 const POWER_STATES: Record<number, string> = {
@@ -142,9 +143,18 @@ export const wheels = defineRvm({
   },
 });
 
-// Probes: archived to be worked out; nothing reads them yet.
+/**
+ * `vehicle.profiles.active_user`: 1 the active driver's profile id, an
+ * opaque id (no name). It follows the key that unlocked the vehicle. Null
+ * when no profile is active or the payload can't be read.
+ */
+export function decodeActiveProfile(payloadBase64: string): string | null {
+  return fieldsOrEmpty(payloadBase64)?.string(1) || null;
+}
+
 export const activeProfile = defineRvm({
-  rvm: 'vehicle.profiles.active_user',
+  rvm: RVM_ACTIVE_PROFILE,
+  decode: decodeActiveProfile,
   store: true,
   fieldNames: { '1': 'Active driver profile id' },
 });

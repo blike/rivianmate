@@ -161,6 +161,8 @@ export const VEHICLE_STATE_PROPERTIES: readonly string[] = [
 
 /** Only valid on the WebSocket subscription — must NOT be polled. */
 export const SUBSCRIPTION_ONLY_PROPERTIES: readonly string[] = [
+  /** The active driver's name as the vehicle shows it. */
+  'activeDriverName',
   'tirePressureFrontLeft',
   'tirePressureFrontRight',
   'tirePressureRearLeft',

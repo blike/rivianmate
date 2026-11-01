@@ -79,6 +79,57 @@ export class ParallaxArchive {
     this.lastPayload.set(key, message.payload);
   }
 
+  /**
+   * A topic's latest archived payload at or before `at`: what the vehicle
+   * last reported then, however long ago it changed. Null when nothing
+   * was archived by then.
+   */
+  async latestAtOrBefore(
+    vehicleId: string,
+    rvm: string,
+    at: Date,
+  ): Promise<ArchivedMessage | null> {
+    const seq = await this.keys.vehicleSeq(vehicleId);
+    const topicId = (await this.keys.topicIds([rvm], false)).get(rvm);
+    if (seq === null || topicId === undefined) return null;
+    const [rows, chunks] = await Promise.all([
+      this.db
+        .select({ at: parallaxArchive.at, payload: parallaxArchive.payload })
+        .from(parallaxArchive)
+        .where(
+          and(
+            eq(parallaxArchive.vehicleSeq, seq),
+            eq(parallaxArchive.topicId, topicId),
+            lte(parallaxArchive.at, at),
+          ),
+        )
+        .orderBy(desc(parallaxArchive.at))
+        .limit(1),
+      // The hour holding `at` may only have later entries; the one before it can't.
+      this.db
+        .select({ data: parallaxChunks.data })
+        .from(parallaxChunks)
+        .where(
+          and(
+            eq(parallaxChunks.vehicleSeq, seq),
+            eq(parallaxChunks.topicId, topicId),
+            lte(parallaxChunks.hour, at),
+          ),
+        )
+        .orderBy(desc(parallaxChunks.hour))
+        .limit(2),
+    ]);
+    let latest: Entry | null = rows[0]
+      ? { at: rows[0].at.getTime(), payload: rows[0].payload }
+      : null;
+    for (const chunk of chunks) {
+      for (const entry of unpackChunk(chunk.data)) {
+        if (entry.at <= at.getTime() && (!latest || entry.at > latest.at)) latest = entry;
+      }
+    }
+    return latest && { at: new Date(latest.at), payload: latest.payload.toString('base64') };
+  }
+
   /** A topic's archived payloads in [from, to], in time order. */
   async messages(vehicleId: string, rvm: string, from: Date, to: Date): Promise<ArchivedMessage[]> {
     const seq = await this.keys.vehicleSeq(vehicleId);

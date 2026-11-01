@@ -104,8 +104,47 @@ export const drives = pgTable(
     windFromDeg: real('wind_from_deg'),
     /** When the weather lookup finished (found or not); null = still to do. */
     weatherCheckedAt: timestamp('weather_checked_at', { withTimezone: true }),
+    /** Who drove; null = nobody known. */
+    driverId: bigint('driver_id', { mode: 'number' }).references(() => drivers.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * Where driverId came from: the vehicle's active profile or the user.
+     * A manual choice is never overwritten.
+     * 'none' = looked, nothing found; null = still to do.
+     */
+    driverSource: text('driver_source', { enum: ['profile', 'manual', 'none'] }),
   },
-  (t) => [index('drives_vehicle_started_idx').on(t.vehicleId, t.startedAt)],
+  (t) => [
+    index('drives_vehicle_started_idx').on(t.vehicleId, t.startedAt),
+    index('drives_driver_started_idx').on(t.driverId, t.startedAt),
+  ],
+);
+
+/**
+ * People who drive a vehicle. Rows with a profileId are created when the
+ * vehicle first reports that profile active (Parallax
+ * `vehicle.profiles.active_user`, an opaque id); rows without one are added
+ * by the user. Shown as `name`, else `reportedName`, else "Driver N".
+ */
+export const drivers = pgTable(
+  'drivers',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    vehicleId: text('vehicle_id')
+      .notNull()
+      .references(() => vehicles.id),
+    /** The vehicle's driver profile id; null for a driver the user added. */
+    profileId: text('profile_id'),
+    /** Name the user gave; wins over reportedName. */
+    name: text('name'),
+    /** Latest `activeDriverName` seen while this profile was active. */
+    reportedName: text('reported_name'),
+    /** Last time the vehicle reported this profile active. */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('drivers_vehicle_profile_idx').on(t.vehicleId, t.profileId)],
 );
 
 export const locationPoints = pgTable(

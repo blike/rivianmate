@@ -166,6 +166,8 @@ export interface DriveDto {
   startRangeKm: number | null;
   endRangeKm: number | null;
   maxSpeedKmh: number | null;
+  /** Time spent moving, leaving out stops; null without route points to tell from. */
+  movingSeconds: number | null;
   /** Average outside temperature along the route (°C), from weather model data; null until the drive ends. */
   outsideTempC: number | null;
   /** The weather over the drive, looked up once it ends; null until then or without data. */
@@ -176,6 +178,16 @@ export interface DriveDto {
   /** Where it started and ended: a saved location's name, or an address once looked up. */
   start: DrivePlaceDto | null;
   end: DrivePlaceDto | null;
+  /** Who drove; null when nobody is known (or not looked at yet). */
+  driver: DriveDriverDto | null;
+}
+
+export interface DriveDriverDto {
+  id: number;
+  /** The name the user gave, else the one the vehicle reported, else "Driver 2". */
+  name: string;
+  /** From the vehicle's active profile, or picked by hand. */
+  source: 'profile' | 'manual';
 }
 
 /**

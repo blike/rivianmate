@@ -91,10 +91,16 @@ export function LastDriveCard(props: {
           <InProgressTag />
         ) : loading || !d ? (
           <Skeleton className="w-[4em]" />
-        ) : live ? (
-          <InProgressTag />
         ) : (
-          relativeTime(new Date(d.endedAt!), props.now)
+          <>
+            {d.driver && (
+              <span className="max-w-[10em] truncate text-(--text-secondary)" title="Driver">
+                {d.driver.name}
+              </span>
+            )}
+            {d.driver && <span aria-hidden>·</span>}
+            {live ? <InProgressTag /> : relativeTime(new Date(d.endedAt!), props.now)}
+          </>
         )
       }
       icon={<DriveIcon />}
