@@ -1,4 +1,5 @@
 /** Integration test against a real Postgres; skipped unless TEST_DATABASE_URL is set. */
+import { sql } from 'drizzle-orm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -102,6 +103,67 @@ describe.skipIf(!url)('ChargeHistoryImporter with Postgres', () => {
     expect(row!.source).toBe('rivian');
     expect(row!.chargingSeconds).toBe(18779); // 5h 12m 59s
     expect([row!.startSoc, row!.endSoc]).toEqual([39.7, 70]);
+  });
+
+  describe('with imported history', () => {
+    const markImported = async (where: ReturnType<typeof sql>) => {
+      await handle.db.execute(sql`UPDATE state_changes SET import_id = 1 WHERE ${where}`);
+      await handle.db.execute(sql`UPDATE state_heartbeats SET import_id = 1 WHERE ${where}`);
+    };
+    const recorderAt = () => {
+      const c = { now: 0 };
+      return {
+        c,
+        recorder: new StateHistoryRecorder(handle.db, new HistoryKeys(handle.db), () => c.now),
+      };
+    };
+
+    it('fills nothing from a session whose readings were all imported', async () => {
+      const { c, recorder } = recorderAt();
+      const reading = (at: string, chargerState: string, soc: number) => {
+        c.now = Date.parse(at);
+        return recorder.record(
+          'v1',
+          {
+            chargerState: { value: chargerState, timeStamp: at },
+            batteryLevel: { value: soc, timeStamp: at },
+          },
+          ['chargerState', 'batteryLevel'],
+        );
+      };
+      await reading('2026-09-30T00:00:00.000Z', 'charging_ready', 30);
+      await reading('2026-10-01T07:00:00.000Z', 'charging_active', 40);
+      await reading('2026-10-01T12:00:00.000Z', 'charging_complete', 70);
+      await markImported(sql`at >= '2026-10-01'`);
+      await new ChargeHistoryImporter(handle.db, historyApi, () => ['v1']).run();
+
+      const [row] = await handle.db.select().from(chargingSessions);
+      expect([row!.chargingSeconds, row!.startSoc, row!.endSoc]).toEqual([null, null, null]);
+    });
+
+    it('takes no battery level from before a live charge from an import', async () => {
+      const { c, recorder } = recorderAt();
+      const reading = (at: string, state: Record<string, string | number>) => {
+        c.now = Date.parse(at);
+        return recorder.record(
+          'v1',
+          Object.fromEntries(
+            Object.entries(state).map(([k, value]) => [k, { value, timeStamp: at }]),
+          ),
+          Object.keys(state),
+        );
+      };
+      await reading('2026-09-30T00:00:00.000Z', { batteryLevel: 30 });
+      await markImported(sql`at < '2026-10-01'`);
+      await reading('2026-10-01T00:00:00.000Z', { chargerState: 'charging_ready' });
+      await reading('2026-10-01T07:00:00.000Z', { chargerState: 'charging_active' });
+      await reading('2026-10-01T12:00:00.000Z', { chargerState: 'charging_complete' });
+      await new ChargeHistoryImporter(handle.db, historyApi, () => ['v1']).run();
+
+      const [row] = await handle.db.select().from(chargingSessions);
+      expect(row!.chargingSeconds).toBe(5 * 3600);
+      expect([row!.startSoc, row!.endSoc]).toEqual([null, null]);
+    });
   });
 
   it("replaces a running total recorded while charging with Rivian's billed total, but not a cost the owner entered", async () => {

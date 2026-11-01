@@ -3,11 +3,11 @@
   RivianMate
 </h1>
 
-![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)
-![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)
-![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)
-![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)
-![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Build status](https://img.shields.io/github/actions/workflow/status/blike/rivianmate/docker-publish.yml?branch=main&label=build)](https://github.com/blike/rivianmate/actions/workflows/docker-publish.yml)
+[![Latest version](https://img.shields.io/github/v/release/blike/rivianmate?sort=semver&label=version&color=brightgreen)](https://github.com/blike/rivianmate/releases/latest)
+[![Docker image size](https://img.shields.io/docker/image-size/mitchvitale/rivianmate/latest?label=image%20size)](https://hub.docker.com/r/mitchvitale/rivianmate/tags)
+[![Docker pulls](https://img.shields.io/docker/pulls/mitchvitale/rivianmate)](https://hub.docker.com/r/mitchvitale/rivianmate)
 
 **A self-hosted data logger and dashboard for your Rivian.**
 
@@ -193,6 +193,19 @@ RivianMate supports configurable vehicle alerts through:
   [many other notification services](https://github.com/caronc/apprise/wiki).
 
 Configure notification providers and alert preferences under **Settings → Notifications**.
+
+### Importing Data
+
+Bring your history across from another app under **Settings → Import Data**: choose **New import**,
+pick the source, add its export files, and check the preview before importing.
+
+| Source    | Getting the export                                                       | Files             |
+| --------- | ------------------------------------------------------------------------ | ----------------- |
+| ElectraFi | **Settings → Account → Advanced → Download Data**, then **Download All** | `.csv`, `.csv.gz` |
+
+- Imports add drives, charging sessions, and vehicle history.
+- Anything already recorded stays as it is, and an existing charge only gets what it's missing.
+- **Undo** removes what an import added.
 
 ### TeslaMate
 

@@ -1,13 +1,16 @@
 import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { nearbySpot, wallboxSpots } from './locations.js';
 import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
-import { drives, geocodeCache } from '../db/schema.js';
+import { chargingSessions, drives, geocodeCache, savedLocations, wallboxes } from '../db/schema.js';
 
 export interface Place {
   /** Short label, e.g. "306 West Willow Street, Normal". */
   place: string;
   /** Full address. */
   address: string | null;
+  /** Town and state, e.g. "Austin, TX". */
+  area?: string | null;
 }
 
 /** Looks up a coordinate; null when nothing is there. Throws when the service fails. */
@@ -109,7 +112,20 @@ export function formatNominatim(result: NominatimResult): Place | null {
   const place = parts.length
     ? [...new Set(parts)].join(', ')
     : result.display_name.split(', ').slice(0, 2).join(', ');
-  return { place, address: result.display_name };
+  return { place, address: result.display_name, area: formatArea(a) };
+}
+
+/** Countries that usually write a state as its code. */
+const STATE_CODE_COUNTRIES = new Set(['us', 'ca', 'au']);
+
+/** The town and state, which names a charge away from any saved place. */
+function formatArea(a: Record<string, string>): string | null {
+  const town = a.city ?? a.town ?? a.village ?? a.hamlet ?? a.municipality ?? a.suburb ?? a.county;
+  const code = a['ISO3166-2-lvl4']?.split('-')[1];
+  const region =
+    code && STATE_CODE_COUNTRIES.has(a.country_code ?? '') ? code : (a.state ?? a.country);
+  const parts = [town, region].filter((p): p is string => !!p);
+  return parts.length > 0 ? [...new Set(parts)].join(', ') : null;
 }
 
 /** ~11 m cells, so nearby stops share a lookup. */
@@ -130,9 +146,17 @@ class LookupsOff extends Error {}
  * and newest first, reusing earlier results for nearby coordinates. A drive
  * whose lookup fails stays pending and is retried on the next pass. While
  * lookups are turned off, nothing is sent and drives stay pending.
+ *
+ * Also names imported charges, which come with a position and nothing to
+ * call it, in the same queue so everything stays within Nominatim's limit.
+ * One at a saved location or wall charger is already named by it, so it's
+ * neither sent nor marked done: it needs a lookup if that location goes.
  */
 export class DrivePlaces {
   private queue: number[] = [];
+  private sessionQueue: number[] = [];
+  /** More drives were waiting than the last pass queued. */
+  private moreBacklog = false;
   private running = false;
   private stopped = false;
   private enabled = true;
@@ -155,20 +179,54 @@ export class DrivePlaces {
       .where(and(isNotNull(drives.endedAt), isNull(drives.placesCheckedAt)))
       .orderBy(desc(drives.startedAt))
       .limit(BACKLOG_BATCH);
+    this.moreBacklog = pending.length === BACKLOG_BATCH;
     for (const { id } of pending) this.enqueue(id);
+    await this.queueSessions();
+  }
+
+  /** Imported charges with nothing to call them, newest first. */
+  private async queueSessions(): Promise<void> {
+    const [pending, locations, boxes] = await Promise.all([
+      this.db
+        .select({ id: chargingSessions.id, lat: chargingSessions.lat, lon: chargingSessions.lon })
+        .from(chargingSessions)
+        .where(
+          and(
+            eq(chargingSessions.source, 'electrafi'),
+            isNull(chargingSessions.placesCheckedAt),
+            isNull(chargingSessions.vendor),
+            isNull(chargingSessions.city),
+            isNotNull(chargingSessions.lat),
+          ),
+        )
+        .orderBy(desc(chargingSessions.startedAt)),
+      this.db.select().from(savedLocations),
+      this.db
+        .select({ latitude: wallboxes.latitude, longitude: wallboxes.longitude })
+        .from(wallboxes),
+    ]);
+    const spots = [...locations, ...wallboxSpots(boxes)];
+    for (const { id, lat, lon } of pending) {
+      if (nearbySpot(lat, lon, spots)) continue;
+      if (!this.sessionQueue.includes(id)) this.sessionQueue.push(id);
+    }
+    if (this.sessionQueue.length > 0) void this.drain();
   }
 
   stop(): void {
     this.stopped = true;
     this.queue = [];
+    this.sessionQueue = [];
   }
 
   /** Turns lookups on or off; turned back on, drives left pending meanwhile are queued. */
   setEnabled(on: boolean): void {
     if (on === this.enabled) return;
     this.enabled = on;
-    if (!on) this.queue = [];
-    else if (!this.stopped) {
+    if (!on) {
+      this.queue = [];
+      this.sessionQueue = [];
+    } else if (!this.stopped) {
       this.start().catch((err: unknown) =>
         this.log.warn({ err }, 'could not list drives for place lookups'),
       );
@@ -183,27 +241,44 @@ export class DrivePlaces {
 
   /** Resolves once the queue is empty (for tests). */
   async idle(): Promise<void> {
-    while (this.running || this.queue.length > 0) await new Promise((r) => setTimeout(r, 10));
+    while (this.running || this.queue.length > 0 || this.sessionQueue.length > 0)
+      await new Promise((r) => setTimeout(r, 10));
   }
 
   private async drain(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
-      while (!this.stopped && this.enabled && this.queue.length > 0) {
-        const driveId = this.queue.shift()!;
+      // Drives first: one under way is being watched, and imports can wait.
+      while (
+        !this.stopped &&
+        this.enabled &&
+        (this.queue.length > 0 || this.sessionQueue.length > 0)
+      ) {
+        const driveId = this.queue.shift();
+        const sessionId = driveId == null ? this.sessionQueue.shift() : undefined;
         try {
-          await this.fill(driveId);
+          if (driveId != null) await this.fill(driveId);
+          else await this.fillSession(sessionId!);
         } catch (err) {
           if (err instanceof LookupsOff) break;
-          // Leave the drive pending; the next start retries it.
-          this.log.warn({ err, driveId }, 'place lookup failed');
-          if (this.queue.length) this.log.warn('pausing place lookups until the next restart');
+          // Leave it pending; the next start retries it.
+          this.log.warn({ err, driveId, sessionId }, 'place lookup failed');
+          if (this.queue.length + this.sessionQueue.length > 0) {
+            this.log.warn('pausing place lookups until the next restart');
+          }
           this.queue = [];
+          this.sessionQueue = [];
+          this.moreBacklog = false;
         }
       }
     } finally {
       this.running = false;
+    }
+    // A backlog bigger than a batch (a large import) carries on with the next.
+    if (this.moreBacklog && !this.stopped && this.enabled) {
+      this.moreBacklog = false;
+      await this.start();
     }
   }
 
@@ -236,11 +311,33 @@ export class DrivePlaces {
       .where(eq(drives.id, driveId));
   }
 
-  private async lookup(lat: number | null, lon: number | null): Promise<Place | null> {
+  private async fillSession(sessionId: number): Promise<void> {
+    const [session] = await this.db
+      .select({ lat: chargingSessions.lat, lon: chargingSessions.lon })
+      .from(chargingSessions)
+      .where(eq(chargingSessions.id, sessionId));
+    if (!session) return;
+    const found = await this.lookup(session.lat, session.lon, true);
+    await this.db
+      .update(chargingSessions)
+      .set({ city: found?.area ?? null, placesCheckedAt: new Date() })
+      .where(eq(chargingSessions.id, sessionId));
+  }
+
+  /** `needArea`: a result from before areas were kept doesn't do, so it's looked up again. */
+  private async lookup(
+    lat: number | null,
+    lon: number | null,
+    needArea = false,
+  ): Promise<Place | null> {
     if (lat == null || lon == null) return null;
     const key = geocodeKey(lat, lon);
     const [cached] = await this.db.select().from(geocodeCache).where(eq(geocodeCache.key, key));
-    if (cached) return cached.place ? { place: cached.place, address: cached.address } : null;
+    if (cached && !(needArea && cached.place && cached.area == null)) {
+      return cached.place
+        ? { place: cached.place, address: cached.address, area: cached.area }
+        : null;
+    }
 
     const wait = this.lastLookupAt + this.spacingMs - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -250,8 +347,16 @@ export class DrivePlaces {
     const found = await this.geocode(lat, lon);
     await this.db
       .insert(geocodeCache)
-      .values({ key, place: found?.place ?? null, address: found?.address ?? null })
-      .onConflictDoNothing();
+      .values({
+        key,
+        place: found?.place ?? null,
+        address: found?.address ?? null,
+        area: found?.area ?? null,
+      })
+      .onConflictDoUpdate({
+        target: geocodeCache.key,
+        set: { area: found?.area ?? null },
+      });
     return found;
   }
 }

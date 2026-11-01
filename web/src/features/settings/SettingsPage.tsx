@@ -4,9 +4,19 @@ import { useRivianDiagnostics, useStatus, useVehicles } from '../../api/hooks';
 import { AboutSection } from './AboutSection';
 import { ApiConnectionsPanel } from './ApiConnectionsPanel';
 import { GeneralSection } from './GeneralSection';
+import { ImportPanel } from './ImportPanel';
 import { LocationsPanel } from './LocationsPanel';
 import { LogsSection } from './LogsSection';
-import { CarIcon, PinIcon, BellIcon, PulseIcon, LockIcon, LogIcon, InfoIcon } from './NavIcons';
+import {
+  CarIcon,
+  PinIcon,
+  BellIcon,
+  ImportIcon,
+  PulseIcon,
+  LockIcon,
+  LogIcon,
+  InfoIcon,
+} from './NavIcons';
 import { NotificationsPanel } from './NotificationsPanel';
 import { SecuritySection } from './SecuritySection';
 
@@ -34,6 +44,12 @@ const sections = [
     label: 'API & Feeds',
     description: 'How data is arriving from Rivian.',
     icon: <PulseIcon />,
+  },
+  {
+    id: 'import',
+    label: 'Import Data',
+    description: 'Bring in history from an ElectraFi export.',
+    icon: <ImportIcon />,
   },
   {
     id: 'security',
@@ -126,6 +142,7 @@ export function SettingsPage() {
         )}
         {section.id === 'locations' && <LocationsPanel vehicleId={vehicles?.[0]?.id} />}
         {section.id === 'notifications' && <NotificationsPanel />}
+        {section.id === 'import' && <ImportPanel vehicles={vehicles ?? []} />}
         {section.id === 'api' && (
           <ApiConnectionsPanel
             diagnostics={diagnostics}

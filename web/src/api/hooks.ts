@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
 import { location } from '../lib/state';
@@ -358,6 +358,22 @@ export function useTeslaMate(live = true) {
     queryFn: api.teslamate,
     refetchInterval: live ? 10_000 : false,
   });
+}
+
+/** Uploads waiting and past imports, polled while one is running. */
+export function useImports() {
+  return useQuery({
+    queryKey: ['imports'],
+    queryFn: api.imports,
+    refetchInterval: (query) =>
+      query.state.data?.batches.some((b) => b.status === 'running') ? 2000 : false,
+  });
+}
+
+/** An import or its undo changes what nearly every page shows. */
+export function useRefreshAfterImport() {
+  const queryClient = useQueryClient();
+  return useCallback(() => queryClient.invalidateQueries(), [queryClient]);
 }
 
 /** Saving or removing TeslaMate changes which vehicles there are. */

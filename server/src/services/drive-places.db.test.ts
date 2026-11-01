@@ -6,9 +6,9 @@ import { eq } from 'drizzle-orm';
 import { silentLogger } from '../logger.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
-import { drives, vehicles } from '../db/schema.js';
+import { chargingSessions, drives, geocodeCache, savedLocations, vehicles } from '../db/schema.js';
 import { DrivePlaces, type ReverseGeocode } from './drive-places.js';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -41,8 +41,111 @@ describe.skipIf(!url)('DrivePlaces with Postgres', () => {
     await handle.sql.end();
   });
   beforeEach(async () => {
-    await handle.sql`TRUNCATE vehicles, geocode_cache RESTART IDENTITY CASCADE`;
+    await handle.sql`TRUNCATE vehicles, geocode_cache, saved_locations RESTART IDENTITY CASCADE`;
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
+  });
+
+  const importedCharge = (lat: number, more = {}) =>
+    handle.db
+      .insert(chargingSessions)
+      .values({
+        vehicleId: 'v1',
+        source: 'electrafi',
+        startedAt: new Date('2026-10-01T15:00:00Z'),
+        endedAt: new Date('2026-10-01T16:00:00Z'),
+        lat,
+        lon: -97,
+        ...more,
+      })
+      .returning()
+      .then((r) => r[0]!.id);
+  const session = async (id: number) =>
+    (await handle.db.select().from(chargingSessions)).find((s) => s.id === id)!;
+  const found: ReverseGeocode = async (lat) => ({
+    place: `Street ${lat}`,
+    address: `Full ${lat}`,
+    area: 'Austin, TX',
+  });
+
+  it('names an imported charge by its town', async () => {
+    const id = await importedCharge(30);
+    const places = new DrivePlaces(handle.db, found, silentLogger, 0);
+    await places.start();
+    await places.idle();
+    const row = await session(id);
+    expect(row.city).toBe('Austin, TX');
+    expect(row.placesCheckedAt).not.toBeNull();
+  });
+
+  it("doesn't send a charge at a saved location, or one with a name", async () => {
+    await handle.db.insert(savedLocations).values({ name: 'Home', lat: 30, lon: -97 });
+    const atHome = await importedCharge(30);
+    const named = await importedCharge(31, { vendor: 'CHARGEPOINT' });
+    const live = await importedCharge(32, { source: 'live' });
+    const calls: number[] = [];
+    const places = new DrivePlaces(
+      handle.db,
+      async (lat) => {
+        calls.push(lat);
+        return null;
+      },
+      silentLogger,
+      0,
+    );
+    await places.start();
+    await places.idle();
+    expect(calls).toEqual([]);
+    expect((await session(atHome)).placesCheckedAt).toBeNull();
+    expect((await session(named)).placesCheckedAt).toBeNull();
+    expect((await session(live)).placesCheckedAt).toBeNull();
+  });
+
+  it('looks up again a spot cached before towns were kept, keeping its other figures', async () => {
+    await handle.db
+      .insert(geocodeCache)
+      .values({ key: '30.0000,-97.0000', place: 'Old street', address: 'Old full' });
+    const id = await importedCharge(30);
+    const places = new DrivePlaces(handle.db, found, silentLogger, 0);
+    await places.start();
+    await places.idle();
+    expect((await session(id)).city).toBe('Austin, TX');
+    const [cached] = await handle.db.select().from(geocodeCache);
+    expect(cached).toMatchObject({ place: 'Old street', area: 'Austin, TX' });
+  });
+
+  it('sends nothing for charges while lookups are off, and catches up when on', async () => {
+    const id = await importedCharge(30);
+    const calls: number[] = [];
+    const places = new DrivePlaces(
+      handle.db,
+      async (lat) => {
+        calls.push(lat);
+        return { place: 'S', address: 'F', area: 'Austin, TX' };
+      },
+      silentLogger,
+      0,
+    );
+    places.setEnabled(false);
+    await places.start();
+    await places.idle();
+    expect(calls).toEqual([]);
+    places.setEnabled(true);
+    await vi.waitFor(async () => expect((await session(id)).city).toBe('Austin, TX'));
+  });
+
+  it('leaves a charge pending when the lookup fails', async () => {
+    const id = await importedCharge(30);
+    const places = new DrivePlaces(
+      handle.db,
+      async () => {
+        throw new Error('Nominatim HTTP 500');
+      },
+      silentLogger,
+      0,
+    );
+    await places.start();
+    await places.idle();
+    expect((await session(id)).placesCheckedAt).toBeNull();
   });
 
   it('fills finished drives, looking each spot up once', async () => {

@@ -36,7 +36,9 @@ export function rateLabel(rate: number | null, currency: string): string {
 }
 
 export function chargerLabel(
-  s: Pick<ChargingSessionDto, 'chargerType' | 'isHome' | 'vendor' | 'chargerId' | 'location'>,
+  s: Pick<ChargingSessionDto, 'chargerType' | 'isHome' | 'vendor' | 'chargerId' | 'location'> & {
+    city?: string | null;
+  },
 ): string {
   // A saved location's name says where better than the network did.
   if (s.location) return s.location.name;
@@ -44,7 +46,21 @@ export function chargerLabel(
   if (s.chargerType === 'rivian_charger' || /^rivian\b/i.test(s.vendor ?? '')) return 'Rivian';
   if (s.isHome) return 'Home';
   if (s.vendor) return titleCase(s.vendor.toLowerCase());
-  return s.chargerId ?? titleCase(s.chargerType);
+  if (s.chargerId) return s.chargerId;
+  // Nothing about the charger (an imported charge): where it was will do.
+  if (!s.chargerType && s.city) return s.city;
+  return titleCase(s.chargerType);
+}
+
+/** The city to show beside a session's label, unless it's home, saved, or the label itself. */
+export function sessionCity(
+  s: Pick<
+    ChargingSessionDto,
+    'chargerType' | 'isHome' | 'vendor' | 'chargerId' | 'location' | 'city'
+  >,
+): string | null {
+  if (!s.city || s.isHome || s.location || chargerLabel(s) === s.city) return null;
+  return s.city;
 }
 
 /**

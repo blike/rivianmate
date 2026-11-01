@@ -15,8 +15,18 @@ import {
   timestamp,
   uniqueIndex,
   primaryKey,
+  serial,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import type { ImportCounts } from '../api-types.js';
 import type { VehicleDetails, VehicleImageUrls } from '../rivian/types.js';
+
+/** Only imported rows are indexed: nearly all of these tables is live data. */
+const importedIndex = (name: string, column: AnyPgColumn) =>
+  index(name)
+    .on(column)
+    .where(sql`${column} IS NOT NULL`);
 
 export const appSettings = pgTable('app_settings', {
   key: text('key').primaryKey(),
@@ -50,6 +60,32 @@ export const vehicles = pgTable('vehicles', {
   details: jsonb('details').$type<VehicleDetails>(),
   images: jsonb('images').$type<VehicleImageUrls>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A run of an import, so everything it added can be told apart and
+ * removed. Rows point here by `import_id`; a plain column, as a foreign key
+ * would make adding it scan the history tables.
+ */
+export const importBatches = pgTable('import_batches', {
+  id: serial('id').primaryKey(),
+  vehicleId: text('vehicle_id')
+    .notNull()
+    .references(() => vehicles.id),
+  /** What kind of export it came from. */
+  format: text('format', { enum: ['electrafi'] }).notNull(),
+  files: jsonb('files').$type<string[]>().notNull(),
+  timeZone: text('time_zone').notNull(),
+  /** The dates chosen, in `time_zone`, both included. */
+  fromDate: text('from_date').notNull(),
+  toDate: text('to_date').notNull(),
+  status: text('status', { enum: ['running', 'done', 'failed'] })
+    .notNull()
+    .default('running'),
+  counts: jsonb('counts').$type<ImportCounts>(),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
 });
 
 export const drives = pgTable(
@@ -114,6 +150,7 @@ export const drives = pgTable(
      * 'none' = looked, nothing found; null = still to do.
      */
     driverSource: text('driver_source', { enum: ['profile', 'manual', 'none'] }),
+    importId: integer('import_id'),
   },
   (t) => [
     index('drives_vehicle_started_idx').on(t.vehicleId, t.startedAt),
@@ -160,10 +197,12 @@ export const locationPoints = pgTable(
     bearing: real('bearing'),
     altitude: real('altitude'),
     driveId: bigint('drive_id', { mode: 'number' }).references(() => drives.id),
+    importId: integer('import_id'),
   },
   (t) => [
     primaryKey({ columns: [t.vehicleId, t.ts] }),
     index('location_points_drive_ts_idx').on(t.driveId, t.ts),
+    importedIndex('location_points_import_idx', t.importId),
   ],
 );
 
@@ -235,8 +274,8 @@ export const chargingSessions = pgTable(
     lat: doublePrecision('lat'),
     lon: doublePrecision('lon'),
     rawFinal: jsonb('raw_final'),
-    /** live = recorded by RivianMate; rivian = imported; live+rivian = both. */
-    source: text('source', { enum: ['live', 'rivian', 'live+rivian'] })
+    /** live = recorded by RivianMate; rivian = imported; live+rivian = both; electrafi = from an ElectraFi export. */
+    source: text('source', { enum: ['live', 'rivian', 'live+rivian', 'electrafi'] })
       .notNull()
       .default('live'),
     rivianTransactionId: text('rivian_transaction_id'),
@@ -244,11 +283,32 @@ export const chargingSessions = pgTable(
     city: text('city'),
     isPublic: boolean('is_public'),
     isHomeCharger: boolean('is_home_charger'),
+    /** When an imported session's city was looked up (found or not); null = still to do. */
+    placesCheckedAt: timestamp('places_checked_at', { withTimezone: true }),
+    importId: integer('import_id'),
   },
   (t) => [
     index('charging_vehicle_started_idx').on(t.vehicleId, t.startedAt),
     uniqueIndex('charging_vehicle_rivian_tx_idx').on(t.vehicleId, t.rivianTransactionId),
   ],
+);
+
+/**
+ * The figures an import wrote to a session, as stored, so undo can blank them
+ * again unless they've changed since.
+ */
+export const importSessionFills = pgTable(
+  'import_session_fills',
+  {
+    importId: integer('import_id')
+      .notNull()
+      .references(() => importBatches.id, { onDelete: 'cascade' }),
+    sessionId: bigint('session_id', { mode: 'number' })
+      .notNull()
+      .references(() => chargingSessions.id, { onDelete: 'cascade' }),
+    fields: jsonb('fields').$type<Record<string, number>>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.importId, t.sessionId] })],
 );
 
 /**
@@ -268,19 +328,23 @@ export const chargingCurvePoints = pgTable(
      * feed's chart;
      * push_live = the push feed's current reading; forecast = the vehicle's
      * projection to the limit for a charge in progress (replaced by each
-     * graph, never a reading); legacy = recorded before sources were kept
-     * apart.
+     * graph, never a reading); electrafi = from an ElectraFi export; legacy =
+     * recorded before sources were kept apart.
      */
     source: text('source', {
-      enum: ['observed', 'graph', 'push_chart', 'push_live', 'forecast', 'legacy'],
+      enum: ['observed', 'graph', 'push_chart', 'push_live', 'forecast', 'electrafi', 'legacy'],
     })
       .notNull()
       .default('legacy'),
     ts: timestamp('ts', { withTimezone: true }).notNull(),
     powerKw: real('power_kw'),
     soc: real('soc'),
+    importId: integer('import_id'),
   },
-  (t) => [uniqueIndex('charging_curve_session_source_ts_idx').on(t.sessionId, t.source, t.ts)],
+  (t) => [
+    uniqueIndex('charging_curve_session_source_ts_idx').on(t.sessionId, t.source, t.ts),
+    importedIndex('charging_curve_points_import_idx', t.importId),
+  ],
 );
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -333,6 +397,8 @@ export const geocodeCache = pgTable('geocode_cache', {
   key: text('key').primaryKey(),
   place: text('place'),
   address: text('address'),
+  /** Town and state, e.g. "Austin, TX"; null on results from before it was kept. */
+  area: text('area'),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -377,8 +443,12 @@ export const stateChanges = pgTable(
     at: timestamp('at', { withTimezone: true }).notNull(),
     num: doublePrecision('num'),
     value: text('value'),
+    importId: integer('import_id'),
   },
-  (t) => [primaryKey({ columns: [t.vehicleSeq, t.fieldId, t.at] })],
+  (t) => [
+    primaryKey({ columns: [t.vehicleSeq, t.fieldId, t.at] }),
+    importedIndex('state_changes_import_idx', t.importId),
+  ],
 );
 
 /**
@@ -392,8 +462,12 @@ export const stateHeartbeats = pgTable(
       .notNull()
       .references(() => vehicles.seq),
     at: timestamp('at', { withTimezone: true }).notNull(),
+    importId: integer('import_id'),
   },
-  (t) => [primaryKey({ columns: [t.vehicleSeq, t.at] })],
+  (t) => [
+    primaryKey({ columns: [t.vehicleSeq, t.at] }),
+    importedIndex('state_heartbeats_import_idx', t.importId),
+  ],
 );
 
 /** Names of the Parallax topics in the archive. */
