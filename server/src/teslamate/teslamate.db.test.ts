@@ -364,10 +364,28 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(balance).toMatchObject({ startLevel: 80, endLevel: 69, parkedLossPct: 45 });
   });
 
+  it('averages tire pressures within an hour', async () => {
+    // Pinned to the start of an hour: readings placed relative to now can land in two buckets.
+    const hour = `date_trunc('hour', now() AT TIME ZONE 'UTC') - interval '3 days'`;
+    const insert = (id: number, date: string, pressure: number) =>
+      `INSERT INTO ${SCHEMA}.positions (id, car_id, date, latitude, longitude,
+         ideal_battery_range_km, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr)
+       VALUES (${id}, 1, ${date}, 37.0, -122.0, 300, ${pressure}, ${pressure}, ${pressure}, ${pressure});`;
+    await admin.unsafe(
+      insert(900, hour, 2.7) + insert(901, `${hour} + interval '10 minutes'`, 2.8),
+    );
+    try {
+      const tires = await source.tirePressures('tm-1', 7);
+      expect(tires.map((t) => t.rearRight)).toContain(2.75);
+    } finally {
+      await admin.unsafe(`DELETE FROM ${SCHEMA}.positions WHERE id IN (900, 901)`);
+    }
+  });
+
   it('reads health: tires, capacity and software', async () => {
     const tires = await source.tirePressures('tm-1', 7);
     expect(tires.length).toBeGreaterThan(0);
-    expect(tires.flatMap((t) => [t.frontLeft, t.rearRight])).toContain(2.85);
+    expect(tires.flatMap((t) => [t.frontLeft, t.rearRight])).toContain(2.9);
     const battery = await source.batteryHealth('tm-1');
     // 450 km rated × 0.153 kWh/km at 90% usable.
     expect(battery.latest?.kwh).toBeCloseTo((450 * 0.153) / 0.9);
