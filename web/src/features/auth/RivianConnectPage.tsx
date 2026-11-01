@@ -9,10 +9,14 @@ export function RivianConnectPage(props: {
   onDone: () => void;
   mockMode: boolean;
   reauth?: boolean;
+  /** Part of first-run setup, so show the progress through it. */
+  setup?: boolean;
   email?: string | null;
 }) {
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [email, setEmail] = useState(props.email ?? '');
+  // A known account's email stays put unless asked to change it.
+  const [emailLocked, setEmailLocked] = useState(!!props.email);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +60,7 @@ export function RivianConnectPage(props: {
             <span className="font-medium text-(--text-primary)">{email}</span>.
           </>
         }
-        step={props.reauth ? undefined : { current: 3, total: 4 }}
+        step={props.setup ? { current: 3, total: 4 } : undefined}
         error={error}
         busy={busy}
         submitDisabled={code.length < OTP_LENGTH}
@@ -106,7 +110,7 @@ export function RivianConnectPage(props: {
           ? 'Your Rivian session expired — sign in again to resume tracking.'
           : 'Your credentials go directly to Rivian; only the resulting tokens are stored, encrypted.'
       }
-      step={props.reauth ? undefined : { current: 2, total: 4 }}
+      step={props.setup ? { current: 2, total: 4 } : undefined}
       error={error}
       busy={busy}
       submitLabel="Connect"
@@ -119,13 +123,21 @@ export function RivianConnectPage(props: {
       }
     >
       <TextField
+        // Remount on unlocking, so that autoFocus moves the cursor here.
+        key={emailLocked ? 'locked' : 'editable'}
         label="Rivian account email"
         type="email"
         value={email}
         onChange={setEmail}
         autoComplete="email"
         inputMode="email"
-        autoFocus
+        readOnly={emailLocked}
+        autoFocus={!emailLocked}
+        action={
+          emailLocked
+            ? { label: 'Change', ariaLabel: 'Change email', onClick: () => setEmailLocked(false) }
+            : undefined
+        }
       />
       <TextField
         label="Rivian password"
@@ -133,6 +145,7 @@ export function RivianConnectPage(props: {
         value={password}
         onChange={setPassword}
         autoComplete="current-password"
+        autoFocus={emailLocked}
       />
       {props.mockMode && (
         <MockNotice>Mock mode is on — any credentials work; OTP is 000000.</MockNotice>

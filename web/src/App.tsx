@@ -36,6 +36,8 @@ export default function App() {
       <RivianConnectPage
         mockMode={status.mockMode}
         reauth={status.rivianAuthState === 'unauthenticated'}
+        // Also shown after setup, when APP_SECRET changes and the tokens are lost.
+        setup={status.needsLookupChoice}
         email={status.rivianEmail}
         onDone={() => refetch()}
       />

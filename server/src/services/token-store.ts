@@ -13,6 +13,8 @@ export interface StoredAccount {
   authState: RivianAuthState;
 }
 
+export type AccountSummary = Omit<StoredAccount, 'tokens'>;
+
 /** Persists the (single) Rivian account with tokens encrypted at rest. */
 export class TokenStore {
   constructor(
@@ -29,17 +31,37 @@ export class TokenStore {
       return {
         email: row.email,
         authState: row.authState,
-        tokens: {
-          accessToken: this.crypto.decrypt(row.accessTokenEnc),
-          refreshToken: this.crypto.decrypt(row.refreshTokenEnc),
-          userSessionToken: this.crypto.decrypt(row.userSessionTokenEnc),
-        },
+        tokens: this.decryptTokens(row),
       };
     } catch (err) {
       // APP_SECRET changed: stored tokens are unrecoverable.
       this.log.warn({ err }, 'stored Rivian tokens could not be decrypted (APP_SECRET changed?)');
       return null;
     }
+  }
+
+  /**
+   * The account as shown to its owner. The email isn't encrypted, so it outlives
+   * tokens lost to a changed APP_SECRET, which just means signing in again.
+   */
+  async summary(): Promise<AccountSummary | null> {
+    const rows = await this.db.select().from(rivianAccount).limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    try {
+      this.decryptTokens(row);
+      return { email: row.email, authState: row.authState };
+    } catch {
+      return { email: row.email, authState: 'unauthenticated' };
+    }
+  }
+
+  private decryptTokens(row: typeof rivianAccount.$inferSelect): RivianTokens {
+    return {
+      accessToken: this.crypto.decrypt(row.accessTokenEnc),
+      refreshToken: this.crypto.decrypt(row.refreshTokenEnc),
+      userSessionToken: this.crypto.decrypt(row.userSessionTokenEnc),
+    };
   }
 
   async save(email: string, tokens: RivianTokens): Promise<void> {

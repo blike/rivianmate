@@ -88,7 +88,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
   app.get('/api/status', async (request): Promise<StatusResponse> => {
     const authed = isAuthed(ctx, request);
     // The account is only described to someone signed in.
-    const account = authed ? await ctx.tokenStore.load() : null;
+    const account = authed ? await ctx.tokenStore.summary() : null;
     // Read before sign-in too, so signing in can show as the first step of setup.
     const pending = await lookupChoicePending(ctx);
     return {
