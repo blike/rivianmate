@@ -341,14 +341,22 @@ export function drivePoints(
  * Time spent moving (seconds), from how far the car went between positions,
  * as for Rivian drives. Positions come often enough for GPS drift at a stop
  * to look like movement, so a stretch reading 0 at both ends is a stop.
+ * They also come faster than the GPS updates, so only readings with new
+ * coordinates count: the repeats between them would look stopped.
  */
 async function movingSeconds(sql: Sql, where: ReturnType<Sql>): Promise<Map<number, number>> {
   const rows = await sql<{ drive_id: number; seconds: number | null }[]>`
-    WITH points AS (
+    WITH readings AS (
       SELECT drive_id, date, latitude::float8 AS lat, longitude::float8 AS lon, speed,
-             lag(date) OVER w AS prev_date, lag(latitude::float8) OVER w AS prev_lat,
-             lag(longitude::float8) OVER w AS prev_lon, lag(speed) OVER w AS prev_speed
+             lag(latitude::float8) OVER w AS last_lat, lag(longitude::float8) OVER w AS last_lon
       FROM positions WHERE ${where}
+      WINDOW w AS (PARTITION BY drive_id ORDER BY date)
+    ),
+    points AS (
+      SELECT drive_id, date, lat, lon, speed,
+             lag(date) OVER w AS prev_date, lag(lat) OVER w AS prev_lat,
+             lag(lon) OVER w AS prev_lon, lag(speed) OVER w AS prev_speed
+      FROM readings WHERE (lat, lon) IS DISTINCT FROM (last_lat, last_lon)
       WINDOW w AS (PARTITION BY drive_id ORDER BY date)
     ),
     segments AS (

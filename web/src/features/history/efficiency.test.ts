@@ -36,7 +36,7 @@ describe('driverFactor', () => {
   const alex = { id: 1, name: 'Alex', source: 'profile' as const };
   const sam = { id: 2, name: 'Sam', source: 'manual' as const };
 
-  it('gives each driver a bar, most driven first, and drives nobody is known for last', () => {
+  it('gives each named driver a bar, most driven first, leaving out unknown drives', () => {
     const f = driverFactor([
       drive(10, 3, 20, { driver: alex }),
       drive(30, 6, 40, { driver: sam }),
@@ -49,13 +49,19 @@ describe('driverFactor', () => {
     expect(f.buckets).toEqual([
       { label: 'Sam', short: 'Sam', drives: 2, km: 50, kwh: 10 },
       { label: 'Alex', short: 'Alex', drives: 1, km: 10, kwh: 3 },
-      { label: 'Unknown', short: 'Unknown', drives: 1, km: 15, kwh: 5 },
     ]);
   });
 
-  it('is left out when no drive has a driver', () => {
-    expect(driverFactor([drive(10, 3, 20, { driver: null })])).toBeNull();
+  it('is left out with fewer than two named drivers', () => {
     expect(driverFactor([])).toBeNull();
+    expect(driverFactor([drive(10, 3, 20, { driver: null })])).toBeNull();
+    expect(
+      driverFactor([drive(10, 3, 20, { driver: alex }), drive(15, 5, 25, { driver: null })]),
+    ).toBeNull();
+    // A second driver's only drive is too short to count.
+    expect(
+      driverFactor([drive(10, 3, 20, { driver: alex }), drive(0.5, 0.2, 2, { driver: sam })]),
+    ).toBeNull();
   });
 });
 

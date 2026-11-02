@@ -33,7 +33,8 @@ export function WeekCard(props: {
       <div className="flex items-center justify-between gap-3">
         <span className="eyebrow text-(--text-secondary)">This week</span>
         <span className="text-xs text-(--text-muted)">
-          {from.toLocaleDateString([], { month: 'short', day: 'numeric' })} – today
+          {from.toLocaleDateString([], { month: 'short', day: 'numeric' })} –{' '}
+          {to.toLocaleDateString([], { month: 'short', day: 'numeric' })}
         </span>
       </div>
 
