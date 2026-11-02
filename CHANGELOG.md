@@ -1,5 +1,85 @@
 # Changelog
 
+## v0.10.0 — 2026-11-01
+
+RivianMate `v0.10.0` brings **ElectraFi imports**, **a better view of software updates**, and
+**drivers on every drive**.
+
+### New features
+
+#### ElectraFi import
+
+- **Settings → Import Data** takes the `.csv` or `.csv.gz` files from ElectraFi's Download All and
+  adds drives, routes, vehicle history and charging sessions for the Rivian and dates you choose.
+  #84
+- Anything already recorded stays as it is, so importing a file twice, or importing a drive that
+  already exists, adds nothing. An existing charging session only gets what it's missing, such as
+  charging time and a curve. #84
+- The review step shows what would be added or skipped by the import process. An odometer that
+  doesn't fit recorded mileage warns but doesn't block the import; a wrong time zone can also
+  trigger this warning. #84
+- An import can be undone from the list of past imports. #84
+
+#### Software updates
+
+- The Software panel shows the time in each update phase and estimates the download time left. The
+  installed version gets a recap, for example "Downloaded in 15 min · Installed in 33 min (estimated
+  1 hr 5 min)". #78
+
+#### Drivers
+
+- Each drive records who was driving, from the vehicle's active profile. #83
+- History's efficiency panel compares drivers when at least two named drivers drove in the period.
+  #83 #85
+
+#### Average moving speed
+
+- The drive card, history summary and efficiency chart by speed now use an average that leaves out
+  time spent stopped. #83
+
+### Improvements
+
+- After `APP_SECRET` changes, the app offers to reconnect the known Rivian account, with its email
+  filled in, instead of showing first-run setup. #82
+- The rated pack capacity comes from Rivian's published usable capacity when a pack repeats its
+  estimate as rated, so the Battery panel no longer always reads 100%. #80
+- Charges imported away from saved locations and wall chargers look up their city, so they read "Los
+  Angeles, CA" rather than a dash. #84
+- Grafana's Vehicle Health shows "none" when no software update is available. #79
+
+### Fixes
+
+- A paused download now reads "Waiting for connection" rather than "Downloading", the install
+  countdown reads "Starting install" rather than "Installing", and the panel no longer says "Up to
+  date" in the last minutes of an install. #78
+- Release notes Rivian hadn't published yet are tried again rather than reported as missing. #77
+
+### Migrations
+
+This release includes two database migrations, which run automatically on startup:
+
+- `0019_drivers`: adds the drivers table and driver columns on drives
+- `0020_electrafi_import`: adds the import tables, an `import_id` on the tables imports write to, a
+  `places_checked_at` on charging sessions and an `area` on the geocode cache
+
+Back up Postgres before updating, preserve your existing `APP_SECRET` and database volume, then run
+`docker compose pull && docker compose up -d`.
+
+### API
+
+- New: `GET`/`POST /api/imports`, `DELETE /api/imports/:id`, `POST /api/imports/files`,
+  `POST /api/imports/preview` and `DELETE /api/imports/drafts/:id`. #84
+- Drives include `driver` and `movingSeconds`. #83
+- A charging session's `source` can be `electrafi`. #84
+- The software version timeline includes `lastInstall`. #78
+
+### Thanks
+
+@edasque
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.9.0...v0.10.0](https://github.com/blike/rivianmate/compare/v0.9.0...v0.10.0)
+
 ## v0.9.0 — 2026-10-29
 
 RivianMate `v0.9.0` brings a **redesigned dashboard**, **TeslaMate vehicles** alongside your
