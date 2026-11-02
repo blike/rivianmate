@@ -102,6 +102,7 @@ export function GeneralSection(props: {
         <SettingRow label="Currency" htmlFor="currency" description="For charging rates and costs.">
           <Select
             id="currency"
+            label="Currency"
             value={charging?.currency ?? 'USD'}
             options={CURRENCIES}
             disabled={!charging || setCharging.isPending}

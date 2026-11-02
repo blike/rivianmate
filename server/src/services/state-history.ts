@@ -236,6 +236,7 @@ export async function latestChanges(
   vehicleId: string,
   fields: readonly string[] | null,
   at: Date | null,
+  options: { liveOnly?: boolean } = {},
 ): Promise<StateChange[]> {
   if (fields?.length === 0) return [];
   const rows = await db.execute<ChangeRow>(sql`
@@ -245,6 +246,7 @@ export async function latestChanges(
       SELECT at, num, value FROM state_changes
       WHERE vehicle_seq = ${seqOf(vehicleId)} AND field_id = f.id
         ${at ? sql`AND at <= ${at.toISOString()}::timestamptz` : sql``}
+        ${options.liveOnly ? sql`AND import_id IS NULL` : sql``}
       ORDER BY at DESC LIMIT 1
     ) c
     WHERE ${fieldFilter(fields)}
@@ -269,6 +271,7 @@ export async function changesBetween(
   fields: readonly string[],
   from: Date,
   to: Date,
+  options: { liveOnly?: boolean } = {},
 ): Promise<StateChange[]> {
   if (fields.length === 0) return [];
   const rows = await db.execute<ChangeRow>(sql`
@@ -276,6 +279,7 @@ export async function changesBetween(
     FROM state_changes c JOIN state_fields f ON f.id = c.field_id
     WHERE c.vehicle_seq = ${seqOf(vehicleId)} AND ${fieldFilter(fields)}
       AND c.at > ${from.toISOString()}::timestamptz AND c.at <= ${to.toISOString()}::timestamptz
+      ${options.liveOnly ? sql`AND c.import_id IS NULL` : sql``}
     ORDER BY c.at, f.name
   `);
   return rows.map(toChange);
@@ -328,20 +332,23 @@ export async function heartbeatsBetween(
   vehicleId: string,
   from: Date,
   to: Date,
+  options: { liveOnly?: boolean } = {},
 ): Promise<number[]> {
   const rows = await db.execute<{ at: string | Date }>(sql`
     SELECT at FROM state_heartbeats
     WHERE vehicle_seq = ${seqOf(vehicleId)}
       AND at >= ${from.toISOString()}::timestamptz AND at <= ${to.toISOString()}::timestamptz
+      ${options.liveOnly ? sql`AND import_id IS NULL` : sql``}
     ORDER BY at
   `);
   return rows.map((r) => new Date(r.at).getTime());
 }
 
-/** When state was first recorded for the vehicle, or null if never. */
+/** When state was first recorded live for the vehicle, or null if never. */
 export async function firstRecordedAt(db: Db, vehicleId: string): Promise<Date | null> {
   const [row] = await db.execute<{ at: string | Date | null }>(sql`
-    SELECT MIN(at) AS at FROM state_heartbeats WHERE vehicle_seq = ${seqOf(vehicleId)}
+    SELECT MIN(at) AS at FROM state_heartbeats
+    WHERE vehicle_seq = ${seqOf(vehicleId)} AND import_id IS NULL
   `);
   return row?.at ? new Date(row.at) : null;
 }
@@ -355,7 +362,8 @@ export interface TimelineEntry {
 /**
  * The fields over [from, to]: their state at `from` (when any is known),
  * then again at each change and, with `heartbeats`, each heartbeat, so a
- * reader sees values that held while state was arriving.
+ * reader sees values that held while state was arriving. `liveOnly` leaves
+ * out what imports added.
  */
 export async function stateTimeline(
   db: Db,
@@ -363,12 +371,12 @@ export async function stateTimeline(
   fields: readonly string[],
   from: Date,
   to: Date,
-  options: { heartbeats?: boolean } = {},
+  options: { heartbeats?: boolean; liveOnly?: boolean } = {},
 ): Promise<TimelineEntry[]> {
   const [opening, changes, beats] = await Promise.all([
-    latestChanges(db, vehicleId, fields, from),
-    changesBetween(db, vehicleId, fields, from, to),
-    options.heartbeats ? heartbeatsBetween(db, vehicleId, from, to) : Promise.resolve([]),
+    latestChanges(db, vehicleId, fields, from, options),
+    changesBetween(db, vehicleId, fields, from, to, options),
+    options.heartbeats ? heartbeatsBetween(db, vehicleId, from, to, options) : Promise.resolve([]),
   ]);
   return timeline(opening, changes, beats, from.getTime());
 }

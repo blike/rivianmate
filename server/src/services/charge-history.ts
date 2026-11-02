@@ -194,7 +194,8 @@ export class ChargeHistoryImporter {
             ['chargerState', 'batteryLevel'],
             session.startedAt,
             session.endedAt!,
-            { heartbeats: true },
+            // Undoing an import couldn't tell figures rebuilt from its rows from recorded ones.
+            { heartbeats: true, liveOnly: true },
           );
           const stats = deriveChargingStats(
             history.map((h) => h.state),

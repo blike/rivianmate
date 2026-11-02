@@ -141,6 +141,13 @@
       "when": 1793566754400,
       "tag": "0019_drivers",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793575563192,
+      "tag": "0020_electrafi_import",
+      "breakpoints": true
     }
   ]
 }

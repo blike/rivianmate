@@ -77,7 +77,7 @@ export function AuthCard(props: {
   );
 }
 
-function StepDots(props: { current: number; total: number }) {
+export function StepDots(props: { current: number; total: number }) {
   return (
     <div className="mb-3 flex items-center gap-2 text-xs text-(--text-muted)">
       <div className="flex gap-1" aria-hidden>

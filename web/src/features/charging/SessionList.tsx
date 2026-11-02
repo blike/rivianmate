@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { ChargingSessionDto } from '../../api/client';
 import { InProgressTag } from '../../components/InProgressTag';
-import { chargerLabel } from '../../lib/charging';
+import { chargerLabel, sessionCity } from '../../lib/charging';
 import { groupByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
 import { fmt } from '../../lib/state';
@@ -71,9 +71,7 @@ function SessionItem(props: {
         <span className="min-w-0">
           <span className="block truncate text-sm">
             <span className={s.isHome || s.location ? 'font-medium' : ''}>{chargerLabel(s)}</span>
-            {s.city && !s.isHome && !s.location && (
-              <span className="text-(--text-muted)"> · {s.city}</span>
-            )}
+            {sessionCity(s) && <span className="text-(--text-muted)"> · {s.city}</span>}
             {!s.endedAt && (
               <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} className="ml-2" />
             )}

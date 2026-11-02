@@ -25,6 +25,14 @@ export function CarIcon() {
   );
 }
 
+export function ImportIcon() {
+  return (
+    <NavIcon>
+      <path d="M8 2.5v7M5.25 7 8 9.75 10.75 7M3 11.5v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1" />
+    </NavIcon>
+  );
+}
+
 export function PinIcon() {
   return (
     <NavIcon>

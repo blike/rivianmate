@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { ChargingSessionDto } from '../../api/client';
 import { RecordPicker } from '../../components/RecordPicker';
-import { chargerLabel } from '../../lib/charging';
+import { chargerLabel, sessionCity } from '../../lib/charging';
 import { groupByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
 import { fmt } from '../../lib/state';
@@ -23,8 +23,7 @@ export function SessionPicker(props: {
         items: day.items.map((s) => ({
           id: s.id,
           time: clock(chargeStart(s)),
-          title:
-            s.city && !s.isHome && !s.location ? `${chargerLabel(s)} · ${s.city}` : chargerLabel(s),
+          title: sessionCity(s) ? `${chargerLabel(s)} · ${s.city}` : chargerLabel(s),
           detail: sessionFacts(s),
           value: s.energyKwh != null ? `${fmt(s.energyKwh, 1)} kWh` : undefined,
           live: !s.endedAt,

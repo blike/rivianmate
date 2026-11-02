@@ -11,10 +11,12 @@ export const LOOKUPS: Record<
   addresses: {
     label: 'Addresses',
     service: 'OpenStreetMap',
-    sends: 'Where each drive starts and ends. A spot already looked up isn’t sent again.',
+    sends:
+      'Where each drive starts and ends, and where imported charges away from your saved places happened. A spot already looked up isn’t sent again.',
     adds: 'Street names for drives on the dashboard, the Drives page, and Places on History.',
     off: "Places you haven't saved show as coordinates.",
-    summary: 'Street names for drives, from OpenStreetMap. Sends where each drive starts and ends.',
+    summary:
+      'Street names for drives, from OpenStreetMap. Sends where each drive starts and ends, and where imported charges happened.',
   },
   weather: {
     label: 'Weather',
