@@ -218,6 +218,24 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(done!.energyKwh).toBeCloseTo(25 * 0.153);
   });
 
+  it('counts repeated coordinates between GPS updates as moving', async () => {
+    await admin.unsafe(`SET search_path TO ${SCHEMA};
+      INSERT INTO drives (id, car_id, start_date, end_date, distance, start_km, end_km)
+        VALUES (4, 1, ${ago(4320)}, ${ago(4318)}, 3, 900, 903);
+      INSERT INTO positions (id, car_id, drive_id, date, latitude, longitude, speed, odometer)
+        VALUES (20, 1, 4, ${ago(4320)}, 37.0, -122.0, 90, 900),
+               (21, 1, 4, ${ago(4319.5)}, 37.0, -122.0, 90, 900.75),
+               (22, 1, 4, ${ago(4319)}, 37.01, -122.01, 90, 901.5),
+               (23, 1, 4, ${ago(4318.5)}, 37.01, -122.01, 90, 902.25),
+               (24, 1, 4, ${ago(4318)}, 37.02, -122.02, 90, 903);`);
+    try {
+      expect((await source.drive('tm-1', 4, home))?.movingSeconds).toBe(120);
+    } finally {
+      await admin.unsafe(`SET search_path TO ${SCHEMA};
+        DELETE FROM positions WHERE drive_id = 4; DELETE FROM drives WHERE id = 4;`);
+    }
+  });
+
   it('ends drives and charges TeslaMate left open at their last reading, once newer ones exist', async () => {
     // A restart mid-drive leaves the drive open for good; it isn't under way.
     await admin.unsafe(`SET search_path TO ${SCHEMA};

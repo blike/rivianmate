@@ -179,28 +179,25 @@ export function efficiencyFactors(drives: readonly DriveDto[], u: Units): Effici
 }
 
 /**
- * Efficiency by who drove: a bar per driver, most driven first, and drives
- * nobody is known for last. Null when no drive has a driver.
+ * Efficiency by who drove: a bar per named driver, most driven first. Null
+ * unless at least two drove, as one has nobody to compare with.
  */
 export function driverFactor(drives: readonly DriveDto[]): EfficiencyFactor | null {
-  const counted = drives.filter(usable);
-  if (!counted.some((d) => d.driver)) return null;
-  const byDriver = new Map<number | null, EfficiencyBucket>();
-  for (const d of counted) {
-    const key = d.driver?.id ?? null;
-    let b = byDriver.get(key);
+  const byDriver = new Map<number, EfficiencyBucket>();
+  for (const d of drives.filter(usable)) {
+    if (!d.driver) continue;
+    let b = byDriver.get(d.driver.id);
     if (!b) {
-      const label = d.driver?.name ?? 'Unknown';
-      byDriver.set(key, (b = { label, short: label, drives: 0, km: 0, kwh: 0 }));
+      const label = d.driver.name;
+      byDriver.set(d.driver.id, (b = { label, short: label, drives: 0, km: 0, kwh: 0 }));
     }
     b.drives++;
     b.km += d.distanceKm!;
     b.kwh += d.energyKwh!;
   }
-  const unknown = byDriver.get(null);
-  byDriver.delete(null);
+  if (byDriver.size < 2) return null;
   const buckets = [...byDriver.values()].sort((a, b) => b.km - a.km);
-  return { key: 'driver', title: 'Driver', buckets: unknown ? [...buckets, unknown] : buckets };
+  return { key: 'driver', title: 'Driver', buckets };
 }
 
 /**
