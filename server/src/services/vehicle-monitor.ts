@@ -65,6 +65,15 @@ const DEPARTURES_SILENCE_MS = 30_000;
 /** Which feed a vehicle state reading came from. */
 type StateSource = 'legacy' | 'parallax';
 /**
+ * How often legacy reports a fix on a car that has legacy GPS of its own (an
+ * R1: every few seconds). A slower feed isn't a track, so it doesn't outrank
+ * the navigation one — a car reporting its own fix about once a minute (an R2)
+ * is the car the navigation fixes exist for.
+ */
+const LEGACY_DENSE_MS = 30_000;
+/** A dense feed that has gone this quiet is not outranking anything. */
+const LEGACY_QUIET_MS = 5 * 60_000;
+/**
  * Parallax sends the next charging window again as each one ends, so one
  * this old is from a schedule that's since been switched off.
  */
@@ -126,8 +135,15 @@ export class VehicleMonitor {
   private readonly parallaxArchive: ParallaxArchive;
   private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
-  /** Each vehicle's LEGACY_PREFERRED_FIELDS that legacy has reported. */
-  private legacyPreferred = new Map<string, Set<string>>();
+  /** Each vehicle's legacy readings that outrank Parallax's, by field name. */
+  private legacySeen = new Map<string, Set<string>>();
+  /** Each vehicle's newest legacy fix, and the two gaps before it. */
+  private legacyFix = new Map<
+    string,
+    { at: number; gapMs: number | null; previousGapMs: number | null }
+  >();
+  /** Whether each vehicle's track is currently coming from legacy's own fixes. */
+  private legacyTracked = new Map<string, boolean>();
   private scheduleTimer?: NodeJS.Timeout;
   /** Re-queries schedules when Parallax's next charging window changes. */
   private readonly scheduleRefresh = new ChargingScheduleRefresh(async (vehicleId) => {
@@ -499,6 +515,14 @@ export class VehicleMonitor {
    * Readings to merge, with LEGACY_PREFERRED_FIELDS settled: legacy's
    * reading replaces Parallax's even when it's older, and Parallax's is
    * used only while legacy hasn't reported the field (an R2).
+   *
+   * `navLocation` is settled against legacy's `gnssLocation` too, but only
+   * where legacy is a dense feed of its own: an R1 reports a fix every few
+   * seconds, so a navigation fix adds nothing there, while a car whose own
+   * fix comes once a minute is exactly the car this stream is for — one
+   * stale legacy reading must not cost it the track. A dense feed that goes
+   * quiet stops outranking the navigation fix, so the rule follows the feed
+   * rather than latching on its first reading.
    */
   private preferLegacy(
     vehicleId: string,
@@ -506,7 +530,6 @@ export class VehicleMonitor {
     source: StateSource,
     cached: VehicleState,
   ): VehicleState {
-    if (!LEGACY_PREFERRED_FIELDS.some((f) => readings[f] != null)) return readings;
     if (source === 'legacy') {
       this.noteLegacyPreferred(vehicleId, readings);
       for (const f of LEGACY_PREFERRED_FIELDS) {
@@ -519,18 +542,73 @@ export class VehicleMonitor {
       }
       return readings;
     }
-    const legacyHas = this.legacyPreferred.get(vehicleId);
-    if (!legacyHas) return readings;
-    return Object.fromEntries(Object.entries(readings).filter(([key]) => !legacyHas.has(key)));
+    const seen = this.legacySeen.get(vehicleId);
+    const nav = readings.navLocation ?? cached.navLocation;
+    const navAt = nav ? Date.parse(nav.timeStamp) : Number.NaN;
+    const legacyHasTrack = Number.isFinite(navAt) && this.legacyTracks(vehicleId, navAt);
+    // Only when a fix is in play: with none cached there is nothing to choose.
+    if (nav) this.noteTrackChange(vehicleId, legacyHasTrack);
+    // Legacy is a track of its own: drop the navigation fix, and the one held
+    // from before, so the writer stops preferring it to legacy's own fixes.
+    if (legacyHasTrack) delete cached.navLocation;
+    if (!seen && !legacyHasTrack) return readings;
+    return Object.fromEntries(
+      Object.entries(readings).filter(([key]) =>
+        key === 'navLocation' ? !legacyHasTrack : !seen?.has(key),
+      ),
+    );
+  }
+
+  /** Says once, as it changes, which of the two fixes a vehicle's track is coming from. */
+  private noteTrackChange(vehicleId: string, legacyHasTrack: boolean): void {
+    if (this.legacyTracked.get(vehicleId) === legacyHasTrack) return;
+    this.legacyTracked.set(vehicleId, legacyHasTrack);
+    this.log.info(
+      {
+        vehicleId,
+        legacyFixGapMs: this.legacyFix.get(vehicleId)?.gapMs ?? null,
+        legacyFixPreviousGapMs: this.legacyFix.get(vehicleId)?.previousGapMs ?? null,
+      },
+      legacyHasTrack
+        ? 'legacy reports a dense fix stream; using it for the track'
+        : 'using navigation fixes for the track',
+    );
   }
 
   private noteLegacyPreferred(vehicleId: string, readings: VehicleState): void {
+    this.noteLegacyFix(vehicleId, readings);
     for (const f of LEGACY_PREFERRED_FIELDS) {
       if (readings[f] == null) continue;
-      let seen = this.legacyPreferred.get(vehicleId);
-      if (!seen) this.legacyPreferred.set(vehicleId, (seen = new Set()));
+      let seen = this.legacySeen.get(vehicleId);
+      if (!seen) this.legacySeen.set(vehicleId, (seen = new Set()));
       seen.add(f);
     }
+  }
+
+  /**
+   * How often legacy is reporting its own fix. A fix Rivian reads as 0,0 is
+   * no fix, and a re-sent one keeps the cadence it had. Two gaps are kept: one
+   * short gap is a wake-up burst, not a feed.
+   */
+  private noteLegacyFix(vehicleId: string, readings: VehicleState): void {
+    const loc = stateLocation(readings);
+    const at = loc ? Date.parse(loc.timeStamp) : Number.NaN;
+    if (!Number.isFinite(at)) return;
+    const last = this.legacyFix.get(vehicleId);
+    if (last && at <= last.at) return;
+    this.legacyFix.set(vehicleId, {
+      at,
+      gapMs: last ? at - last.at : null,
+      previousGapMs: last?.gapMs ?? null,
+    });
+  }
+
+  /** Whether legacy is a track of its own as of `at`: dense, and still current. */
+  private legacyTracks(vehicleId: string, at: number): boolean {
+    const fix = this.legacyFix.get(vehicleId);
+    if (!fix || fix.gapMs == null || fix.previousGapMs == null) return false;
+    const dense = fix.gapMs <= LEGACY_DENSE_MS && fix.previousGapMs <= LEGACY_DENSE_MS;
+    return dense && at - fix.at <= LEGACY_QUIET_MS;
   }
 
   private async handleDelta(
@@ -548,6 +626,16 @@ export class VehicleMonitor {
     );
     this.states.set(vehicleId, cached);
     if (changed.length === 0) return;
+
+    // Nothing reads a navigation fix live (the map, geofence, charging and
+    // drive detection read `gnssLocation`): the track's writer is its only
+    // consumer.
+    if (changed.length === 1 && changed[0] === 'navLocation') {
+      await this.locationWriter.onState(vehicleId, { ...cached }).catch((err: unknown) => {
+        this.log.error({ err, vehicleId }, 'saving vehicle state failed');
+      });
+      return;
+    }
 
     this.bus.emitState(vehicleId, cached);
 

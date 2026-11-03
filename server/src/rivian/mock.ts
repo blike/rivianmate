@@ -673,10 +673,19 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   private emitTripProgress(): void {
     const ticksLeft = this.route.driveTicks - this.tickInPhase;
     const secondsLeft = ticksLeft * (TICK_MS / 1000);
+    // 6 is the vehicle's own fix: 1 {1 latitude, 2 longitude}, 2 speed, 3
+    // heading, 5 its own time.
+    const vehicle = message(6, [
+      ...message(1, [...double(1, this.lat), ...double(2, this.lon)]),
+      ...float(2, this.speedMps()),
+      ...float(3, this.heading),
+      ...int(5, Date.now()),
+    ]);
     this.emitParallax(RVM_TRIP_PROGRESS, [
       ...message(1, int(1, Math.round(Date.now() / 1000 + secondsLeft))),
       ...double(4, this.route.lengthM - this.drivenM()),
       ...double(5, secondsLeft),
+      ...vehicle,
     ]);
   }
 

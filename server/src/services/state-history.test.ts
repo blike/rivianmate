@@ -43,6 +43,7 @@ describe('StateDiff', () => {
     const changes = diff.changes(
       {
         gnssLocation: { latitude: 33, longitude: -117, timeStamp: '2026-10-01T10:00:00Z' },
+        navLocation: { latitude: 33, longitude: -117, timeStamp: '2026-10-01T10:00:02Z' },
         gnssSpeed: { value: 20, timeStamp: '2026-10-01T10:00:00Z' },
         cloudConnection: { lastSync: '2026-10-01T10:00:00Z', isOnline: true },
         batteryLevel: { value: 80, timeStamp: 'not a time' },

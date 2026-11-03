@@ -25,6 +25,11 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
   });
   const points = () => handle.db.select().from(locationPoints).orderBy(locationPoints.ts);
 
+  /** A navigation frame's fix: a position, its time, and the speed it read there. */
+  const nav = (fix: string, lat: number, speedMps = 10) => ({
+    navLocation: { latitude: lat, longitude: -116.05, timeStamp: fix, speedMps, bearing: 90 },
+  });
+
   beforeAll(async () => {
     await runMigrations(url!, join(here, '..', '..', 'drizzle'));
     handle = createDb(url!);
@@ -111,5 +116,107 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
     await writer.onState('v1', state('2026-10-04T17:08:00Z', 34.01));
     await writer.onState('v1', state('2026-10-04T17:08:05Z', 34.01001)); // ~1 m on
     expect(await points()).toHaveLength(2);
+  });
+
+  it('stores the navigation fix while navigating, in place of the GNSS one', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    // Both in one state: the GNSS fix a minute behind, the navigation one current.
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:59Z', 34.01),
+      ...nav('2026-10-04T17:08:59.500Z', 34.0105),
+    });
+
+    const [point] = await points();
+    expect([point!.lat, point!.ts.toISOString()]).toEqual([34.0105, '2026-10-04T17:08:59.500Z']);
+    // Its own speed and heading, not the GNSS readings stamped with the other fix;
+    // height has no navigation source, so it comes from the GNSS fix beside it.
+    expect([point!.speedKmh, point!.bearing, point!.altitude]).toEqual([36, 90, 600]);
+  });
+
+  it('stores one row per navigation fix, ignoring the GNSS ones meanwhile', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:00Z', 34.01),
+      ...nav('2026-10-04T17:08:01Z', 34.0105),
+    });
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:40Z', 34.02),
+      ...nav('2026-10-04T17:08:41Z', 34.011),
+    });
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:50Z', 34.03),
+      ...nav('2026-10-04T17:08:51Z', 34.02),
+    });
+
+    expect((await points()).map((p) => p.ts.toISOString())).toEqual([
+      '2026-10-04T17:08:01.000Z',
+      '2026-10-04T17:08:41.000Z',
+      '2026-10-04T17:08:51.000Z',
+    ]);
+  });
+
+  it('goes back to the navigation fix once it comes back', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    // Navigating: the navigation fix.
+    clock = Date.parse('2026-10-04T17:08:05Z');
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:00Z', 34.0),
+      ...nav('2026-10-04T17:08:05Z', 34.01),
+    });
+    // The route ended: the navigation fix is two minutes old, so GNSS is back.
+    clock = Date.parse('2026-10-04T17:10:00Z');
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:09:59Z', 34.02),
+      ...nav('2026-10-04T17:08:05Z', 34.01),
+    });
+    // A new route: the navigation fix wins again.
+    clock = Date.parse('2026-10-04T17:10:10Z');
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:10:09Z', 34.03),
+      ...nav('2026-10-04T17:10:09.500Z', 34.04),
+    });
+
+    expect((await points()).map((p) => [p.ts.toISOString(), p.lat])).toEqual([
+      ['2026-10-04T17:08:05.000Z', 34.01],
+      ['2026-10-04T17:09:59.000Z', 34.02],
+      ['2026-10-04T17:10:09.500Z', 34.04],
+    ]);
+  });
+
+  it('takes a navigation fix up to a minute old, and not a millisecond more', async () => {
+    const both = {
+      ...state('2026-10-04T17:08:59Z', 34.01),
+      ...nav('2026-10-04T17:08:00Z', 34.0105),
+    };
+    const at = Date.parse('2026-10-04T17:09:00Z');
+    clock = at;
+    await new LocationWriter(handle.db, () => clock).onState('v1', both);
+    clock = at + 1;
+    await new LocationWriter(handle.db, () => clock).onState('v1', both);
+
+    expect((await points()).map((p) => p.lat)).toEqual([34.0105, 34.01]);
+  });
+
+  it('falls back to the GNSS fix once the navigation one is a minute old', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:59Z', 34.01),
+      ...nav('2026-10-04T17:07:00Z', 34.02),
+    });
+
+    const [point] = await points();
+    expect([point!.lat, point!.speedKmh]).toEqual([34.01, 72]);
+  });
+
+  it('does not store the navigation frame a restart is handed as its last', async () => {
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await new LocationWriter(handle.db, () => clock).onState(
+      'v1',
+      nav('2026-10-03T21:37:03Z', 34.0),
+    );
+    expect(await points()).toHaveLength(0);
   });
 });

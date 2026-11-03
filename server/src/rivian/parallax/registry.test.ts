@@ -67,6 +67,7 @@ describe('Parallax registry', () => {
     expect(new Set(PARALLAX_STATE_FIELDS)).toEqual(
       new Set([
         'gnssLocation',
+        'navLocation',
         'gnssAltitude',
         'gnssBearing',
         'gnssSpeed',
