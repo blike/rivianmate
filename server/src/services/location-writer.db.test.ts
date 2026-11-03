@@ -92,4 +92,24 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
     });
     expect(await points()).toHaveLength(0);
   });
+
+  it('stores a fix re-sent under a newer stamp once, even with a new speed', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', state('2026-10-04T17:08:00Z', 34.01));
+    await writer.onState('v1', state('2026-10-04T17:08:40Z', 34.01));
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:50Z', 34.01),
+      gnssSpeed: { value: 3, timeStamp: '2026-10-04T17:08:50Z' },
+    });
+    expect(await points()).toHaveLength(1);
+  });
+
+  it('still stores a short move at speed', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', state('2026-10-04T17:08:00Z', 34.01));
+    await writer.onState('v1', state('2026-10-04T17:08:05Z', 34.01001)); // ~1 m on
+    expect(await points()).toHaveLength(2);
+  });
 });
