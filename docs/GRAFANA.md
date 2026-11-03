@@ -16,9 +16,9 @@ The dashboards are in [`contrib/grafana/`](../contrib/grafana/).
 | Battery Health | Estimated range at 100% charge over time, battery temperature                  |
 | Vampire Drain  | Battery lost while parked and unplugged                                        |
 | Mileage        | Odometer growth                                                                |
-| Drives         | Drive history and totals, linking to Drive Details                             |
-| Drive Details  | Route, speed and battery for one drive                                         |
-| Drive Stats    | Weekly distance, drive count and battery use                                   |
+| Drives         | Drive history with mode, driver and efficiency, and totals; links to details   |
+| Drive Details  | Route, speed, battery, mode, driver and efficiency for one drive               |
+| Drive Stats    | Weekly distance and battery use; time, distance and efficiency by mode, driver |
 | Charging       | Sessions, energy, cost, home against away charging                             |
 | Charge Details | State of charge and power through one session                                  |
 | Charging Curve | Power and state of charge for the latest session                               |
@@ -56,7 +56,7 @@ Either:
 ## 2. Create a read-only database user
 
 You can point Grafana at the `rivianmate` user, but the database also holds the application password
-hash, your encrypted Rivian tokens and notification settings. The dashboards need only 13 tables, so
+hash, your encrypted Rivian tokens and notification settings. The dashboards need only 14 tables, so
 give Grafana a user that can read just those:
 
 ```sh
@@ -64,12 +64,14 @@ docker compose exec -T postgres psql -U rivianmate -d rivianmate -v pw='choose-a
   < contrib/grafana/readonly-role.sql
 ```
 
-This creates `grafana_ro` with `SELECT` on the tables the dashboards read and nothing else. The
+This creates `grafana_ro` with `SELECT` on the tables the dashboards read and nothing else. It also
+creates a `grafana_settings()` function that returns only your distance and temperature units and
+currency from RivianMate's settings, which the dashboards use to show the same units as the app. The
 script can be run again, for example after an update that adds a table the dashboards need.
 
 If you use the application's own login instead, the defaults are database `rivianmate`, user
 `rivianmate` and the password from `POSTGRES_PASSWORD` in your `.env` (`rivianmate` if you never set
-one).
+one). Run the script anyway, so that `grafana_settings()` exists.
 
 ## 3. Add the data source
 
@@ -142,14 +144,23 @@ panel, including the Location and Visited maps, shows only the vehicle you pick.
 selected when you move to another dashboard from the **RivianMate Dashboards** menu or open a drive
 from the Drives table, and it is part of the page address, so a bookmark keeps it.
 
+Drives and Drive Stats also have a **Driver** drop-down. It lists the drivers RivianMate has seen
+from the vehicle's driver profiles, named as in the app, plus **Unknown** for drives where the
+vehicle reported no profile. It starts on all of them; pick one or more to narrow every panel.
+
 ## Notes
 
-- Distances are in miles, tire pressure in psi and cost in US dollars; speeds are in km/h and
-  temperatures in °C. To change a unit, edit the query behind the panel.
+- Units follow RivianMate's settings, as in the app: miles, mph, feet, psi and mi/kWh, or
+  kilometres, km/h, metres, bar and kWh/100 km; °F or °C; and the currency of your charging
+  settings. A column's unit is shown in its name, such as `Distance [mi]`. Change the units in
+  RivianMate and reload the dashboard.
+- Efficiency is an estimate: battery percentage used times pack capacity, per distance. It includes
+  climate and other loads, and is noisy on short drives.
 - Vehicles do not all report the same fields. A panel for something yours does not report shows "Not
   reported" or "No data".
 - Saved locations, such as Home, belong to the account, so every vehicle's maps show the same ones.
 - The dashboards follow RivianMate's database schema. After updating RivianMate, check the release
   notes, and if a panel shows a query error, update to the matching version of the dashboards. The
-  database role in step 2 may need to be run again.
+  database role in step 2 may need to be run again; it must be after the update that added
+  `grafana_settings()`, or the unit drop-downs behind the panels fail to load.
 - The data includes your vehicle's locations. Do not make your Grafana public.

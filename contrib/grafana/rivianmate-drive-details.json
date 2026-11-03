@@ -24,7 +24,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "lengthmi",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -39,11 +38,36 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 0,
         "y": 0
       },
@@ -69,7 +93,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT distance_km*0.621371 AS value FROM drives WHERE id=$drive_id",
+          "rawSql": "SELECT distance_km*(CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"value [${dist}]\" FROM drives WHERE id=$drive_id",
           "refId": "A"
         }
       ],
@@ -103,8 +127,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 3,
+        "x": 3,
         "y": 0
       },
       "id": 2,
@@ -144,7 +168,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "velocitykmh",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -159,12 +182,37 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mph\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitymph"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km/h\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 8,
+        "x": 6,
         "y": 0
       },
       "id": 3,
@@ -189,12 +237,105 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND((distance_km / NULLIF(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))/3600.0, 0))::numeric, 1) AS value FROM drives WHERE id=$drive_id",
+          "rawSql": "SELECT ROUND((distance_km * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) / NULLIF(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at))/3600.0, 0))::numeric, 1) AS \"value [${speed_u}]\" FROM drives WHERE id=$drive_id",
           "refId": "A"
         }
       ],
       "title": "Avg Speed",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi/kWh\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: mi/kWh"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[kWh/100 km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: kWh/100 km"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 10,
+        "y": 0
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT (CASE WHEN ((start_battery - end_battery) * battery_capacity_kwh / 100) > 0 AND (distance_km) > 0 THEN CASE WHEN '${dist}' = 'km' THEN ((start_battery - end_battery) * battery_capacity_kwh / 100) * 100 / (distance_km) ELSE (distance_km) * 0.621371 / ((start_battery - end_battery) * battery_capacity_kwh / 100) END END) AS \"value [${eff_u}]\" FROM drives WHERE id=$drive_id"
+        }
+      ],
+      "title": "Efficiency (est.)",
+      "type": "stat",
+      "description": "Battery % used x pack capacity per distance, so it includes climate and other loads. Short drives are noisy (distance is whole km, battery 0.1 %)."
     },
     {
       "datasource": {
@@ -224,7 +365,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 12,
+        "x": 14,
         "y": 0
       },
       "id": 4,
@@ -283,8 +424,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 18,
         "y": 0
       },
       "id": 5,
@@ -343,8 +484,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
+        "w": 3,
+        "x": 21,
         "y": 0
       },
       "id": 6,
@@ -505,10 +646,34 @@
             "lineWidth": 2,
             "pointSize": 4,
             "spanNulls": true
-          },
-          "unit": "velocitykmh"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mph\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitymph"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km/h\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -535,7 +700,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, speed_kmh AS \"Speed (km/h)\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
+          "rawSql": "SELECT ts AS time, speed_kmh * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"Speed [${speed_u}]\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -556,10 +721,34 @@
             "lineWidth": 2,
             "pointSize": 4,
             "spanNulls": true
-          },
-          "unit": "lengthm"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[ft\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthft"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[m\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -586,7 +775,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, altitude AS \"Altitude (m)\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
+          "rawSql": "SELECT ts AS time, altitude * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 3.28084 END) AS \"Altitude [${elev_u}]\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND drive_id=$drive_id ORDER BY ts",
           "refId": "A"
         }
       ],
@@ -601,7 +790,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "lengthm",
           "noValue": "—",
           "thresholds": {
             "mode": "absolute",
@@ -617,11 +805,36 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[ft\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthft"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[m\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 3,
         "x": 0,
         "y": 4
       },
@@ -647,7 +860,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT elevation_gain_m AS value FROM drives WHERE id=$drive_id",
+          "rawSql": "SELECT elevation_gain_m * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 3.28084 END) AS \"value [${elev_u}]\" FROM drives WHERE id=$drive_id",
           "refId": "A"
         }
       ],
@@ -662,7 +875,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "lengthm",
           "noValue": "—",
           "thresholds": {
             "mode": "absolute",
@@ -678,12 +890,37 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[ft\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthft"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[m\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 3,
+        "x": 3,
         "y": 4
       },
       "id": 11,
@@ -708,7 +945,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT elevation_loss_m AS value FROM drives WHERE id=$drive_id",
+          "rawSql": "SELECT elevation_loss_m * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 3.28084 END) AS \"value [${elev_u}]\" FROM drives WHERE id=$drive_id",
           "refId": "A"
         }
       ],
@@ -742,8 +979,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
+        "w": 5,
+        "x": 14,
         "y": 4
       },
       "id": 12,
@@ -802,8 +1039,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
+        "w": 5,
+        "x": 19,
         "y": 4
       },
       "id": 13,
@@ -834,6 +1071,128 @@
       ],
       "title": "To",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 6,
+        "y": 4
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^value$/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN drives.drive_mode IS NULL THEN NULL ELSE (SELECT string_agg(CASE m.mode WHEN 'everyday' THEN 'All-Purpose' WHEN 'distance' THEN 'Conserve' WHEN 'sport' THEN 'Sport' WHEN 'off_road_snow_ice' THEN 'Snow' WHEN 'towing' THEN 'Towing' WHEN 'winter' THEN 'Winter' ELSE initcap(replace(m.mode, '_', ' ')) END, ' → ' ORDER BY m.at) FROM (SELECT p.at, p.mode, LAG(p.mode) OVER (ORDER BY p.at) AS prev FROM (SELECT drives.started_at AS at, drives.drive_mode AS mode UNION ALL SELECT c.at, c.value FROM state_changes c JOIN state_fields f ON f.id = c.field_id AND f.name = 'driveMode' JOIN vehicles v ON v.seq = c.vehicle_seq AND v.id = drives.vehicle_id WHERE c.value IS NOT NULL AND c.at > drives.started_at AND c.at < COALESCE(drives.ended_at, now())) p) m WHERE m.prev IS DISTINCT FROM m.mode) END AS value FROM drives WHERE id=$drive_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Mode",
+      "type": "stat",
+      "description": "Drive mode at the start, then any change before the drive ended."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "noValue": "—",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 10,
+        "y": 4
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^value$/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (SELECT dn.name FROM (SELECT id, COALESCE(NULLIF(trim(name), ''), NULLIF(trim(reported_name), ''), 'Driver ' || row_number() OVER (ORDER BY created_at, id)) AS name FROM drivers WHERE vehicle_id = drives.vehicle_id) dn WHERE dn.id = drives.driver_id) AS value FROM drives WHERE id=$drive_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Driver",
+      "type": "stat",
+      "description": "From the vehicle's active profile when the drive started."
     }
   ],
   "refresh": "",
@@ -882,12 +1241,92 @@
           "type": "grafana-postgresql-datasource",
           "uid": "${datasource}"
         },
-        "definition": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(distance_km::numeric,1)::text, '?') || ' km' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
+        "definition": "SELECT v FROM (SELECT distance AS v, 0 AS o FROM grafana_settings() UNION ALL SELECT CASE distance WHEN 'km' THEN 'mi' ELSE 'km' END, 1 FROM grafana_settings()) x ORDER BY o",
+        "description": "Distance unit from RivianMate's settings (mi or km); speed, elevation, tire pressure and efficiency follow it.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "dist",
+        "options": [],
+        "query": "SELECT v FROM (SELECT distance AS v, 0 AS o FROM grafana_settings() UNION ALL SELECT CASE distance WHEN 'km' THEN 'mi' ELSE 'km' END, 1 FROM grafana_settings()) x ORDER BY o",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT CASE WHEN '${dist}' = 'km' THEN 'km/h' ELSE 'mph' END",
+        "description": "Speed unit label.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "speed_u",
+        "options": [],
+        "query": "SELECT CASE WHEN '${dist}' = 'km' THEN 'km/h' ELSE 'mph' END",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT CASE WHEN '${dist}' = 'km' THEN 'm' ELSE 'ft' END",
+        "description": "Elevation unit label.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "elev_u",
+        "options": [],
+        "query": "SELECT CASE WHEN '${dist}' = 'km' THEN 'm' ELSE 'ft' END",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT CASE WHEN '${dist}' = 'km' THEN 'kWh/100 km' ELSE 'mi/kWh' END",
+        "description": "Efficiency unit label.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "eff_u",
+        "options": [],
+        "query": "SELECT CASE WHEN '${dist}' = 'km' THEN 'kWh/100 km' ELSE 'mi/kWh' END",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND((distance_km * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END))::numeric,1)::text, '?') || ' ${dist}' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
         "includeAll": false,
         "label": "Drive",
         "multi": false,
         "name": "drive_id",
-        "query": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND(distance_km::numeric,1)::text, '?') || ' km' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
+        "query": "SELECT id AS __value, to_char(started_at, 'YYYY-MM-DD HH24:MI') || ' (' || COALESCE(ROUND((distance_km * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END))::numeric,1)::text, '?') || ' ${dist}' || CASE WHEN ended_at IS NULL THEN ', in progress)' ELSE ')' END AS __text FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) ORDER BY started_at DESC",
         "refresh": 1,
         "sort": 0,
         "type": "query"
@@ -901,6 +1340,6 @@
   "timezone": "browser",
   "title": "RivianMate - Drive Details",
   "uid": "rivianmate-drive-details",
-  "version": 1,
+  "version": 4,
   "id": null
 }
