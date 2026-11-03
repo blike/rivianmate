@@ -65,6 +65,8 @@ export class LocationWriter {
     if (last) {
       if (last.ts === loc.timeStamp) return;
       const movedKm = haversineKm(last.lat, last.lon, loc.latitude, loc.longitude);
+      // The same fix re-sent under a newer stamp, often with a speed.
+      if (movedKm === 0) return;
       if (movedKm < MIN_MOVE_KM && (speed ?? 0) <= 0) return;
     }
     pv.lastLocation = { lat: loc.latitude, lon: loc.longitude, ts: loc.timeStamp };
