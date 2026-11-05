@@ -4,7 +4,8 @@ import { type ImportDraftDto, type ImportPreviewDto, type VehicleDto, api } from
 import { StepDots } from '../../components/AuthCard';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ImportPreviewList } from './ImportPreviewList';
-import { Select, SettingRow, secondaryButton } from './SettingsControls';
+import { Select } from '../../components/Select';
+import { SettingRow, secondaryButton } from './SettingsControls';
 
 const fieldClass = 'rounded-lg border border-(--border) bg-(--surface-2) px-3 py-1.5 text-sm';
 const primaryButton = 'btn-primary rounded-md px-3 py-1.5 text-sm font-medium';

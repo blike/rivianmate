@@ -4,6 +4,7 @@ import { useUnits } from '../../api/hooks';
 import { InProgressTag } from '../../components/InProgressTag';
 import { drivesByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
+import { useRevealed } from '../../lib/goToDate';
 import { placeName, driveFacts, destination } from './format';
 
 /** Home or a saved location, which stand out from plain addresses. */
@@ -14,11 +15,15 @@ export function DriveList(props: {
   drives: DriveDto[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  /** A drive picked from outside the list (by date), scrolled into view once listed. */
+  revealId?: number | null;
+  onRevealed?: () => void;
 }) {
   const u = useUnits();
   const days = useMemo(() => drivesByDay(props.drives), [props.drives]);
+  const rootRef = useRevealed(props.revealId, props.onRevealed, days);
   return (
-    <div>
+    <div ref={rootRef}>
       {days.map((day) => (
         <section key={day.key}>
           <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-(--border) bg-(--surface-1) px-4 py-2 text-xs">
@@ -53,7 +58,7 @@ function DriveItem(props: { drive: DriveDto; selected: boolean; onSelect: () => 
   const navigating = !d.endedAt && to != null;
 
   return (
-    <li>
+    <li data-record-id={d.id}>
       <button
         onClick={props.onSelect}
         aria-current={props.selected ? 'true' : undefined}

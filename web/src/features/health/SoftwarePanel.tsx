@@ -294,10 +294,7 @@ function PendingDetails(props: {
 
 function Eyebrow(props: { color: string; children: ReactNode }) {
   return (
-    <div
-      className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide"
-      style={{ color: props.color }}
-    >
+    <div className="eyebrow flex items-center gap-1.5" style={{ color: props.color }}>
       {props.children}
     </div>
   );

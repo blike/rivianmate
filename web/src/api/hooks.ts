@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  queryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -12,6 +13,8 @@ import { location } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
+  type DriveDetailDto,
+  type DriverDto,
   type TeslaMateSettingsDto,
   type ChargingSettings,
   type LookupSettings,
@@ -105,8 +108,8 @@ const LIVE_REFRESH_MS = 15_000;
 const OLDER_PAGES_REFRESH_MS = 5 * 60_000;
 
 /** The newest drives, or with `since`, all of them from then on. */
-export function useDrives(vehicleId: string, since?: Date) {
-  return useQuery({
+export const drivesQuery = (vehicleId: string, since?: Date) =>
+  queryOptions({
     queryKey: since ? ['drives', vehicleId, since.toISOString()] : ['drives', vehicleId],
     queryFn: () => api.drives(vehicleId, { from: since }),
     // A drive in progress grows by the second.
@@ -114,6 +117,9 @@ export function useDrives(vehicleId: string, since?: Date) {
       query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
     placeholderData: since ? keepPreviousData : undefined,
   });
+
+export function useDrives(vehicleId: string, since?: Date) {
+  return useQuery(drivesQuery(vehicleId, since));
 }
 
 /**
@@ -192,9 +198,41 @@ export function useDrive(vehicleId: string, driveId: number | null) {
   });
 }
 
-/** The newest sessions, or with `since`, all of them from then on. */
-export function useChargingSessions(vehicleId: string, since?: Date) {
+/** The vehicle's drivers, to pick a drive's from. */
+export function useDrivers(vehicleId: string, enabled = true) {
   return useQuery({
+    queryKey: ['drivers', vehicleId],
+    queryFn: () => api.drivers(vehicleId),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** Picks who drove a drive (null for nobody), shown at once and kept over the vehicle's profile. */
+export function useSetDriveDriver(vehicleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pick: { driveId: number; driver: DriverDto | null }) =>
+      api.setDriveDriver(pick.driveId, pick.driver?.id ?? null),
+    onMutate: async ({ driveId, driver }) => {
+      const key = ['drive', vehicleId, driveId];
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<DriveDetailDto>(
+        key,
+        (d) => d && { ...d, driver: driver && { ...driver, source: 'manual' } },
+      );
+    },
+    // Listings by driver (History's efficiency) follow too.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['drive', vehicleId] });
+      void queryClient.invalidateQueries({ queryKey: ['drives', vehicleId] });
+    },
+  });
+}
+
+/** The newest sessions, or with `since`, all of them from then on. */
+export const chargingSessionsQuery = (vehicleId: string, since?: Date) =>
+  queryOptions({
     queryKey: since
       ? ['chargingSessions', vehicleId, since.toISOString()]
       : ['chargingSessions', vehicleId],
@@ -202,6 +240,9 @@ export function useChargingSessions(vehicleId: string, since?: Date) {
     refetchInterval: 60_000,
     placeholderData: since ? keepPreviousData : undefined,
   });
+
+export function useChargingSessions(vehicleId: string, since?: Date) {
+  return useQuery(chargingSessionsQuery(vehicleId, since));
 }
 
 /** The charging and departure schedules set in the Rivian app. */

@@ -4,6 +4,7 @@ import { InProgressTag } from '../../components/InProgressTag';
 import { chargerLabel, sessionCity } from '../../lib/charging';
 import { groupByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
+import { useRevealed } from '../../lib/goToDate';
 import { fmt } from '../../lib/state';
 import { chargeStart, dayTotals, sessionFacts } from './sessions';
 
@@ -12,11 +13,15 @@ export function SessionList(props: {
   sessions: ChargingSessionDto[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  /** A session picked from outside the list (by date), scrolled into view once listed. */
+  revealId?: number | null;
+  onRevealed?: () => void;
 }) {
   // Listed by when each started charging, which can be hours after plug-in.
   const days = useMemo(() => groupByDay(props.sessions, new Date(), chargeStart), [props.sessions]);
+  const rootRef = useRevealed(props.revealId, props.onRevealed, days);
   return (
-    <div>
+    <div ref={rootRef}>
       {days.map((day) => {
         return (
           <section key={day.key}>
@@ -51,7 +56,7 @@ function SessionItem(props: {
   const s = props.session;
 
   return (
-    <li>
+    <li data-record-id={s.id}>
       <button
         onClick={props.onSelect}
         aria-current={props.selected ? 'true' : undefined}

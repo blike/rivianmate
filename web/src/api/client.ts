@@ -8,6 +8,7 @@ import type {
   DriveCoverageDto,
   DriveDetailDto,
   DriveDto,
+  DriverDto,
   FeedLatestData,
   FeedTopic,
   HistoryMetric,
@@ -71,6 +72,7 @@ export type {
   ConnectResponse,
   DriveDetailDto,
   DriveDto,
+  DriverDto,
   HistoryMetric,
   HistoryPoint,
   LocationPointDto,
@@ -110,10 +112,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** A listing's window: everything since `from`, or the page started before `before`. */
-const listQuery = (q: { from?: Date; before?: Date }) => {
+/** A listing's window: everything since `from` (until `to`), or the page started before `before`. */
+const listQuery = (q: { from?: Date; to?: Date; before?: Date }) => {
   const params = new URLSearchParams();
   if (q.from) params.set('from', q.from.toISOString());
+  if (q.to) params.set('to', q.to.toISOString());
   if (q.before) params.set('before', q.before.toISOString());
   const query = params.toString();
   return query ? `?${query}` : '';
@@ -216,10 +219,10 @@ export const api = {
       `/api/vehicles/${id}/locations?from=${from.toISOString()}&to=${to.toISOString()}`,
     ),
   /**
-   * The newest drives; with `from`, every drive that started after it; with
-   * `before`, the next page of those that started before it.
+   * The newest drives; with `from` (and `to`), every drive that started in
+   * that window; with `before`, the next page of those that started before it.
    */
-  drives: (id: string, q: { from?: Date; before?: Date } = {}) =>
+  drives: (id: string, q: { from?: Date; to?: Date; before?: Date } = {}) =>
     request<DriveDto[]>(`/api/vehicles/${id}/drives${listQuery(q)}`),
   batteryWindow: (id: string, from: Date, to: Date) =>
     request<BatteryWindowDto>(
@@ -228,8 +231,15 @@ export const api = {
   driveCoverage: (id: string) => request<DriveCoverageDto>(`/api/vehicles/${id}/drive-coverage`),
   drive: (vehicleId: string, driveId: number) =>
     request<DriveDetailDto>(`/api/vehicles/${vehicleId}/drives/${driveId}`),
+  drivers: (vehicleId: string) => request<DriverDto[]>(`/api/vehicles/${vehicleId}/drivers`),
+  /** Who drove, picked by hand; null for nobody. */
+  setDriveDriver: (driveId: number, driverId: number | null) =>
+    request<void>(`/api/drives/${driveId}/driver`, {
+      method: 'PUT',
+      body: JSON.stringify({ driverId }),
+    }),
   /** As `drives`, for charging sessions. */
-  chargingSessions: (id: string, q: { from?: Date; before?: Date } = {}) =>
+  chargingSessions: (id: string, q: { from?: Date; to?: Date; before?: Date } = {}) =>
     request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${listQuery(q)}`),
   updateSessionCost: (sessionId: number, cost: string | null) =>
     request<ChargingSessionDto>(`/api/charging-sessions/${sessionId}`, {

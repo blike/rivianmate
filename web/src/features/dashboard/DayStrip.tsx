@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { SkeletonBlock } from '../../components/LoadingState';
+import { Panel } from '../../components/Panel';
 import { TimeTrace } from '../../components/TimeTrace';
 import { fmtSeconds } from '../../lib/state';
 import { stateRows, stateTotals } from '../history/history';
@@ -47,9 +48,9 @@ export function DayStrip(props: { vehicleId: string }) {
   const loading = spansPending || batteryPending;
 
   return (
-    <section className="card p-5 sm:p-6">
-      <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-        <h2 className="eyebrow text-(--text-secondary)">Last 24 hours</h2>
+    <Panel
+      title="Last 24 hours"
+      action={
         <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--text-muted)">
           {STATE_ORDER.filter((k) => totals.has(k)).map((k) => (
             <li key={k} className="flex items-center gap-1.5">
@@ -64,7 +65,8 @@ export function DayStrip(props: { vehicleId: string }) {
             </li>
           ))}
         </ul>
-      </div>
+      }
+    >
       {loading ? (
         <SkeletonBlock height={124} />
       ) : points.length === 0 && segments.length === 0 ? (
@@ -85,6 +87,6 @@ export function DayStrip(props: { vehicleId: string }) {
           maxTicks={8}
         />
       )}
-    </section>
+    </Panel>
   );
 }

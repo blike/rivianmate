@@ -1,6 +1,7 @@
 /** Integration test against a real Postgres; skipped unless TEST_DATABASE_URL is set. */
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ChargingSessionDto, DriveCoverageDto, DriveDto } from '../api-types.js';
@@ -186,5 +187,55 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     ]);
     const one = await get<DriveDto>(`/api/vehicles/v1/drives/${listed[4]!.id}`);
     expect(one.driver).toEqual({ id: ids[0], name: 'Alex', source: 'profile' });
+  });
+
+  it('lists the drivers to pick from, and keeps the one picked for a drive, or nobody', async () => {
+    await handle.db.insert(vehicles).values({ id: 'v2', vin: 'VIN2' });
+    const [alex, sam, other] = (
+      await handle.db
+        .insert(drivers)
+        .values([
+          { vehicleId: 'v1', profileId: 'p1', reportedName: 'Alex' },
+          { vehicleId: 'v1', profileId: 'p2', name: 'Sam' },
+          { vehicleId: 'v2', profileId: 'p3', name: 'Elsewhere' },
+        ])
+        .returning({ id: drivers.id })
+    ).map((r) => r.id);
+    const [drive] = await handle.db
+      .insert(drives)
+      .values({
+        vehicleId: 'v1',
+        startedAt: day(10),
+        endedAt: day(10),
+        distanceKm: 5,
+        driverId: alex,
+        driverSource: 'profile',
+      })
+      .returning({ id: drives.id });
+    const server = await app();
+    const pick = (driverId: number | null) =>
+      server.inject({
+        method: 'PUT',
+        url: `/api/drives/${drive!.id}/driver`,
+        payload: { driverId },
+      });
+
+    expect(await get('/api/vehicles/v1/drivers')).toEqual([
+      { id: alex, name: 'Alex' },
+      { id: sam, name: 'Sam' },
+    ]);
+
+    expect((await pick(sam!)).statusCode).toBe(204);
+    expect((await get<DriveDto>(`/api/vehicles/v1/drives/${drive!.id}`)).driver).toEqual({
+      id: sam,
+      name: 'Sam',
+      source: 'manual',
+    });
+
+    expect((await pick(other!)).statusCode).toBe(400);
+    expect((await pick(null)).statusCode).toBe(204);
+    const [row] = await handle.db.select().from(drives).where(eq(drives.id, drive!.id));
+    expect(row).toMatchObject({ driverId: null, driverSource: 'manual' });
+    expect((await get<DriveDto>(`/api/vehicles/v1/drives/${drive!.id}`)).driver).toBeNull();
   });
 });

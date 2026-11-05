@@ -1,5 +1,6 @@
 import type { DriveDetailDto, DrivePlaceDto } from '@server/api-types';
-import { useUnits } from '../../api/hooks';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
+import { useDrivers, useSetDriveDriver, useUnits } from '../../api/hooks';
 import { InProgressTag } from '../../components/InProgressTag';
 import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
@@ -9,9 +10,10 @@ import { clock, longDay } from '../../lib/format';
 import { fmt, fmtDuration, titleCase } from '../../lib/state';
 import { WeatherIcon, WindArrow } from '../../components/WeatherIcon';
 import { compass, isDaytime, weatherKind, weatherLabel } from '../../lib/weather';
+import { Select } from '../../components/Select';
 
 /** The chosen drive: where it went up front, then its figures. */
-export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
+export function DriveCard(props: { vehicleId: string; drive: DriveDetailDto | undefined }) {
   const u = useUnits();
   const loading = useLoading();
   const d = props.drive;
@@ -63,11 +65,12 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
     },
   ];
 
+  // Not clipped, so the driver list can open past its edge; the tiles are.
   return (
-    <section className="card overflow-hidden">
+    <section className="card">
       <div className="flex items-start justify-between gap-4 p-5">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs text-(--text-muted)">
+          <div className="flex items-center gap-2 text-sm text-(--text-muted)">
             {loading || !d ? (
               <Skeleton className="w-[14em]" />
             ) : (
@@ -75,13 +78,8 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
                 <span>
                   {longDay(d.startedAt)} · {clock(d.startedAt)}
                   {d.endedAt ? ` – ${clock(d.endedAt)}` : ' – now'}
-                  {d.driver && (
-                    <>
-                      {' · '}
-                      <span className="text-(--text-secondary)">{d.driver.name}</span>
-                    </>
-                  )}
                 </span>
+                <DriverPicker vehicleId={props.vehicleId} drive={d} />
                 {live && <InProgressTag />}
               </>
             )}
@@ -115,8 +113,50 @@ export function DriveCard(props: { drive: DriveDetailDto | undefined }) {
         </div>
         {d && !loading && <DriveWeather drive={d} />}
       </div>
-      <StatTiles tiles={tiles} columns="sm:grid-cols-3 lg:grid-cols-6" />
+      <div className="overflow-hidden rounded-b-[calc(1rem-1px)]">
+        <StatTiles tiles={tiles} columns="sm:grid-cols-3 lg:grid-cols-6" />
+      </div>
     </section>
+  );
+}
+
+const NOBODY = 'none';
+
+/**
+ * Who drove, to change by hand: one of the vehicle's drivers, or nobody.
+ * Just the name where there's no one to pick from (TeslaMate, or no
+ * drivers seen yet).
+ */
+function DriverPicker(props: { vehicleId: string; drive: DriveDetailDto }) {
+  const editable = !isTeslaMateVehicle(props.vehicleId);
+  const { data: drivers } = useDrivers(props.vehicleId, editable);
+  const setDriver = useSetDriveDriver(props.vehicleId);
+  const current = props.drive.driver;
+  if (!editable || !drivers?.length) {
+    return current && <span className="text-(--text-secondary)">· {current.name}</span>;
+  }
+  // A driver no longer listed still shows as the one picked.
+  const options = [
+    { value: NOBODY, label: 'No driver' },
+    ...drivers.map((r) => ({ value: String(r.id), label: r.name })),
+    ...(current && !drivers.some((r) => r.id === current.id)
+      ? [{ value: String(current.id), label: current.name }]
+      : []),
+  ];
+  return (
+    <Select
+      label="Driver"
+      compact
+      value={current ? String(current.id) : NOBODY}
+      options={options}
+      disabled={setDriver.isPending}
+      onChange={(value) =>
+        setDriver.mutate({
+          driveId: props.drive.id,
+          driver: value === NOBODY ? null : (drivers.find((r) => String(r.id) === value) ?? null),
+        })
+      }
+    />
   );
 }
 

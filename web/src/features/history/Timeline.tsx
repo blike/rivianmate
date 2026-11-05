@@ -1,12 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { HistoryMetric, HistoryPoint } from '@server/api-types';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame } from '../../components/LoadingState';
+import { Panel, PanelSection } from '../../components/Panel';
 import { type TraceBand, TimeTrace } from '../../components/TimeTrace';
-import { type ActivityBand, type StateSegment } from './history';
-import { METRICS, RANGES } from './options';
-import { Segmented } from './Segmented';
+import { type ActivityBand, type StateSegment, rangeWindow } from './history';
+import { METRICS, neighbours, PREFETCH_FRESH_MS, type Range } from './options';
+import { Segmented } from '../../components/Segmented';
 import { StateStrip } from './StateStrip';
 
 /** Drives and charging behind the line; plugged in but idle is fainter. */
@@ -28,13 +30,30 @@ const BAND: Record<ActivityBand['kind'], { label: string; fill: string; swatch: 
   },
 };
 
+const historyQuery = (
+  vehicleId: string,
+  metric: HistoryMetric,
+  range: Range,
+  from: Date,
+  to: Date,
+) =>
+  queryOptions({
+    queryKey: ['history', vehicleId, metric, range.label],
+    queryFn: () => api.history(vehicleId, metric, from, to, range.bucket),
+    refetchInterval: 60_000,
+    // Keep the old line while a new range loads; another metric's values
+    // would be drawn on the wrong scale, so those show a placeholder instead.
+    placeholderData: (previous: HistoryPoint[] | undefined, previousQuery) =>
+      previousQuery?.queryKey[2] === metric ? previous : undefined,
+  });
+
 /**
  * The chosen metric over the period with drives and charging shaded behind
  * it, then the vehicle's state as a strip of its own; each with its legend.
  */
 export function Timeline(props: {
   vehicleId: string;
-  range: (typeof RANGES)[number];
+  range: Range;
   from: Date;
   to: Date;
   bands: ActivityBand[];
@@ -46,15 +65,29 @@ export function Timeline(props: {
   const [metricIdx, setMetricIdx] = useState(0);
   const metric = METRICS[metricIdx] ?? METRICS[0]!;
 
-  const { data: points, isPending } = useQuery({
-    queryKey: ['history', props.vehicleId, metric.key, range.label],
-    queryFn: () => api.history(props.vehicleId, metric.key, from, to, range.bucket),
-    refetchInterval: 60_000,
-    // Keep the old line while a new range loads; another metric's values
-    // would be drawn on the wrong scale, so those show a placeholder instead.
-    placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[2] === metric.key ? previous : undefined,
-  });
+  const {
+    data: points,
+    isPending,
+    isSuccess,
+    isPlaceholderData,
+  } = useQuery(historyQuery(props.vehicleId, metric.key, range, from, to));
+
+  // As the page does: the metric over the other periods, loaded behind this one.
+  const queryClient = useQueryClient();
+  const shownLoaded = isSuccess && !isPlaceholderData;
+  useEffect(() => {
+    if (!shownLoaded) return;
+    const now = new Date();
+    for (const other of neighbours(range)) {
+      const w = rangeWindow(other.hours, now);
+      void queryClient
+        .query({
+          ...historyQuery(props.vehicleId, metric.key, other, w.from, w.to),
+          staleTime: PREFETCH_FRESH_MS,
+        })
+        .catch(() => {});
+    }
+  }, [shownLoaded, range, metric.key, props.vehicleId, queryClient]);
 
   const data = useMemo(
     () =>
@@ -81,16 +114,17 @@ export function Timeline(props: {
   const unit = metric.kind === 'distance' ? u.distanceUnit : '%';
 
   return (
-    <section className="card p-5 sm:p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <h2 className="eyebrow text-(--text-secondary)">Timeline</h2>
+    <Panel
+      title="Timeline"
+      action={
         <Segmented
           label="Metric"
-          items={METRICS.map((m) => m.label)}
+          options={METRICS.map((m, i) => ({ value: i, label: m.label }))}
           value={metricIdx}
           onChange={setMetricIdx}
         />
-      </div>
+      }
+    >
       <ContentFrame
         height={260}
         loading={isPending}
@@ -129,10 +163,7 @@ export function Timeline(props: {
       </ul>
 
       {props.segments.length > 0 && (
-        <div className="mt-6 border-t border-(--hairline) pt-5">
-          <h3 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
-            Vehicle state
-          </h3>
+        <PanelSection title="Vehicle state">
           <StateStrip
             segments={props.segments}
             from={from.getTime()}
@@ -140,8 +171,8 @@ export function Timeline(props: {
             gutter
             onHover={props.onHover}
           />
-        </div>
+        </PanelSection>
       )}
-    </section>
+    </Panel>
   );
 }

@@ -11,7 +11,8 @@ import { Skeleton } from '../../components/LoadingState';
 import { StatTiles } from '../../components/StatTiles';
 import { relativeTime } from '../../lib/freshness';
 import { dateTime } from '../../lib/format';
-import { SegmentedControl, SettingsGroup, SettingsHero } from './SettingsControls';
+import { SettingsGroup, SettingsHero } from './SettingsControls';
+import { Segmented } from '../../components/Segmented';
 
 type Feed = NonNullable<RivianDiagnosticsResponse['monitor']['subscriptions']>['feeds'][number];
 type FeedState = Feed['status'];
@@ -417,9 +418,7 @@ export function TopicDetail(props: {
 function LabelKey() {
   return (
     <section aria-label="Legend" className="px-1">
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-(--text-muted)">
-        Legend
-      </h3>
+      <h3 className="eyebrow mb-2">Legend</h3>
       <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
         <div>
           <h4 className="mb-2 text-xs font-medium text-(--text-secondary)">Feeds</h4>
@@ -488,10 +487,11 @@ function ParallaxTopics(props: { feeds: Feed[]; now: number }) {
             title={f.help}
             disabled={counts[f.value] === 0 && f.value !== filter}
             onClick={() => setFilter(f.value)}
-            className={`rounded-full px-2.5 py-0.5 text-xs transition-colors disabled:opacity-40 ${
+            // Chosen and not as in the app's Segmented, as chips that wrap.
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
               f.value === filter
-                ? 'bg-(--accent) font-medium text-(--on-accent)'
-                : 'bg-(--surface-2) text-(--text-secondary) hover:text-(--text-primary)'
+                ? 'border-transparent bg-(--surface-3) text-(--text-primary) shadow-[inset_0_1px_0_rgb(255_255_240/0.06)]'
+                : 'border-(--hairline) text-(--text-muted) hover:text-(--text-primary)'
             }`}
           >
             {f.label} <span className="tabular-nums opacity-75">{counts[f.value]}</span>
@@ -591,7 +591,8 @@ export function ApiConnectionsPanel({
         <>
           {feedVehicles.length > 1 && vehicleId && (
             <div className="overflow-x-auto">
-              <SegmentedControl
+              <Segmented
+                size="md"
                 label="Vehicle"
                 value={vehicleId}
                 options={feedVehicles.map((id) => ({ value: id, label: vehicleName(id) }))}

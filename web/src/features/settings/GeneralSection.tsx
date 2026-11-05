@@ -9,16 +9,11 @@ import {
   useVehicles,
 } from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
-import {
-  SegmentedControl,
-  Select,
-  SettingRow,
-  SettingsGroup,
-  Switch,
-  secondaryButton,
-} from './SettingsControls';
+import { Select } from '../../components/Select';
+import { SettingRow, SettingsGroup, Switch, secondaryButton } from './SettingsControls';
 import { AccountsPanel } from './AccountsPanel';
 import { LOOKUPS } from './LookupDetails';
+import { Segmented } from '../../components/Segmented';
 
 const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
 
@@ -75,7 +70,8 @@ export function GeneralSection(props: {
           label="Measurement"
           description={`Distance, speed, tire pressure and elevation: ${u.distanceUnit}, ${u.speedUnit}, ${u.pressureUnit}, ${u.elevationUnit}`}
         >
-          <SegmentedControl
+          <Segmented
+            size="md"
             label="Measurement"
             value={units.distance}
             options={[
@@ -89,7 +85,8 @@ export function GeneralSection(props: {
           label="Temperature"
           description={`Cabin ${u.formatTemperature(21)} · Outside ${u.formatTemperature(4)}`}
         >
-          <SegmentedControl
+          <Segmented
+            size="md"
             label="Temperature"
             value={units.temperature}
             options={[

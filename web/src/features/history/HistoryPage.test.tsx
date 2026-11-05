@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ID, ago, drives, sessions } from '../../testing/fixtures';
 import { rangeWindow } from './history';
 import { HistoryPage } from './HistoryPage';
-import { RANGES } from './options';
+import { DEFAULT_RANGE, rangeOf } from './options';
 
 function render(battery?: object) {
   const client = new QueryClient();
   // Drives and sessions are listed from the start of the default 7-day window.
-  const { from, to } = rangeWindow(RANGES[0].hours, new Date());
+  const { from, to } = rangeWindow(rangeOf(DEFAULT_RANGE).hours, new Date());
   const since = from.toISOString();
   client.setQueryData(['drives', ID, since], drives);
   client.setQueryData(['chargingSessions', ID, since], sessions);
@@ -55,6 +55,11 @@ describe('HistoryPage', () => {
   it('reports the period, its patterns and its energy', () => {
     const html = render();
     expect(html).toContain('Last 7 days');
+    // The period is picked from a dropdown, showing the one chosen, as wide
+    // as the longest it could show.
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).toContain('<span class="[grid-area:1/1] ">7 days</span>');
+    expect(html).toContain('<span class="[grid-area:1/1] invisible">12 months</span>');
     expect(html).toContain('Timeline');
     expect(html).toContain('Time spent');
     expect(html).toContain('Driving rhythm');

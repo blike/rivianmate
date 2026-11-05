@@ -70,7 +70,8 @@ export interface Day<T> {
   items: T[];
 }
 
-const localKey = (d: Date) =>
+/** A local date as YYYY-MM-DD, as days are keyed. */
+export const localKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** Items grouped by the local day they started (or `at` gives), keeping their order. */

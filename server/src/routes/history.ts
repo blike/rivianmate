@@ -8,12 +8,13 @@ import type {
   DriveDetailDto,
   DriveDto,
   DrivePlaceDto,
+  DriverDto,
   HistoryPoint,
   LocationPointDto,
   StateSpanDto,
 } from '../api-types.js';
 import type { AppContext } from '../context.js';
-import { drives, locationPoints } from '../db/schema.js';
+import { drivers, drives, locationPoints } from '../db/schema.js';
 import {
   driveElevation,
   maxSpeeds,
@@ -54,6 +55,9 @@ const BUCKET_MS: Record<string, number> = {
   '6h': 6 * 3600_000,
   '1d': 86400_000,
 };
+
+/** A driver picked by hand; null for nobody. */
+const driveDriverSchema = z.object({ driverId: z.number().int().nullable() });
 
 const rangeQuerySchema = z.object({
   from: z.coerce.date().default(() => new Date(Date.now() - 86400_000)),
@@ -264,6 +268,43 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           names,
         ),
       );
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/drivers',
+    async (request): Promise<DriverDto[]> => {
+      // TeslaMate's drives are read-only, so there is no one to pick.
+      if (isTeslaMateVehicle(request.params.id)) return [];
+      const names = await driverNames(ctx.db, request.params.id);
+      return [...names].map(([id, name]) => ({ id, name }));
+    },
+  );
+
+  // Kept as picked: the vehicle's profile never replaces it.
+  app.put<{ Params: { driveId: string } }>(
+    '/api/drives/:driveId/driver',
+    async (request, reply) => {
+      const { driverId } = driveDriverSchema.parse(request.body);
+      const driveId = Number(request.params.driveId);
+      if (!Number.isSafeInteger(driveId)) return reply.code(404).send({ error: 'Not found' });
+      const [drive] = await ctx.db
+        .select({ vehicleId: drives.vehicleId })
+        .from(drives)
+        .where(eq(drives.id, driveId));
+      if (!drive) return reply.code(404).send({ error: 'Not found' });
+      if (driverId != null) {
+        const [driver] = await ctx.db
+          .select({ id: drivers.id })
+          .from(drivers)
+          .where(and(eq(drivers.id, driverId), eq(drivers.vehicleId, drive.vehicleId)));
+        if (!driver) return reply.code(400).send({ error: "Not one of this vehicle's drivers" });
+      }
+      await ctx.db
+        .update(drives)
+        .set({ driverId, driverSource: 'manual' })
+        .where(eq(drives.id, driveId));
+      return reply.code(204).send();
     },
   );
 

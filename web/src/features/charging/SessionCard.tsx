@@ -88,7 +88,7 @@ export function SessionCard(props: {
   return (
     <section className="card overflow-hidden">
       <div className="p-5">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-(--text-muted)">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-(--text-muted)">
           {loading || !s ? (
             <Skeleton className="w-[14em]" />
           ) : (
