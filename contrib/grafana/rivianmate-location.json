@@ -24,7 +24,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "velocitykmh",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -39,7 +38,32 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mph\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitymph"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km/h\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -69,7 +93,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, COALESCE(speed_kmh, 0) AS value FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} ORDER BY ts DESC LIMIT 1",
+          "rawSql": "SELECT ts AS time, COALESCE(speed_kmh, 0) * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"value [${speed_u}]\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} ORDER BY ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -146,7 +170,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "lengthm",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -161,7 +184,32 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[ft\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthft"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[m\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -191,7 +239,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, altitude AS value FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND altitude IS NOT NULL ORDER BY ts DESC LIMIT 1",
+          "rawSql": "SELECT ts AS time, altitude * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 3.28084 END) AS \"value [${elev_u}]\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} AND altitude IS NOT NULL ORDER BY ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -428,7 +476,56 @@
             "filterable": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mph\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitymph"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km/h\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[ft\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthft"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[m\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -450,7 +547,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS \"Time\", lat AS \"Latitude\", lon AS \"Longitude\", speed_kmh AS \"Speed (km/h)\", bearing AS \"Bearing\", altitude AS \"Altitude (m)\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} ORDER BY ts DESC LIMIT 100",
+          "rawSql": "SELECT ts AS \"Time\", lat AS \"Latitude\", lon AS \"Longitude\", speed_kmh * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"Speed [${speed_u}]\", bearing AS \"Bearing\", altitude * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 3.28084 END) AS \"Altitude [${elev_u}]\" FROM location_points WHERE vehicle_id = ${vehicle:sqlstring} ORDER BY ts DESC LIMIT 100",
           "refId": "A"
         }
       ],
@@ -468,7 +565,7 @@
   "timezone": "browser",
   "title": "RivianMate - Location",
   "uid": "rivianmate-location",
-  "version": 1,
+  "version": 2,
   "id": null,
   "templating": {
     "list": [
@@ -501,6 +598,66 @@
         "name": "vehicle",
         "options": [],
         "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT v FROM (SELECT distance AS v, 0 AS o FROM grafana_settings() UNION ALL SELECT CASE distance WHEN 'km' THEN 'mi' ELSE 'km' END, 1 FROM grafana_settings()) x ORDER BY o",
+        "description": "Distance unit from RivianMate's settings (mi or km); speed, elevation, tire pressure and efficiency follow it.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "dist",
+        "options": [],
+        "query": "SELECT v FROM (SELECT distance AS v, 0 AS o FROM grafana_settings() UNION ALL SELECT CASE distance WHEN 'km' THEN 'mi' ELSE 'km' END, 1 FROM grafana_settings()) x ORDER BY o",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT CASE WHEN '${dist}' = 'km' THEN 'km/h' ELSE 'mph' END",
+        "description": "Speed unit label.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "speed_u",
+        "options": [],
+        "query": "SELECT CASE WHEN '${dist}' = 'km' THEN 'km/h' ELSE 'mph' END",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT CASE WHEN '${dist}' = 'km' THEN 'm' ELSE 'ft' END",
+        "description": "Elevation unit label.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "elev_u",
+        "options": [],
+        "query": "SELECT CASE WHEN '${dist}' = 'km' THEN 'm' ELSE 'ft' END",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,

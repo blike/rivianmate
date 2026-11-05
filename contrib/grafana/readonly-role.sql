@@ -20,6 +20,7 @@ GRANT USAGE ON SCHEMA public TO grafana_ro;
 GRANT SELECT ON
   vehicles,
   drives,
+  drivers,
   location_points,
   saved_locations,
   charging_sessions,
@@ -32,3 +33,20 @@ GRANT SELECT ON
   parallax_latest,
   ota_release_notes
 TO grafana_ro;
+
+-- The display settings the dashboards follow (distance and temperature units, currency), with the
+-- app's defaults, without granting read access to app_settings itself.
+CREATE OR REPLACE FUNCTION grafana_settings()
+RETURNS TABLE (distance text, temperature text, currency text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  WITH s AS (
+    SELECT key, value::jsonb AS v FROM app_settings
+    WHERE key IN ('display_units', 'home_charging') AND pg_input_is_valid(value, 'jsonb')
+  )
+  SELECT
+    COALESCE((SELECT v->>'distance' FROM s WHERE key = 'display_units' AND v->>'distance' IN ('mi', 'km')), 'mi'),
+    COALESCE((SELECT v->>'temperature' FROM s WHERE key = 'display_units' AND v->>'temperature' IN ('F', 'C')), 'F'),
+    COALESCE((SELECT v->>'currency' FROM s WHERE key = 'home_charging' AND v->>'currency' ~ '^[A-Z]{3}$'), 'USD')
+$$;
+REVOKE ALL ON FUNCTION grafana_settings() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION grafana_settings() TO grafana_ro;

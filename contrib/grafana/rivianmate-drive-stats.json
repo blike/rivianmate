@@ -24,7 +24,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "lengthmi",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -39,7 +38,32 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -69,7 +93,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT SUM(distance_km)*(CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"value [${dist}]\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -128,7 +152,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT COUNT(*) AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -143,7 +167,6 @@
       "fieldConfig": {
         "defaults": {
           "custom": {},
-          "unit": "lengthmi",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -158,7 +181,32 @@
             "fixedColor": "text"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 4,
@@ -188,7 +236,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT AVG(distance_km)*0.621371 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT AVG(distance_km)*(CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"value [${dist}]\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -248,7 +296,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now())-started_at)))/3600.0 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1)",
+          "rawSql": "SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now())-started_at)))/3600.0 AS value FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1)",
           "refId": "A"
         }
       ],
@@ -268,10 +316,34 @@
             "lineWidth": 2,
             "pointSize": 4,
             "spanNulls": false
-          },
-          "unit": "lengthmi"
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 9,
@@ -298,7 +370,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(distance_km)*0.621371 AS \"Distance (mi)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(distance_km)*(CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"Distance [${dist}]\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -347,7 +419,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, COUNT(*) AS \"Drives\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, COUNT(*) AS \"Drives\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -397,12 +469,520 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('week', started_at) AS time, SUM(start_battery-end_battery) AS \"Battery Used (%)\" FROM drives WHERE vehicle_id=${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
       "title": "Battery Used per Week",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Time spent driving in each drive mode, including mode changes during a drive. Unknown = drives recorded before the vehicle reported its mode.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "id": 608,
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (SELECT id, started_at, COALESCE(ended_at, now()) AS ended_at, COALESCE(distance_km, 0) AS km, start_battery - end_battery AS pct, battery_capacity_kwh AS cap, drive_mode FROM drives WHERE vehicle_id = ${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at)), ch AS (SELECT c.at, c.value FROM state_changes c JOIN state_fields f ON f.id = c.field_id AND f.name = 'driveMode' JOIN vehicles v ON v.seq = c.vehicle_seq AND v.id = ${vehicle:sqlstring} WHERE c.value IS NOT NULL), p AS (SELECT id, started_at AS at, drive_mode AS mode FROM d UNION ALL SELECT d.id, ch.at, ch.value FROM d JOIN ch ON d.drive_mode IS NOT NULL AND ch.at > d.started_at AND ch.at < d.ended_at), s AS (SELECT p.mode, d.km, EXTRACT(EPOCH FROM d.ended_at - d.started_at) AS dsecs, EXTRACT(EPOCH FROM COALESCE(LEAD(p.at) OVER (PARTITION BY p.id ORDER BY p.at), d.ended_at) - p.at) AS secs FROM p JOIN d ON d.id = p.id) SELECT COALESCE(CASE mode WHEN 'everyday' THEN 'All-Purpose' WHEN 'distance' THEN 'Conserve' WHEN 'sport' THEN 'Sport' WHEN 'off_road_snow_ice' THEN 'Snow' WHEN 'towing' THEN 'Towing' WHEN 'winter' THEN 'Winter' ELSE initcap(replace(mode, '_', ' ')) END, 'Unknown') AS \"Mode\", SUM(secs) AS \"Driving time\" FROM s GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Driving Time by Mode",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Each drive's distance split between its modes in proportion to time spent in each.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "id": 609,
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (SELECT id, started_at, COALESCE(ended_at, now()) AS ended_at, COALESCE(distance_km, 0) AS km, start_battery - end_battery AS pct, battery_capacity_kwh AS cap, drive_mode FROM drives WHERE vehicle_id = ${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at)), ch AS (SELECT c.at, c.value FROM state_changes c JOIN state_fields f ON f.id = c.field_id AND f.name = 'driveMode' JOIN vehicles v ON v.seq = c.vehicle_seq AND v.id = ${vehicle:sqlstring} WHERE c.value IS NOT NULL), p AS (SELECT id, started_at AS at, drive_mode AS mode FROM d UNION ALL SELECT d.id, ch.at, ch.value FROM d JOIN ch ON d.drive_mode IS NOT NULL AND ch.at > d.started_at AND ch.at < d.ended_at), s AS (SELECT p.mode, d.km, EXTRACT(EPOCH FROM d.ended_at - d.started_at) AS dsecs, EXTRACT(EPOCH FROM COALESCE(LEAD(p.at) OVER (PARTITION BY p.id ORDER BY p.at), d.ended_at) - p.at) AS secs FROM p JOIN d ON d.id = p.id) SELECT COALESCE(CASE mode WHEN 'everyday' THEN 'All-Purpose' WHEN 'distance' THEN 'Conserve' WHEN 'sport' THEN 'Sport' WHEN 'off_road_snow_ice' THEN 'Snow' WHEN 'towing' THEN 'Towing' WHEN 'winter' THEN 'Winter' ELSE initcap(replace(mode, '_', ' ')) END, 'Unknown') AS \"Mode\", SUM(km * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) * secs / NULLIF(dsecs, 0)) AS \"Distance [${dist}]\" FROM s GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Distance by Mode (est.)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Drives that stayed in one mode only. Energy = battery % used x pack capacity, so it includes climate and other loads; short drives are noisy (distance is whole km).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^Distance \\["
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi/kWh\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: mi/kWh"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[kWh/100 km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: kWh/100 km"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "id": 610,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (SELECT id, started_at, COALESCE(ended_at, now()) AS ended_at, COALESCE(distance_km, 0) AS km, start_battery - end_battery AS pct, battery_capacity_kwh AS cap, drive_mode FROM drives WHERE vehicle_id = ${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at)), ch AS (SELECT c.at, c.value FROM state_changes c JOIN state_fields f ON f.id = c.field_id AND f.name = 'driveMode' JOIN vehicles v ON v.seq = c.vehicle_seq AND v.id = ${vehicle:sqlstring} WHERE c.value IS NOT NULL), p AS (SELECT id, started_at AS at, drive_mode AS mode FROM d UNION ALL SELECT d.id, ch.at, ch.value FROM d JOIN ch ON d.drive_mode IS NOT NULL AND ch.at > d.started_at AND ch.at < d.ended_at), s AS (SELECT p.mode, d.km, EXTRACT(EPOCH FROM d.ended_at - d.started_at) AS dsecs, EXTRACT(EPOCH FROM COALESCE(LEAD(p.at) OVER (PARTITION BY p.id ORDER BY p.at), d.ended_at) - p.at) AS secs FROM p JOIN d ON d.id = p.id) SELECT CASE drive_mode WHEN 'everyday' THEN 'All-Purpose' WHEN 'distance' THEN 'Conserve' WHEN 'sport' THEN 'Sport' WHEN 'off_road_snow_ice' THEN 'Snow' WHEN 'towing' THEN 'Towing' WHEN 'winter' THEN 'Winter' ELSE initcap(replace(drive_mode, '_', ' ')) END AS \"Mode\", (CASE WHEN (SUM(pct * cap / 100)) > 0 AND (SUM(km)) > 0 THEN CASE WHEN '${dist}' = 'km' THEN (SUM(pct * cap / 100)) * 100 / (SUM(km)) ELSE (SUM(km)) * 0.621371 / (SUM(pct * cap / 100)) END END) AS \"Efficiency [${eff_u}]\", COUNT(*) AS \"Drives\", SUM(km) * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"Distance [${dist}]\" FROM d WHERE drive_mode IS NOT NULL AND pct > 0 AND cap IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ch WHERE ch.at > d.started_at AND ch.at < d.ended_at AND ch.value <> d.drive_mode) GROUP BY 1 ORDER BY 3 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Efficiency by Mode (est.)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Unknown = drives where the vehicle reported no driver profile.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
+      "id": 611,
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (SELECT COALESCE((SELECT dn.name FROM (SELECT id, COALESCE(NULLIF(trim(name), ''), NULLIF(trim(reported_name), ''), 'Driver ' || row_number() OVER (ORDER BY created_at, id)) AS name FROM drivers WHERE vehicle_id = ${vehicle:sqlstring}) dn WHERE dn.id = drives.driver_id), 'Unknown') AS driver, COALESCE(distance_km, 0) AS km, EXTRACT(EPOCH FROM COALESCE(ended_at, now()) - started_at) AS secs, start_battery - end_battery AS pct, battery_capacity_kwh AS cap FROM drives WHERE vehicle_id = ${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at)) SELECT driver AS \"Driver\", SUM(km) * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"Distance [${dist}]\" FROM d GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Distance by Driver",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Unknown = drives where the vehicle reported no driver profile.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "id": 612,
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (SELECT COALESCE((SELECT dn.name FROM (SELECT id, COALESCE(NULLIF(trim(name), ''), NULLIF(trim(reported_name), ''), 'Driver ' || row_number() OVER (ORDER BY created_at, id)) AS name FROM drivers WHERE vehicle_id = ${vehicle:sqlstring}) dn WHERE dn.id = drives.driver_id), 'Unknown') AS driver, COALESCE(distance_km, 0) AS km, EXTRACT(EPOCH FROM COALESCE(ended_at, now()) - started_at) AS secs, start_battery - end_battery AS pct, battery_capacity_kwh AS cap FROM drives WHERE vehicle_id = ${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at)) SELECT driver AS \"Driver\", SUM(secs) AS \"Driving time\" FROM d GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Driving Time by Driver",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Energy = battery % used x pack capacity, so it includes climate and other loads; short drives are noisy (distance is whole km). Drives and routes differ between drivers.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^Distance \\["
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[mi/kWh\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: mi/kWh"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\[kWh/100 km\\]$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: kWh/100 km"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "id": 613,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH d AS (SELECT COALESCE((SELECT dn.name FROM (SELECT id, COALESCE(NULLIF(trim(name), ''), NULLIF(trim(reported_name), ''), 'Driver ' || row_number() OVER (ORDER BY created_at, id)) AS name FROM drivers WHERE vehicle_id = ${vehicle:sqlstring}) dn WHERE dn.id = drives.driver_id), 'Unknown') AS driver, COALESCE(distance_km, 0) AS km, EXTRACT(EPOCH FROM COALESCE(ended_at, now()) - started_at) AS secs, start_battery - end_battery AS pct, battery_capacity_kwh AS cap FROM drives WHERE vehicle_id = ${vehicle:sqlstring} AND COALESCE(driver_id, 0)::text IN (${driver:sqlstring}) AND (distance_km IS NULL OR distance_km >= 0.1) AND $__timeFilter(started_at)) SELECT driver AS \"Driver\", (CASE WHEN (SUM(pct * cap / 100)) > 0 AND (SUM(km)) > 0 THEN CASE WHEN '${dist}' = 'km' THEN (SUM(pct * cap / 100)) * 100 / (SUM(km)) ELSE (SUM(km)) * 0.621371 / (SUM(pct * cap / 100)) END END) AS \"Efficiency [${eff_u}]\", COUNT(*) AS \"Drives\", SUM(km) * (CASE WHEN '${dist}' = 'km' THEN 1 ELSE 0.621371 END) AS \"Distance [${dist}]\" FROM d WHERE pct > 0 AND cap IS NOT NULL GROUP BY 1 ORDER BY 4 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Efficiency by Driver (est.)",
+      "type": "table"
     }
   ],
   "refresh": "",
@@ -415,7 +995,7 @@
   "timezone": "browser",
   "title": "RivianMate - Drive Stats",
   "uid": "rivianmate-drive-stats",
-  "version": 1,
+  "version": 4,
   "id": null,
   "templating": {
     "list": [
@@ -448,6 +1028,71 @@
         "name": "vehicle",
         "options": [],
         "query": "SELECT id AS __value, COALESCE(NULLIF(name, ''), NULLIF(concat_ws(' ', model_year, model), ''), vin) AS __text FROM vehicles ORDER BY seq",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT v FROM (SELECT distance AS v, 0 AS o FROM grafana_settings() UNION ALL SELECT CASE distance WHEN 'km' THEN 'mi' ELSE 'km' END, 1 FROM grafana_settings()) x ORDER BY o",
+        "description": "Distance unit from RivianMate's settings (mi or km); speed, elevation, tire pressure and efficiency follow it.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "dist",
+        "options": [],
+        "query": "SELECT v FROM (SELECT distance AS v, 0 AS o FROM grafana_settings() UNION ALL SELECT CASE distance WHEN 'km' THEN 'mi' ELSE 'km' END, 1 FROM grafana_settings()) x ORDER BY o",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT CASE WHEN '${dist}' = 'km' THEN 'kWh/100 km' ELSE 'mi/kWh' END",
+        "description": "Efficiency unit label.",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "eff_u",
+        "options": [],
+        "query": "SELECT CASE WHEN '${dist}' = 'km' THEN 'kWh/100 km' ELSE 'mi/kWh' END",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": ["All"],
+          "value": ["$__all"]
+        },
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT name AS __text, id::text AS __value FROM (SELECT id, COALESCE(NULLIF(trim(name), ''), NULLIF(trim(reported_name), ''), 'Driver ' || row_number() OVER (ORDER BY created_at, id)) AS name FROM drivers WHERE vehicle_id = ${vehicle:sqlstring} UNION ALL SELECT 0, 'Unknown') x ORDER BY id = 0, id",
+        "description": "Who drove, from the vehicle's active profile. Unknown = no profile reported.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Driver",
+        "multi": true,
+        "name": "driver",
+        "options": [],
+        "query": "SELECT name AS __text, id::text AS __value FROM (SELECT id, COALESCE(NULLIF(trim(name), ''), NULLIF(trim(reported_name), ''), 'Driver ' || row_number() OVER (ORDER BY created_at, id)) AS name FROM drivers WHERE vehicle_id = ${vehicle:sqlstring} UNION ALL SELECT 0, 'Unknown') x ORDER BY id = 0, id",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
