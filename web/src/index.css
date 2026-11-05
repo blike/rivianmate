@@ -424,6 +424,15 @@ body {
   }
 }
 
+/* Last period's data while the new one loads: dims after a moment, brightens at once. */
+.stale-content {
+  transition: opacity 0.15s ease-out;
+}
+.stale-content[data-stale] {
+  opacity: 0.35;
+  transition-delay: 0.3s;
+}
+
 /* Only show a full-page loading message if loading is actually slow. */
 .delayed-fade-in {
   animation: fade-in 0.2s ease-out 0.4s both;

@@ -19,6 +19,8 @@ const hourLabel = (h: number) =>
 export function RhythmPanel(props: {
   drives: DriveDto[] | undefined;
   loading: boolean;
+  /** Showing the last period's data while this one loads. */
+  stale: boolean;
   from: Date;
   to: Date;
 }) {
@@ -64,6 +66,7 @@ export function RhythmPanel(props: {
       <ContentFrame
         height="13rem"
         loading={props.loading}
+        stale={props.stale}
         empty={rhythm.max === 0}
         emptyText="No drives in this period."
       >

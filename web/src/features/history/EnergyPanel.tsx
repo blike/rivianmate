@@ -54,6 +54,8 @@ export function EnergyPanel(props: {
   /** The battery over the same period, to balance against. */
   battery?: BatteryWindowDto;
   loading: boolean;
+  /** Showing the last period's data while this one loads. */
+  stale: boolean;
   from: Date;
   to: Date;
 }) {
@@ -105,6 +107,7 @@ export function EnergyPanel(props: {
       <ContentFrame
         height="9rem"
         loading={props.loading}
+        stale={props.stale}
         empty={scale === 0}
         emptyText="No charging or drive energy recorded in this period."
       >

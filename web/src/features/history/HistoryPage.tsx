@@ -10,7 +10,7 @@ import {
   useDrives,
   useLookupSettings,
 } from '../../api/hooks';
-import { ContentFrame, LoadingScope } from '../../components/LoadingState';
+import { ContentFrame, LoadingNote, LoadingScope } from '../../components/LoadingState';
 import { Panel } from '../../components/Panel';
 import { PageHeader, SectionRule } from '../../components/PageHeader';
 import { TRIPS_LEGEND, VehicleMap } from '../../components/VehicleMap';
@@ -79,7 +79,8 @@ export function HistoryPage(props: { vehicleId: string }) {
   const sessionsResult = useChargingSessions(props.vehicleId, from);
   const { data: drives, isPending: drivesPending } = drivesResult;
   const { data: sessions, isPending: sessionsPending } = sessionsResult;
-  const { data: coverage } = useDriveCoverage(props.vehicleId);
+  const coverageResult = useDriveCoverage(props.vehicleId);
+  const { data: coverage } = coverageResult;
   const { data: lookups } = useLookupSettings();
   // The battery over the energy ledger's period, which starts no earlier than the drives
   // and ends where the ledger does.
@@ -88,19 +89,37 @@ export function HistoryPage(props: { vehicleId: string }) {
     const since = drivesSince ? new Date(drivesSince) : null;
     return since && since > from ? since : from;
   }, [drivesSince, from]);
-  const { data: battery } = useQuery({
+  const batteryResult = useQuery({
     queryKey: ['batteryWindow', props.vehicleId, balanceFrom.toISOString(), to.toISOString()],
     queryFn: () => api.batteryWindow(props.vehicleId, balanceFrom, to),
     enabled: coverage !== undefined,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
+  const { data: battery } = batteryResult;
   const chargeSpansResult = useQuery(chargeSpansQuery(props.vehicleId, range, { from, to }));
   const stateSpansResult = useQuery(stateSpansQuery(props.vehicleId, range, { from, to }));
   const trailResult = useQuery(locationsQuery(props.vehicleId, range, { from, to }));
   const { data: chargeSpans, isPending: chargeSpansPending } = chargeSpansResult;
   const { data: stateSpans, isPending: stateSpansPending } = stateSpansResult;
   const { data: trail, isPending: trailPending } = trailResult;
+
+  // While a new period loads, cards go on showing the last one's data, dimmed.
+  const drivesStale = drivesResult.isPlaceholderData;
+  const activityStale = drivesStale || sessionsResult.isPlaceholderData;
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  // Until every card has this period's data; a query waiting on another isn't fetching yet.
+  const loading =
+    timelineLoading ||
+    [
+      drivesResult,
+      sessionsResult,
+      coverageResult,
+      batteryResult,
+      chargeSpansResult,
+      stateSpansResult,
+      trailResult,
+    ].some((q) => (q.isPending && q.fetchStatus !== 'idle') || q.isPlaceholderData);
 
   // Once the period shown has loaded, load the ones either side of it
   // behind it, so switching to one shows it straight away rather than the
@@ -174,19 +193,23 @@ export function HistoryPage(props: { vehicleId: string }) {
         kicker={`Last ${range.title}`}
         title="History"
         action={
-          <Select
-            label="Period"
-            value={rangeLabel}
-            options={RANGES.map((r) => ({ value: r.label, label: r.title }))}
-            widthOf={RANGES.map((r) => r.title)}
-            onChange={setRangeLabel}
-          />
+          <div className="flex items-center gap-3">
+            <span role="status">{loading && <LoadingNote className="delayed-fade-in" />}</span>
+            <Select
+              label="Period"
+              value={rangeLabel}
+              options={RANGES.map((r) => ({ value: r.label, label: r.title }))}
+              widthOf={RANGES.map((r) => r.title)}
+              onChange={setRangeLabel}
+            />
+          </div>
         }
       />
 
       <div className="space-y-10">
         <div className="space-y-4">
-          <LoadingScope loading={activityPending}>
+          {/* Totals from the last period would mislead, so they wait for this one's. */}
+          <LoadingScope loading={activityPending || activityStale}>
             <SummaryCard
               summary={summary}
               drives={drives ?? []}
@@ -203,7 +226,13 @@ export function HistoryPage(props: { vehicleId: string }) {
             to={to}
             bands={drivesPending || chargeSpansPending ? [] : bands}
             segments={segments}
+            stale={
+              drivesStale ||
+              chargeSpansResult.isPlaceholderData ||
+              stateSpansResult.isPlaceholderData
+            }
             onHover={setHoverTs}
+            onLoading={setTimelineLoading}
           />
         </div>
 
@@ -231,6 +260,7 @@ export function HistoryPage(props: { vehicleId: string }) {
                   <ContentFrame
                     height="100%"
                     loading={trailPending}
+                    stale={trailResult.isPlaceholderData}
                     empty={fixes.length === 0}
                     emptyText="No location points in this period."
                   >
@@ -253,16 +283,29 @@ export function HistoryPage(props: { vehicleId: string }) {
               <TimeSpent
                 spans={stateSpans}
                 loading={stateSpansPending}
+                stale={stateSpansResult.isPlaceholderData}
                 from={from}
                 to={to}
                 hours={range.hours}
               />
             </div>
             <div className="xl:col-span-7">
-              <RhythmPanel drives={drives} loading={drivesPending} from={from} to={to} />
+              <RhythmPanel
+                drives={drives}
+                loading={drivesPending}
+                stale={drivesStale}
+                from={from}
+                to={to}
+              />
             </div>
             <div className="xl:col-span-5">
-              <PlacesPanel drives={drives} loading={drivesPending} from={from} to={to} />
+              <PlacesPanel
+                drives={drives}
+                loading={drivesPending}
+                stale={drivesStale}
+                from={from}
+                to={to}
+              />
             </div>
           </div>
         </section>
@@ -275,6 +318,7 @@ export function HistoryPage(props: { vehicleId: string }) {
             drivesSince={coverage?.since ?? null}
             battery={battery}
             loading={activityPending}
+            stale={activityStale || batteryResult.isPlaceholderData}
             from={from}
             to={to}
           />
@@ -285,6 +329,7 @@ export function HistoryPage(props: { vehicleId: string }) {
           <EfficiencyPanel
             drives={drives}
             loading={drivesPending}
+            stale={drivesStale}
             weather={
               isTeslaMateVehicle(props.vehicleId)
                 ? 'none'

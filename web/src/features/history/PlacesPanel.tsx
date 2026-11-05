@@ -11,6 +11,8 @@ import { Segmented } from '../../components/Segmented';
 export function PlacesPanel(props: {
   drives: DriveDto[] | undefined;
   loading: boolean;
+  /** Showing the last period's data while this one loads. */
+  stale: boolean;
   from: Date;
   to: Date;
 }) {
@@ -45,6 +47,7 @@ export function PlacesPanel(props: {
       <ContentFrame
         height="13rem"
         loading={props.loading}
+        stale={props.stale}
         empty={view === 0 ? places.length === 0 : routes.length === 0}
         emptyText={
           view === 0
