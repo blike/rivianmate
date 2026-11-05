@@ -48,8 +48,12 @@ export function simplifyTrack(
   return kept;
 }
 
-/** At most this many points for a window's routes. */
-export const MAX_TRACK_POINTS = 20_000;
+/**
+ * At most this many points for a window's routes. A year of daily driving
+ * simplified at 20 m is around 50,000; past this, points are dropped evenly
+ * and routes start cutting corners.
+ */
+export const MAX_TRACK_POINTS = 60_000;
 
 /**
  * How far a simplified drive may stray from its recorded points: tighter for
