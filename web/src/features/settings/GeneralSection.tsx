@@ -9,9 +9,9 @@ import {
   useVehicles,
 } from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
+import { Select } from '../../components/Select';
 import {
   SegmentedControl,
-  Select,
   SettingRow,
   SettingsGroup,
   Switch,
