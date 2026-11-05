@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  queryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -107,8 +108,8 @@ const LIVE_REFRESH_MS = 15_000;
 const OLDER_PAGES_REFRESH_MS = 5 * 60_000;
 
 /** The newest drives, or with `since`, all of them from then on. */
-export function useDrives(vehicleId: string, since?: Date) {
-  return useQuery({
+export const drivesQuery = (vehicleId: string, since?: Date) =>
+  queryOptions({
     queryKey: since ? ['drives', vehicleId, since.toISOString()] : ['drives', vehicleId],
     queryFn: () => api.drives(vehicleId, { from: since }),
     // A drive in progress grows by the second.
@@ -116,6 +117,9 @@ export function useDrives(vehicleId: string, since?: Date) {
       query.state.data?.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000,
     placeholderData: since ? keepPreviousData : undefined,
   });
+
+export function useDrives(vehicleId: string, since?: Date) {
+  return useQuery(drivesQuery(vehicleId, since));
 }
 
 /**
@@ -227,8 +231,8 @@ export function useSetDriveDriver(vehicleId: string) {
 }
 
 /** The newest sessions, or with `since`, all of them from then on. */
-export function useChargingSessions(vehicleId: string, since?: Date) {
-  return useQuery({
+export const chargingSessionsQuery = (vehicleId: string, since?: Date) =>
+  queryOptions({
     queryKey: since
       ? ['chargingSessions', vehicleId, since.toISOString()]
       : ['chargingSessions', vehicleId],
@@ -236,6 +240,9 @@ export function useChargingSessions(vehicleId: string, since?: Date) {
     refetchInterval: 60_000,
     placeholderData: since ? keepPreviousData : undefined,
   });
+
+export function useChargingSessions(vehicleId: string, since?: Date) {
+  return useQuery(chargingSessionsQuery(vehicleId, since));
 }
 
 /** The charging and departure schedules set in the Rivian app. */

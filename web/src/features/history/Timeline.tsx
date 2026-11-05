@@ -1,11 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { HistoryMetric, HistoryPoint } from '@server/api-types';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame } from '../../components/LoadingState';
 import { type TraceBand, TimeTrace } from '../../components/TimeTrace';
-import { type ActivityBand, type StateSegment } from './history';
-import { METRICS, RANGES } from './options';
+import { type ActivityBand, type StateSegment, rangeWindow } from './history';
+import { METRICS, neighbours, PREFETCH_FRESH_MS, type Range } from './options';
 import { Segmented } from './Segmented';
 import { StateStrip } from './StateStrip';
 
@@ -28,13 +29,30 @@ const BAND: Record<ActivityBand['kind'], { label: string; fill: string; swatch: 
   },
 };
 
+const historyQuery = (
+  vehicleId: string,
+  metric: HistoryMetric,
+  range: Range,
+  from: Date,
+  to: Date,
+) =>
+  queryOptions({
+    queryKey: ['history', vehicleId, metric, range.label],
+    queryFn: () => api.history(vehicleId, metric, from, to, range.bucket),
+    refetchInterval: 60_000,
+    // Keep the old line while a new range loads; another metric's values
+    // would be drawn on the wrong scale, so those show a placeholder instead.
+    placeholderData: (previous: HistoryPoint[] | undefined, previousQuery) =>
+      previousQuery?.queryKey[2] === metric ? previous : undefined,
+  });
+
 /**
  * The chosen metric over the period with drives and charging shaded behind
  * it, then the vehicle's state as a strip of its own; each with its legend.
  */
 export function Timeline(props: {
   vehicleId: string;
-  range: (typeof RANGES)[number];
+  range: Range;
   from: Date;
   to: Date;
   bands: ActivityBand[];
@@ -46,15 +64,29 @@ export function Timeline(props: {
   const [metricIdx, setMetricIdx] = useState(0);
   const metric = METRICS[metricIdx] ?? METRICS[0]!;
 
-  const { data: points, isPending } = useQuery({
-    queryKey: ['history', props.vehicleId, metric.key, range.label],
-    queryFn: () => api.history(props.vehicleId, metric.key, from, to, range.bucket),
-    refetchInterval: 60_000,
-    // Keep the old line while a new range loads; another metric's values
-    // would be drawn on the wrong scale, so those show a placeholder instead.
-    placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[2] === metric.key ? previous : undefined,
-  });
+  const {
+    data: points,
+    isPending,
+    isSuccess,
+    isPlaceholderData,
+  } = useQuery(historyQuery(props.vehicleId, metric.key, range, from, to));
+
+  // As the page does: the metric over the other periods, loaded behind this one.
+  const queryClient = useQueryClient();
+  const shownLoaded = isSuccess && !isPlaceholderData;
+  useEffect(() => {
+    if (!shownLoaded) return;
+    const now = new Date();
+    for (const other of neighbours(range)) {
+      const w = rangeWindow(other.hours, now);
+      void queryClient
+        .query({
+          ...historyQuery(props.vehicleId, metric.key, other, w.from, w.to),
+          staleTime: PREFETCH_FRESH_MS,
+        })
+        .catch(() => {});
+    }
+  }, [shownLoaded, range, metric.key, props.vehicleId, queryClient]);
 
   const data = useMemo(
     () =>
