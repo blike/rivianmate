@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
 import { useChargingPages, useLiveCharging, useVehicleState } from '../../api/hooks';
+import { DayCalendar } from '../../components/DayCalendar';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
 import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
 import { lastChargedTo } from '../../lib/charging';
+import { useGoToDate } from '../../lib/goToDate';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
 import { CurveChart } from './CurveChart';
@@ -15,7 +17,7 @@ import { LiveCard } from './LiveCard';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
-import { notStarted } from './sessions';
+import { chargeStart, notStarted } from './sessions';
 import { WallboxPanel } from './WallboxPanel';
 
 export function ChargingPage(props: { vehicleId: string }) {
@@ -52,6 +54,21 @@ export function ChargingPage(props: { vehicleId: string }) {
 
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const session = sessions?.find((s) => s.id === selectedSessionId) ?? sessions?.[0];
+
+  // Going to a date: a calendar of the month with each day's sessions, by
+  // the day each started charging, as they're listed.
+  const goTo = useGoToDate({
+    queryKey: ['chargingSessions', props.vehicleId],
+    fetchWindow: (from, to) => api.chargingSessions(props.vehicleId, { from, to }),
+    listed: sessions,
+    pages,
+    selected: session,
+    onSelect: setSelectedSessionId,
+    dayOf: chargeStart,
+  });
+  const calendar = (variant: 'pill' | 'tile') => (
+    <DayCalendar variant={variant} noun="session" {...goTo.calendar} />
+  );
   const showingOpen = session != null && !session.endedAt && session.id === sessions?.[0]?.id;
 
   const {
@@ -88,12 +105,16 @@ export function ChargingPage(props: { vehicleId: string }) {
   return (
     <div className="space-y-4">
       {sessions && sessions.length > 1 && (
-        <SessionPicker
-          sessions={sessions}
-          selectedId={session?.id ?? null}
-          onSelect={setSelectedSessionId}
-          older={older}
-        />
+        <div className="sticky top-2 z-20 flex items-stretch gap-2 lg:hidden">
+          <SessionPicker
+            sessions={sessions}
+            selectedId={session?.id ?? null}
+            onSelect={setSelectedSessionId}
+            older={older}
+            className="min-w-0 flex-1"
+          />
+          {calendar('tile')}
+        </div>
       )}
       <div className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}>
         <LoadingScope loading={sessionsPending}>
@@ -121,7 +142,7 @@ export function ChargingPage(props: { vehicleId: string }) {
           {session && <EnergySplit session={session} />}
         </Panel>
 
-        <Panel title="All sessions" className="hidden flex-col lg:flex">
+        <Panel title="All sessions" className="hidden flex-col lg:flex" action={calendar('pill')}>
           <div className="relative min-h-0 flex-1">
             <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {sessionsPending ? (
@@ -134,6 +155,8 @@ export function ChargingPage(props: { vehicleId: string }) {
                     sessions={sessions!}
                     selectedId={session?.id ?? null}
                     onSelect={setSelectedSessionId}
+                    revealId={goTo.revealId}
+                    onRevealed={goTo.clearReveal}
                   />
                   {older.has && (
                     <LoadOlder

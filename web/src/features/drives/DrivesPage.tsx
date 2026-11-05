@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { useDrive, useDrivePages, useInsights, useUnits, useVehicleState } from '../../api/hooks';
+import {
+  useDrive,
+  useDriveCoverage,
+  useDrivePages,
+  useInsights,
+  useUnits,
+  useVehicleState,
+} from '../../api/hooks';
+import { api } from '../../api/client';
+import { DayCalendar } from '../../components/DayCalendar';
 import {
   ContentFrame,
   LoadingScope,
@@ -11,6 +20,7 @@ import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { VehicleMap } from '../../components/VehicleMap';
 import { driveProfile, minuteTicks, profilePosition } from '../../lib/drives';
+import { useGoToDate } from '../../lib/goToDate';
 import { useLiveTrail } from '../../lib/liveTrail';
 import { routePlan } from '../../lib/navigation';
 import { nv } from '../../lib/state';
@@ -36,6 +46,21 @@ export function DrivesPage(props: { vehicleId: string }) {
     isPlaceholderData: showingPreviousDrive,
   } = useDrive(props.vehicleId, driveId);
   const loading = drivesPending || (driveId != null && detailPending);
+
+  // Going to a date: a calendar of the month with each day's drives.
+  const { data: coverage } = useDriveCoverage(props.vehicleId);
+  const goTo = useGoToDate({
+    queryKey: ['drives', props.vehicleId],
+    fetchWindow: (from, to) => api.drives(props.vehicleId, { from, to }),
+    listed: drives,
+    pages,
+    selected: detail,
+    onSelect: setSelectedId,
+    earliest: coverage?.since ? new Date(coverage.since) : null,
+  });
+  const calendar = (variant: 'pill' | 'tile') => (
+    <DayCalendar variant={variant} noun="drive" {...goTo.calendar} />
+  );
 
   // The drive under way shows where navigation is taking it, and the
   // vehicle's latest fix and heading, until it ends.
@@ -72,7 +97,16 @@ export function DrivesPage(props: { vehicleId: string }) {
   return (
     <div className="space-y-4">
       {drives && drives.length > 1 && (
-        <DrivePicker drives={drives} selectedId={driveId} onSelect={setSelectedId} older={older} />
+        <div className="sticky top-2 z-20 flex items-stretch gap-2 lg:hidden">
+          <DrivePicker
+            drives={drives}
+            selectedId={driveId}
+            onSelect={setSelectedId}
+            older={older}
+            className="min-w-0 flex-1"
+          />
+          {calendar('tile')}
+        </div>
       )}
       <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
         <LoadingScope loading={loading}>
@@ -146,7 +180,7 @@ export function DrivesPage(props: { vehicleId: string }) {
           </div>
         </Panel>
 
-        <Panel title="All drives" className="hidden flex-col lg:flex">
+        <Panel title="All drives" className="hidden flex-col lg:flex" action={calendar('pill')}>
           <div className="relative min-h-0 flex-1">
             <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
               {drivesPending ? (
@@ -155,7 +189,13 @@ export function DrivesPage(props: { vehicleId: string }) {
                 </div>
               ) : (
                 <>
-                  <DriveList drives={drives!} selectedId={driveId} onSelect={setSelectedId} />
+                  <DriveList
+                    drives={drives!}
+                    selectedId={driveId}
+                    onSelect={setSelectedId}
+                    revealId={goTo.revealId}
+                    onRevealed={goTo.clearReveal}
+                  />
                   {older.has && (
                     <LoadOlder
                       label="Show older drives"
