@@ -12,6 +12,8 @@ import { location } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
+  type DriveDetailDto,
+  type DriverDto,
   type TeslaMateSettingsDto,
   type ChargingSettings,
   type LookupSettings,
@@ -189,6 +191,38 @@ export function useDrive(vehicleId: string, driveId: number | null) {
       query.state.data && !query.state.data.endedAt ? LIVE_REFRESH_MS : false,
     // Keep the previous drive on screen while the next one loads.
     placeholderData: keepPreviousData,
+  });
+}
+
+/** The vehicle's drivers, to pick a drive's from. */
+export function useDrivers(vehicleId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['drivers', vehicleId],
+    queryFn: () => api.drivers(vehicleId),
+    enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** Picks who drove a drive (null for nobody), shown at once and kept over the vehicle's profile. */
+export function useSetDriveDriver(vehicleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pick: { driveId: number; driver: DriverDto | null }) =>
+      api.setDriveDriver(pick.driveId, pick.driver?.id ?? null),
+    onMutate: async ({ driveId, driver }) => {
+      const key = ['drive', vehicleId, driveId];
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<DriveDetailDto>(
+        key,
+        (d) => d && { ...d, driver: driver && { ...driver, source: 'manual' } },
+      );
+    },
+    // Listings by driver (History's efficiency) follow too.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['drive', vehicleId] });
+      void queryClient.invalidateQueries({ queryKey: ['drives', vehicleId] });
+    },
   });
 }
 

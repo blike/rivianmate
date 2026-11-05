@@ -8,6 +8,7 @@ import type {
   DriveCoverageDto,
   DriveDetailDto,
   DriveDto,
+  DriverDto,
   FeedLatestData,
   FeedTopic,
   HistoryMetric,
@@ -71,6 +72,7 @@ export type {
   ConnectResponse,
   DriveDetailDto,
   DriveDto,
+  DriverDto,
   HistoryMetric,
   HistoryPoint,
   LocationPointDto,
@@ -228,6 +230,13 @@ export const api = {
   driveCoverage: (id: string) => request<DriveCoverageDto>(`/api/vehicles/${id}/drive-coverage`),
   drive: (vehicleId: string, driveId: number) =>
     request<DriveDetailDto>(`/api/vehicles/${vehicleId}/drives/${driveId}`),
+  drivers: (vehicleId: string) => request<DriverDto[]>(`/api/vehicles/${vehicleId}/drivers`),
+  /** Who drove, picked by hand; null for nobody. */
+  setDriveDriver: (driveId: number, driverId: number | null) =>
+    request<void>(`/api/drives/${driveId}/driver`, {
+      method: 'PUT',
+      body: JSON.stringify({ driverId }),
+    }),
   /** As `drives`, for charging sessions. */
   chargingSessions: (id: string, q: { from?: Date; before?: Date } = {}) =>
     request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${listQuery(q)}`),

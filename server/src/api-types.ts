@@ -190,6 +190,13 @@ export interface DriveDriverDto {
   source: 'profile' | 'manual';
 }
 
+/** Someone who drives a vehicle, as offered when picking a drive's driver. */
+export interface DriverDto {
+  id: number;
+  /** As DriveDriverDto's name. */
+  name: string;
+}
+
 /**
  * When RivianMate's drive history starts. Charging history imported from
  * Rivian can reach back further, so totals that set the two against each

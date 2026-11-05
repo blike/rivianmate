@@ -76,7 +76,7 @@ export function DrivesPage(props: { vehicleId: string }) {
       )}
       <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
         <LoadingScope loading={loading}>
-          <DriveCard drive={detail} />
+          <DriveCard vehicleId={props.vehicleId} drive={detail} />
         </LoadingScope>
       </div>
 
