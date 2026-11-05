@@ -151,12 +151,10 @@ describe.skipIf(!url)('navigation fixes through the monitor', () => {
     expect(rows.every((p) => p.speedKmh === 36 && p.altitude === 300)).toBe(true);
   });
 
-  it('stores nothing for a navigation frame replayed long after the fact', async () => {
-    // The same frame while it is current is stored, so what follows is the age
-    // being refused, not the fix being ignored.
-    await handleDelta(delta(40.4842, -88.9937, 12.5, 271.5, Date.now()));
-    expect(await points()).toHaveLength(1);
-    await handleDelta(delta(40.5, -88.99, 12.5, 271.5, Date.now() - 6 * 3600_000));
-    expect(await points()).toHaveLength(1);
+  it('stores a navigation frame replayed long after the fact once, at its own time', async () => {
+    const taken = Date.now() - 6 * 3600_000;
+    await handleDelta(delta(40.5, -88.99, 12.5, 271.5, taken));
+    await handleDelta(delta(40.5, -88.99, 12.5, 271.5, taken));
+    expect((await points()).map((p) => p.ts.getTime())).toEqual([taken]);
   });
 });

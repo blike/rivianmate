@@ -118,6 +118,20 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
     expect(await points()).toHaveLength(2);
   });
 
+  it('stores a short move once its speed arrives in a later delta', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', state('2026-10-04T17:08:00Z', 34.01));
+    const moved = { latitude: 34.01001, longitude: -116.05, timeStamp: '2026-10-04T17:08:05Z' };
+    await writer.onState('v1', { gnssLocation: moved });
+    expect(await points()).toHaveLength(1);
+    await writer.onState('v1', {
+      gnssLocation: moved,
+      gnssSpeed: { value: 3, timeStamp: '2026-10-04T17:08:05Z' },
+    });
+    expect(await points()).toHaveLength(2);
+  });
+
   it('stores the navigation fix while navigating, in place of the GNSS one', async () => {
     const writer = new LocationWriter(handle.db, () => clock);
     clock = Date.parse('2026-10-04T17:09:00Z');
@@ -185,38 +199,58 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
     ]);
   });
 
-  it('takes a navigation fix up to a minute old, and not a millisecond more', async () => {
-    const both = {
-      ...state('2026-10-04T17:08:59Z', 34.01),
-      ...nav('2026-10-04T17:08:00Z', 34.0105),
-    };
-    const at = Date.parse('2026-10-04T17:09:00Z');
-    clock = at;
-    await new LocationWriter(handle.db, () => clock).onState('v1', both);
-    clock = at + 1;
-    await new LocationWriter(handle.db, () => clock).onState('v1', both);
-
-    expect((await points()).map((p) => p.lat)).toEqual([34.0105, 34.01]);
-  });
-
-  it('falls back to the GNSS fix once the navigation one is a minute old', async () => {
+  it('stores a GNSS fix 15 s after the last navigation fix, and not a millisecond sooner', async () => {
     const writer = new LocationWriter(handle.db, () => clock);
-    clock = Date.parse('2026-10-04T17:09:00Z');
+    clock = Date.parse('2026-10-04T17:08:31Z');
+    await writer.onState('v1', nav('2026-10-04T17:08:00Z', 34.01));
+    // The route ended a moment ago: GNSS takes over by its own time, not the clock's.
     await writer.onState('v1', {
-      ...state('2026-10-04T17:08:59Z', 34.01),
-      ...nav('2026-10-04T17:07:00Z', 34.02),
+      ...state('2026-10-04T17:08:15Z', 34.02),
+      ...nav('2026-10-04T17:08:00Z', 34.01),
+    });
+    await writer.onState('v1', {
+      ...state('2026-10-04T17:08:15.001Z', 34.03),
+      ...nav('2026-10-04T17:08:00Z', 34.01),
     });
 
-    const [point] = await points();
-    expect([point!.lat, point!.speedKmh]).toEqual([34.01, 72]);
+    expect((await points()).map((p) => [p.lat, p.speedKmh])).toEqual([
+      [34.01, 36],
+      [34.03, 72],
+    ]);
   });
 
-  it('does not store the navigation frame a restart is handed as its last', async () => {
+  it('files a navigation fix delivered late under the drive it was taken on', async () => {
+    const [earlier] = await handle.db
+      .insert(drives)
+      .values({
+        vehicleId: 'v1',
+        startedAt: new Date('2026-10-04T16:16:00Z'),
+        endedAt: new Date('2026-10-04T16:42:42Z'),
+      })
+      .returning();
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', state('2026-10-04T17:08:00Z', 34.05));
+    await writer.onState('v1', nav('2026-10-04T16:30:00Z', 34.01));
+    // The late fix isn't where the vehicle is now: the next move is measured from the live one.
+    await writer.onState('v1', state('2026-10-04T17:08:55Z', 34.05));
+
+    expect((await points()).map((p) => [p.ts.toISOString(), p.driveId])).toEqual([
+      ['2026-10-04T16:30:00.000Z', earlier!.id],
+      ['2026-10-04T17:08:00.000Z', null],
+    ]);
+  });
+
+  it('stores a navigation fix once, even when a restart sees it again', async () => {
     clock = Date.parse('2026-10-04T17:09:00Z');
     await new LocationWriter(handle.db, () => clock).onState(
       'v1',
       nav('2026-10-03T21:37:03Z', 34.0),
     );
-    expect(await points()).toHaveLength(0);
+    await new LocationWriter(handle.db, () => clock).onState(
+      'v1',
+      nav('2026-10-03T21:37:03Z', 34.0),
+    );
+    expect(await points()).toHaveLength(1);
   });
 });

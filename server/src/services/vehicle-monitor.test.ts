@@ -154,21 +154,21 @@ describe('legacy-preferred fields', () => {
     expect(navOf(monitor)).toEqual(fix('2026-10-13T12:01:11Z'));
   });
 
-  it('drops the navigation fix once legacy reports one every few seconds', async () => {
+  it('refuses navigation fixes once legacy reports one every few seconds', async () => {
     const { monitor, delta } = oneVehicle();
-    // A navigation fix accepted first, so the state holds one to clear.
     await delta('v1', { navLocation: fix('2026-10-13T11:59:59Z') }, 'parallax');
     expect(navOf(monitor)).toEqual(fix('2026-10-13T11:59:59Z'));
 
     // An R1: legacy is a five-second track of its own, so the navigation one
-    // adds nothing — and the fix held from before must not keep the writer on it.
+    // adds nothing. The fix held from before stays; the writer only uses it
+    // for the moment it was taken.
     await legacyFixes(delta, [
       '2026-10-13T12:00:00Z',
       '2026-10-13T12:00:05Z',
       '2026-10-13T12:00:10Z',
     ]);
     await delta('v1', { navLocation: fix('2026-10-13T12:00:11Z') }, 'parallax');
-    expect(navOf(monitor)).toBeUndefined();
+    expect(navOf(monitor)).toEqual(fix('2026-10-13T11:59:59Z'));
   });
 
   it('does not take a re-sent legacy fix for a faster feed', async () => {
@@ -192,26 +192,31 @@ describe('legacy-preferred fields', () => {
     expect(navOf(monitor)).toEqual(fix('2026-10-13T12:00:59Z'));
   });
 
-  it('takes a 30 s cadence for a track, and not a millisecond more', async () => {
+  it('counts three legacy fixes within 30 s as a track, and not a millisecond more', async () => {
     const { monitor, delta } = oneVehicle();
     await legacyFixes(delta, [
       '2026-10-13T12:00:00Z',
-      '2026-10-13T12:00:30Z',
-      '2026-10-13T12:01:00Z',
+      '2026-10-13T12:00:10Z',
+      '2026-10-13T12:00:20Z',
     ]);
-    await delta('v1', { navLocation: fix('2026-10-13T12:01:01Z') }, 'parallax');
+    await delta('v1', { navLocation: fix('2026-10-13T12:00:30Z') }, 'parallax');
     expect(navOf(monitor)).toBeUndefined();
+    await delta('v1', { navLocation: fix('2026-10-13T12:00:30.001Z') }, 'parallax');
+    expect(navOf(monitor)).toEqual(fix('2026-10-13T12:00:30.001Z'));
   });
 
-  it('keeps the navigation fix when legacy is a second short of that cadence', async () => {
+  it('goes back to the navigation fix within 30 s of a wake-up burst', async () => {
     const { monitor, delta } = oneVehicle();
+    // An R2 waking: three quick fixes, then its usual minute between them.
     await legacyFixes(delta, [
       '2026-10-13T12:00:00Z',
-      '2026-10-13T12:00:30.001Z',
-      '2026-10-13T12:01:00.002Z',
+      '2026-10-13T12:00:02Z',
+      '2026-10-13T12:00:04Z',
     ]);
-    await delta('v1', { navLocation: fix('2026-10-13T12:01:01Z') }, 'parallax');
-    expect(navOf(monitor)).toEqual(fix('2026-10-13T12:01:01Z'));
+    await delta('v1', { navLocation: fix('2026-10-13T12:00:10Z') }, 'parallax');
+    expect(navOf(monitor)).toBeUndefined();
+    await delta('v1', { navLocation: fix('2026-10-13T12:00:31Z') }, 'parallax');
+    expect(navOf(monitor)).toEqual(fix('2026-10-13T12:00:31Z'));
   });
 
   it('goes back to the navigation fix when a dense legacy feed goes quiet', async () => {
@@ -221,10 +226,8 @@ describe('legacy-preferred fields', () => {
       '2026-10-13T12:00:05Z',
       '2026-10-13T12:00:10Z',
     ]);
-    // Five minutes after its last fix, legacy still counts; a millisecond later it doesn't.
-    await delta('v1', { navLocation: fix('2026-10-13T12:05:10Z') }, 'parallax');
-    expect(navOf(monitor)).toBeUndefined();
-    await delta('v1', { navLocation: fix('2026-10-13T12:05:10.001Z') }, 'parallax');
-    expect(navOf(monitor)).toEqual(fix('2026-10-13T12:05:10.001Z'));
+    // Twenty-one seconds after its last fix, it no longer has three in 30 s.
+    await delta('v1', { navLocation: fix('2026-10-13T12:00:31Z') }, 'parallax');
+    expect(navOf(monitor)).toEqual(fix('2026-10-13T12:00:31Z'));
   });
 });
