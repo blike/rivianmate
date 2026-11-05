@@ -1,6 +1,8 @@
 /** `navigation.*`: the vehicle's active route. */
+import { isPosition } from '../../../geo.js';
+import type { VehicleState } from '../../types.js';
 import { defineRvm } from '../define.js';
-import { decodePayload, type Fields } from '../wire.js';
+import { decodePayload, f32, type Fields } from '../wire.js';
 
 export const RVM_TRIP_INFO = 'navigation.navigation_service.trip_info';
 export const RVM_TRIP_PROGRESS = 'navigation.navigation_service.trip_progress';
@@ -150,14 +152,38 @@ export interface TripProgress {
   /** What's left to the next stop. */
   remainingKm: number | null;
   remainingS: number | null;
+  /** The vehicle's own fix in the frame, where it was and when; null when the frame has none. */
+  fix: TripFix | null;
 }
+
+/** Where the vehicle was, and when, as a navigation frame reports it. */
+export interface TripFix {
+  latitude: number;
+  longitude: number;
+  /** Its own time (ms since epoch); null when the frame leaves it out. */
+  timeMs: number | null;
+  /** m/s; 0 when the frame leaves it out, as at a standstill (as `decodeGnss` reads it). */
+  speedMps: number;
+  /** Heading (°, 0–360); null when the frame leaves it out. */
+  bearing: number | null;
+}
+
+/**
+ * A fix more than this far from the frame's own time isn't this frame's: the
+ * vehicle keeps sending its last progress after a trip ends, carrying that
+ * frame's time, so comparing the two catches a payload that isn't a fix at
+ * all. It cannot catch a re-sent frame — see `NAV_FIX_FRESH_MS`.
+ */
+const FIX_WITHIN_MS = 60_000;
 
 /**
  * `trip_progress`, every few seconds while navigating: 1 {1 ETA at the next
  * stop, s}, 2 {1 ETA at the destination}, 3 the next stop's index, 4/5
- * distance (m) and time (s) to the next stop, 6 the vehicle's fix (not
- * read). Rivian keeps the last after a trip ends, so it only counts beside
- * a trip_info.
+ * distance (m) and time (s) to the next stop, 6 the vehicle's fix {1 {1
+ * latitude, 2 longitude}, 2 speed m/s, 3 heading, 5 fix time (Unix ms)}.
+ * Rivian keeps the last after a trip ends, so the ETAs only count beside a
+ * trip_info; the fix counts while it's recent enough to be where the vehicle
+ * is now.
  */
 export function decodeTripProgress(payloadBase64: string): TripProgress | null {
   const m = decodePayload(payloadBase64);
@@ -167,12 +193,28 @@ export function decodeTripProgress(payloadBase64: string): TripProgress | null {
     return s && s > 0 ? s * 1000 : null;
   };
   const remainingM = m.double(4);
+  const vehicle = m.message(6);
+  const location = vehicle?.message(1);
+  const latitude = location?.double(1) ?? null;
+  const longitude = location?.double(2) ?? null;
+  const heading = vehicle?.float(3);
   return {
     nextEtaMs: ms(1),
     finalEtaMs: ms(2),
     nextStopIndex: Math.max(0, m.int(3) ?? 0),
     remainingKm: remainingM != null ? remainingM / 1000 : null,
     remainingS: m.double(5),
+    fix:
+      latitude != null && longitude != null
+        ? {
+            latitude,
+            longitude,
+            timeMs: vehicle?.int(5) ?? null,
+            speedMps: f32(vehicle?.float(2) ?? null) ?? 0,
+            // As a compass heading, like `decodeGnss` reads its own.
+            bearing: heading == null ? null : (((f32(heading) ?? 0) % 360) + 360) % 360,
+          }
+        : null,
   };
 }
 
@@ -278,6 +320,29 @@ export const tripInfo = defineRvm({
 export const tripProgress = defineRvm({
   rvm: RVM_TRIP_PROGRESS,
   decode: decodeTripProgress,
+  /**
+   * The frame's own fix, as a state key of its own, so the live map, geofence,
+   * charging and drive detection keep reading `gnssLocation` and `gnssSpeed`.
+   * A fix is written only when it carries its own time, that time is near the
+   * frame's, and the position is real.
+   */
+  toState(progress, timeStamp): VehicleState {
+    const fix = progress.fix;
+    const stampedAt = Date.parse(timeStamp);
+    if (!fix || fix.timeMs == null || !Number.isFinite(fix.timeMs)) return {};
+    if (!Number.isFinite(stampedAt) || Math.abs(fix.timeMs - stampedAt) > FIX_WITHIN_MS) return {};
+    if (!isPosition(fix.latitude, fix.longitude)) return {};
+    return {
+      navLocation: {
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        timeStamp: new Date(fix.timeMs).toISOString(),
+        speedMps: fix.speedMps,
+        bearing: fix.bearing,
+      },
+    };
+  },
+  stateKeys: ['navLocation'],
   store: true,
   fieldNames: {
     '1.1': 'ETA (s since epoch)',

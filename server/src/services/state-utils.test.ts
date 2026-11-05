@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { VehicleState } from '../rivian/types.js';
 import { PARALLAX_STATE_FIELDS } from '../rivian/parallax/index.js';
-import { isPosition, mergeVehicleState, normalizeReadings, stateLocation } from './state-utils.js';
+import { mergeVehicleState, normalizeReadings, stateLocation } from './state-utils.js';
 
 describe('stateLocation', () => {
   const at = (latitude: number, longitude: number) =>
@@ -17,11 +17,6 @@ describe('stateLocation', () => {
     expect(at(91, 10)).toBeNull();
     expect(at(10, -181)).toBeNull();
     expect(at(Number.NaN, 10)).toBeNull();
-  });
-
-  it('keeps real places near the equator or the prime meridian', () => {
-    expect(isPosition(0, 32.5)).toBe(true); // Lake Victoria
-    expect(isPosition(51.48, 0)).toBe(true); // Greenwich
   });
 });
 

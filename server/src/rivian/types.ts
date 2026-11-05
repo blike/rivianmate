@@ -21,7 +21,17 @@ export interface CloudConnection {
 export interface VehicleState {
   cloudConnection?: CloudConnection;
   gnssLocation?: GnssLocation;
-  [property: string]: TimeStampedValue | CloudConnection | GnssLocation | undefined;
+  /** The vehicle's own fix from a navigation frame; never mixed into `gnssLocation`. */
+  navLocation?: NavLocation;
+  [property: string]: TimeStampedValue | CloudConnection | GnssLocation | NavLocation | undefined;
+}
+
+/** A navigation frame's fix: where the vehicle was, when, and what it read there. */
+export interface NavLocation extends GnssLocation {
+  /** Speed (m/s); 0 when the frame leaves it out, as at a standstill. */
+  speedMps?: number | null;
+  /** Heading (°, 0–360). */
+  bearing?: number | null;
 }
 
 export interface RivianTokens {

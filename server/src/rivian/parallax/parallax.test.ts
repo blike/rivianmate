@@ -16,6 +16,7 @@ import {
   RVM_PRECONDITIONING,
   RVM_RANGE,
   RVM_SOC_SLIDER,
+  RVM_TRIP_PROGRESS,
   chargerStateFromStatus,
   chargerStatusFromStatus,
   chargingWindowSchedule,
@@ -615,6 +616,30 @@ describe('decodeTripInfo / decodeTripProgress', () => {
       nextStopIndex: 0,
       remainingKm: 30.506,
       remainingS: 2220,
+      fix: { latitude: 40.5, longitude: -89, timeMs: null, speedMps: 7.9, bearing: null },
+    });
+  });
+
+  // Laid out as an R2 sends it: 6.1 {1 latitude, 2 longitude}, 2 speed, 3
+  // heading, 5 the fix's own time as a varint (Unix ms). Position, readings and
+  // times changed from the captured frame.
+  const withFix =
+    'CgYI157A1gYSBgjXnsDWBiEAAAAAAABPQCkAAAAAAAAuQDIlChIJklz+Q/o9REARQYLix5g/VsAVzcz8QB0AwIdDKMDi7uWTNA==';
+
+  it("reads the vehicle's own fix and what it read there", () => {
+    expect(decodeTripProgress(withFix)).toEqual({
+      nextEtaMs: 1792020311000,
+      finalEtaMs: 1792020311000,
+      nextStopIndex: 0,
+      remainingKm: 0.062,
+      remainingS: 15,
+      fix: {
+        latitude: 40.4842,
+        longitude: -88.9937,
+        timeMs: 1792020296000,
+        speedMps: 7.9,
+        bearing: 271.5,
+      },
     });
   });
 
@@ -1024,6 +1049,63 @@ describe('vehicleStateFromParallax', () => {
     expect(read(RVM_ODOMETER, int(1, 456))).toEqual({ vehicleMileage: v(456_000) });
     expect(read(RVM_ODOMETER, int(1, 0))).toBeNull();
     expect(read(RVM_ODOMETER, int(1, 3_000_000))).toBeNull();
+  });
+
+  describe('navigation fixes', () => {
+    const TS_MS = Date.parse(TS);
+    const fix = (lat: number, lon: number, timeMs: number | null, speedMps?: number) =>
+      message(6, [
+        ...message(1, [...double(1, lat), ...double(2, lon)]),
+        ...(timeMs == null ? [] : int(5, timeMs)),
+        ...(speedMps == null ? [] : float(2, speedMps)),
+        ...float(3, 271.5),
+      ]);
+    const frame = (fields: number[]) => read(RVM_TRIP_PROGRESS, fields);
+
+    it('writes the fix under its own key, stamped with the fix time', () => {
+      expect(frame(fix(40.4842, -88.9937, TS_MS, 7.9))).toEqual({
+        navLocation: {
+          latitude: 40.4842,
+          longitude: -88.9937,
+          timeStamp: TS,
+          speedMps: 7.9,
+          bearing: 271.5,
+        },
+      });
+    });
+
+    it('reads a fix with no speed as standing still, as GNSS does', () => {
+      expect(frame(fix(40.4842, -88.9937, TS_MS))).toMatchObject({
+        navLocation: { speedMps: 0 },
+      });
+    });
+
+    it('writes nothing without a fix time, or with one from another frame', () => {
+      expect(frame(fix(40.4842, -88.9937, null))).toBeNull();
+      expect(frame(fix(40.4842, -88.9937, TS_MS - 61_000))).toBeNull();
+      expect(frame(fix(40.4842, -88.9937, TS_MS + 61_000))).toBeNull();
+      // Exactly a minute still counts, a millisecond more does not.
+      expect(frame(fix(40.4842, -88.9937, TS_MS - 60_000))).toMatchObject({ navLocation: {} });
+      expect(frame(fix(40.4842, -88.9937, TS_MS - 60_001))).toBeNull();
+      // Either way: the two clocks drift against each other.
+      expect(frame(fix(40.4842, -88.9937, TS_MS - 59_000))).toEqual({
+        navLocation: {
+          latitude: 40.4842,
+          longitude: -88.9937,
+          timeStamp: '2026-10-12T13:57:10.952Z',
+          speedMps: 0,
+          bearing: 271.5,
+        },
+      });
+    });
+
+    it('writes nothing for 0,0 or an impossible position', () => {
+      expect(frame(fix(0, 0, TS_MS))).toBeNull();
+      expect(frame(fix(91, -88.9937, TS_MS))).toBeNull();
+      expect(frame(fix(40.4842, -181, TS_MS))).toBeNull();
+      // A frame with no fix at all, as one sent after a trip ends arrives.
+      expect(frame(double(4, 30_000))).toBeNull();
+    });
   });
 
   it('reads an R2 closure frame: doors, liftgate, windows, rear glass and charge port', () => {

@@ -3,7 +3,7 @@ import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
 import { drives, locationPoints } from '../db/schema.js';
 import { MIN_DRIVE_KM } from './drive-metrics.js';
-import { isPosition } from './state-utils.js';
+import { isPosition } from '../geo.js';
 
 export interface WeatherPoint {
   lat: number;

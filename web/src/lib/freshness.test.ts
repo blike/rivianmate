@@ -69,6 +69,18 @@ describe('locationIsBehind', () => {
     expect(locationIsBehind({ gnssSpeed: v(ago(1)), gnssLocation: loc(ago(60)) })).toBe(false);
   });
 
+  it('does not measure the map fix against the navigation one', () => {
+    // Only GPS readings here: counting the navigation fix would flag this
+    // 19-minute-old map fix as behind, which is the GPS-versus-GPS comparison
+    // this has never made.
+    expect(
+      locationIsBehind({
+        gnssLocation: loc(ago(19 * 60)),
+        navLocation: { ...loc(ago(1)), speedMps: 10, bearing: 90 },
+      }),
+    ).toBe(false);
+  });
+
   it('accepts a fix that keeps up', () => {
     expect(locationIsBehind({ gearStatus: v(ago(1)), gnssLocation: loc(ago(3)) })).toBe(false);
     expect(locationIsBehind({ gnssLocation: loc(ago(600)) })).toBe(false);

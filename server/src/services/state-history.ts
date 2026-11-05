@@ -5,11 +5,12 @@ import type { TimeStampedValue, VehicleState } from '../rivian/types.js';
 import type { HistoryKeys } from './history-keys.js';
 
 /**
- * Fields not recorded: GPS is kept per fix in location_points, and the
- * cloud connection is live status, re-stamped on every sync.
+ * Fields not recorded: GPS is kept per fix in location_points — the navigation
+ * fix included — and the cloud connection is live status, re-stamped on every sync.
  */
 const UNRECORDED_FIELDS = new Set([
   'gnssLocation',
+  'navLocation',
   'gnssSpeed',
   'gnssBearing',
   'gnssAltitude',

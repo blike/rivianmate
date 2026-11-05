@@ -44,7 +44,11 @@ export function lastSeenAt(
  */
 export function locationIsBehind(state: VehicleState | undefined): boolean {
   const fixAt = Date.parse(state?.gnssLocation?.timeStamp ?? '');
-  const othersAt = lastSeenAt(state, (key) => key.startsWith('gnss'));
+  // The navigation fix is the drive track's source, not a reading the map's fix
+  // is measured against: leaving it out keeps this comparing the map fix with
+  // what the vehicle reports besides GPS, as it did before navigation fixes
+  // were read at all.
+  const othersAt = lastSeenAt(state, (key) => key.startsWith('gnss') || key === 'navLocation');
   return (
     Number.isFinite(fixAt) && othersAt !== null && othersAt.getTime() - fixAt > LOCATION_LAG_MS
   );
