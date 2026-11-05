@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame, LoadingScope } from '../../components/LoadingState';
-import { Panel } from '../../components/Panel';
+import { Panel, PanelSection } from '../../components/Panel';
+import { Segmented } from '../../components/Segmented';
 import { TrendChart } from '../../components/TrendChart';
 import { vehicleBody } from '../../lib/closures';
 import { dateTime, shortDate } from '../../lib/format';
@@ -76,7 +77,17 @@ export function TiresPanel(props: {
   const leaking = trend?.leaking ? TIRES.find((t) => t.key === trend.leaking) : null;
 
   return (
-    <Panel title="Tires" action={<WindowPicker value={days} onChange={setDays} />}>
+    <Panel
+      title="Tires"
+      action={
+        <Segmented
+          label="Window"
+          options={WINDOWS.map((d) => ({ value: d, label: `${d}d` }))}
+          value={days}
+          onChange={setDays}
+        />
+      }
+    >
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:items-center">
         <LoadingScope loading={props.statePending}>
           <TireDiagram
@@ -119,10 +130,9 @@ export function TiresPanel(props: {
 
       {/* Only for a vehicle that reports its wheels' rotation reminder. */}
       {rotation && (
-        <div className="mt-6 border-t border-(--border) pt-4">
-          <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">Rotation</h4>
+        <PanelSection title="Rotation">
           <RotationReminder rotation={rotation} />
-        </div>
+        </PanelSection>
       )}
     </Panel>
   );
@@ -186,25 +196,5 @@ function RotationReminder(props: { rotation: TireRotation }) {
       )}
       {since && <p className="mt-2 text-sm text-(--text-secondary) tabular-nums">{since}</p>}
     </>
-  );
-}
-
-function WindowPicker(props: { value: number; onChange: (days: number) => void }) {
-  return (
-    <div className="flex shrink-0 rounded-md border border-(--border) p-0.5">
-      {WINDOWS.map((d) => (
-        <button
-          key={d}
-          onClick={() => props.onChange(d)}
-          className={`rounded px-2.5 py-1 text-xs ${
-            d === props.value
-              ? 'bg-(--surface-2) text-(--text-primary)'
-              : 'text-(--text-secondary) hover:text-(--text-primary)'
-          }`}
-        >
-          {d}d
-        </button>
-      ))}
-    </div>
   );
 }

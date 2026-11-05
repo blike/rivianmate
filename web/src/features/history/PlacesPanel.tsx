@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react';
 import type { DriveDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame } from '../../components/LoadingState';
+import { Panel } from '../../components/Panel';
 import { PlaceIcon } from '../../components/PlaceIcon';
 import { commonRoutes, topDestinations } from './patterns';
-import { Segmented } from './Segmented';
+import { Segmented } from '../../components/Segmented';
 
 /** Where the vehicle goes most, and the trips it makes again and again. */
 export function PlacesPanel(props: {
@@ -26,11 +27,21 @@ export function PlacesPanel(props: {
   const most = places[0]?.visits ?? 0;
 
   return (
-    <section className="card flex h-full flex-col p-5 sm:p-6">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <h2 className="eyebrow text-(--text-secondary)">Places</h2>
-        <Segmented label="Show" items={['Destinations', 'Trips']} value={view} onChange={setView} />
-      </div>
+    <Panel
+      title="Places"
+      className="flex h-full flex-col"
+      action={
+        <Segmented
+          label="Show"
+          options={[
+            { value: 0, label: 'Destinations' },
+            { value: 1, label: 'Trips' },
+          ]}
+          value={view}
+          onChange={setView}
+        />
+      }
+    >
       <ContentFrame
         height="13rem"
         loading={props.loading}
@@ -91,6 +102,6 @@ export function PlacesPanel(props: {
           </ol>
         )}
       </ContentFrame>
-    </section>
+    </Panel>
   );
 }

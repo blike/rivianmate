@@ -11,6 +11,7 @@ import {
   useLookupSettings,
 } from '../../api/hooks';
 import { ContentFrame, LoadingScope } from '../../components/LoadingState';
+import { Panel } from '../../components/Panel';
 import { PageHeader, SectionRule } from '../../components/PageHeader';
 import { TRIPS_LEGEND, VehicleMap } from '../../components/VehicleMap';
 import { isPosition } from '../../lib/geo';
@@ -209,15 +210,18 @@ export function HistoryPage(props: { vehicleId: string }) {
         <section>
           <SectionRule>Where and when</SectionRule>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-            <section className="card flex flex-col overflow-hidden xl:col-span-8">
-              <div className="flex items-center justify-between gap-4 px-5 pt-5 pb-4 sm:px-6">
-                <h2 className="eyebrow text-(--text-secondary)">Routes driven</h2>
+            <Panel
+              title="Routes driven"
+              className="flex flex-col xl:col-span-8"
+              flush
+              action={
                 <span className="flex items-center gap-2 text-xs text-(--text-muted)">
                   Once
                   <span className="h-1.5 w-16 rounded-full" style={{ background: TRIPS_LEGEND }} />
                   Often
                 </span>
-              </div>
+              }
+            >
               {/* Fills the card, as tall as the time spent beside it. */}
               <div
                 className="overview-map relative flex-1 border-t border-(--hairline)"
@@ -244,7 +248,7 @@ export function HistoryPage(props: { vehicleId: string }) {
                   </ContentFrame>
                 </div>
               </div>
-            </section>
+            </Panel>
             <div className="xl:col-span-4">
               <TimeSpent
                 spans={stateSpans}

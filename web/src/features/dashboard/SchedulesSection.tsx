@@ -155,9 +155,7 @@ function NextWindow(props: {
   if (!status) {
     return (
       <div>
-        <div className="text-xs font-medium uppercase tracking-wide text-(--text-muted)">
-          Charging
-        </div>
+        <div className="eyebrow">Charging</div>
         <div className="mt-1 text-xl font-semibold tracking-tight">Any time</div>
         <div className="mt-0.5 text-sm text-(--text-secondary)">
           {props.loaded
@@ -170,7 +168,7 @@ function NextWindow(props: {
   return (
     <div>
       <div
-        className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide"
+        className="eyebrow flex items-center gap-2"
         style={{ color: status.open ? 'var(--accent)' : 'var(--text-muted)' }}
       >
         <Dot color={status.open ? 'var(--accent)' : 'var(--text-muted)'} pulse={status.open} />
@@ -204,7 +202,7 @@ function NextDeparture(props: { departures: DepartureSchedule[]; now: Date }) {
   const next = status && !status.open ? status.startsAt : null;
   return (
     <div>
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-(--text-muted)">
+      <div className="eyebrow flex items-center gap-2">
         <Dot color="var(--text-muted)" />
         Next departure
       </div>
@@ -288,7 +286,7 @@ function ChargingWeek(props: { schedules: ChargingSchedule[]; now: Date }) {
         .map((c) => `${formatWeekDays(c.weekDays)} ${formatTimeRange(c.startTime, c.duration)}`)
         .join('; ')}
     >
-      <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">This week</h4>
+      <h4 className="eyebrow mb-3">This week</h4>
       <div className="relative">
         {/* Faint guides at 6a, 12p and 6p behind the rows. */}
         <div aria-hidden className="pointer-events-none absolute inset-y-0 left-11 right-0">

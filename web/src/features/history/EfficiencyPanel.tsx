@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { DriveDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame } from '../../components/LoadingState';
+import { Panel } from '../../components/Panel';
 import { fmt } from '../../lib/state';
 import {
   type EfficiencyBucket,
@@ -69,9 +70,12 @@ export function EfficiencyPanel(props: {
       emptyText="No finished drives with battery readings in this period."
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <section className={`card flex flex-col p-5 sm:p-6 ${AVERAGE_SPAN[factors.length] ?? ''}`}>
-          <h3 className="eyebrow text-(--text-secondary)">Average efficiency</h3>
-          <div className="mt-3 flex items-baseline gap-1.5">
+        <Panel
+          tight
+          title="Average efficiency"
+          className={`flex flex-col ${AVERAGE_SPAN[factors.length] ?? ''}`}
+        >
+          <div className="mt-1 flex items-baseline gap-1.5">
             <span className="readout text-5xl font-[350]">{fmt(average, digits)}</span>
             <span className="text-base text-(--text-muted)">{unit}</span>
           </div>
@@ -79,7 +83,7 @@ export function EfficiencyPanel(props: {
             Over {overall.drives} drive{overall.drives === 1 ? '' : 's'},{' '}
             {u.formatDistance(overall.km)}
           </p>
-        </section>
+        </Panel>
 
         {factors.map((f) => (
           <FactorChart
@@ -134,9 +138,8 @@ function FactorChart(props: {
   };
 
   return (
-    <section className="card flex flex-col p-5 sm:p-6">
-      <h3 className="eyebrow text-(--text-secondary)">{props.factor.title}</h3>
-      <p className="mt-1.5 min-h-5 truncate text-xs text-(--text-muted) tabular-nums">
+    <Panel tight title={props.factor.title} className="flex flex-col">
+      <p className="min-h-5 truncate text-xs text-(--text-muted) tabular-nums">
         {shownBucket ? (
           <>
             {hover == null && 'Best: '}
@@ -222,6 +225,6 @@ function FactorChart(props: {
           <span>{props.factor.ends[1]}</span>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

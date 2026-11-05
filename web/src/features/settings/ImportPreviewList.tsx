@@ -7,7 +7,7 @@ import type {
 } from '../../api/client';
 import { useUnits } from '../../api/hooks';
 import { fmt } from '../../lib/state';
-import { SegmentedControl } from './SettingsControls';
+import { Segmented } from '../../components/Segmented';
 
 /** Up to this many rows start open; beyond it, only the newest month does. */
 const OPEN_ALL_UP_TO = 30;
@@ -248,7 +248,8 @@ export function ImportPreviewList(props: { preview: ImportPreviewDto; timeZone: 
   return (
     <div className="px-4 py-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <SegmentedControl
+        <Segmented
+          size="md"
           label="Show"
           value={kind}
           options={[
@@ -257,7 +258,8 @@ export function ImportPreviewList(props: { preview: ImportPreviewDto; timeZone: 
           ]}
           onChange={setKind}
         />
-        <SegmentedControl
+        <Segmented
+          size="md"
           label="Filter"
           value={filter}
           options={[

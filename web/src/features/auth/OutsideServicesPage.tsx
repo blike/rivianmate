@@ -86,9 +86,7 @@ function DrivePreview(props: { lookups: LookupSettings }) {
   const condition = weatherLabel(SAMPLE.weatherCode);
   return (
     <figure className="rounded-lg bg-(--surface-2) px-3.5 py-3">
-      <figcaption className="mb-2 text-[11px] font-medium uppercase tracking-wide text-(--text-muted)">
-        Preview
-      </figcaption>
+      <figcaption className="eyebrow mb-2">Preview</figcaption>
       <div className="flex min-w-0 items-baseline text-sm">
         <span className="shrink-0 font-medium">
           <PlaceIcon isHome saved={false} />

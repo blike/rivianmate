@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame } from '../../components/LoadingState';
+import { Panel, PanelSection } from '../../components/Panel';
 import { type TraceBand, TimeTrace } from '../../components/TimeTrace';
 import { type ActivityBand, type StateSegment, rangeWindow } from './history';
 import { METRICS, neighbours, PREFETCH_FRESH_MS, type Range } from './options';
-import { Segmented } from './Segmented';
+import { Segmented } from '../../components/Segmented';
 import { StateStrip } from './StateStrip';
 
 /** Drives and charging behind the line; plugged in but idle is fainter. */
@@ -113,16 +114,17 @@ export function Timeline(props: {
   const unit = metric.kind === 'distance' ? u.distanceUnit : '%';
 
   return (
-    <section className="card p-5 sm:p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <h2 className="eyebrow text-(--text-secondary)">Timeline</h2>
+    <Panel
+      title="Timeline"
+      action={
         <Segmented
           label="Metric"
-          items={METRICS.map((m) => m.label)}
+          options={METRICS.map((m, i) => ({ value: i, label: m.label }))}
           value={metricIdx}
           onChange={setMetricIdx}
         />
-      </div>
+      }
+    >
       <ContentFrame
         height={260}
         loading={isPending}
@@ -161,10 +163,7 @@ export function Timeline(props: {
       </ul>
 
       {props.segments.length > 0 && (
-        <div className="mt-6 border-t border-(--hairline) pt-5">
-          <h3 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
-            Vehicle state
-          </h3>
+        <PanelSection title="Vehicle state">
           <StateStrip
             segments={props.segments}
             from={from.getTime()}
@@ -172,8 +171,8 @@ export function Timeline(props: {
             gutter
             onHover={props.onHover}
           />
-        </div>
+        </PanelSection>
       )}
-    </section>
+    </Panel>
   );
 }

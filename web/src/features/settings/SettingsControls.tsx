@@ -17,11 +17,7 @@ export function SettingsGroup(props: {
     <section aria-label={props.ariaLabel} className={`min-w-0 ${props.className ?? ''}`}>
       {(props.title || props.action) && (
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
-          {props.title && (
-            <h3 className="text-xs font-medium uppercase tracking-wide text-(--text-muted)">
-              {props.title}
-            </h3>
-          )}
+          {props.title && <h3 className="eyebrow">{props.title}</h3>}
           {props.action}
         </div>
       )}
@@ -90,10 +86,7 @@ export function SettingsHero(props: {
   return (
     <section className="card overflow-hidden">
       <div className="p-5">
-        <div
-          className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide"
-          style={{ color }}
-        >
+        <div className="eyebrow flex items-center gap-2" style={{ color }}>
           <Dot color={color} pulse={props.pulse} />
           {props.eyebrow}
         </div>
@@ -102,38 +95,6 @@ export function SettingsHero(props: {
       </div>
       {props.children}
     </section>
-  );
-}
-
-export function SegmentedControl<T extends string>(props: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={props.label}
-      className="flex rounded-lg bg-(--surface-2) p-0.5 text-sm"
-    >
-      {props.options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={o.value === props.value}
-          className={`rounded-md px-3 py-1 transition-colors ${
-            o.value === props.value
-              ? 'bg-(--accent) font-medium text-(--on-accent)'
-              : 'text-(--text-secondary) hover:text-(--text-primary)'
-          }`}
-          onClick={() => props.onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

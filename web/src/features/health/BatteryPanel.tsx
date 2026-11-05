@@ -1,7 +1,7 @@
 import type { BatteryHealthDto, VehicleInsightsDto } from '@server/api-types';
 import { useMemo, type ReactNode } from 'react';
 import { ContentFrame, LoadingScope, Skeleton, useLoading } from '../../components/LoadingState';
-import { Panel } from '../../components/Panel';
+import { Panel, PanelSection } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { TrendChart } from '../../components/TrendChart';
 import { longDateTime, shortDate } from '../../lib/format';
@@ -101,24 +101,20 @@ export function BatteryPanel(props: {
               </p>
             </div>
           </LoadingScope>
-          <div className="border-t border-(--border) pt-4">
-            <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">Pack</h4>
+          <PanelSection title="Pack" stacked>
             <LoadingScope loading={props.insightsPending}>
               <PackDetails insights={props.insights} cellType={props.cellType} />
             </LoadingScope>
-          </div>
+          </PanelSection>
         </div>
       </div>
 
       {/* Short and wide: both windows side by side under the capacity readings. */}
-      <div className="mt-6 border-t border-(--border) pt-4">
-        <h4 className="mb-3 text-xs uppercase tracking-wide text-(--text-muted)">
-          Used while parked
-        </h4>
+      <PanelSection title="Used while parked">
         <LoadingScope loading={props.insightsPending}>
           <ParkedEnergyPanel insights={props.insights} columns />
         </LoadingScope>
-      </div>
+      </PanelSection>
     </Panel>
   );
 }

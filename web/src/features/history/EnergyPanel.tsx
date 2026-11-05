@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import type { BatteryWindowDto, ChargingSessionDto, DriveDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame, Skeleton, useLoading } from '../../components/LoadingState';
+import { Panel } from '../../components/Panel';
 import { formatMoney } from '../../lib/charging';
 import { shortDate } from '../../lib/format';
 import { fmt } from '../../lib/state';
@@ -91,15 +92,16 @@ export function EnergyPanel(props: {
   const batteryLevels = `${fmt(props.battery?.startLevel, 0)}% → ${fmt(props.battery?.endLevel, 0)}%`;
 
   return (
-    <section className="card p-5 sm:p-6">
-      <div className="mb-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="eyebrow text-(--text-secondary)">In and out</h2>
-        {ledger.since != null && (
+    <Panel
+      title="In and out"
+      action={
+        ledger.since != null && (
           <p className="text-xs text-(--text-muted)">
             Since {shortDate(ledger.since)}, the earliest recorded drive
           </p>
-        )}
-      </div>
+        )
+      }
+    >
       <ContentFrame
         height="9rem"
         loading={props.loading}
@@ -190,7 +192,7 @@ export function EnergyPanel(props: {
           </dl>
         </div>
       </ContentFrame>
-    </section>
+    </Panel>
   );
 }
 

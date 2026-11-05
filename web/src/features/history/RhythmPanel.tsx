@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { DriveDto } from '@server/api-types';
 import { useUnits } from '../../api/hooks';
 import { ContentFrame } from '../../components/LoadingState';
+import { Panel } from '../../components/Panel';
 import { drivingRhythm } from './patterns';
 
 /** Monday first, as the grid is. */
@@ -37,9 +38,10 @@ export function RhythmPanel(props: {
   const shown: [number, number] | null = hover ?? peak;
 
   return (
-    <section className="card flex h-full flex-col p-5 sm:p-6">
-      <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h2 className="eyebrow text-(--text-secondary)">Driving rhythm</h2>
+    <Panel
+      title="Driving rhythm"
+      className="flex h-full flex-col"
+      action={
         <span className="text-xs text-(--text-muted) tabular-nums">
           {shown &&
             (() => {
@@ -57,7 +59,8 @@ export function RhythmPanel(props: {
               );
             })()}
         </span>
-      </div>
+      }
+    >
       <ContentFrame
         height="13rem"
         loading={props.loading}
@@ -101,6 +104,6 @@ export function RhythmPanel(props: {
           </div>
         </div>
       </ContentFrame>
-    </section>
+    </Panel>
   );
 }

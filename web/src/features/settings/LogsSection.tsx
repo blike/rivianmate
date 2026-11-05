@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogBacklogDto } from '@server/api-types';
 import { Dot } from '../../components/Dot';
-import { SegmentedControl, secondaryButton } from './SettingsControls';
+import { secondaryButton } from './SettingsControls';
 import {
   type LogEntryDto,
   type LogLevelName,
@@ -11,6 +11,7 @@ import {
   inlineFields,
   logText,
 } from './logs';
+import { Segmented } from '../../components/Segmented';
 
 const LEVEL_OPTIONS: { value: LogLevelName; label: string }[] = [
   { value: 'debug', label: 'All' },
@@ -85,7 +86,13 @@ export function LogsSection(props: {
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <SegmentedControl label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
+        <Segmented
+          size="md"
+          label="Level"
+          value={level}
+          options={LEVEL_OPTIONS}
+          onChange={setLevel}
+        />
         <input
           type="search"
           value={query}

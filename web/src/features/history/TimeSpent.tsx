@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StateSpanDto } from '@server/api-types';
 import { ContentFrame } from '../../components/LoadingState';
+import { Panel, PanelSection } from '../../components/Panel';
 import { clock, dateTime } from '../../lib/format';
 import { fmtSeconds } from '../../lib/state';
 import { type StateSegment, stateRows, stateTotals } from './history';
@@ -42,8 +43,7 @@ export function TimeSpent(props: {
   }, [rows.length]);
 
   return (
-    <section className="card flex h-full flex-col p-5 sm:p-6">
-      <h2 className="eyebrow mb-5 text-(--text-secondary)">Time spent</h2>
+    <Panel title="Time spent" className="flex h-full flex-col">
       <ContentFrame
         height="12rem"
         loading={props.loading}
@@ -75,16 +75,17 @@ export function TimeSpent(props: {
         </dl>
 
         {rows.length > 0 && (
-          <div className="mt-6 border-t border-(--hairline) pt-5">
-            <div className="mb-3 flex min-h-4 items-baseline justify-between gap-3 text-xs">
-              <span className="eyebrow">Day by day</span>
-              {selected && (
-                <span className="truncate text-(--text-muted) tabular-nums">
+          <PanelSection
+            title="Day by day"
+            action={
+              selected && (
+                <span className="truncate text-xs text-(--text-muted) tabular-nums">
                   {STATE_STYLE[selected.state].label} · {dateTime(selected.from)} –{' '}
                   {clock(selected.to)}
                 </span>
-              )}
-            </div>
+              )
+            }
+          >
             <div
               ref={daysRef}
               className="max-h-56 space-y-1 overflow-y-auto overscroll-contain pr-1"
@@ -129,9 +130,9 @@ export function TimeSpent(props: {
                 </span>
               ))}
             </div>
-          </div>
+          </PanelSection>
         )}
       </ContentFrame>
-    </section>
+    </Panel>
   );
 }
