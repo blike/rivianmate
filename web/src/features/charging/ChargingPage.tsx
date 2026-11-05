@@ -4,6 +4,7 @@ import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
 import { useChargingPages, useLiveCharging, useVehicleState } from '../../api/hooks';
 import { DayCalendar } from '../../components/DayCalendar';
+import { PageHeader } from '../../components/PageHeader';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
 import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
@@ -66,9 +67,7 @@ export function ChargingPage(props: { vehicleId: string }) {
     onSelect: setSelectedSessionId,
     dayOf: chargeStart,
   });
-  const calendar = (variant: 'pill' | 'tile') => (
-    <DayCalendar variant={variant} noun="session" {...goTo.calendar} />
-  );
+  const calendar = <DayCalendar noun="session" {...goTo.calendar} />;
   const showingOpen = session != null && !session.endedAt && session.id === sessions?.[0]?.id;
 
   const {
@@ -90,90 +89,95 @@ export function ChargingPage(props: { vehicleId: string }) {
 
   if (!sessionsPending && !sessions?.length) {
     return (
-      <div className="space-y-4">
-        {(isLive || liveExpected) && <LiveCard live={live} loading={!isLive} state={state} />}
-        <Panel title="Charging sessions">
-          <p className="py-6 text-center text-sm text-(--text-muted)">
-            No charging sessions recorded yet.
-          </p>
-        </Panel>
-        {!teslamate && <Wallboxes wallboxes={wallboxes} />}
-      </div>
+      <>
+        <PageHeader title="Charging" />
+        <div className="space-y-4">
+          {(isLive || liveExpected) && <LiveCard live={live} loading={!isLive} state={state} />}
+          <Panel title="Charging sessions">
+            <p className="py-6 text-center text-sm text-(--text-muted)">
+              No charging sessions recorded yet.
+            </p>
+          </Panel>
+          {!teslamate && <Wallboxes wallboxes={wallboxes} />}
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {sessions && sessions.length > 1 && (
-        <div className="sticky top-2 z-20 flex items-stretch gap-2 lg:hidden">
+    <>
+      {/* Until the list shows beside the details, the calendar sits at the header's
+          right, so the picker has the width. */}
+      <PageHeader title="Charging" action={<div className="lg:hidden">{calendar}</div>} />
+      <div className="space-y-4">
+        {sessions && sessions.length > 1 && (
           <SessionPicker
             sessions={sessions}
             selectedId={session?.id ?? null}
             onSelect={setSelectedSessionId}
             older={older}
-            className="min-w-0 flex-1"
+            className="sticky top-2 z-20 lg:hidden"
           />
-          {calendar('tile')}
+        )}
+        <div className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}>
+          <LoadingScope loading={sessionsPending}>
+            <SessionCard
+              session={session}
+              live={showingOpen ? liveCharge(isLive ? live : null, state) : null}
+              lastChargedTo={lastChargedTo(sessions)}
+              // A TeslaMate session's id is TeslaMate's, so its cost isn't RivianMate's to edit.
+              onSaveCost={session && !teslamate ? saveCost(session.id) : undefined}
+            />
+          </LoadingScope>
         </div>
-      )}
-      <div className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}>
-        <LoadingScope loading={sessionsPending}>
-          <SessionCard
-            session={session}
-            live={showingOpen ? liveCharge(isLive ? live : null, state) : null}
-            lastChargedTo={lastChargedTo(sessions)}
-            // A TeslaMate session's id is TeslaMate's, so its cost isn't RivianMate's to edit.
-            onSaveCost={session && !teslamate ? saveCost(session.id) : undefined}
-          />
-        </LoadingScope>
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Panel
-          title="Charging curve"
-          className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}
-        >
-          <CurveChart
-            curve={curve}
-            limit={session?.socLimit}
-            loading={sessionsPending || (session != null && curvePending)}
-            notStarted={session != null && notStarted(session)}
-          />
-          {session && <EnergySplit session={session} />}
-        </Panel>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Panel
+            title="Charging curve"
+            className={`transition-opacity ${showingPreviousCurve ? 'opacity-50' : ''}`}
+          >
+            <CurveChart
+              curve={curve}
+              limit={session?.socLimit}
+              loading={sessionsPending || (session != null && curvePending)}
+              notStarted={session != null && notStarted(session)}
+            />
+            {session && <EnergySplit session={session} />}
+          </Panel>
 
-        <Panel title="All sessions" className="hidden flex-col lg:flex" action={calendar('pill')}>
-          <div className="relative min-h-0 flex-1">
-            <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
-              {sessionsPending ? (
-                <div className="px-4">
-                  <SkeletonRows rows={8} />
-                </div>
-              ) : (
-                <>
-                  <SessionList
-                    sessions={sessions!}
-                    selectedId={session?.id ?? null}
-                    onSelect={setSelectedSessionId}
-                    revealId={goTo.revealId}
-                    onRevealed={goTo.clearReveal}
-                  />
-                  {older.has && (
-                    <LoadOlder
-                      label="Show older sessions"
-                      loading={older.loading}
-                      onLoad={older.load}
+          <Panel title="All sessions" className="hidden flex-col lg:flex" action={calendar}>
+            <div className="relative min-h-0 flex-1">
+              <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
+                {sessionsPending ? (
+                  <div className="px-4">
+                    <SkeletonRows rows={8} />
+                  </div>
+                ) : (
+                  <>
+                    <SessionList
+                      sessions={sessions!}
+                      selectedId={session?.id ?? null}
+                      onSelect={setSelectedSessionId}
+                      revealId={goTo.revealId}
+                      onRevealed={goTo.clearReveal}
                     />
-                  )}
-                </>
-              )}
+                    {older.has && (
+                      <LoadOlder
+                        label="Show older sessions"
+                        loading={older.loading}
+                        onLoad={older.load}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </Panel>
-      </div>
+          </Panel>
+        </div>
 
-      {!teslamate && <Wallboxes wallboxes={wallboxes} />}
-    </div>
+        {!teslamate && <Wallboxes wallboxes={wallboxes} />}
+      </div>
+    </>
   );
 }
 
