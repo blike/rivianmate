@@ -6,7 +6,7 @@ import { PlaceIcon } from '../../components/PlaceIcon';
 import { Skeleton, useLoading } from '../../components/LoadingState';
 import { type StatTile, StatTiles } from '../../components/StatTiles';
 import { movingSpeedKmh, rangeUsedKm } from '../../lib/drives';
-import { clock, longDay } from '../../lib/format';
+import { clock, longDay, shortDate } from '../../lib/format';
 import { fmt, fmtDuration, titleCase } from '../../lib/state';
 import { WeatherIcon, WindArrow } from '../../components/WeatherIcon';
 import { compass, isDaytime, weatherKind, weatherLabel } from '../../lib/weather';
@@ -66,25 +66,34 @@ export function DriveCard(props: { vehicleId: string; drive: DriveDetailDto | un
   ];
 
   // Not clipped, so the driver list can open past its edge; the tiles are.
+  // When it ran is one line along the top with who drove after it; on a phone
+  // the date is shortened to fit, who drove goes to the right, and the weather
+  // goes below the places.
   return (
     <section className="card">
-      <div className="flex items-start justify-between gap-4 p-5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm text-(--text-muted)">
-            {loading || !d ? (
-              <Skeleton className="w-[14em]" />
-            ) : (
-              <>
-                <span>
-                  {longDay(d.startedAt)} · {clock(d.startedAt)}
+      <div className="p-5">
+        <div className="flex min-h-7 items-center justify-between gap-3 text-sm text-(--text-muted) sm:justify-start">
+          {loading || !d ? (
+            <Skeleton className="w-[14em]" />
+          ) : (
+            <>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">
+                  <span className="sm:hidden">{shortDate(d.startedAt)}</span>
+                  <span className="hidden sm:inline">{longDay(d.startedAt)}</span> ·{' '}
+                  {clock(d.startedAt)}
                   {d.endedAt ? ` – ${clock(d.endedAt)}` : ' – now'}
                 </span>
-                <DriverPicker vehicleId={props.vehicleId} drive={d} />
                 {live && <InProgressTag />}
-              </>
-            )}
-          </div>
-          <h2 className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 text-base lg:text-xl font-semibold tracking-tight">
+              </span>
+              <span className="shrink-0">
+                <DriverPicker vehicleId={props.vehicleId} drive={d} />
+              </span>
+            </>
+          )}
+        </div>
+        <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <h2 className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-base lg:text-xl font-semibold tracking-tight">
             {loading || !d ? (
               <Skeleton className="w-[16em]" />
             ) : (
@@ -110,8 +119,8 @@ export function DriveCard(props: { vehicleId: string; drive: DriveDetailDto | un
               </>
             )}
           </h2>
+          {d && !loading && <DriveWeather drive={d} />}
         </div>
-        {d && !loading && <DriveWeather drive={d} />}
       </div>
       <div className="overflow-hidden rounded-b-[calc(1rem-1px)]">
         <StatTiles tiles={tiles} columns="sm:grid-cols-3 lg:grid-cols-6" />
@@ -133,7 +142,7 @@ function DriverPicker(props: { vehicleId: string; drive: DriveDetailDto }) {
   const setDriver = useSetDriveDriver(props.vehicleId);
   const current = props.drive.driver;
   if (!editable || !drivers?.length) {
-    return current && <span className="text-(--text-secondary)">· {current.name}</span>;
+    return current && <span className="text-(--text-secondary)">{current.name}</span>;
   }
   // A driver no longer listed still shows as the one picked.
   const options = [
@@ -182,7 +191,7 @@ function DriveWeather(props: { drive: DriveDetailDto }) {
       : null;
   return (
     <div
-      className="flex shrink-0 items-center gap-3"
+      className="flex shrink-0 items-center gap-2 sm:gap-3"
       title={[condition, range, wind].filter(Boolean).join(' · ')}
     >
       {w?.weatherCode != null && (
@@ -190,15 +199,15 @@ function DriveWeather(props: { drive: DriveDetailDto }) {
           kind={weatherKind(w.weatherCode)}
           night={night}
           label={condition ?? undefined}
-          className="size-9 text-(--text-secondary)"
+          className="size-6 text-(--text-secondary) sm:size-9"
         />
       )}
-      <div className="text-right">
-        <div className="text-base lg:text-xl font-semibold tabular-nums">
+      <div className="flex items-baseline gap-2 sm:block sm:text-right">
+        <div className="text-sm font-semibold tabular-nums sm:text-base lg:text-xl">
           {u.formatTemperature(tempC)}
         </div>
         {w?.windKmh != null && (
-          <div className="flex items-center justify-end gap-1 text-xs text-(--text-muted) tabular-nums">
+          <div className="flex items-center gap-1 text-xs text-(--text-muted) tabular-nums sm:justify-end">
             {w.windFromDeg != null && <WindArrow fromDeg={w.windFromDeg} className="size-3.5" />}
             {u.formatSpeed(w.windKmh)}
             {windFrom && ` ${windFrom}`}
@@ -209,11 +218,17 @@ function DriveWeather(props: { drive: DriveDetailDto }) {
   );
 }
 
-/** A saved location's name or a short address, with the full address on hover. */
+/**
+ * A saved location's name or a short address, with the full address on
+ * hover. On a phone it wraps rather than being cut short.
+ */
 function Place(props: { place: DrivePlaceDto | null }) {
   if (!props.place) return <span className="text-(--text-muted)">Unknown</span>;
   return (
-    <span className="min-w-0 truncate" title={props.place.address ?? props.place.label}>
+    <span
+      className="min-w-0 break-words sm:truncate"
+      title={props.place.address ?? props.place.label}
+    >
       <PlaceIcon isHome={props.place.isHome} saved={props.place.locationId != null} />
       {props.place.label}
     </span>

@@ -76,24 +76,8 @@ function Shell() {
                     element={<DashboardPage vehicleId={vehicleId} vehicle={vehicle} />}
                   />
                   <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
-                  <Route
-                    path="/drives"
-                    element={
-                      <>
-                        <PageHeader title="Drives" />
-                        <DrivesPage vehicleId={vehicleId} />
-                      </>
-                    }
-                  />
-                  <Route
-                    path="/charging"
-                    element={
-                      <>
-                        <PageHeader title="Charging" />
-                        <ChargingPage vehicleId={vehicleId} />
-                      </>
-                    }
-                  />
+                  <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />
+                  <Route path="/charging" element={<ChargingPage vehicleId={vehicleId} />} />
                   <Route
                     path="/health"
                     element={

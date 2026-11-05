@@ -111,10 +111,13 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
   const bus = new LiveBus();
   const sessions = new Map<string, LiveSessionData | null>();
   bus.onChargingSession((id, s) => sessions.set(id, s));
+  /** About when the fixture's now() was, which its times count back from. */
+  let loadedAt = 0;
 
   beforeAll(async () => {
     admin = postgres(url!, { max: 1, onnotice: () => {} });
     await admin.unsafe(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE; CREATE SCHEMA ${SCHEMA};`);
+    loadedAt = Date.now();
     await admin.unsafe(
       `SET search_path TO ${SCHEMA}; ${readFileSync(join(here, 'testing', 'schema.sql'), 'utf8')}; ${FIXTURE}`,
     );
@@ -353,8 +356,8 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     const now = new Date();
     const spans = await source.stateSpans('tm-1', new Date(now.getTime() - 2 * 3600_000), now);
     expect(spans.map((s) => s.state)).toEqual(['awake', 'driving', 'awake']);
-    // The open drive ends at its last position, half a minute ago.
-    expect(now.getTime() - Date.parse(spans[1]!.to)).toBeCloseTo(30_000, -3);
+    // The open drive ends at its last position, half a minute before the fixture loaded.
+    expect(loadedAt - Date.parse(spans[1]!.to)).toBeCloseTo(30_000, -3);
     // The software update ten days ago.
     const older = await source.stateSpans(
       'tm-1',

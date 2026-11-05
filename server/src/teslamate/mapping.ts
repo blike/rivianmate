@@ -811,3 +811,32 @@ export function activitySpans(
   }
   return spans;
 }
+
+/**
+ * Moving time reads every position of the drives listed, millions over a
+ * year, and Postgres runs a query's window functions on one core. A long listing's
+ * drives are split into up to this many runs of time, read side by side.
+ */
+const MAX_MOVING_BATCHES = 4;
+/** Driving time per batch before a listing is split at all (ms). */
+const MOVING_BATCH_MS = 24 * 3600_000;
+
+/**
+ * Drives split into runs of about equal driving time, to be worked out side
+ * by side; each run spans as little time as it can, for the index on dates.
+ */
+export function movingBatches<D extends { started_at: Date; ended_at: Date }>(
+  drives: readonly D[],
+): D[][] {
+  const length = (d: D) => d.ended_at.getTime() - d.started_at.getTime();
+  const sorted = [...drives].sort((a, b) => a.started_at.getTime() - b.started_at.getTime());
+  const total = sorted.reduce((sum, d) => sum + length(d), 0);
+  const count = Math.min(MAX_MOVING_BATCHES, Math.max(1, Math.ceil(total / MOVING_BATCH_MS)));
+  const batches: D[][] = Array.from({ length: count }, () => []);
+  let done = 0;
+  for (const d of sorted) {
+    batches[total > 0 ? Math.min(count - 1, Math.floor((done / total) * count)) : 0]!.push(d);
+    done += length(d);
+  }
+  return batches.filter((b) => b.length > 0);
+}

@@ -343,44 +343,67 @@ export function drivePoints(
  * to look like movement, so a stretch reading 0 at both ends is a stop.
  * They also come faster than the GPS updates, so only readings with new
  * coordinates count: the repeats between them would look stopped.
+ *
+ * A year runs to millions of positions, so the work per position is kept
+ * small: repeats are found on the stored numerics, and only new readings
+ * (about a third) are cast to float8, which is slow for numeric, once each
+ * (OFFSET 0 keeps the casts from being repeated in the window above). Over
+ * the few metres between readings the flat-earth distance is haversine's
+ * to well within a millionth.
  */
 async function movingSeconds(sql: Sql, where: ReturnType<Sql>): Promise<Map<number, number>> {
   const rows = await sql<{ drive_id: number; seconds: number | null }[]>`
-    WITH readings AS (
-      SELECT drive_id, date, latitude::float8 AS lat, longitude::float8 AS lon, speed,
-             lag(latitude::float8) OVER w AS last_lat, lag(longitude::float8) OVER w AS last_lon
-      FROM positions WHERE ${where}
-      WINDOW w AS (PARTITION BY drive_id ORDER BY date)
-    ),
-    points AS (
-      SELECT drive_id, date, lat, lon, speed,
-             lag(date) OVER w AS prev_date, lag(lat) OVER w AS prev_lat,
-             lag(lon) OVER w AS prev_lon, lag(speed) OVER w AS prev_speed
-      FROM readings WHERE (lat, lon) IS DISTINCT FROM (last_lat, last_lon)
-      WINDOW w AS (PARTITION BY drive_id ORDER BY date)
-    ),
-    segments AS (
-      SELECT drive_id, EXTRACT(EPOCH FROM date - prev_date)::float8 AS seconds,
-             2 * 6371 * asin(least(1, sqrt(
-               sin(radians(lat - prev_lat) / 2) ^ 2 +
-               cos(radians(lat)) * cos(radians(prev_lat)) * sin(radians(lon - prev_lon) / 2) ^ 2
-             ))) AS km,
-             COALESCE(speed, 1) > 0 OR COALESCE(prev_speed, 1) > 0 AS rolling
-      FROM points WHERE date > prev_date
-    )
     SELECT drive_id::int AS drive_id,
            SUM(seconds) FILTER (WHERE rolling AND km * 3600 > ${STOPPED_KMH} * seconds) AS seconds
-    FROM segments GROUP BY drive_id
+    FROM (
+      SELECT drive_id, EXTRACT(EPOCH FROM date - prev_date)::float8 AS seconds,
+             6371 * sqrt(radians(lat - prev_lat) ^ 2 + (radians(lon - prev_lon) * cos(radians(lat))) ^ 2) AS km,
+             COALESCE(speed, 1) > 0 OR COALESCE(prev_speed, 1) > 0 AS rolling
+      FROM (
+        SELECT drive_id, date, lat, lon, speed,
+               lag(date) OVER w AS prev_date, lag(lat) OVER w AS prev_lat,
+               lag(lon) OVER w AS prev_lon, lag(speed) OVER w AS prev_speed
+        FROM (
+          SELECT drive_id, date, latitude::float8 AS lat, longitude::float8 AS lon, speed
+          FROM (
+            SELECT drive_id, date, latitude, longitude, speed,
+                   (latitude, longitude) IS DISTINCT FROM
+                     (lag(latitude) OVER w, lag(longitude) OVER w) AS new
+            FROM positions WHERE ${where}
+            WINDOW w AS (PARTITION BY drive_id ORDER BY date)
+          ) readings
+          WHERE new OFFSET 0
+        ) points
+        WINDOW w AS (PARTITION BY drive_id ORDER BY date)
+      ) pairs
+      WHERE date > prev_date
+    ) segments
+    GROUP BY drive_id
   `;
   return new Map(
     rows.flatMap((r) => (r.seconds == null ? [] : [[r.drive_id, Number(r.seconds)]])),
   ) as Map<number, number>;
 }
 
-/** Each finished drive's time spent moving, by drive. */
-export function drivesMovingSeconds(sql: Sql, driveIds: number[]): Promise<Map<number, number>> {
-  if (driveIds.length === 0) return Promise.resolve(new Map());
-  return movingSeconds(sql, sql`drive_id IN ${sql(driveIds)}`);
+/**
+ * Each finished drive's time spent moving, by drive. Bounded by when the
+ * drives ran, so TeslaMate's index on positions' dates finds their rows
+ * rather than every position being read.
+ */
+export function drivesMovingSeconds(
+  sql: Sql,
+  carId: number,
+  drives: readonly { id: number; started_at: Date; ended_at: Date }[],
+): Promise<Map<number, number>> {
+  if (drives.length === 0) return Promise.resolve(new Map());
+  // A second either side: TeslaMate keeps microseconds, a Date only milliseconds.
+  const from = new Date(Math.min(...drives.map((d) => d.started_at.getTime())) - 1000);
+  const to = new Date(Math.max(...drives.map((d) => d.ended_at.getTime())) + 1000);
+  return movingSeconds(
+    sql,
+    sql`car_id = ${carId} AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
+        AND drive_id IN ${sql(drives.map((d) => d.id))}`,
+  );
 }
 
 /** One drive's time spent moving; an abandoned one's up to where the car stopped. */
@@ -521,6 +544,13 @@ export function history(
   `;
 }
 
+/**
+ * Not ended before `from`: rows that can't overlap the window are left out
+ * before anything is joined to them. Open ones are kept, to be ended later.
+ */
+const endsFrom = (sql: Sql, alias: string, from: Date) =>
+  sql`AND (${sql(alias)}.end_date IS NULL OR ${sql(alias)}.end_date >= ${at(sql, from)})`;
+
 export function chargeIntervals(
   sql: Sql,
   carId: number,
@@ -539,6 +569,7 @@ export function chargeIntervals(
         WHERE charging_process_id = cp.id AND cp.end_date IS NULL
       ) last ON true
       WHERE cp.car_id = ${carId} AND cp.start_date <= ${at(sql, to)}
+        ${endsFrom(sql, 'cp', from)}
     ) spans
     WHERE spans.to >= ${from.toISOString()}::timestamptz
     ORDER BY spans.from
@@ -563,6 +594,7 @@ export function activityIntervals(
              COALESCE(s.end_date AT TIME ZONE 'UTC', now()) AS to
       FROM states s
       WHERE s.car_id = ${carId} AND s.start_date <= ${at(sql, to)}
+        ${endsFrom(sql, 's', from)}
       UNION ALL
       SELECT 'driving', ${utc(sql, 'd.start_date')},
              COALESCE(d.end_date, last.date, d.start_date) AT TIME ZONE 'UTC'
@@ -572,11 +604,13 @@ export function activityIntervals(
         WHERE drive_id = d.id AND d.end_date IS NULL
       ) last ON true
       WHERE d.car_id = ${carId} AND d.start_date <= ${at(sql, to)}
+        ${endsFrom(sql, 'd', from)}
       UNION ALL
       SELECT 'updating', ${utc(sql, 'u.start_date')},
              COALESCE(u.end_date AT TIME ZONE 'UTC', now())
       FROM updates u
       WHERE u.car_id = ${carId} AND u.start_date <= ${at(sql, to)}
+        ${endsFrom(sql, 'u', from)}
     ) spans
     WHERE spans.to >= ${from.toISOString()}::timestamptz
   `;
@@ -591,6 +625,19 @@ export interface LocationRow {
   drive_id: number | null;
 }
 
+/**
+ * The car's positions over [from, to], about `max` of them spread evenly
+ * through it, plus its first and last, in time order.
+ *
+ * Numbering every position to pick evenly sorts millions over a year, so
+ * positions are picked by id instead: ids rise as positions arrive, and
+ * every nth is kept, with n from how many ids the window spans. The span
+ * comes from the window's first and last full reports (a few in a hundred
+ * positions, with an index of their own), and every position up to the
+ * first or from the last is kept too, so the window's ends are. Other
+ * cars' positions share the ids, so with several cars each gets fewer;
+ * positions imported later with old dates are thinned more.
+ */
 export function locations(
   sql: Sql,
   carId: number,
@@ -598,16 +645,25 @@ export function locations(
   to: Date,
   max: number,
 ): Promise<LocationRow[]> {
+  const reports = sql`
+    SELECT id, date FROM positions
+    WHERE car_id = ${carId} AND ideal_battery_range_km IS NOT NULL
+      AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
+  `;
   return sql<LocationRow[]>`
-    SELECT ts, lat, lon, speed, elevation, drive_id FROM (
-      SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
-             speed, elevation, drive_id::int AS drive_id,
-             ROW_NUMBER() OVER (ORDER BY date) AS rn, COUNT(*) OVER () AS n
-      FROM positions
-      WHERE car_id = ${carId} AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
-    ) p
-    WHERE rn % CEIL(n / ${max}::float8)::int = 0 OR rn = n OR rn = 1
-    ORDER BY ts
+    WITH span AS MATERIALIZED (
+      SELECT f.date AS first_date, l.date AS last_date,
+             GREATEST(1, CEIL(ABS(l.id - f.id) / ${max}::float8))::int AS step
+      FROM (${reports} ORDER BY date LIMIT 1) f, (${reports} ORDER BY date DESC LIMIT 1) l
+    )
+    SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
+           speed, elevation, drive_id::int AS drive_id
+    FROM positions
+    WHERE car_id = ${carId} AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
+      -- Without a full report there's no span, and every position is kept: there are few.
+      AND (id % COALESCE((SELECT step FROM span), 1) = 0
+           OR date <= (SELECT first_date FROM span) OR date >= (SELECT last_date FROM span))
+    ORDER BY date
   `;
 }
 
@@ -636,6 +692,7 @@ export function busySpans(
         SELECT MAX(date) AS date FROM positions WHERE drive_id = d.id AND d.end_date IS NULL
       ) last ON true
       WHERE d.car_id = ${carId} AND d.start_date <= ${at(sql, to)}
+        ${endsFrom(sql, 'd', from)}
       UNION ALL
       SELECT ${utc(sql, 'cp.start_date')},
              COALESCE(cp.end_date, last.date) AT TIME ZONE 'UTC',
@@ -646,6 +703,7 @@ export function busySpans(
         WHERE charging_process_id = cp.id AND cp.end_date IS NULL
       ) last ON true
       WHERE cp.car_id = ${carId} AND cp.start_date <= ${at(sql, to)}
+        ${endsFrom(sql, 'cp', from)}
     ) spans
     WHERE spans.end IS NULL OR spans.end >= ${from.toISOString()}::timestamptz
   `;

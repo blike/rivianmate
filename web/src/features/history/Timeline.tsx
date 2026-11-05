@@ -58,7 +58,11 @@ export function Timeline(props: {
   to: Date;
   bands: ActivityBand[];
   segments: StateSegment[];
+  /** The bands or segments are still the last period's. */
+  stale: boolean;
   onHover?: (ts: number | null) => void;
+  /** Whether the metric for this period is still on its way. */
+  onLoading?: (loading: boolean) => void;
 }) {
   const { range, from, to } = props;
   const u = useUnits();
@@ -75,6 +79,11 @@ export function Timeline(props: {
   // As the page does: the metric over the other periods, loaded behind this one.
   const queryClient = useQueryClient();
   const shownLoaded = isSuccess && !isPlaceholderData;
+  const { onLoading } = props;
+  useEffect(
+    () => onLoading?.(isPending || isPlaceholderData),
+    [onLoading, isPending, isPlaceholderData],
+  );
   useEffect(() => {
     if (!shownLoaded) return;
     const now = new Date();
@@ -128,6 +137,7 @@ export function Timeline(props: {
       <ContentFrame
         height={260}
         loading={isPending}
+        stale={props.stale || isPlaceholderData}
         empty={data.length === 0 && props.segments.length === 0}
         emptyText="No history yet. Data appears as the vehicle reports its state."
       >

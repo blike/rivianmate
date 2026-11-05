@@ -38,6 +38,8 @@ const AVERAGE_SPAN: Record<number, string> = {
 export function EfficiencyPanel(props: {
   drives: DriveDto[] | undefined;
   loading: boolean;
+  /** Showing the last period's data while this one loads. */
+  stale: boolean;
   weather: WeatherLookups;
 }) {
   const u = useUnits();
@@ -66,6 +68,7 @@ export function EfficiencyPanel(props: {
     <ContentFrame
       height="22rem"
       loading={props.loading}
+      stale={props.stale}
       empty={average == null}
       emptyText="No finished drives with battery readings in this period."
     >
