@@ -151,6 +151,20 @@ export class Drivers {
 
   /** The driver for a profile, created the first time it's seen. */
   async driverFor(vehicleId: string, profileId: string, seenAt: Date | null): Promise<number> {
+    // Updated first, as nearly every call finds the driver: an insert that
+    // meets the row spends an id all the same.
+    const [found] = await this.db
+      .update(drivers)
+      .set({
+        // greatest() skips nulls, so an unknown time never clears a known one.
+        lastSeenAt: seenAt
+          ? sql`greatest(${drivers.lastSeenAt}, ${seenAt.toISOString()}::timestamptz)`
+          : sql`${drivers.lastSeenAt}`,
+      })
+      .where(and(eq(drivers.vehicleId, vehicleId), eq(drivers.profileId, profileId)))
+      .returning({ id: drivers.id });
+    if (found) return found.id;
+    // Should another call make it first.
     const [row] = await this.db
       .insert(drivers)
       .values({ vehicleId, profileId, lastSeenAt: seenAt })
