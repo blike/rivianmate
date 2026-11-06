@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, open, readdir, rm } from 'node:fs/promises';
@@ -27,6 +27,7 @@ import {
   savedLocations,
   stateChanges,
   stateHeartbeats,
+  tripActivities,
   vehicles,
 } from '../../db/schema.js';
 import { type Logger, silentLogger } from '../../logger.js';
@@ -784,6 +785,32 @@ async function removeImportedRows(db: Db, id: number): Promise<void> {
         sql`${chargingSessions.rivianTransactionId} IS NOT NULL`,
       ),
     );
+  // Trips lose what's going; a session kept above stays in its trip.
+  await db.delete(tripActivities).where(
+    and(
+      // Ids are per source, so a TeslaMate activity can share one.
+      inArray(
+        tripActivities.vehicleId,
+        db
+          .select({ id: importBatches.vehicleId })
+          .from(importBatches)
+          .where(eq(importBatches.id, id)),
+      ),
+      or(
+        and(
+          eq(tripActivities.kind, 'charge'),
+          inArray(
+            tripActivities.activityId,
+            db
+              .select({ id: chargingSessions.id })
+              .from(chargingSessions)
+              .where(eq(chargingSessions.importId, id)),
+          ),
+        ),
+        and(eq(tripActivities.kind, 'drive'), inArray(tripActivities.activityId, imported)),
+      ),
+    ),
+  );
   await db.delete(chargingSessions).where(eq(chargingSessions.importId, id));
   await db.delete(drives).where(eq(drives.importId, id));
 }

@@ -29,6 +29,7 @@ import {
   type CarRow,
   type CarSnapshot,
   type DriveProgress,
+  type DriveRow,
   type GeofenceRow,
   type RangeKind,
   activitySpans,
@@ -370,8 +371,18 @@ export class TeslaMateSource {
   async drives(vehicleId: string, places: Places, window: ListWindow): Promise<DriveDto[]> {
     const car = this.need(vehicleId);
     if (!car) return [];
+    return this.driveDtos(car, await q.drives(this.db(), car.row.id, window), places);
+  }
+
+  /** The car's drives with these ids; those it doesn't have are left out. */
+  async drivesByIds(vehicleId: string, ids: number[], places: Places): Promise<DriveDto[]> {
+    const car = this.need(vehicleId);
+    if (!car) return [];
+    return this.driveDtos(car, await q.drivesByIds(this.db(), car.row.id, ids), places);
+  }
+
+  private async driveDtos(car: Car, rows: DriveRow[], places: Places): Promise<DriveDto[]> {
     const sql = this.db();
-    const rows = await q.drives(sql, car.row.id, window);
     // Open drives' figures come from their positions: the one under way, and
     // any TeslaMate abandoned (a handful, over years).
     const open = rows.filter((r) => r.ended_at == null);
@@ -403,6 +414,31 @@ export class TeslaMateSource {
         geofences: this.geofences,
       }),
     );
+  }
+
+  /** The route points of the car's drives with these ids, in time order. */
+  async drivePoints(
+    vehicleId: string,
+    ids: number[],
+  ): Promise<{ ts: Date; lat: number; lon: number; altitude: number | null; driveId: number }[]> {
+    const car = this.need(vehicleId);
+    if (!car) return [];
+    const sql = this.db();
+    const rows = await q.drivesByIds(sql, car.row.id, ids);
+    const tracks = await Promise.all(
+      rows.map(async (row) => {
+        const abandoned = row.ended_at == null && row.superseded;
+        const points = await q.drivePoints(sql, row.id, MAX_DRIVE_POINTS, abandoned);
+        return points.map((p) => ({
+          ts: p.ts,
+          lat: p.lat,
+          lon: p.lon,
+          altitude: p.elevation,
+          driveId: row.id,
+        }));
+      }),
+    );
+    return tracks.flat().sort((a, b) => a.ts.getTime() - b.ts.getTime());
   }
 
   /** When the car's drives in TeslaMate start. */
@@ -471,6 +507,18 @@ export class TeslaMateSource {
     const car = this.need(vehicleId);
     if (!car) return [];
     const rows = await q.chargingProcesses(this.db(), car.row.id, window);
+    return rows.map((row) => toSessionDto(row, { vehicleId, range: this.range, places }));
+  }
+
+  /** The car's charges with these ids; those it doesn't have are left out. */
+  async chargingSessionsByIds(
+    vehicleId: string,
+    ids: number[],
+    places: Places,
+  ): Promise<ChargingSessionDto[]> {
+    const car = this.need(vehicleId);
+    if (!car) return [];
+    const rows = await q.chargingProcessesByIds(this.db(), car.row.id, ids);
     return rows.map((row) => toSessionDto(row, { vehicleId, range: this.range, places }));
   }
 

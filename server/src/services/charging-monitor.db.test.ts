@@ -8,7 +8,13 @@ import { dirname, join } from 'node:path';
 import { and, eq, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
-import { chargingCurvePoints, chargingSessions, vehicles } from '../db/schema.js';
+import {
+  chargingCurvePoints,
+  chargingSessions,
+  tripActivities,
+  trips,
+  vehicles,
+} from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import type { LiveSessionData, VehicleState } from '../rivian/types.js';
 import {
@@ -91,7 +97,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     await handle.sql.end();
   });
   beforeEach(async () => {
-    await handle.sql`TRUNCATE charging_curve_points, charging_sessions, vehicles RESTART IDENTITY CASCADE`;
+    await handle.sql`TRUNCATE trips, charging_curve_points, charging_sessions, vehicles RESTART IDENTITY CASCADE`;
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
     clock = NOW;
   });
@@ -129,6 +135,26 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:32:00.000Z');
     expect(rows[0]!.chargingSeconds).toBe(3600);
+  });
+
+  it('takes a discarded plug-in out of its trip, and only that', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
+    const [session] = await sessions();
+    const [trip] = await handle.db.insert(trips).values({ vehicleId: 'v1', name: 'A' }).returning();
+    const link = { tripId: trip!.id, kind: 'charge' as const, activityId: session!.id };
+    // TeslaMate's ids are its own, so one of its charges can share this id.
+    await handle.db.insert(tripActivities).values([
+      { ...link, vehicleId: 'v1' },
+      { ...link, vehicleId: 'tm-1' },
+    ]);
+    await note(m, '2026-10-01T00:31:00Z', UNPLUGGED, 'charging_ready', 40);
+    m.stop();
+
+    expect(await sessions()).toHaveLength(0);
+    const left = await handle.db.select().from(tripActivities);
+    expect(left.map((l) => l.vehicleId)).toEqual(['tm-1']);
   });
 
   it('continues a plug-in across a restart, keeping its charging time', async () => {

@@ -683,3 +683,123 @@ export interface ImportsDto {
   draft: ImportDraftDto | null;
   batches: ImportBatchDto[];
 }
+
+/** The kinds of record a trip can hold. */
+export type TripActivityKind = 'drive' | 'charge';
+
+/** A trip's own fields. */
+export interface TripDto {
+  id: number;
+  vehicleId: string;
+  name: string;
+  notes: string | null;
+  /**
+   * The trip's days, as YYYY-MM-DD: finished drives and charges that start
+   * within them join on their own, and ones taken out stay out. Null without
+   * dates, holding only what's put in it.
+   */
+  startDate: string | null;
+  endDate: string | null;
+  /** The zone the dates are days in; set with a start date. */
+  timeZone: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TripCostDto {
+  currency: string | null;
+  amount: number;
+  /** Some of it is a rate-based estimate. */
+  estimated: boolean;
+}
+
+/**
+ * A trip's totals, from the figures its drives and charges have. Each `with…`
+ * count says how many a total covers, so a gap in the data can be shown.
+ */
+export interface TripStatsDto {
+  drives: number;
+  charges: number;
+  /** First activity's start and last one's end; null with no activities. */
+  startedAt: string | null;
+  endedAt: string | null;
+  /**
+   * When the last activity began. The trip's days run to this, so a charge
+   * that started on its last evening and ran overnight doesn't add a day.
+   */
+  lastStartedAt: string | null;
+  distanceKm: number;
+  drivesWithDistance: number;
+  /** Start to end of each drive. */
+  drivingSeconds: number;
+  /** Time the vehicle charged, not time plugged in. */
+  chargingSeconds: number;
+  chargesWithTime: number;
+  /** Battery energy used on drives, estimated from the battery level. */
+  energyUsedKwh: number;
+  /** Energy charged; includes estimates from battery gained when `energyAddedEstimated`. */
+  energyAddedKwh: number;
+  energyAddedEstimated: boolean;
+  chargesWithEnergy: number;
+  /** The drives with both figures, which efficiency is worked out from. */
+  efficiency: { distanceKm: number; energyKwh: number; drives: number } | null;
+  /** One total per currency, as different currencies can't be added. */
+  costs: TripCostDto[];
+  chargesWithCost: number;
+}
+
+export interface TripSummaryDto extends TripDto {
+  stats: TripStatsDto;
+}
+
+export interface TripDetailDto extends TripSummaryDto {
+  drives: DriveDto[];
+  sessions: ChargingSessionDto[];
+  /** Activities in the trip that can't be read, e.g. with TeslaMate unreachable. */
+  missing: number;
+}
+
+/** A point along a trip's elevation profile. */
+export interface TripProfilePointDto {
+  /** Distance along this drive's route. */
+  km: number;
+  altitudeM: number;
+}
+
+/** A drive's line on a trip's map, as [lat, lon] pairs, and the ground it covered. */
+export interface TripRouteDto {
+  driveId: number;
+  points: [number, number][];
+  /** Empty without altitude readings. */
+  profile: TripProfilePointDto[];
+}
+
+/** Which trip an activity is in. */
+export interface TripAssignmentDto {
+  kind: TripActivityKind;
+  activityId: number;
+  tripId: number;
+  tripName: string;
+}
+
+/** Finished activities in a date window, for choosing what goes in a trip. */
+export interface TripCandidatesDto {
+  drives: DriveDto[];
+  sessions: ChargingSessionDto[];
+  assignments: TripAssignmentDto[];
+  /** Taken out of the trip asked about (`tripId`); empty without one. */
+  excluded: TripActivityRef[];
+}
+
+export interface TripInput {
+  name: string;
+  notes?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  timeZone?: string | null;
+}
+
+export interface TripActivityRef {
+  kind: TripActivityKind;
+  id: number;
+}

@@ -22,6 +22,7 @@ import { healthRoutes } from './routes/health.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { settingsRoutes } from './routes/settings.js';
 import { teslamateRoutes } from './routes/teslamate.js';
+import { tripRoutes } from './routes/trips.js';
 import { vehicleRoutes } from './routes/vehicles.js';
 
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
@@ -93,6 +94,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await vehicleRoutes(app, ctx);
   await historyRoutes(app, ctx);
   await chargingRoutes(app, ctx);
+  await tripRoutes(app, ctx);
   await settingsRoutes(app, ctx);
   await locationRoutes(app, ctx);
   await healthRoutes(app, ctx);

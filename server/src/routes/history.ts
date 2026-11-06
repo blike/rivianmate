@@ -216,58 +216,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
         )
         .orderBy(desc(drives.startedAt))
         .limit(listLimit(q));
-      // Drives recorded before elevation tracking: compute once and keep.
-      // Only drives that actually have altitude readings are candidates, so
-      // drives without any don't cost a query on every listing.
-      const pending = rows.filter((r) => r.endedAt && r.elevationGainM == null);
-      const withAltitude = pending.length
-        ? new Set(
-            (
-              await ctx.db
-                .selectDistinct({ driveId: locationPoints.driveId })
-                .from(locationPoints)
-                .where(
-                  and(
-                    inArray(
-                      locationPoints.driveId,
-                      pending.map((r) => r.id),
-                    ),
-                    isNotNull(locationPoints.altitude),
-                  ),
-                )
-            ).map((r) => r.driveId),
-          )
-        : new Set<number | null>();
-      for (const row of pending) {
-        if (withAltitude.has(row.id)) {
-          const elevation = await driveElevation(ctx.db, row.id);
-          if (!elevation) continue;
-          row.elevationGainM = elevation.gainM;
-          row.elevationLossM = elevation.lossM;
-          await ctx.db
-            .update(drives)
-            .set({ elevationGainM: elevation.gainM, elevationLossM: elevation.lossM })
-            .where(eq(drives.id, row.id));
-        }
-      }
-      const fallback = await latestCapacityKwh(ctx, request.params.id);
-      const ids = rows.map((r) => r.id);
-      const speeds = await maxSpeeds(ctx.db, ids);
-      const moving = await movingSeconds(ctx.db, ids);
-      const state = ctx.monitor.getState(request.params.id);
-      const places = await placeContext(ctx);
-      const names = await driverNames(ctx.db, request.params.id);
-      return rows.map((row) =>
-        toDriveDto(
-          row,
-          fallback,
-          speeds.get(row.id) ?? null,
-          moving.get(row.id) ?? null,
-          state,
-          places,
-          names,
-        ),
-      );
+      return driveDtos(ctx, request.params.id, rows);
     },
   );
 
@@ -328,6 +277,66 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
       if (!detail) return reply.code(404).send({ error: 'Not found' });
       return detail;
     },
+  );
+}
+
+/** A vehicle's recorded drives as the API shows them. */
+export async function driveDtos(
+  ctx: AppContext,
+  vehicleId: string,
+  rows: (typeof drives.$inferSelect)[],
+): Promise<DriveDto[]> {
+  // Drives recorded before elevation tracking: compute once and keep.
+  // Only drives that actually have altitude readings are candidates, so
+  // drives without any don't cost a query on every listing.
+  const pending = rows.filter((r) => r.endedAt && r.elevationGainM == null);
+  const withAltitude = pending.length
+    ? new Set(
+        (
+          await ctx.db
+            .selectDistinct({ driveId: locationPoints.driveId })
+            .from(locationPoints)
+            .where(
+              and(
+                inArray(
+                  locationPoints.driveId,
+                  pending.map((r) => r.id),
+                ),
+                isNotNull(locationPoints.altitude),
+              ),
+            )
+        ).map((r) => r.driveId),
+      )
+    : new Set<number | null>();
+  for (const row of pending) {
+    if (withAltitude.has(row.id)) {
+      const elevation = await driveElevation(ctx.db, row.id);
+      if (!elevation) continue;
+      row.elevationGainM = elevation.gainM;
+      row.elevationLossM = elevation.lossM;
+      await ctx.db
+        .update(drives)
+        .set({ elevationGainM: elevation.gainM, elevationLossM: elevation.lossM })
+        .where(eq(drives.id, row.id));
+    }
+  }
+  const fallback = await latestCapacityKwh(ctx, vehicleId);
+  const ids = rows.map((r) => r.id);
+  const speeds = await maxSpeeds(ctx.db, ids);
+  const moving = await movingSeconds(ctx.db, ids);
+  const state = ctx.monitor.getState(vehicleId);
+  const places = await placeContext(ctx);
+  const names = await driverNames(ctx.db, vehicleId);
+  return rows.map((row) =>
+    toDriveDto(
+      row,
+      fallback,
+      speeds.get(row.id) ?? null,
+      moving.get(row.id) ?? null,
+      state,
+      places,
+      names,
+    ),
   );
 }
 

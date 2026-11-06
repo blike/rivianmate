@@ -61,22 +61,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
         )
         .orderBy(desc(chargingSessions.startedAt))
         .limit(listLimit(q));
-      const places = await placeContext(ctx);
-      const capacityKwh = await packCapacityKwh(ctx, request.params.id);
-      const limits = await sessionLimits(ctx, rows);
-      const oldest = rows.at(-1);
-      const spans = oldest
-        ? await loadChargeSpans(ctx.db, request.params.id, oldest.startedAt, new Date())
-        : [];
-      return rows.map((row) =>
-        toSessionDto(
-          row,
-          places,
-          chargingWindow(spans, row.startedAt, row.endedAt),
-          capacityKwh,
-          limits.get(row.id) ?? null,
-        ),
-      );
+      return sessionDtos(ctx, request.params.id, rows);
     },
   );
 
@@ -150,6 +135,30 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
     }
     return result;
   });
+}
+
+/** A vehicle's recorded sessions, newest first, as the API shows them. */
+export async function sessionDtos(
+  ctx: AppContext,
+  vehicleId: string,
+  rows: (typeof chargingSessions.$inferSelect)[],
+): Promise<ChargingSessionDto[]> {
+  const places = await placeContext(ctx);
+  const capacityKwh = await packCapacityKwh(ctx, vehicleId);
+  const limits = await sessionLimits(ctx, rows);
+  const oldest = rows.at(-1);
+  const spans = oldest
+    ? await loadChargeSpans(ctx.db, vehicleId, oldest.startedAt, new Date())
+    : [];
+  return rows.map((row) =>
+    toSessionDto(
+      row,
+      places,
+      chargingWindow(spans, row.startedAt, row.endedAt),
+      capacityKwh,
+      limits.get(row.id) ?? null,
+    ),
+  );
 }
 
 /** A session's curve; empty if missing or (with `vehicleId`) another vehicle's. */

@@ -20,6 +20,8 @@ import {
   stateChanges,
   stateFields,
   stateHeartbeats,
+  tripActivities,
+  trips,
   vehicles,
 } from '../../db/schema.js';
 import { HistoryKeys } from '../history-keys.js';
@@ -77,7 +79,7 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     await handle.sql.end();
   });
   beforeEach(async () => {
-    await handle.sql`TRUNCATE vehicles, state_fields, import_batches, saved_locations RESTART IDENTITY CASCADE`;
+    await handle.sql`TRUNCATE trips, vehicles, state_fields, import_batches, saved_locations RESTART IDENTITY CASCADE`;
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
     lookups = vi.fn();
     imports = new ElectraFiImports(
@@ -508,6 +510,31 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     const sessions = await handle.db.select().from(chargingSessions);
     expect(sessions.map((s) => s.id)).toEqual([rivian!.id]);
     expect((await imports.list()).batches).toEqual([]);
+  });
+
+  it('undo takes what it removes out of trips, leaving what stays', async () => {
+    const batch = await importCsv(csvOf(driveRows()));
+    const [imported] = await handle.db.select().from(drives);
+    const [kept] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: 'v1', startedAt: new Date('2026-01-05T00:00:00Z') })
+      .returning();
+    const [trip] = await handle.db.insert(trips).values({ vehicleId: 'v1', name: 'A' }).returning();
+    const link = { tripId: trip!.id, kind: 'drive' as const };
+    await handle.db.insert(tripActivities).values([
+      { ...link, vehicleId: 'v1', activityId: imported!.id },
+      { ...link, vehicleId: 'v1', activityId: kept!.id },
+      // TeslaMate's ids are its own, so one of its drives can share this id.
+      { ...link, vehicleId: 'tm-1', activityId: imported!.id },
+    ]);
+
+    await imports.undo(batch.id);
+
+    const left = await handle.db.select().from(tripActivities);
+    expect(left.map((l) => [l.vehicleId, l.activityId])).toEqual([
+      ['v1', kept!.id],
+      ['tm-1', imported!.id],
+    ]);
   });
 
   describe('undo of what an import filled in', () => {
