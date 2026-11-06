@@ -15,7 +15,7 @@ import { rateLabel } from '../../lib/charging';
 import { haversineKm } from '../../lib/geo';
 import { location as vehicleLocation } from '../../lib/state';
 import { LocationEditor } from './LocationEditor';
-import { SettingRow, SettingsGroup, dangerButton, secondaryButton } from './SettingsControls';
+import { SettingRow, SettingsGroup } from './SettingsControls';
 
 /** A new location starts where the vehicle is, or else at home. */
 function draft(
@@ -78,7 +78,7 @@ export function LocationsPanel(props: { vehicleId: string | undefined }) {
       <SettingsGroup
         title="Places"
         action={
-          <button className={secondaryButton} onClick={() => setEditing('new')}>
+          <button className="btn-secondary" onClick={() => setEditing('new')}>
             Add location
           </button>
         }
@@ -119,11 +119,11 @@ export function LocationsPanel(props: { vehicleId: string | undefined }) {
                   .filter(Boolean)
                   .join(' · ')}
               >
-                <button className={secondaryButton} onClick={() => setEditing(l.id)}>
+                <button className="btn-secondary" onClick={() => setEditing(l.id)}>
                   Edit
                 </button>
                 <button
-                  className={dangerButton}
+                  className="btn-danger"
                   disabled={save.isPending}
                   onClick={() => setDeleting(l)}
                 >

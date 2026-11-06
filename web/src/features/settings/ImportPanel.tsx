@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { type ImportBatchDto, type VehicleDto, api } from '../../api/client';
 import { useImports, useRefreshAfterImport } from '../../api/hooks';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { DiscardUploadDialog, ImportFlow, type ImportStep } from './ImportFlow';
 import { plural } from '../../lib/format';
-import { SettingRow, SettingsGroup, dangerButton, secondaryButton } from './SettingsControls';
+import { DiscardUploadDialog, ImportFlow, type ImportStep } from './ImportFlow';
+import { SettingRow, SettingsGroup } from './SettingsControls';
 
 export function batchSummary(batch: ImportBatchDto): string {
   if (batch.status === 'running') return `Importing… ${Math.round((batch.progress ?? 0) * 100)}%`;
@@ -89,10 +89,10 @@ export function ImportPanel(props: { vehicles: readonly VehicleDto[] }) {
             label={draft.files.join(', ')}
             description="Uploaded but not imported. Files stay on your server until you import or discard them, or the server restarts."
           >
-            <button className={dangerButton} onClick={() => setDiscarding(true)}>
+            <button className="btn-danger" onClick={() => setDiscarding(true)}>
               Discard
             </button>
-            <button className={secondaryButton} onClick={() => setFlowStep('settings')}>
+            <button className="btn-secondary" onClick={() => setFlowStep('settings')}>
               Continue
             </button>
           </SettingRow>
@@ -104,7 +104,7 @@ export function ImportPanel(props: { vehicles: readonly VehicleDto[] }) {
         action={
           !draft && (
             <button
-              className={secondaryButton}
+              className="btn-secondary"
               disabled={rivians.length === 0}
               onClick={() => setFlowStep('source')}
             >
@@ -128,7 +128,7 @@ export function ImportPanel(props: { vehicles: readonly VehicleDto[] }) {
           >
             {batch.status !== 'running' && (
               <button
-                className={secondaryButton}
+                className="btn-secondary"
                 disabled={running}
                 onClick={() => {
                   undo.reset();

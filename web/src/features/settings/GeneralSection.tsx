@@ -10,7 +10,7 @@ import {
 } from '../../api/hooks';
 import { Skeleton } from '../../components/LoadingState';
 import { Select } from '../../components/Select';
-import { SettingRow, SettingsGroup, Switch, secondaryButton } from './SettingsControls';
+import { SettingRow, SettingsGroup, Switch } from './SettingsControls';
 import { AccountsPanel } from './AccountsPanel';
 import { LOOKUPS } from './LookupDetails';
 import { Segmented } from '../../components/Segmented';
@@ -134,7 +134,7 @@ function CopyButton(props: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      className={secondaryButton}
+      className="btn-secondary"
       aria-label={props.label}
       onClick={async () => {
         try {

@@ -66,6 +66,18 @@
     cursor: not-allowed;
     opacity: 0.5;
   }
+  /* The quiet outlined button for everything that isn't the main action. */
+  .btn-secondary {
+    @apply rounded-md border border-[color-mix(in_srgb,var(--border)_60%,var(--text-muted))] bg-(--surface-2) px-3 py-1.5 text-sm font-medium text-(--text-primary) transition-colors hover:bg-[color-mix(in_srgb,var(--surface-2)_75%,var(--text-muted))] disabled:opacity-50 disabled:hover:bg-(--surface-2);
+  }
+  /* For what can't be undone. */
+  .btn-danger {
+    @apply rounded-md border border-[color-mix(in_srgb,var(--status-critical)_55%,var(--border))] bg-[color-mix(in_srgb,var(--status-critical)_10%,var(--surface-1))] px-3 py-1.5 text-sm font-medium text-(--status-critical) transition-colors hover:bg-[color-mix(in_srgb,var(--status-critical)_20%,var(--surface-1))] disabled:opacity-50;
+  }
+  /* A text field; where it sits and how wide is the caller's. */
+  .field {
+    @apply rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm outline-none focus:border-(--text-muted) disabled:opacity-50;
+  }
 }
 
 html,

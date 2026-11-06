@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { type ImportDraftDto, type ImportPreviewDto, type VehicleDto, api } from '../../api/client';
 import { StepDots } from '../../components/AuthCard';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { browserTimeZone, plural } from '../../lib/format';
 import { ImportPreviewList } from './ImportPreviewList';
 import { Select } from '../../components/Select';
-import { browserTimeZone, plural } from '../../lib/format';
-import { SettingRow, secondaryButton } from './SettingsControls';
+import { SettingRow } from './SettingsControls';
 
 const fieldClass = 'rounded-lg border border-(--border) bg-(--surface-2) px-3 py-1.5 text-sm';
 const primaryButton = 'btn-primary rounded-md px-3 py-1.5 text-sm font-medium';
@@ -267,7 +267,7 @@ export function ImportFlow(props: {
             description={draft ? draft.files.join(', ') : source.instructions}
           >
             <label
-              className={`${draft ? secondaryButton : primaryButton} cursor-pointer focus-within:outline-2`}
+              className={`${draft ? 'btn-secondary' : primaryButton} cursor-pointer focus-within:outline-2`}
             >
               {uploading
                 ? `Uploading ${uploading.at} of ${uploading.of}…`
@@ -357,7 +357,7 @@ export function ImportFlow(props: {
               />
               {narrowed && (
                 <button
-                  className={secondaryButton}
+                  className="btn-secondary"
                   onClick={() => {
                     stale();
                     setNarrowed(false);

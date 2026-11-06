@@ -3,7 +3,7 @@ import { passwordProblem } from '@server/password-policy';
 import { ApiError, api } from '../../api/client';
 import { TextField } from '../../components/AuthCard';
 import { PasswordHint } from '../../components/PasswordHint';
-import { SettingRow, SettingsGroup, secondaryButton } from './SettingsControls';
+import { SettingRow, SettingsGroup } from './SettingsControls';
 
 export function SecuritySection() {
   const [current, setCurrent] = useState('');
@@ -75,7 +75,7 @@ export function SecuritySection() {
 
       <SettingsGroup title="Session">
         <SettingRow label="Sign out" description="Signs this browser out. Tracking keeps running.">
-          <button className={secondaryButton} onClick={logout}>
+          <button className="btn-secondary" onClick={logout}>
             Sign out
           </button>
         </SettingRow>

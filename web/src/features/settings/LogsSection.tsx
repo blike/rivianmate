@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogBacklogDto } from '@server/api-types';
 import { Dot } from '../../components/Dot';
-import { secondaryButton } from './SettingsControls';
 import {
   type LogEntryDto,
   type LogLevelName,
@@ -103,7 +102,7 @@ export function LogsSection(props: {
         />
         <button
           type="button"
-          className={secondaryButton}
+          className="btn-secondary"
           onClick={download}
           disabled={!entries.length}
         >

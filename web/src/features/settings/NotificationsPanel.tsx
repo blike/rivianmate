@@ -323,7 +323,7 @@ function NotificationsForm(props: { settings: NotificationSettingsDto }) {
                 value={appUrlDraft}
                 onChange={(e) => setAppUrlDraft(e.target.value)}
                 aria-invalid={appUrlError != null}
-                className="min-w-0 flex-1 rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm"
+                className="min-w-0 flex-1 field"
               />
               {appUrlChanged && (
                 <>
@@ -683,7 +683,7 @@ function DestinationCard(props: {
               placeholder={channel.name}
               value={d.name}
               onChange={(e) => props.onChange({ name: e.target.value })}
-              className="w-full rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm"
+              className="w-full field"
             />
           </div>
           <div>
@@ -700,7 +700,7 @@ function DestinationCard(props: {
               value={d.url}
               onChange={(e) => props.onChange({ url: e.target.value })}
               aria-invalid={problem != null}
-              className="w-full rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm"
+              className="w-full field"
             />
           </div>
           <p
