@@ -15,9 +15,9 @@ export const batteryChange = (used: number) => `${used > 0 ? '−' : '+'}${fmt(M
 /** "2101 Ireland Grove Road, Bloomington" → "2101 Ireland Grove Road", for tight rows. */
 export const shortPlace = (label: string) => label.split(',')[0]!.trim();
 
-/** A saved location's name as given; an address shortened for tight rows. */
+/** A saved location's or navigation's name as given; an address shortened for tight rows. */
 export const placeName = (p: DrivePlaceDto) =>
-  p.locationId != null ? p.label : shortPlace(p.label);
+  p.locationId != null || p.navigated ? p.label : shortPlace(p.label);
 
 /** "38m · −6.3% · 1.84 mi/kWh · 54 °F" */
 export function driveFacts(d: DriveDto, u: UnitFormatter): string {

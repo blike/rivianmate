@@ -445,7 +445,10 @@ function driveDriver(
   return { id: row.driverId!, name, source: row.driverSource };
 }
 
-/** A saved location's name, "Home" near a wallbox, else the looked-up address; null until known. */
+/**
+ * A saved location's name, "Home" near a wallbox, the name navigation gave a
+ * place the vehicle arrived at, else the looked-up address; null until known.
+ */
 export function drivePlace(
   lat: number | null,
   lon: number | null,
@@ -460,6 +463,18 @@ export function drivePlace(
   }
   if (nearbySpot(lat, lon, places.wallboxes)) {
     return { label: 'Home', address, isHome: true, locationId: null, unnamed: false };
+  }
+  // "Jumbo Rocks Campground" says more than the road it's on.
+  const navigated = nearbySpot(lat, lon, places.navigated);
+  if (navigated) {
+    return {
+      label: navigated.name,
+      address: address ?? place,
+      isHome: false,
+      locationId: null,
+      unnamed: false,
+      navigated: true,
+    };
   }
   if (place) return { label: place, address, isHome: false, locationId: null, unnamed: false };
   // With lookups off no address is coming, so say where rather than "Unknown".

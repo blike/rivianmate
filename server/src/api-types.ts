@@ -207,7 +207,7 @@ export interface DriveCoverageDto {
 }
 
 export interface DrivePlaceDto {
-  /** A saved location's name ("Work"), "Home", or a short address, e.g. "306 West Willow Street, Normal". */
+  /** A saved location's name ("Work"), "Home", a place navigation named, or a short address, e.g. "306 West Willow Street, Normal". */
   label: string;
   /** Full address, when looked up. */
   address: string | null;
@@ -216,6 +216,8 @@ export interface DrivePlaceDto {
   locationId: number | null;
   /** Neither saved nor looked up (address lookups off): the label is the coordinates. */
   unnamed: boolean;
+  /** The label is the name navigation gave the place, e.g. "Jumbo Rocks Campground". */
+  navigated?: boolean;
 }
 
 export interface DriveWeatherDto {

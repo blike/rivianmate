@@ -28,6 +28,7 @@ import {
 /** Tolerance for Rivian's clock running ahead of the server's. */
 const CLOCK_SLACK_MS = 60_000;
 import { isChargingState, socReadingsBetween } from '../services/charging-time.js';
+import { type NavigatedSpot, loadNavigatedSpots } from '../services/navigated-places.js';
 import { latestNumber, stateTimeline } from '../services/state-history.js';
 import { chargingWindow, loadChargeSpans } from '../services/charge-spans.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
@@ -247,6 +248,8 @@ export interface PlaceContext {
   wallboxes: Spot[];
   /** Whether drives' addresses are looked up; off, unnamed places show their coordinates. */
   addressLookups: boolean;
+  /** Places navigation named that a drive arrived at. */
+  navigated: NavigatedSpot[];
 }
 
 export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
@@ -258,6 +261,7 @@ export async function placeContext(ctx: AppContext): Promise<PlaceContext> {
     locations: await loadLocations(ctx),
     wallboxes: wallboxSpots(boxes),
     addressLookups: (await getLookupSettings(ctx)).addresses,
+    navigated: await loadNavigatedSpots(ctx.db),
   };
 }
 

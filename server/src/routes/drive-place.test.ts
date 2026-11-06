@@ -12,6 +12,7 @@ const places = (over: Partial<PlaceContext> = {}): PlaceContext => ({
   ],
   wallboxes: [],
   addressLookups: true,
+  navigated: [],
   ...over,
 });
 
@@ -58,6 +59,38 @@ describe('drivePlace', () => {
     expect(drivePlace(WORK.lat, WORK.lon, null, null, off)).toMatchObject({ label: 'Work' });
     expect(drivePlace(40, -100, '2 Elm St', null, off)).toMatchObject({ label: '2 Elm St' });
     expect(drivePlace(null, null, null, null, off)).toBeNull();
+  });
+});
+
+describe('drivePlace with navigation', () => {
+  const camp = { name: 'Jumbo Rocks Campground', lat: 34.0031, lon: -116.0511 };
+
+  it('names where navigation took the vehicle, over the road it parked on', () => {
+    const at = drivePlace(
+      34.0026,
+      -116.0522,
+      'Park Boulevard, Riverside County',
+      'full',
+      places({
+        navigated: [camp],
+      }),
+    );
+    expect(at).toEqual({
+      label: 'Jumbo Rocks Campground',
+      address: 'full',
+      isHome: false,
+      locationId: null,
+      unnamed: false,
+      navigated: true,
+    });
+  });
+
+  it('keeps a saved location’s name, and an address away from the spot', () => {
+    const atWork = places({ navigated: [{ ...camp, ...WORK }] });
+    expect(drivePlace(WORK.lat, WORK.lon, null, null, atWork)).toMatchObject({ label: 'Work' });
+    expect(
+      drivePlace(34.02, -116.0511, '2 Elm St', null, places({ navigated: [camp] })),
+    ).toMatchObject({ label: '2 Elm St' });
   });
 });
 
