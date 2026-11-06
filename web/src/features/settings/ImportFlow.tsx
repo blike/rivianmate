@@ -5,6 +5,7 @@ import { StepDots } from '../../components/AuthCard';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ImportPreviewList } from './ImportPreviewList';
 import { Select } from '../../components/Select';
+import { browserTimeZone, plural } from '../../lib/format';
 import { SettingRow, secondaryButton } from './SettingsControls';
 
 const fieldClass = 'rounded-lg border border-(--border) bg-(--surface-2) px-3 py-1.5 text-sm';
@@ -15,15 +16,11 @@ const textButton =
 /** Wider than any export, for reading what its files cover. */
 const ALL_DATES = { from: '0001-01-01', to: '9999-12-31' };
 
-const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-
 /** The browser's list, with the zone given first if it isn't in it (some omit UTC). */
 export function timeZoneOptions(current: string): string[] {
   const known = Intl.supportedValuesOf('timeZone');
   return known.includes(current) ? known : [current, ...known];
 }
-
-const plural = (n: number, one: string) => `${n.toLocaleString()} ${one}${n === 1 ? '' : 's'}`;
 
 export interface ImportSource {
   id: string;

@@ -4,9 +4,8 @@ import { type ImportBatchDto, type VehicleDto, api } from '../../api/client';
 import { useImports, useRefreshAfterImport } from '../../api/hooks';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { DiscardUploadDialog, ImportFlow, type ImportStep } from './ImportFlow';
+import { plural } from '../../lib/format';
 import { SettingRow, SettingsGroup, dangerButton, secondaryButton } from './SettingsControls';
-
-const plural = (n: number, one: string) => `${n.toLocaleString()} ${one}${n === 1 ? '' : 's'}`;
 
 export function batchSummary(batch: ImportBatchDto): string {
   if (batch.status === 'running') return `Importing… ${Math.round((batch.progress ?? 0) * 100)}%`;
