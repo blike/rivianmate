@@ -11,6 +11,8 @@ import { HistoryPage } from './features/history/HistoryPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RivianConnectPage } from './features/auth/RivianConnectPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { TripPage } from './features/trips/TripPage';
+import { TripsPage } from './features/trips/TripsPage';
 import { OutsideServicesPage } from './features/auth/OutsideServicesPage';
 import { SetupPage } from './features/auth/SetupPage';
 
@@ -77,6 +79,8 @@ function Shell() {
                   />
                   <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
                   <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />
+                  <Route path="/trips" element={<TripsPage vehicleId={vehicleId} />} />
+                  <Route path="/trips/:tripId" element={<TripPage vehicleId={vehicleId} />} />
                   <Route path="/charging" element={<ChargingPage vehicleId={vehicleId} />} />
                   <Route
                     path="/health"

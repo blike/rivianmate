@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { ChargingSessionDto } from '../../api/client';
 import { useUnits } from '../../api/hooks';
 import { InProgressTag } from '../../components/InProgressTag';
@@ -32,6 +33,7 @@ export function SessionCard(props: {
   /** The level the last finished charge reached, marked when no limit is reported. */
   lastChargedTo?: number | null;
   onSaveCost?: (cost: string | null) => void;
+  action?: ReactNode;
 }) {
   const u = useUnits();
   const loading = useLoading();
@@ -101,6 +103,7 @@ export function SessionCard(props: {
               {s.source === 'teslamate' && (
                 <SourceBadge label="TeslaMate" title="Read from TeslaMate" />
               )}
+              {props.action}
               {!s.endedAt && (
                 <span className="ml-auto">
                   <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} />

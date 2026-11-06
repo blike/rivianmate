@@ -10,6 +10,7 @@ import {
   HistoryIcon,
   OverviewIcon,
   SettingsIcon,
+  TripsIcon,
 } from './AppIcons';
 import { Dot } from './Dot';
 import { VehicleMenu, vehicleName } from './VehicleMenu';
@@ -18,6 +19,7 @@ export const NAV = [
   { to: '/', label: 'Overview', icon: <OverviewIcon /> },
   { to: '/history', label: 'History', icon: <HistoryIcon /> },
   { to: '/drives', label: 'Drives', icon: <DrivesIcon /> },
+  { to: '/trips', label: 'Trips', icon: <TripsIcon /> },
   { to: '/charging', label: 'Charging', icon: <ChargingIcon /> },
   { to: '/health', label: 'Health', icon: <HealthIcon /> },
 ];

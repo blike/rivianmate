@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import {
   Area,
   Bar,
@@ -32,6 +32,8 @@ export interface TrendSeries {
   dashed?: boolean;
   interpolation?: 'linear' | 'monotone';
   connectNulls?: boolean;
+  /** Drawn, but left out of the tooltip and legend: a guide, not a reading. */
+  quiet?: boolean;
 }
 
 /** A labelled horizontal line at a fixed value, e.g. a limit. */
@@ -65,8 +67,17 @@ export function TrendChart(props: {
   references?: TrendReference[];
   /** Index into `data` of the point under the pointer; null when it leaves. */
   onHover?: (index: number | null) => void;
+  /** Charts with the same id and data share the pointer. */
+  syncId?: string;
+  /** A fixed width for the left axis, so stacked charts line up. */
+  yAxisWidth?: number;
+  /** Leave the x axis to a chart stacked beneath. */
+  hideXAxis?: boolean;
 }) {
   const gradientId = useId().replace(/:/g, '');
+  // Synced charts all follow the pointer, but only the one under it explains.
+  const [pointerIn, setPointerIn] = useState(false);
+  const shown = props.series.filter((s) => !s.quiet);
   const hasRight = props.series.some((s) => s.right && !s.ownScale);
   const axisOf = (s: TrendSeries) => (s.ownScale ? `own-${s.key}` : s.right ? 'right' : 'left');
   const tick = { fill: 'var(--text-muted)', fontSize: 11 };
@@ -76,10 +87,15 @@ export function TrendChart(props: {
   const rightDigits = props.series.find((s) => s.right && !s.ownScale)?.digits ?? 0;
 
   return (
-    <div style={{ height: props.height ?? 220 }}>
+    <div
+      style={{ height: props.height ?? 220 }}
+      onPointerEnter={props.syncId ? () => setPointerIn(true) : undefined}
+      onPointerLeave={props.syncId ? () => setPointerIn(false) : undefined}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={props.data}
+          syncId={props.syncId}
           margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
           onMouseMove={
             props.onHover &&
@@ -101,6 +117,7 @@ export function TrendChart(props: {
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey={props.xKey}
+            hide={props.hideXAxis}
             type={props.xType ?? 'number'}
             domain={['dataMin', 'dataMax']}
             tick={tick}
@@ -117,7 +134,7 @@ export function TrendChart(props: {
             tick={tick}
             tickLine={false}
             axisLine={false}
-            width="auto"
+            width={props.yAxisWidth ?? 'auto'}
             tickFormatter={(v: number) =>
               `${fmt(v, props.leftUnit && Number.isInteger(v) ? 0 : leftDigits)}${props.leftUnit ? ` ${props.leftUnit}` : ''}`
             }
@@ -142,22 +159,23 @@ export function TrendChart(props: {
               <YAxis key={s.key} yAxisId={axisOf(s)} domain={['auto', 'auto']} hide />
             ))}
           <Tooltip
+            isAnimationActive={false}
             cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
             content={({ active, payload, label }) => {
-              if (!active || !payload?.length) return null;
+              if (!active || !payload?.length || (props.syncId && !pointerIn)) return null;
               // One row per series, in declared order, skipping gaps.
               const valueOf = (s: TrendSeries) => {
                 const value = payload.find((p) => p.dataKey === s.key)?.value;
                 return typeof value === 'number' ? value : null;
               };
-              const rows = props.series.flatMap((s) => {
+              const rows = shown.flatMap((s) => {
                 const value = valueOf(s);
                 if (value == null) return [];
                 // An estimate adds nothing where a reading on its axis exists,
                 // e.g. where a forecast joins the recorded curve.
                 const read = (o: TrendSeries) =>
                   !o.dashed && axisOf(o) === axisOf(s) && valueOf(o) != null;
-                if (s.dashed && props.series.some(read)) return [];
+                if (s.dashed && shown.some(read)) return [];
                 return [{ s, value }];
               });
               if (rows.length === 0) return null;
@@ -204,7 +222,7 @@ export function TrendChart(props: {
               }}
             />
           ))}
-          {props.series.length > 1 && (
+          {shown.length > 1 && (
             <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
           )}
           {props.series.map((s) => {
@@ -214,6 +232,7 @@ export function TrendChart(props: {
               name: s.label,
               yAxisId: axisOf(s),
               isAnimationActive: false,
+              ...(s.quiet && { legendType: 'none' as const }),
             };
             if (s.mark === 'bar') return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
             if (s.mark === 'line') {

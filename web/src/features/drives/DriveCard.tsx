@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { DriveDetailDto, DrivePlaceDto } from '@server/api-types';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useDrivers, useSetDriveDriver, useUnits } from '../../api/hooks';
@@ -13,7 +14,11 @@ import { compass, isDaytime, weatherKind, weatherLabel } from '../../lib/weather
 import { Select } from '../../components/Select';
 
 /** The chosen drive: where it went up front, then its figures. */
-export function DriveCard(props: { vehicleId: string; drive: DriveDetailDto | undefined }) {
+export function DriveCard(props: {
+  vehicleId: string;
+  drive: DriveDetailDto | undefined;
+  action?: ReactNode;
+}) {
   const u = useUnits();
   const loading = useLoading();
   const d = props.drive;
@@ -86,8 +91,9 @@ export function DriveCard(props: { vehicleId: string; drive: DriveDetailDto | un
                 </span>
                 {live && <InProgressTag />}
               </span>
-              <span className="shrink-0">
+              <span className="flex shrink-0 items-center gap-2">
                 <DriverPicker vehicleId={props.vehicleId} drive={d} />
+                {props.action}
               </span>
             </>
           )}

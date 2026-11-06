@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
 import { useChargingPages, useLiveCharging, useVehicleState } from '../../api/hooks';
+import { AddToTrip } from '../../components/AddToTrip';
 import { DayCalendar } from '../../components/DayCalendar';
 import { PageHeader } from '../../components/PageHeader';
 import { LoadingScope, SkeletonRows } from '../../components/LoadingState';
@@ -127,6 +128,16 @@ export function ChargingPage(props: { vehicleId: string }) {
               lastChargedTo={lastChargedTo(sessions)}
               // A TeslaMate session's id is TeslaMate's, so its cost isn't RivianMate's to edit.
               onSaveCost={session && !teslamate ? saveCost(session.id) : undefined}
+              action={
+                session?.endedAt ? (
+                  <AddToTrip
+                    vehicleId={props.vehicleId}
+                    kind="charge"
+                    activityId={session.id}
+                    startedAt={chargeStart(session)}
+                  />
+                ) : undefined
+              }
             />
           </LoadingScope>
         </div>

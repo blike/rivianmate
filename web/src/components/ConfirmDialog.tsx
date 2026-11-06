@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { useScrollLock } from './Dialog';
 
 /**
  * Asks before something that can't be undone, in the app's own style. The
@@ -21,6 +22,7 @@ export function ConfirmDialog(props: {
     if (props.open && !dialog.open) dialog.showModal();
     if (!props.open && dialog.open) dialog.close();
   }, [props.open]);
+  useScrollLock(props.open);
 
   return (
     <dialog

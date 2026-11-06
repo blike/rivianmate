@@ -15,10 +15,7 @@ export function ActivityCard(props: {
   children: ReactNode;
 }) {
   return (
-    <Link
-      to={props.to}
-      className="card flex h-full flex-col gap-5 p-5 transition-colors hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--hairline))]"
-    >
+    <Link to={props.to} className="card card-link flex h-full flex-col gap-5 p-5">
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-2 text-(--accent)">
           {props.icon}

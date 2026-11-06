@@ -66,6 +66,28 @@ describe('CalendarMonth', () => {
       /aria-pressed="true"[^>]*aria-label="[^"]*October 14:/,
     );
   });
+
+  it('picking a date, takes any day from the earliest allowed, and months ahead', () => {
+    const html = render({
+      pickAny: true,
+      minKey: '2026-10-10',
+      latest: new Date(2027, 11, 1),
+      noun: 'drive or charge',
+      nouns: 'drives and charges',
+    });
+    expect(html).not.toMatch(/disabled=""[^>]*aria-label="[^"]*October 25: 0 drives and charges"/);
+    expect(html).toMatch(/disabled=""[^>]*aria-label="[^"]*October 3: 1 drive or charge"/);
+    expect(html).not.toMatch(/aria-label="Next month" disabled=""/);
+  });
+
+  it('outlines a span of days', () => {
+    const inSpan = /ring-\[color-mix\(in_srgb,var\(--accent\)_55%,transparent\)\]/;
+    const day = (n: number, html: string) =>
+      html.match(new RegExp(`<button[^>]*October ${n}:[^>]*>`))![0];
+    const html = render({ range: { from: '2026-10-12', to: '2026-10-15' } });
+    expect(day(13, html)).toMatch(inSpan);
+    expect(day(16, html)).not.toMatch(inSpan);
+  });
 });
 
 describe('DayCalendar', () => {

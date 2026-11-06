@@ -16,6 +16,7 @@ import {
   SkeletonBlock,
   SkeletonRows,
 } from '../../components/LoadingState';
+import { AddToTrip } from '../../components/AddToTrip';
 import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
@@ -112,7 +113,20 @@ export function DrivesPage(props: { vehicleId: string }) {
         )}
         <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
           <LoadingScope loading={loading}>
-            <DriveCard vehicleId={props.vehicleId} drive={detail} />
+            <DriveCard
+              vehicleId={props.vehicleId}
+              drive={detail}
+              action={
+                detail?.endedAt ? (
+                  <AddToTrip
+                    vehicleId={props.vehicleId}
+                    kind="drive"
+                    activityId={detail.id}
+                    startedAt={detail.startedAt}
+                  />
+                ) : undefined
+              }
+            />
           </LoadingScope>
         </div>
 

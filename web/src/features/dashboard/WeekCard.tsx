@@ -26,10 +26,7 @@ export function WeekCard(props: {
   const most = Math.max(...days.map((d) => d.km), 0);
 
   return (
-    <Link
-      to="/history"
-      className="card group flex h-full flex-col gap-5 p-5 transition-colors hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--hairline))]"
-    >
+    <Link to="/history" className="card card-link group flex h-full flex-col gap-5 p-5">
       <div className="flex items-center justify-between gap-3">
         <span className="eyebrow text-(--text-secondary)">This week</span>
         <span className="text-xs text-(--text-muted)">

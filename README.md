@@ -45,6 +45,23 @@ a dashboard you can open from anywhere.
 - The weather on each drive (temperature, conditions, wind), and efficiency charted by temperature,
   speed, climb, length and weather.
 
+### Trips
+
+- A trip is its dates. Pick the day it started: it runs until you got home, or to the day you pick,
+  and you untick anything that wasn't part of it. A drive or charge belongs to one trip at a time.
+- Make one before you leave or partway through, with no end date yet: drives and charges join on
+  their own as they finish, and its figures update while you're on the road. End it when you're
+  home. Anything you untick stays out.
+- A map colored by day with numbered stops, where a road driven more than once is drawn once, and a
+  replay that draws the journey in order. Beside it, a timeline with overnight stays worked out from
+  when the vehicle was parked.
+- The trip day by day and where you stayed each night, with highlights, the battery and elevation
+  across the whole trip, where the time went, and who drove.
+- Totals for distance, driving time, time charging, energy, efficiency and cost, which say when
+  they're estimated or don't cover every drive or charge.
+- Add notes and your own dates. Works for TeslaMate vehicles too. Trips read your existing records,
+  so they add almost nothing to your database, and nothing about them leaves your server.
+
 ### Charging History & Analytics
 
 - Automatic charging session tracking with detailed power curves, energy delivered, range added,
