@@ -199,7 +199,7 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
     ]);
   });
 
-  it('stores a GNSS fix 15 s after the last navigation fix, and not a millisecond sooner', async () => {
+  it('hands back to GNSS once the last navigation fix is more than 15 s old', async () => {
     const writer = new LocationWriter(handle.db, () => clock);
     clock = Date.parse('2026-10-04T17:08:31Z');
     await writer.onState('v1', nav('2026-10-04T17:08:00Z', 34.01));
@@ -216,6 +216,20 @@ describe.skipIf(!url)('LocationWriter with Postgres', () => {
     expect((await points()).map((p) => [p.lat, p.speedKmh])).toEqual([
       [34.01, 36],
       [34.03, 72],
+    ]);
+  });
+
+  it('does not let a fix it stepped back from mute the GNSS fix after it', async () => {
+    const writer = new LocationWriter(handle.db, () => clock);
+    clock = Date.parse('2026-10-04T17:09:00Z');
+    await writer.onState('v1', state('2026-10-04T17:08:00Z', 34.05));
+    // Navigation's own stamp runs behind GNSS, so this one is refused as a step back.
+    await writer.onState('v1', nav('2026-10-04T17:07:58.5Z', 34.06));
+    // The next GNSS fix is the track's only point here and must still be stored.
+    await writer.onState('v1', state('2026-10-04T17:08:05Z', 34.06));
+    expect((await points()).map((p) => p.ts.toISOString())).toEqual([
+      '2026-10-04T17:08:00.000Z',
+      '2026-10-04T17:08:05.000Z',
     ]);
   });
 

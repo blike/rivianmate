@@ -11,7 +11,8 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations } from '../db/client.js';
 import { drives, locationPoints, vehicles } from '../db/schema.js';
-import { silentLogger } from '../logger.js';
+import { pino } from 'pino';
+import { silentLogger, type Logger } from '../logger.js';
 import { b64, double, float, int, message } from '../testing/protobuf.js';
 import { RVM_TRIP_PROGRESS, vehicleStateFromParallax } from '../rivian/parallax/index.js';
 import type { VehicleState } from '../rivian/types.js';
@@ -64,9 +65,9 @@ describe.skipIf(!url)('navigation fixes through the monitor', () => {
   afterAll(async () => {
     await handle.sql.end();
   });
-  beforeEach(async () => {
-    await handle.sql`TRUNCATE vehicles RESTART IDENTITY CASCADE`;
-    monitor = new VehicleMonitor(
+  /** A monitor as the server starts one, with nothing seen yet. */
+  const newMonitor = (log: Logger = silentLogger) => {
+    const m = new VehicleMonitor(
       handle.db,
       {
         load: async () => ({ authState: 'ok', tokens: {} }),
@@ -74,9 +75,9 @@ describe.skipIf(!url)('navigation fixes through the monitor', () => {
       } as unknown as TokenStore,
       new LiveBus(),
       () => ({}) as unknown as RivianConnection,
-      silentLogger,
+      log,
     );
-    monitor.getVehicles().push({
+    m.getVehicles().push({
       id: 'v1',
       vin: 'VIN1',
       name: null,
@@ -85,6 +86,12 @@ describe.skipIf(!url)('navigation fixes through the monitor', () => {
       modelYear: null,
       supportedFeatures: [],
     });
+    return m;
+  };
+
+  beforeEach(async () => {
+    await handle.sql`TRUNCATE vehicles RESTART IDENTITY CASCADE`;
+    monitor = newMonitor();
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
   });
 
@@ -151,10 +158,15 @@ describe.skipIf(!url)('navigation fixes through the monitor', () => {
     expect(rows.every((p) => p.speedKmh === 36 && p.altitude === 300)).toBe(true);
   });
 
-  it('stores a navigation frame replayed long after the fact once, at its own time', async () => {
+  it('stores a navigation frame replayed after a restart once, at its own time', async () => {
     const taken = Date.now() - 6 * 3600_000;
     await handleDelta(delta(40.5, -88.99, 12.5, 271.5, taken));
+    // A new monitor remembers nothing, so only the stored row can stop the
+    // same frame being stored again, and it must do so without a failed save.
+    const errors: string[] = [];
+    monitor = newMonitor(pino({ level: 'error' }, { write: (line) => errors.push(line) }));
     await handleDelta(delta(40.5, -88.99, 12.5, 271.5, taken));
     expect((await points()).map((p) => p.ts.getTime())).toEqual([taken]);
+    expect(errors).toEqual([]);
   });
 });

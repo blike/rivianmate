@@ -22,6 +22,9 @@ const NAV_SPANS_KEPT = 64;
 /** A fix this recent with no drive around it belongs to the drive under way. */
 const LIVE_FIX_MS = 5 * 60_000;
 
+/** What became of a fix: a row now, one already there, or why neither. */
+type WriteResult = 'stored' | 'already-stored' | 'back-step' | 'unchanged';
+
 interface PerVehicle {
   /** The newest fix stored, to measure movement from. */
   lastLocation: { lat: number; lon: number; ts: string } | null;
@@ -87,14 +90,17 @@ export class LocationWriter {
       pv.seenNav = nav.timeStamp;
       const at = Date.parse(nav.timeStamp);
       if (Number.isFinite(at)) {
-        noteNavFix(pv, at);
         // A navigation fix carries its own readings; the GNSS ones were taken
         // at a different instant, so only altitude comes from them
         // (navigation sends none, and height changes slowly).
-        await this.write(vehicleId, pv, state, nav, at, {
+        const result = await this.write(vehicleId, pv, state, nav, at, {
           speed: nav.speedMps ?? null,
           bearing: nav.bearing ?? null,
         });
+        // A fix refused for stepping the track back stores no point, so it
+        // must not claim the moment: its span would mute the GNSS fix that is
+        // the only point there.
+        if (result !== 'back-step') noteNavFix(pv, at);
       }
     }
     const gnss = stateLocation(state);
@@ -106,11 +112,11 @@ export class LocationWriter {
         return;
       }
       // Rivian reports gnssSpeed in m/s.
-      const stored = await this.write(vehicleId, pv, state, gnss, at, {
+      const result = await this.write(vehicleId, pv, state, gnss, at, {
         speed: alongside(state, 'gnssSpeed', at),
         bearing: alongside(state, 'gnssBearing', at),
       });
-      if (stored) pv.seenGnss = gnss.timeStamp;
+      if (result === 'stored' || result === 'already-stored') pv.seenGnss = gnss.timeStamp;
     }
   }
 
@@ -121,20 +127,20 @@ export class LocationWriter {
     location: GnssLocation,
     at: number,
     readings: { speed: number | null; bearing: number | null },
-  ): Promise<boolean> {
+  ): Promise<WriteResult> {
     const { speed } = readings;
     const last = pv.lastLocation;
     const lastAt = last ? Date.parse(last.ts) : Number.NaN;
     if (last) {
-      if (last.ts === location.timeStamp) return true;
+      if (last.ts === location.timeStamp) return 'already-stored';
       // A live fix stamped before the last one came from the other stream, a
       // second away: storing it would step the track back. An old one is a fix
       // delivered late, which belongs to the drive it was taken on.
-      if (at < lastAt && this.now() - at < LIVE_FIX_MS) return false;
+      if (at < lastAt && this.now() - at < LIVE_FIX_MS) return 'back-step';
       const movedKm = haversineKm(last.lat, last.lon, location.latitude, location.longitude);
       // The same fix re-sent under a newer stamp, often with a speed.
-      if (movedKm === 0) return false;
-      if (movedKm < MIN_MOVE_KM && (speed ?? 0) <= 0) return false;
+      if (movedKm === 0) return 'unchanged';
+      if (movedKm < MIN_MOVE_KM && (speed ?? 0) <= 0) return 'unchanged';
     }
     // A late fix is stored but isn't where the vehicle is now.
     if (!last || at > lastAt) {
@@ -154,7 +160,7 @@ export class LocationWriter {
       })
       // Already stored (e.g. Rivian's last fix again after a restart).
       .onConflictDoNothing();
-    return true;
+    return 'stored';
   }
 
   /** The drive under way at `at`, by the drives' recorded times. */
