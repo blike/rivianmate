@@ -15,6 +15,12 @@ describe('withFix', () => {
     expect(withFix(fixes, fix('2026-10-28T21:40:00Z'))).toBe(fixes);
   });
 
+  it('does not step back to a fix older than the last', () => {
+    // A navigation fix taken a moment before the GPS fix already drawn.
+    const fixes = [fix('2026-10-28T21:40:05Z')];
+    expect(withFix(fixes, fix('2026-10-28T21:40:03.5Z', 33.0001))).toBe(fixes);
+  });
+
   it('lets go of fixes from over ten minutes before the newest', () => {
     expect(
       withFix(

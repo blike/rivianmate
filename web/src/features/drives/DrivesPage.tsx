@@ -23,7 +23,7 @@ import { driveProfile, minuteTicks, profilePosition } from '../../lib/drives';
 import { useGoToDate } from '../../lib/goToDate';
 import { useLiveTrail } from '../../lib/liveTrail';
 import { routePlan } from '../../lib/navigation';
-import { nv } from '../../lib/state';
+import { location } from '../../lib/state';
 import { DriveCard } from './DriveCard';
 import { DriveList } from './DriveList';
 import { DrivePicker } from './DrivePicker';
@@ -128,7 +128,7 @@ export function DrivesPage(props: { vehicleId: string }) {
                   key={detail.id}
                   lat={lastPoint[0]}
                   lon={lastPoint[1]}
-                  bearing={underWay ? nv(state, 'gnssBearing') : null}
+                  bearing={underWay ? (location(state)?.bearing ?? null) : null}
                   trail={trail}
                   height="100%"
                   follow={false}

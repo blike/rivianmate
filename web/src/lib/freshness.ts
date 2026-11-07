@@ -1,5 +1,5 @@
 import type { VehicleState } from '@server/api-types';
-import { sv } from './state';
+import { location, sv } from './state';
 
 export type FreshnessLevel = 'live' | 'recent' | 'asleep' | 'stale';
 
@@ -43,11 +43,10 @@ export function lastSeenAt(
  * keeps showing the last fix while the vehicle has no GPS signal.
  */
 export function locationIsBehind(state: VehicleState | undefined): boolean {
-  const fixAt = Date.parse(state?.gnssLocation?.timeStamp ?? '');
-  // The navigation fix is the drive track's source, not a reading the map's fix
-  // is measured against: leaving it out keeps this comparing the map fix with
-  // what the vehicle reports besides GPS, as it did before navigation fixes
-  // were read at all.
+  const fixAt = Date.parse(location(state)?.ts ?? '');
+  // The map's fix is measured against what the vehicle reports besides GPS:
+  // neither GPS field nor the navigation fix, which is the map's fix while it
+  // runs.
   const othersAt = lastSeenAt(state, (key) => key.startsWith('gnss') || key === 'navLocation');
   return (
     Number.isFinite(fixAt) && othersAt !== null && othersAt.getTime() - fixAt > LOCATION_LAG_MS

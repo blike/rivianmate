@@ -3,20 +3,11 @@ import type { Db } from '../db/client.js';
 import { drives, locationPoints } from '../db/schema.js';
 import { isPosition } from '../geo.js';
 import type { GnssLocation, TimeStampedValue, VehicleState } from '../rivian/types.js';
-import { haversineKm, stateLocation, stateNumber } from './state-utils.js';
+import { haversineKm, NAV_COVERS_MS, stateLocation, stateNumber } from './state-utils.js';
 
 export const MIN_MOVE_KM = 0.015;
 /** Speed, heading and altitude count for a fix only if stamped this close to it. */
 const SAME_FIX_MS = 60_000;
-/**
- * A GNSS fix this close in time to a navigation fix is left out: the two
- * streams run about a second apart, so storing both would put two clocks'
- * worth of readings in one track. Three navigation intervals (every 5 s), so
- * GNSS fills in only once navigation has actually stopped. Not the same
- * question as the decoder's `FIX_WITHIN_MS` (a frame's time against its own
- * fix) or `SAME_FIX_MS` (a reading against a fix it belongs to).
- */
-const NAV_COVERS_MS = 15_000;
 /** Navigation spans kept per vehicle, for GNSS fixes delivered late. */
 const NAV_SPANS_KEPT = 64;
 /** A fix this recent with no drive around it belongs to the drive under way. */

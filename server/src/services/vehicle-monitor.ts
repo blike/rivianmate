@@ -630,10 +630,10 @@ export class VehicleMonitor {
     this.states.set(vehicleId, cached);
     if (changed.length === 0) return;
 
-    // Nothing reads a navigation fix live (the map, geofence, charging and
-    // drive detection read `gnssLocation`): the track's writer is its only
-    // consumer.
+    // Only the track's writer and the dashboard's map read a navigation fix:
+    // geofence, charging and drive detection read `gnssLocation`.
     if (changed.length === 1 && changed[0] === 'navLocation') {
+      this.bus.emitState(vehicleId, cached);
       await this.locationWriter.onState(vehicleId, { ...cached }).catch((err: unknown) => {
         this.log.error({ err, vehicleId }, 'saving vehicle state failed');
       });

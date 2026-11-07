@@ -9,7 +9,7 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
-import { location } from '../lib/state';
+import { location, type VehicleFix } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   api,
@@ -70,19 +70,24 @@ export function useLiveState(vehicleId: string | undefined) {
   }, [vehicleId, queryClient]);
 }
 
-export type LiveFix = NonNullable<ReturnType<typeof location>>;
+export type LiveFix = Pick<VehicleFix, 'lat' | 'lon' | 'ts'>;
 
 /** How long live GPS fixes are kept: well past the drive's refresh, which stores them. */
 const FIXES_KEPT_MS = 10 * 60_000;
 
-/** The fixes kept with a new one from the stream: a repeat isn't added, and old ones go. */
+/**
+ * The fixes kept with a new one from the stream: a repeat isn't added, nor a
+ * fix older than the last (a navigation fix taken a moment before the GPS fix
+ * already drawn, which would step the trail back), and old ones go.
+ */
 export function withFix(fixes: LiveFix[], fix: LiveFix): LiveFix[] {
-  if (fixes.at(-1)?.ts === fix.ts) return fixes;
+  const last = fixes.at(-1);
+  if (last && Date.parse(fix.ts) <= Date.parse(last.ts)) return fixes;
   const from = Date.parse(fix.ts) - FIXES_KEPT_MS;
   return [...fixes.filter((f) => Date.parse(f.ts) > from), fix];
 }
 
-/** The GPS fixes the live stream has sent recently, oldest first. */
+/** The fixes the live stream has sent recently, as the map shows them, oldest first. */
 export function useLiveFixes(vehicleId: string): LiveFix[] {
   const { data } = useQuery<LiveFix[]>({
     queryKey: ['liveFixes', vehicleId],

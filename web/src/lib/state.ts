@@ -1,4 +1,5 @@
 import type { VehicleState } from '@server/api-types';
+import { NAV_COVERS_MS } from '@server/services/state-utils';
 import { isPosition } from './geo';
 
 interface ValueRecord {
@@ -19,12 +20,47 @@ export function nv(state: VehicleState | undefined, key: string): number | null 
   return Number.isFinite(n) ? n : null;
 }
 
-export function location(
-  state: VehicleState | undefined,
-): { lat: number; lon: number; ts: string } | null {
-  const loc = state?.gnssLocation;
-  if (!loc || !isPosition(loc.latitude, loc.longitude)) return null;
-  return { lat: loc.latitude, lon: loc.longitude, ts: loc.timeStamp };
+export interface VehicleFix {
+  lat: number;
+  lon: number;
+  ts: string;
+  /** Heading (°, 0–360) and speed (m/s) taken with the fix, where it has them. */
+  bearing: number | null;
+  speedMps: number | null;
+}
+
+/**
+ * Where the vehicle is, by the rule its stored track follows: the navigation
+ * fix while one is running, and the vehicle's own GPS fix once that is more
+ * than NAV_COVERS_MS newer. An R2 reports its own fix about once a minute, so
+ * while it navigates the map moves every 5 s instead. The server only keeps a
+ * navigation fix where legacy GPS isn't already a track of its own (an R1).
+ */
+export function location(state: VehicleState | undefined): VehicleFix | null {
+  const gnss = state?.gnssLocation;
+  const nav = state?.navLocation;
+  const gnssOk = gnss != null && isPosition(gnss.latitude, gnss.longitude);
+  if (nav && isPosition(nav.latitude, nav.longitude)) {
+    const navAt = Date.parse(nav.timeStamp);
+    const gnssAt = gnssOk ? Date.parse(gnss.timeStamp) : Number.NaN;
+    if (Number.isFinite(navAt) && !(gnssAt - navAt > NAV_COVERS_MS)) {
+      return {
+        lat: nav.latitude,
+        lon: nav.longitude,
+        ts: nav.timeStamp,
+        bearing: nav.bearing ?? null,
+        speedMps: nav.speedMps ?? null,
+      };
+    }
+  }
+  if (!gnssOk) return null;
+  return {
+    lat: gnss.latitude,
+    lon: gnss.longitude,
+    ts: gnss.timeStamp,
+    bearing: nv(state, 'gnssBearing'),
+    speedMps: nv(state, 'gnssSpeed'),
+  };
 }
 
 export function fmt(n: number | null | undefined, digits = 0): string {
