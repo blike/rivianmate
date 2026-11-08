@@ -17,6 +17,7 @@ export function batchSummary(batch: ImportBatchDto): string {
     plural(c.sessions, 'charge'),
     plural(c.locationPoints, 'location point'),
     plural(c.stateChanges, 'state change'),
+    ...(c.places ? [plural(c.places, 'saved place')] : []),
   ].join(', ');
   return c.sessionsEnriched > 0
     ? `${added}; added detail to ${plural(c.sessionsEnriched, 'charge')}`
@@ -87,7 +88,7 @@ export function ImportPanel(props: { vehicles: readonly VehicleDto[] }) {
         <SettingsGroup title="Waiting to import">
           <SettingRow
             label={draft.files.join(', ')}
-            description="Uploaded but not imported. Files stay on your server until you import or discard them, or the server restarts."
+            description="Kept on your server until imported or discarded, or the server restarts."
           >
             <button className="btn-danger" onClick={() => setDiscarding(true)}>
               Discard
@@ -149,8 +150,8 @@ export function ImportPanel(props: { vehicles: readonly VehicleDto[] }) {
         onConfirm={() => undoing && undo.mutate(undoing.id)}
         onCancel={() => setUndoing(null)}
       >
-        Removes the drives, charges and history it added, and clears what it filled in on charges
-        you already had. A value that has changed since stays.
+        Removes the drives, charges and history it added, and what it filled in on existing charges.
+        Drivers and places it added stay.
         {undo.isError && <p className="mt-2 text-(--status-critical)">{undo.error.message}</p>}
       </ConfirmDialog>
       <DiscardUploadDialog

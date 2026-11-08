@@ -390,9 +390,9 @@ export interface ChargingSessionDto {
   socLimit: number | null;
   /**
    * live = recorded by RivianMate; rivian = imported from Rivian's history;
-   * electrafi = imported from an ElectraFi export; teslamate = read from TeslaMate.
+   * electrafi, roamer = imported from that app's export; teslamate = read from TeslaMate.
    */
-  source: 'live' | 'rivian' | 'live+rivian' | 'electrafi' | 'teslamate';
+  source: 'live' | 'rivian' | 'live+rivian' | 'electrafi' | 'roamer' | 'teslamate';
   vendor: string | null;
   city: string | null;
   isPublic: boolean | null;
@@ -587,17 +587,25 @@ export interface ImportCounts {
   sessionsEnriched: number;
   locationPoints: number;
   stateChanges: number;
+  /** Saved places added; absent on imports from before places were. */
+  places?: number;
 }
 
-/** An ElectraFi upload waiting to be imported. */
+/** The kinds of export that can be imported. */
+export type ImportFormat = 'electrafi' | 'roamer';
+
+/** An upload waiting to be imported. */
 export interface ImportDraftDto {
   id: string;
+  format: ImportFormat;
   files: string[];
+  /** The vehicles the export has data for, matched by VIN; null when it doesn't say. */
+  vehicleIds: string[] | null;
 }
 
 export interface ImportSelection {
   vehicleId: string;
-  /** IANA time zone the export's local times are in. */
+  /** IANA time zone the dates are in, and an ElectraFi export's local times. */
   timeZone: string;
   /** Both included, as YYYY-MM-DD in `timeZone`. */
   from: string;
@@ -621,11 +629,20 @@ export interface ImportDrivePreview {
   /** Saved locations it starts and ends at. */
   startPlace: string | null;
   endPlace: string | null;
+  /** Who the export says drove. */
+  driver: string | null;
 }
 
 /** What a charge can add to a session that's missing it. */
 export type ImportSessionAddition =
-  'chargingTime' | 'batteryLevels' | 'energy' | 'range' | 'power' | 'location' | 'curve';
+  | 'chargingTime'
+  | 'batteryLevels'
+  | 'energy'
+  | 'breakdown'
+  | 'range'
+  | 'power'
+  | 'location'
+  | 'curve';
 
 export interface ImportChargePreview {
   startedAt: string;
@@ -657,6 +674,11 @@ export interface ImportPreviewDto {
   sessionsEnriched: number;
   readingsNew: number;
   readingsRecorded: number;
+  /** Past what live recording last reported, so left for it. */
+  readingsNewer: number;
+  /** Names of the saved places it adds, and how many are saved already. */
+  placesNew: string[];
+  placesRecorded: number;
   warnings: ('odometer' | 'future')[];
   /** Everything starting in the chosen dates, in time order. */
   drives: ImportDrivePreview[];
@@ -666,6 +688,7 @@ export interface ImportPreviewDto {
 export interface ImportBatchDto {
   id: number;
   vehicleId: string;
+  format: ImportFormat;
   files: string[];
   timeZone: string;
   from: string;

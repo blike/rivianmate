@@ -17,6 +17,7 @@ const COLUMNS = [
   'charge_limit_soc',
   'car_version',
   'spoiler_type',
+  'autopark_state_v2',
   'charging_state',
   'chargeNumber',
   'charger_power',

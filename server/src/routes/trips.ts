@@ -24,8 +24,8 @@ import {
   vehicles,
 } from '../db/schema.js';
 import { MIN_DRIVE_KM } from '../services/drive-metrics.js';
-import { isTimeZone } from '../services/electrafi/parse.js';
-import { rangeOf } from '../services/electrafi/plan.js';
+import { isTimeZone } from '../services/imports/time-zone.js';
+import { rangeOf } from '../services/imports/plan.js';
 import { tripProfiles } from '../services/trip-profile.js';
 import { thinTrack, trackToleranceM } from '../services/simplify-track.js';
 import { tripStats } from '../services/trip-stats.js';

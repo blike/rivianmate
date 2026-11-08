@@ -100,6 +100,9 @@ export function SessionCard(props: {
               {s.source === 'electrafi' && (
                 <SourceBadge label="ElectraFi" title="Imported from an ElectraFi export" />
               )}
+              {s.source === 'roamer' && (
+                <SourceBadge label="Rivian Roamer" title="Imported from a Rivian Roamer export" />
+              )}
               {s.source === 'teslamate' && (
                 <SourceBadge label="TeslaMate" title="Read from TeslaMate" />
               )}

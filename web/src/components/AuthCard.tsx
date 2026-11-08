@@ -145,6 +145,8 @@ export function TextField(props: {
           <button
             type="button"
             onClick={() => setRevealed((r) => !r)}
+            // Tab goes from one password field to the next, as forms usually do.
+            tabIndex={-1}
             aria-label={revealed ? 'Hide password' : 'Show password'}
             className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-(--text-muted) hover:text-(--text-primary)"
           >

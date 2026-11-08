@@ -28,6 +28,7 @@ const tesla = { ...rivian, id: 'tm', name: 'Model Y', source: 'teslamate' } as V
 const batch: ImportBatchDto = {
   id: 1,
   vehicleId: 'v1',
+  format: 'electrafi',
   files: ['a.csv'],
   timeZone: 'America/Chicago',
   from: '2026-01-01',
@@ -61,6 +62,9 @@ const preview: ImportPreviewDto = {
   sessionsEnriched: 0,
   readingsNew: 500,
   readingsRecorded: 0,
+  readingsNewer: 0,
+  placesNew: [],
+  placesRecorded: 0,
   warnings: [],
   drivesNewer: 0,
   drives: [],
@@ -93,7 +97,10 @@ describe('ImportPanel', () => {
   });
 
   it('offers to continue or discard a waiting upload instead of starting another', () => {
-    const html = render({ draft: { id: 'd', files: ['export.csv'] }, batches: [batch] });
+    const html = render({
+      draft: { id: 'd', format: 'electrafi', files: ['export.csv'], vehicleIds: null },
+      batches: [batch],
+    });
     expect(html).toContain('export.csv');
     expect(html).toContain('>Continue</button>');
     expect(html).toContain('>Discard</button>');
@@ -128,11 +135,15 @@ describe('ImportPanel while another import runs', () => {
 });
 
 describe('ImportFlow', () => {
-  const renderStep = (initialStep: ImportStep, draft: ImportsDto['draft'] = null) =>
+  const renderStep = (
+    initialStep: ImportStep,
+    draft: ImportsDto['draft'] = null,
+    vehicles = [rivian],
+  ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <ImportFlow
-          vehicles={[rivian]}
+          vehicles={vehicles}
           draft={draft}
           running={false}
           initialStep={initialStep}
@@ -142,11 +153,18 @@ describe('ImportFlow', () => {
         />
       </QueryClientProvider>,
     );
-  const draft = { id: 'd', files: ['export.csv'] };
+  const draft = {
+    id: 'd',
+    format: 'electrafi' as const,
+    files: ['export.csv'],
+    vehicleIds: null,
+  };
+  const archive = { id: 'r', format: 'roamer' as const, files: ['roamer.zip'], vehicleIds: ['v1'] };
 
-  it('starts by asking for the source, showing where it is', () => {
+  it('starts by asking for the source, with Roamer first', () => {
     const html = renderStep('source');
-    expect(html).toContain('ElectraFi');
+    expect(html.indexOf('Roamer')).toBeGreaterThan(-1);
+    expect(html.indexOf('Roamer')).toBeLessThan(html.indexOf('ElectraFi'));
     expect(html).toContain('type="radio"');
     expect(html).toContain('Step 1 of 4');
     expect(html).not.toContain('>Back</button>');
@@ -154,11 +172,14 @@ describe('ImportFlow', () => {
 
   it('holds at the files step until there are some', () => {
     const html = renderStep('files');
-    expect(html).toContain('Download All');
-    expect(html).toContain('Choose files');
+    expect(html).toContain('Download a copy');
+    expect(html).toContain('Choose file<');
+    expect(html).toContain('No file added yet.');
+    expect(html).not.toContain('multiple');
     expect(html).toMatch(/disabled=""[^>]*>Continue/);
     expect(html).not.toContain('Discard upload');
     const withFiles = renderStep('files', draft);
+    expect(withFiles).toContain('Add your ElectraFi export');
     expect(withFiles).toContain('export.csv');
     expect(withFiles).toContain('Add more');
     expect(withFiles).not.toMatch(/disabled=""[^>]*>Continue/);
@@ -166,9 +187,39 @@ describe('ImportFlow', () => {
     expect(withFiles).toContain('Save for later');
   });
 
+  it('replaces a Roamer archive rather than adding to it', () => {
+    const html = renderStep('files', archive);
+    expect(html).toContain('roamer.zip');
+    expect(html).toContain('Choose another');
+    expect(html).not.toContain('Add more');
+    // The instructions stay with the file added.
+    expect(html).toContain('Download a copy');
+  });
+
+  it('shows the vehicle the export was matched to, without a choice', () => {
+    const red = { ...rivian, id: 'v2', name: 'Red' } as VehicleDto;
+    const html = renderStep('settings', archive, [rivian, red]);
+    expect(html).toContain('Blue');
+    expect(html).not.toContain('Red');
+    expect(html).toContain('by VIN');
+    expect(html).not.toContain('id="import-vehicle"');
+    const both = renderStep('settings', { ...archive, vehicleIds: ['v1', 'v2'] }, [rivian, red]);
+    expect(both).toContain('id="import-vehicle"');
+    const none = renderStep('settings', { ...archive, vehicleIds: [] }, [rivian]);
+    expect(none).toContain('No vehicle in this export is connected.');
+    expect(none).toMatch(/disabled=""[^>]*>Review/);
+  });
+
   it('asks for settings once there are files', () => {
     const html = renderStep('settings', draft);
     expect(html).toContain('Time zone');
+    // The rule stays put while what the files cover fills in below it.
+    expect(html).toContain('imported whole.');
+    expect(html).toMatch(/<span class="\[grid-area:1\/1\] ">Choose the dates\./);
+    // Held unseen until the dates are narrowed, so its showing doesn't re-wrap the text.
+    expect(html).toMatch(/invisible">Use all dates</);
+    // The others hold their space, unseen and unread.
+    expect(html).toMatch(/aria-hidden="true" class="\[grid-area:1\/1\] invisible">Reading files…/);
     expect(html).toContain('Blue');
     expect(html).not.toContain('Model Y');
     expect(html).toContain('>Review</button>');
@@ -215,8 +266,15 @@ describe('importSummary', () => {
       importSummary({ ...preview, sessionsEnriched: 1, readingsNew: 786, readingsRecorded: 638 })
         .details,
     ).toEqual([
-      'Also adds 786 history readings and detail on 1 existing charge.',
-      'Skips 638 history readings from times RivianMate was already recording.',
+      'Also adds 786 history readings and detail on 1 charge.',
+      'Skips 638 readings RivianMate already has.',
+    ]);
+  });
+
+  it('tells readings it skips from ones it leaves for live tracking', () => {
+    expect(importSummary({ ...preview, readingsNewer: 40 }).details).toEqual([
+      'Also adds 500 history readings.',
+      'Leaves 40 newer readings to live tracking.',
     ]);
   });
 
@@ -230,6 +288,21 @@ describe('importSummary', () => {
     });
     expect(summary.label).toBe('Nothing new to import');
     expect(summary.canImport).toBe(false);
+  });
+
+  it('names the places it adds, and counts the ones already saved', () => {
+    const summary = importSummary({
+      ...preview,
+      readingsNew: 0,
+      placesNew: ['Home', 'Work'],
+      placesRecorded: 1,
+    });
+    expect(summary.details).toEqual([
+      'Also adds 2 places (Home, Work).',
+      'Skips 1 place already saved.',
+    ]);
+    const only = { ...preview, drivesNew: 0, sessionsNew: 0, readingsNew: 0 };
+    expect(importSummary({ ...only, placesNew: ['Home'] }).canImport).toBe(true);
   });
 
   it('still imports when it only adds detail or history', () => {
@@ -249,8 +322,8 @@ describe('PreviewRows', () => {
 
   it('warns about a time zone that looks wrong, leaving the car to the vehicle row', () => {
     expect(html({ warnings: ['future'] })).toContain('in the future');
-    expect(html({ warnings: ['odometer'] })).not.toContain('right car');
-    expect(renderToStaticMarkup(<OdometerWarning />)).toContain('right car');
+    expect(html({ warnings: ['odometer'] })).not.toContain('Check the vehicle');
+    expect(renderToStaticMarkup(<OdometerWarning />)).toContain('Check the vehicle');
     expect(html({})).not.toContain('role="alert"');
   });
 });

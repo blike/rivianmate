@@ -79,8 +79,9 @@ export function Overview(props: {
   // Without a distance for it, the vehicle's own word on the cold.
   const coldNote = cold ? null : coldRangeNote(state);
   const mileageM = nv(state, 'vehicleMileage');
-  const speedMps = nv(state, 'gnssSpeed');
   const loc = location(state);
+  // The speed taken with the fix the map shows, so the two agree.
+  const speedMps = loc ? loc.speedMps : nv(state, 'gnssSpeed');
   const locBehind = locationIsBehind(state);
   const trail = useActiveDriveTrail(props.vehicleId);
   const navigation = insights?.navigation;
@@ -321,7 +322,7 @@ export function Overview(props: {
                 <VehicleMap
                   lat={loc.lat}
                   lon={loc.lon}
-                  bearing={nv(state, 'gnssBearing')}
+                  bearing={loc.bearing}
                   trail={trail}
                   stale={locBehind}
                   plan={plan}

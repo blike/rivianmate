@@ -172,7 +172,8 @@ export interface TripFix {
  * A fix more than this far from the frame's own time isn't this frame's: the
  * vehicle keeps sending its last progress after a trip ends, carrying that
  * frame's time, so comparing the two catches a payload that isn't a fix at
- * all. It cannot catch a re-sent frame — see `NAV_FIX_FRESH_MS`.
+ * all. It cannot catch a re-sent frame; the location writer's own repeat guard
+ * does, so a frame it has already stored is not stored again.
  */
 const FIX_WITHIN_MS = 60_000;
 

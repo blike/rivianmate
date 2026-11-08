@@ -44,7 +44,9 @@ export function EnergySplit(props: {
         : 'TeslaMate didn’t record the energy drawn for this session'
       : s.source === 'electrafi'
         ? 'ElectraFi exports don’t include a breakdown'
-        : 'Rivian didn’t report a breakdown for this session';
+        : s.source === 'roamer'
+          ? 'Rivian Roamer’s export has no breakdown for this session'
+          : 'Rivian didn’t report a breakdown for this session';
   return (
     <div className="mt-4 space-y-2 border-t border-(--border) pt-4">
       <div className="flex items-baseline justify-between gap-4 text-sm">

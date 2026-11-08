@@ -73,7 +73,7 @@ export const importBatches = pgTable('import_batches', {
     .notNull()
     .references(() => vehicles.id),
   /** What kind of export it came from. */
-  format: text('format', { enum: ['electrafi'] }).notNull(),
+  format: text('format', { enum: ['electrafi', 'roamer'] }).notNull(),
   files: jsonb('files').$type<string[]>().notNull(),
   timeZone: text('time_zone').notNull(),
   /** The dates chosen, in `time_zone`, both included. */
@@ -339,8 +339,11 @@ export const chargingSessions = pgTable(
     lat: doublePrecision('lat'),
     lon: doublePrecision('lon'),
     rawFinal: jsonb('raw_final'),
-    /** live = recorded by RivianMate; rivian = imported; live+rivian = both; electrafi = from an ElectraFi export. */
-    source: text('source', { enum: ['live', 'rivian', 'live+rivian', 'electrafi'] })
+    /**
+     * live = recorded by RivianMate; rivian = imported; live+rivian = both;
+     * electrafi, roamer = from that app's export.
+     */
+    source: text('source', { enum: ['live', 'rivian', 'live+rivian', 'electrafi', 'roamer'] })
       .notNull()
       .default('live'),
     rivianTransactionId: text('rivian_transaction_id'),
@@ -393,11 +396,21 @@ export const chargingCurvePoints = pgTable(
      * feed's chart;
      * push_live = the push feed's current reading; forecast = the vehicle's
      * projection to the limit for a charge in progress (replaced by each
-     * graph, never a reading); electrafi = from an ElectraFi export; legacy =
-     * recorded before sources were kept apart.
+     * graph, never a reading); roamer = the push feed's readings as Roamer
+     * kept them; electrafi = from an ElectraFi export; legacy = recorded
+     * before sources were kept apart.
      */
     source: text('source', {
-      enum: ['observed', 'graph', 'push_chart', 'push_live', 'forecast', 'electrafi', 'legacy'],
+      enum: [
+        'observed',
+        'graph',
+        'push_chart',
+        'push_live',
+        'forecast',
+        'roamer',
+        'electrafi',
+        'legacy',
+      ],
     })
       .notNull()
       .default('legacy'),

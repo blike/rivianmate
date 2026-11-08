@@ -17,6 +17,7 @@ import type {
   ImportChargePreview,
   ImportDraftDto,
   ImportDrivePreview,
+  ImportFormat,
   ImportPreviewDto,
   ImportSelection,
   ImportSessionAddition,
@@ -69,6 +70,7 @@ export type {
   ImportChargePreview,
   ImportDraftDto,
   ImportDrivePreview,
+  ImportFormat,
   ImportPreviewDto,
   ImportSelection,
   ImportSessionAddition,
@@ -325,8 +327,8 @@ export const api = {
     ),
   imports: () => request<ImportsDto>('/api/imports'),
   /** Sent as is, gzipped or not: the server works out which. */
-  uploadImportFile: (file: File, draftId: string | undefined) => {
-    const params = new URLSearchParams({ name: file.name });
+  uploadImportFile: (file: File, draftId: string | undefined, format: ImportFormat) => {
+    const params = new URLSearchParams({ name: file.name, format });
     if (draftId) params.set('draft', draftId);
     return request<ImportDraftDto>(`/api/imports/files?${params}`, {
       method: 'POST',
