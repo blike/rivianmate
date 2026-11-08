@@ -7,8 +7,9 @@ import { rangeWindow } from './history';
 import { HistoryPage } from './HistoryPage';
 import { DEFAULT_RANGE, rangeOf } from './options';
 
-function render(battery?: object) {
+function render(battery?: object, seed = true) {
   const client = new QueryClient();
+  if (!seed) return page(client);
   // Drives and sessions are listed from the start of the default 7-day window.
   const { from, to } = rangeWindow(rangeOf(DEFAULT_RANGE).hours, new Date());
   const since = from.toISOString();
@@ -35,6 +36,10 @@ function render(battery?: object) {
       { bucket: ago(22), avg: 82 },
     ],
   );
+  return page(client);
+}
+
+function page(client: QueryClient) {
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <MemoryRouter>
@@ -69,6 +74,18 @@ describe('HistoryPage', () => {
     expect(html).toContain('1 visit');
     expect(html).toContain('100%');
     expect(html).toContain('Used driving');
+  });
+
+  it('says when the period is still loading, and stops once it has', () => {
+    expect(render(undefined, false)).toMatch(/role="status"><span[^>]*>.*Loading<\/span><\/span>/);
+    const battery = {
+      capacityKwh: 100,
+      startLevel: 70,
+      endLevel: 70,
+      parkedLossPct: 0,
+      parkedHours: 0,
+    };
+    expect(render(battery)).toContain('<span role="status"></span>');
   });
 
   it('balances energy in against energy out', () => {

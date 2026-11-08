@@ -1,3 +1,4 @@
+import fastifyCompress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify, {
@@ -61,6 +62,9 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     forceCloseConnections: true,
   });
 
+  // History listings run to megabytes of JSON over a long period. Live
+  // streams write to the raw response, so they go out uncompressed.
+  await app.register(fastifyCompress);
   await app.register(fastifyCookie);
 
   // Judged by the route that matched, not the raw URL: the router decodes

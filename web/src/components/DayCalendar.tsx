@@ -71,12 +71,9 @@ export function DayCalendar(props: {
   earliest?: Date | null;
   /** Called as it opens, to start loading. */
   onOpen?: () => void;
-  /** "pill" for a card's header: a small round button. "tile" for beside a picker card: as tall as it. */
-  variant?: 'pill' | 'tile';
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const pill = props.variant !== 'tile';
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -116,12 +113,8 @@ export function DayCalendar(props: {
           if (!open) props.onOpen?.();
           setOpen(!open);
         }}
-        className={`transition-colors hover:bg-(--surface-2) hover:text-(--text-primary) ${
+        className={`grid h-8 w-8 place-items-center rounded-full border border-(--hairline) transition-colors hover:bg-(--surface-2) hover:text-(--text-primary) ${
           open ? 'bg-(--surface-2) text-(--text-primary)' : 'text-(--text-secondary)'
-        } ${
-          pill
-            ? 'grid h-8 w-8 place-items-center rounded-full border border-(--hairline)'
-            : 'card grid h-full min-h-9 w-11 place-items-center'
         }`}
       >
         <CalendarIcon className="h-5 w-5" />

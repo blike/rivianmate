@@ -12,6 +12,7 @@ import {
   geofenceAt,
   liveChargingSession,
   modelName,
+  movingBatches,
   shortAddress,
   softwareVersion,
   toSessionDto,
@@ -479,5 +480,39 @@ describe('activitySpans', () => {
       t(8),
     );
     expect(spans).toEqual([span('asleep', 2, 8)]);
+  });
+});
+
+describe('movingBatches', () => {
+  const hour = 3600_000;
+  // A drive starting `start` hours in, lasting `hours`.
+  const drive = (id: number, start: number, hours: number) => ({
+    id,
+    started_at: new Date(start * hour),
+    ended_at: new Date((start + hours) * hour),
+  });
+  const ids = (batches: { id: number }[][]) => batches.map((b) => b.map((d) => d.id));
+
+  it('keeps a short listing in one batch', () => {
+    expect(ids(movingBatches([drive(2, 5, 1), drive(1, 0, 2)]))).toEqual([[1, 2]]);
+  });
+
+  it('splits a long one into runs of time with about equal driving', () => {
+    // 100 hours of driving: four batches of about 25, each drive in one.
+    const drives = Array.from({ length: 100 }, (_, i) => drive(i, i * 10, 1));
+    const batches = movingBatches(drives.toReversed());
+    expect(batches.map((b) => b.length)).toEqual([25, 25, 25, 25]);
+    expect(batches.flat().map((d) => d.id)).toEqual(drives.map((d) => d.id));
+  });
+
+  it('weighs drives by how long they ran', () => {
+    // 48 hours in all, so two batches: one long drive is one of them.
+    const batches = movingBatches([drive(1, 0, 30), drive(2, 40, 8), drive(3, 60, 10)]);
+    expect(ids(batches)).toEqual([[1], [2, 3]]);
+  });
+
+  it('copes with nothing, and with drives of no length', () => {
+    expect(movingBatches([])).toEqual([]);
+    expect(ids(movingBatches([drive(1, 0, 0), drive(2, 1, 0)]))).toEqual([[1, 2]]);
   });
 });

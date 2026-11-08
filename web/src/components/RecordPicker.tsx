@@ -134,7 +134,7 @@ export function RecordPicker(props: {
                 show();
               }
             }}
-            className={`flex min-w-0 flex-1 items-center gap-2 border-x border-(--border) px-3 py-2 text-left transition-colors hover:bg-(--surface-2) ${
+            className={`flex min-w-0 flex-1 items-center gap-2 border-x border-(--border) px-2.5 py-2 text-left sm:px-3 transition-colors hover:bg-(--surface-2) ${
               open ? 'bg-(--surface-2)' : ''
             }`}
           >
@@ -144,8 +144,14 @@ export function RecordPicker(props: {
                   ? `${current.day} at ${current.time} · ${index + 1} of ${flat.length}${moreOlder ? '+' : ''}`
                   : props.label}
               </span>
-              <span className="block truncate text-sm font-medium">
-                {current ? [current.title, current.value].filter(Boolean).join(' · ') : '—'}
+              {/* The figure keeps its place; the title gives way. */}
+              <span className="flex min-w-0 items-baseline gap-2 text-sm font-medium">
+                <span className="min-w-0 truncate">{current?.title ?? '—'}</span>
+                {current?.value && (
+                  <span className="shrink-0 tabular-nums text-(--text-secondary)">
+                    {current.value}
+                  </span>
+                )}
               </span>
             </span>
             <svg
@@ -259,7 +265,7 @@ function StepButton(props: {
       aria-label={props.label}
       disabled={props.disabled}
       onClick={props.onClick}
-      className="grid w-11 shrink-0 place-items-center text-(--text-secondary) transition-colors hover:bg-(--surface-2) hover:text-(--text-primary) disabled:opacity-30 disabled:hover:bg-transparent"
+      className="grid w-9 shrink-0 place-items-center text-(--text-secondary) sm:w-11 transition-colors hover:bg-(--surface-2) hover:text-(--text-primary) disabled:opacity-30 disabled:hover:bg-transparent"
     >
       <svg
         viewBox="0 0 16 16"

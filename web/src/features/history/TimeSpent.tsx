@@ -17,6 +17,8 @@ const BY_DAY_MAX_HOURS = 24 * 30;
 export function TimeSpent(props: {
   spans: StateSpanDto[] | undefined;
   loading: boolean;
+  /** Showing the last period's data while this one loads. */
+  stale: boolean;
   from: Date;
   to: Date;
   hours: number;
@@ -47,6 +49,7 @@ export function TimeSpent(props: {
       <ContentFrame
         height="12rem"
         loading={props.loading}
+        stale={props.stale}
         empty={spans.length === 0}
         emptyText="No state recorded in this period."
       >

@@ -36,6 +36,7 @@ import {
   type Places,
   capacityHistory,
   liveChargingSession,
+  movingBatches,
   softwareVersion,
   toDriveDto,
   toSessionDto,
@@ -102,7 +103,9 @@ export const NO_SCHEDULES: SchedulesDto = {
  */
 export function connectReadOnly(url: string, extra: Record<string, string> = {}): q.Sql {
   return postgres(url, {
-    max: 3,
+    // History asks for several things at once, moving time in batches side
+    // by side; with fewer, quick reads wait behind slow ones.
+    max: 6,
     idle_timeout: 120,
     connect_timeout: 10,
     onnotice: () => {},
@@ -377,10 +380,13 @@ export class TeslaMateSource {
         open.map(async (r) => [r.id, await this.progress(r.id, r.superseded)] as const),
       ),
     );
-    const moving = await q.drivesMovingSeconds(
-      sql,
-      rows.filter((r) => r.ended_at != null).map((r) => r.id),
-    );
+    const moving = new Map<number, number>();
+    const finished = rows.flatMap((r) => (r.ended_at ? [{ ...r, ended_at: r.ended_at }] : []));
+    for (const found of await Promise.all(
+      movingBatches(finished).map((batch) => q.drivesMovingSeconds(sql, car.row.id, batch)),
+    )) {
+      for (const [id, seconds] of found) moving.set(id, seconds);
+    }
     await Promise.all(
       open.map(async (r) => {
         const seconds = await q.driveMovingSeconds(sql, r.id, r.superseded);

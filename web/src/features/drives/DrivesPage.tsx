@@ -9,6 +9,7 @@ import {
 } from '../../api/hooks';
 import { api } from '../../api/client';
 import { DayCalendar } from '../../components/DayCalendar';
+import { PageHeader } from '../../components/PageHeader';
 import {
   ContentFrame,
   LoadingScope,
@@ -58,10 +59,7 @@ export function DrivesPage(props: { vehicleId: string }) {
     onSelect: setSelectedId,
     earliest: coverage?.since ? new Date(coverage.since) : null,
   });
-  const calendar = (variant: 'pill' | 'tile') => (
-    <DayCalendar variant={variant} noun="drive" {...goTo.calendar} />
-  );
-
+  const calendar = <DayCalendar noun="drive" {...goTo.calendar} />;
   // The drive under way shows where navigation is taking it, and the
   // vehicle's latest fix and heading, until it ends.
   const { data: insights } = useInsights(props.vehicleId);
@@ -88,127 +86,132 @@ export function DrivesPage(props: { vehicleId: string }) {
 
   if (!drivesPending && !drives?.length) {
     return (
-      <Panel title="Drives">
-        <p className="py-6 text-center text-sm text-(--text-muted)">No drives recorded yet.</p>
-      </Panel>
+      <>
+        <PageHeader title="Drives" />
+        <Panel title="Drives">
+          <p className="py-6 text-center text-sm text-(--text-muted)">No drives recorded yet.</p>
+        </Panel>
+      </>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {drives && drives.length > 1 && (
-        <div className="sticky top-2 z-20 flex items-stretch gap-2 lg:hidden">
+    <>
+      {/* Until the list shows beside the details, the calendar sits at the header's
+          right, so the picker has the width. */}
+      <PageHeader title="Drives" action={<div className="lg:hidden">{calendar}</div>} />
+      <div className="space-y-4">
+        {drives && drives.length > 1 && (
           <DrivePicker
             drives={drives}
             selectedId={driveId}
             onSelect={setSelectedId}
             older={older}
-            className="min-w-0 flex-1"
+            className="sticky top-2 z-20 lg:hidden"
           />
-          {calendar('tile')}
+        )}
+        <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
+          <LoadingScope loading={loading}>
+            <DriveCard vehicleId={props.vehicleId} drive={detail} />
+          </LoadingScope>
         </div>
-      )}
-      <div className={`transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}>
-        <LoadingScope loading={loading}>
-          <DriveCard vehicleId={props.vehicleId} drive={detail} />
-        </LoadingScope>
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Panel
-          title="Route"
-          className={`flex flex-col transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}
-        >
-          <div className="relative h-88 overflow-hidden rounded-lg lg:h-104">
-            {loading ? (
-              <SkeletonBlock height="100%" />
-            ) : detail && lastPoint ? (
-              <div className="absolute inset-0">
-                <VehicleMap
-                  key={detail.id}
-                  lat={lastPoint[0]}
-                  lon={lastPoint[1]}
-                  bearing={underWay ? (location(state)?.bearing ?? null) : null}
-                  trail={trail}
-                  height="100%"
-                  follow={false}
-                  highlight={hoverPosition}
-                  plan={plan}
-                />
-              </div>
-            ) : (
-              <p className="flex h-full items-center justify-center text-sm text-(--text-muted)">
-                No GPS from the vehicle during this drive (it may have had no signal).
-              </p>
-            )}
-          </div>
-          <div className="mt-4">
-            <ContentFrame
-              height={150}
-              loading={loading}
-              empty={profile.length < 2}
-              emptyText="No speed or altitude readings for this drive."
-            >
-              <TrendChart
-                data={profile}
-                xKey="minutes"
-                height={150}
-                onHover={setHoverIndex}
-                xTicks={minuteTicks(profile[0]?.minutes ?? 0, profile.at(-1)?.minutes ?? 0)}
-                xFormatter={formatMinutes(profile.at(-1)?.minutes ?? 0)}
-                tooltipLabel={detail ? tooltipTime(detail.startedAt) : undefined}
-                series={[
-                  {
-                    key: 'speed',
-                    label: 'Speed',
-                    color: 'var(--accent)',
-                    unit: u.speedUnit,
-                    digits: 0,
-                  },
-                  {
-                    key: 'elevation',
-                    label: 'Elevation',
-                    color: 'var(--series-1)',
-                    mark: 'line',
-                    right: true,
-                    unit: u.elevationUnit,
-                    digits: 0,
-                  },
-                ]}
-              />
-            </ContentFrame>
-          </div>
-        </Panel>
-
-        <Panel title="All drives" className="hidden flex-col lg:flex" action={calendar('pill')}>
-          <div className="relative min-h-0 flex-1">
-            <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
-              {drivesPending ? (
-                <div className="px-4">
-                  <SkeletonRows rows={8} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Panel
+            title="Route"
+            className={`flex flex-col transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}
+          >
+            <div className="relative h-88 overflow-hidden rounded-lg lg:h-104">
+              {loading ? (
+                <SkeletonBlock height="100%" />
+              ) : detail && lastPoint ? (
+                <div className="absolute inset-0">
+                  <VehicleMap
+                    key={detail.id}
+                    lat={lastPoint[0]}
+                    lon={lastPoint[1]}
+                    bearing={underWay ? (location(state)?.bearing ?? null) : null}
+                    trail={trail}
+                    height="100%"
+                    follow={false}
+                    highlight={hoverPosition}
+                    plan={plan}
+                  />
                 </div>
               ) : (
-                <>
-                  <DriveList
-                    drives={drives!}
-                    selectedId={driveId}
-                    onSelect={setSelectedId}
-                    revealId={goTo.revealId}
-                    onRevealed={goTo.clearReveal}
-                  />
-                  {older.has && (
-                    <LoadOlder
-                      label="Show older drives"
-                      loading={older.loading}
-                      onLoad={older.load}
-                    />
-                  )}
-                </>
+                <p className="flex h-full items-center justify-center text-sm text-(--text-muted)">
+                  No GPS from the vehicle during this drive (it may have had no signal).
+                </p>
               )}
             </div>
-          </div>
-        </Panel>
+            <div className="mt-4">
+              <ContentFrame
+                height={150}
+                loading={loading}
+                empty={profile.length < 2}
+                emptyText="No speed or altitude readings for this drive."
+              >
+                <TrendChart
+                  data={profile}
+                  xKey="minutes"
+                  height={150}
+                  onHover={setHoverIndex}
+                  xTicks={minuteTicks(profile[0]?.minutes ?? 0, profile.at(-1)?.minutes ?? 0)}
+                  xFormatter={formatMinutes(profile.at(-1)?.minutes ?? 0)}
+                  tooltipLabel={detail ? tooltipTime(detail.startedAt) : undefined}
+                  series={[
+                    {
+                      key: 'speed',
+                      label: 'Speed',
+                      color: 'var(--accent)',
+                      unit: u.speedUnit,
+                      digits: 0,
+                    },
+                    {
+                      key: 'elevation',
+                      label: 'Elevation',
+                      color: 'var(--series-1)',
+                      mark: 'line',
+                      right: true,
+                      unit: u.elevationUnit,
+                      digits: 0,
+                    },
+                  ]}
+                />
+              </ContentFrame>
+            </div>
+          </Panel>
+
+          <Panel title="All drives" className="hidden flex-col lg:flex" action={calendar}>
+            <div className="relative min-h-0 flex-1">
+              <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
+                {drivesPending ? (
+                  <div className="px-4">
+                    <SkeletonRows rows={8} />
+                  </div>
+                ) : (
+                  <>
+                    <DriveList
+                      drives={drives!}
+                      selectedId={driveId}
+                      onSelect={setSelectedId}
+                      revealId={goTo.revealId}
+                      onRevealed={goTo.clearReveal}
+                    />
+                    {older.has && (
+                      <LoadOlder
+                        label="Show older drives"
+                        loading={older.loading}
+                        onLoad={older.load}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </Panel>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
