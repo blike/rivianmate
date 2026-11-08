@@ -31,6 +31,16 @@ export function OverviewIcon() {
   );
 }
 
+/** A folded map: a whole journey, apart from the single road of a drive. */
+export function TripsIcon() {
+  return (
+    <Icon>
+      <path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2z" />
+      <path d="M9 4.5v13M15 6.5v13" />
+    </Icon>
+  );
+}
+
 /** A trace over time. */
 export function HistoryIcon() {
   return (
@@ -51,9 +61,9 @@ export function DrivesIcon() {
   );
 }
 
-export function ChargingIcon() {
+export function ChargingIcon(props: { className?: string }) {
   return (
-    <Icon>
+    <Icon className={props.className}>
       <path d="M13 3 5.5 13.5h6L10.5 21 18.5 10.5h-6z" />
     </Icon>
   );

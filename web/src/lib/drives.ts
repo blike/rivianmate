@@ -70,9 +70,13 @@ export interface Day<T> {
   items: T[];
 }
 
-/** A local date as YYYY-MM-DD, as days are keyed. */
-export const localKey = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** A time's local date as YYYY-MM-DD, as days are keyed. */
+export function localKey(when: string | number | Date): string {
+  const d = new Date(when);
+  return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 /** Items grouped by the local day they started (or `at` gives), keeping their order. */
 export function groupByDay<T extends { startedAt: string }>(

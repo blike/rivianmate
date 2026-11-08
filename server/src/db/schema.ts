@@ -73,7 +73,7 @@ export const importBatches = pgTable('import_batches', {
     .notNull()
     .references(() => vehicles.id),
   /** What kind of export it came from. */
-  format: text('format', { enum: ['electrafi'] }).notNull(),
+  format: text('format', { enum: ['electrafi', 'roamer'] }).notNull(),
   files: jsonb('files').$type<string[]>().notNull(),
   timeZone: text('time_zone').notNull(),
   /** The dates chosen, in `time_zone`, both included. */
@@ -184,6 +184,71 @@ export const drivers = pgTable(
   (t) => [uniqueIndex('drivers_vehicle_profile_idx').on(t.vehicleId, t.profileId)],
 );
 
+/**
+ * A journey the user put together from existing drives and charges. The
+ * vehicle id isn't a foreign key, as TeslaMate's vehicles aren't in `vehicles`.
+ */
+export const trips = pgTable(
+  'trips',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    vehicleId: text('vehicle_id').notNull(),
+    name: text('name').notNull(),
+    notes: text('notes'),
+    /**
+     * The trip's days, as YYYY-MM-DD: finished activities that start within
+     * them join on their own. Without an end date it takes everything after.
+     * Without a start date it holds only what's put in it.
+     */
+    startDate: text('start_date'),
+    endDate: text('end_date'),
+    /** The zone the dates are days in, from the browser that set them. */
+    timeZone: text('time_zone'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('trips_vehicle_idx').on(t.vehicleId)],
+);
+
+/**
+ * What's in a trip. `activity_id` is a plain column: TeslaMate's records are
+ * in another database, so a foreign key can't reach them, and deleting a local
+ * drive or session has to remove its row here. An activity is in one trip.
+ */
+export const tripActivities = pgTable(
+  'trip_activities',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    tripId: bigint('trip_id', { mode: 'number' })
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    vehicleId: text('vehicle_id').notNull(),
+    kind: text('kind', { enum: ['drive', 'charge'] }).notNull(),
+    activityId: bigint('activity_id', { mode: 'number' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('trip_activities_activity_idx').on(t.vehicleId, t.kind, t.activityId),
+    index('trip_activities_trip_idx').on(t.tripId),
+  ],
+);
+
+/**
+ * Activities taken out of a trip, so a trip kept open doesn't add them back.
+ * Adding one to the trip again clears its row.
+ */
+export const tripExclusions = pgTable(
+  'trip_exclusions',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    tripId: bigint('trip_id', { mode: 'number' })
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ['drive', 'charge'] }).notNull(),
+    activityId: bigint('activity_id', { mode: 'number' }).notNull(),
+  },
+  (t) => [uniqueIndex('trip_exclusions_activity_idx').on(t.tripId, t.kind, t.activityId)],
+);
+
 export const locationPoints = pgTable(
   'location_points',
   {
@@ -274,8 +339,11 @@ export const chargingSessions = pgTable(
     lat: doublePrecision('lat'),
     lon: doublePrecision('lon'),
     rawFinal: jsonb('raw_final'),
-    /** live = recorded by RivianMate; rivian = imported; live+rivian = both; electrafi = from an ElectraFi export. */
-    source: text('source', { enum: ['live', 'rivian', 'live+rivian', 'electrafi'] })
+    /**
+     * live = recorded by RivianMate; rivian = imported; live+rivian = both;
+     * electrafi, roamer = from that app's export.
+     */
+    source: text('source', { enum: ['live', 'rivian', 'live+rivian', 'electrafi', 'roamer'] })
       .notNull()
       .default('live'),
     rivianTransactionId: text('rivian_transaction_id'),
@@ -328,11 +396,21 @@ export const chargingCurvePoints = pgTable(
      * feed's chart;
      * push_live = the push feed's current reading; forecast = the vehicle's
      * projection to the limit for a charge in progress (replaced by each
-     * graph, never a reading); electrafi = from an ElectraFi export; legacy =
-     * recorded before sources were kept apart.
+     * graph, never a reading); roamer = the push feed's readings as Roamer
+     * kept them; electrafi = from an ElectraFi export; legacy = recorded
+     * before sources were kept apart.
      */
     source: text('source', {
-      enum: ['observed', 'graph', 'push_chart', 'push_live', 'forecast', 'electrafi', 'legacy'],
+      enum: [
+        'observed',
+        'graph',
+        'push_chart',
+        'push_live',
+        'forecast',
+        'roamer',
+        'electrafi',
+        'legacy',
+      ],
     })
       .notNull()
       .default('legacy'),

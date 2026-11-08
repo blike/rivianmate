@@ -137,7 +137,7 @@ export function TextField(props: {
           autoComplete={props.autoComplete}
           inputMode={props.inputMode}
           readOnly={props.readOnly}
-          className={`h-11 w-full rounded-lg border border-(--border) bg-(--surface-0) px-3 text-(--text-primary) outline-none transition placeholder:text-(--text-muted) hover:border-[#4a4a45] focus:border-(--series-1) focus:ring-3 focus:ring-[color-mix(in_srgb,var(--series-1)_25%,transparent)] read-only:text-(--text-secondary) read-only:hover:border-(--border) ${
+          className={`h-11 w-full rounded-lg border border-(--border) bg-(--surface-0) px-3 text-(--text-primary) outline-none transition placeholder:text-(--text-muted) hover:border-[#4a4a45] focus:border-(--text-muted) read-only:text-(--text-secondary) read-only:hover:border-(--border) ${
             isPassword || props.action ? 'pr-16' : ''
           }`}
         />
@@ -145,6 +145,8 @@ export function TextField(props: {
           <button
             type="button"
             onClick={() => setRevealed((r) => !r)}
+            // Tab goes from one password field to the next, as forms usually do.
+            tabIndex={-1}
             aria-label={revealed ? 'Hide password' : 'Show password'}
             className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-(--text-muted) hover:text-(--text-primary)"
           >

@@ -19,6 +19,7 @@ const ADDITIONS: Readonly<Record<ImportSessionAddition, string>> = {
   chargingTime: 'charging time',
   batteryLevels: 'battery levels',
   energy: 'energy',
+  breakdown: 'energy breakdown',
   range: 'range added',
   power: 'power',
   location: 'location',
@@ -130,6 +131,7 @@ function DriveRow(props: { drive: ImportDrivePreview; timeZone: string }) {
         u.formatDistance(d.distanceKm, 1),
         duration(seconds),
         levels(d.startBattery, d.endBattery),
+        d.driver,
       ]}
     />
   );

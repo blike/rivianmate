@@ -4,7 +4,7 @@ import { api, type GeocodeResultDto, type SavedLocationInput } from '../../api/c
 import { useUnits } from '../../api/hooks';
 import { LocationPicker, type PickerArea } from '../../components/LocationPicker';
 import { formatMoney } from '../../lib/charging';
-import { Switch, secondaryButton } from './SettingsControls';
+import { Switch } from './SettingsControls';
 
 /** A typical overnight top-up, to put the rate in familiar terms. */
 const EXAMPLE_KWH = 50;
@@ -99,7 +99,7 @@ export function LocationEditor(props: {
             maxLength={40}
             placeholder="Work"
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm font-normal outline-none focus:border-(--text-muted)"
+            className="mt-1 block w-full field font-normal"
           />
         </label>
         <label className="block text-sm font-medium">
@@ -172,7 +172,7 @@ export function LocationEditor(props: {
                   setOpen(false);
                 }
               }}
-              className="w-full rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm outline-none focus:border-(--text-muted)"
+              className="w-full field"
             />
             {open && (searching || searchError || results) && (
               <div
@@ -207,7 +207,7 @@ export function LocationEditor(props: {
           </div>
           <button
             type="button"
-            className={secondaryButton}
+            className="btn-secondary"
             disabled={searching || term.length < MIN_QUERY}
             // Keeps focus in the field while searching.
             onMouseDown={(e) => e.preventDefault()}
@@ -217,7 +217,7 @@ export function LocationEditor(props: {
           </button>
           <button
             type="button"
-            className={secondaryButton}
+            className="btn-secondary"
             disabled={!props.vehicle}
             title={props.vehicle ? undefined : "The vehicle's location isn't known yet"}
             onClick={() => props.vehicle && setCenter(props.vehicle)}
@@ -260,7 +260,7 @@ export function LocationEditor(props: {
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <button type="button" className={secondaryButton} onClick={props.onCancel}>
+        <button type="button" className="btn-secondary" onClick={props.onCancel}>
           Cancel
         </button>
         <button

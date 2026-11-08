@@ -90,6 +90,22 @@ describe.skipIf(!url)('Drivers with Postgres', () => {
     expect(row!.lastSeenAt).toEqual(at(-3600));
   });
 
+  it('finds a driver seen before without spending ids, keeping the latest time', async () => {
+    await service.noteProfile('v1', ALICE, at(10));
+    await service.noteProfile('v1', ALICE, at(5));
+    await service.driverFor('v1', ALICE, null);
+    await service.noteProfile('v1', BEN, at(20));
+
+    const rows = await handle.db
+      .select({ id: drivers.id, profileId: drivers.profileId, lastSeenAt: drivers.lastSeenAt })
+      .from(drivers)
+      .orderBy(asc(drivers.id));
+    expect(rows).toEqual([
+      { id: 1, profileId: ALICE, lastSeenAt: at(10) },
+      { id: 2, profileId: BEN, lastSeenAt: at(20) },
+    ]);
+  });
+
   it('takes a profile picked just after the start, but not one picked later', async () => {
     await report(ALICE, -600);
     await report(BEN, 30);
@@ -173,6 +189,28 @@ describe.skipIf(!url)('Drivers with Postgres', () => {
       { profileId: ALICE, reportedName: null, lastSeenAt: at(1) },
       { profileId: BEN, reportedName: 'Ben', lastSeenAt: at(2) },
     ]);
+  });
+
+  it('takes over a driver an import made from the name, with its drives', async () => {
+    const [imported] = await handle.db
+      .insert(drivers)
+      .values({ vehicleId: 'v1', reportedName: 'Ben V.', name: 'Benny' })
+      .returning({ id: drivers.id });
+    const id = await drive(0);
+    await handle.db
+      .update(drives)
+      .set({ driverId: imported!.id, driverSource: 'profile' })
+      .where(eq(drives.id, id));
+
+    await service.noteProfile('v1', BEN, at(10));
+    service.noteName('v1', ' ben v. ');
+    await service.flushNames();
+
+    const rows = await handle.db
+      .select({ id: drivers.id, profileId: drivers.profileId, name: drivers.name })
+      .from(drivers);
+    expect(rows).toEqual([{ id: await driverId(BEN), profileId: BEN, name: 'Benny' }]);
+    expect(await driveDriver(id)).toEqual({ driverId: await driverId(BEN), source: 'profile' });
   });
 });
 

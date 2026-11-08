@@ -9,9 +9,11 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
-import { location } from '../lib/state';
+import { localKey } from '../lib/drives';
+import { location, type VehicleFix } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
+  ApiError,
   api,
   type DriveDetailDto,
   type DriverDto,
@@ -20,6 +22,9 @@ import {
   type LookupSettings,
   type SavedLocation,
   type SavedLocationInput,
+  type TripActivityRef,
+  type TripInput,
+  type TripSummaryDto,
   type UnitPreferences,
 } from './client';
 
@@ -70,19 +75,24 @@ export function useLiveState(vehicleId: string | undefined) {
   }, [vehicleId, queryClient]);
 }
 
-export type LiveFix = NonNullable<ReturnType<typeof location>>;
+export type LiveFix = Pick<VehicleFix, 'lat' | 'lon' | 'ts'>;
 
 /** How long live GPS fixes are kept: well past the drive's refresh, which stores them. */
 const FIXES_KEPT_MS = 10 * 60_000;
 
-/** The fixes kept with a new one from the stream: a repeat isn't added, and old ones go. */
+/**
+ * The fixes kept with a new one from the stream: a repeat isn't added, nor a
+ * fix older than the last (a navigation fix taken a moment before the GPS fix
+ * already drawn, which would step the trail back), and old ones go.
+ */
 export function withFix(fixes: LiveFix[], fix: LiveFix): LiveFix[] {
-  if (fixes.at(-1)?.ts === fix.ts) return fixes;
+  const last = fixes.at(-1);
+  if (last && Date.parse(fix.ts) <= Date.parse(last.ts)) return fixes;
   const from = Date.parse(fix.ts) - FIXES_KEPT_MS;
   return [...fixes.filter((f) => Date.parse(f.ts) > from), fix];
 }
 
-/** The GPS fixes the live stream has sent recently, oldest first. */
+/** The fixes the live stream has sent recently, as the map shows them, oldest first. */
 export function useLiveFixes(vehicleId: string): LiveFix[] {
   const { data } = useQuery<LiveFix[]>({
     queryKey: ['liveFixes', vehicleId],
@@ -435,4 +445,171 @@ export function useSetTeslaMate() {
 export function useRemoveTeslaMate() {
   const onSuccess = useOnTeslaMateSaved();
   return useMutation({ mutationFn: api.removeTeslamate, onSuccess });
+}
+
+/** How often a trip still under way looks for drives and charges that finished since. */
+const OPEN_TRIP_REFRESH_MS = 60_000;
+
+/** Dated and not past its last day, so what's driven is still joining it. */
+function stillOpen(trip: { startDate: string | null; endDate: string | null }): boolean {
+  const today = localKey(new Date());
+  return trip.startDate != null && (trip.endDate == null || trip.endDate >= today);
+}
+
+/** The server said there's no such thing (or none this vehicle can reach). */
+export const isNotFound = (error: unknown) => error instanceof ApiError && error.status === 404;
+
+/** The vehicle's trips, newest journey first. */
+export function useTrips(vehicleId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['trips', vehicleId],
+    queryFn: () => api.trips(vehicleId),
+    enabled,
+    refetchInterval: (q) => (q.state.data?.some(stillOpen) ? OPEN_TRIP_REFRESH_MS : false),
+  });
+}
+
+export function useTrip(vehicleId: string, tripId: number) {
+  return useQuery({
+    queryKey: ['trips', vehicleId, tripId],
+    queryFn: () => api.trip(vehicleId, tripId),
+    // Not there won't change on asking again; a dropped connection might.
+    retry: (failures, error) => !isNotFound(error) && failures < 2,
+    refetchInterval: (q) =>
+      q.state.data && stillOpen(q.state.data) ? OPEN_TRIP_REFRESH_MS : false,
+  });
+}
+
+/** `open`: the trip is still taking in drives, so its lines can grow. */
+export function useTripRoute(vehicleId: string, tripId: number, open = false) {
+  return useQuery({
+    queryKey: ['trips', vehicleId, tripId, 'route'],
+    queryFn: () => api.tripRoute(vehicleId, tripId),
+    refetchInterval: open ? OPEN_TRIP_REFRESH_MS : false,
+  });
+}
+
+/** Which trip each of the vehicle's activities is in. */
+export function useTripAssignments(vehicleId: string) {
+  return useQuery({
+    queryKey: ['trips', vehicleId, 'assignments'],
+    queryFn: () => api.tripAssignments(vehicleId),
+  });
+}
+
+/** What can go in a trip over a window of time. */
+export function useTripCandidates(
+  vehicleId: string,
+  from: Date,
+  to: Date,
+  enabled: boolean,
+  /** The trip being edited, to learn what was taken out of it. */
+  tripId?: number,
+) {
+  return useQuery({
+    queryKey: ['trips', vehicleId, 'candidates', from.toISOString(), to.toISOString(), tripId],
+    queryFn: () => api.tripCandidates(vehicleId, from, to, tripId),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Everything about trips is under one key, so any change refreshes all of it. */
+function useInvalidateTrips(vehicleId: string) {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: ['trips', vehicleId] });
+}
+
+export function useUpdateTrip(vehicleId: string, tripId: number) {
+  const invalidate = useInvalidateTrips(vehicleId);
+  return useMutation({
+    mutationFn: (input: TripInput) => api.updateTrip(vehicleId, tripId, input),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * Deletes a trip. `onDeleted` runs first, to leave its page, and the trip is
+ * then taken out of the list where it stands, so nothing reloads or reshuffles.
+ */
+export function useDeleteTrip(vehicleId: string, tripId: number, onDeleted?: () => void) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.deleteTrip(vehicleId, tripId),
+    onSuccess: () => {
+      onDeleted?.();
+      queryClient.setQueryData<TripSummaryDto[]>(['trips', vehicleId], (trips) =>
+        trips?.filter((t) => t.id !== tripId),
+      );
+      // This trip's own queries would only refetch to a 404.
+      queryClient.removeQueries({ queryKey: ['trips', vehicleId, tripId] });
+      // Freed activities show as such next time they're looked at, not now.
+      void queryClient.invalidateQueries({ queryKey: ['trips', vehicleId], refetchType: 'none' });
+    },
+  });
+}
+
+/** One save of a trip: made or updated, with what goes in and comes out. */
+export interface TripSave {
+  /** Null makes the trip. */
+  tripId: number | null;
+  fields: TripInput;
+  add: TripActivityRef[];
+  /** Take what's added out of any other trip. */
+  move: boolean;
+  /** Kept out, so the trip doesn't take them in later. */
+  exclude: TripActivityRef[];
+  remove: TripActivityRef[];
+  /** Told the new trip's id as soon as there is one, so a retry doesn't make another. */
+  onCreated?: (id: number) => void;
+}
+
+/**
+ * Saves a trip whole, then refreshes trips once: a step at a time, each step
+ * would redraw the pages showing them. The trip's own figures are fetched
+ * before it resolves, so its page opens drawn rather than loading.
+ */
+export function useSaveTrip(vehicleId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: TripSave) => {
+      let id = v.tripId;
+      if (id == null) {
+        id = (await api.createTrip(vehicleId, v.fields)).id;
+        v.onCreated?.(id);
+      } else {
+        await api.updateTrip(vehicleId, id, v.fields);
+      }
+      if (v.add.length + v.exclude.length > 0) {
+        await api.addTripActivities(vehicleId, id, v.add, v.move, v.exclude);
+      }
+      for (const r of v.remove) await api.removeTripActivity(vehicleId, id, r.kind, r.id);
+      const tripId = id;
+      await queryClient.fetchQuery({
+        queryKey: ['trips', vehicleId, tripId],
+        queryFn: () => api.trip(vehicleId, tripId),
+        staleTime: 0,
+      });
+      return tripId;
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['trips', vehicleId] }),
+  });
+}
+
+/** Puts activities in a trip as they are, clearing any kept out. */
+export function useAddTripActivities(vehicleId: string, tripId: number) {
+  const invalidate = useInvalidateTrips(vehicleId);
+  return useMutation({
+    mutationFn: (items: TripActivityRef[]) =>
+      api.addTripActivities(vehicleId, tripId, items, false),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRemoveTripActivity(vehicleId: string, tripId: number) {
+  const invalidate = useInvalidateTrips(vehicleId);
+  return useMutation({
+    mutationFn: (v: TripActivityRef) => api.removeTripActivity(vehicleId, tripId, v.kind, v.id),
+    onSuccess: invalidate,
+  });
 }

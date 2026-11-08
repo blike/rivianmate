@@ -301,6 +301,14 @@ export function drives(sql: Sql, carId: number, window: ListWindow): Promise<Dri
   `;
 }
 
+export function drivesByIds(sql: Sql, carId: number, ids: number[]): Promise<DriveRow[]> {
+  if (ids.length === 0) return Promise.resolve([]);
+  return sql<DriveRow[]>`
+    ${driveSelect(sql)} WHERE d.car_id = ${carId} AND d.id IN ${sql(ids)}
+    ORDER BY d.start_date DESC
+  `;
+}
+
 export async function firstDriveStart(sql: Sql, carId: number): Promise<Date | null> {
   const [row] = await sql<{ started_at: Date | null }[]>`
     SELECT MIN(${utc(sql, 'start_date')}) AS started_at FROM drives WHERE car_id = ${carId}
@@ -436,6 +444,27 @@ export function chargingProcesses(
   carId: number,
   window: ListWindow,
 ): Promise<ChargingProcessRow[]> {
+  return processRows(
+    sql,
+    sql`cp.car_id = ${carId} ${startedIn(sql, 'cp.start_date', window)}`,
+    window.limit,
+  );
+}
+
+export function chargingProcessesByIds(
+  sql: Sql,
+  carId: number,
+  ids: number[],
+): Promise<ChargingProcessRow[]> {
+  if (ids.length === 0) return Promise.resolve([]);
+  return processRows(sql, sql`cp.car_id = ${carId} AND cp.id IN ${sql(ids)}`, ids.length);
+}
+
+function processRows(
+  sql: Sql,
+  where: ReturnType<Sql>,
+  limit: number,
+): Promise<ChargingProcessRow[]> {
   return sql<ChargingProcessRow[]>`
     SELECT cp.id::int AS id, (cp.start_date AT TIME ZONE 'UTC') AS started_at,
            (cp.end_date AT TIME ZONE 'UTC') AS ended_at,
@@ -475,8 +504,8 @@ export function chargingProcesses(
       FROM charges WHERE charging_process_id = cp.id AND cp.end_date IS NULL
       ORDER BY date DESC LIMIT 1
     ) latest ON true
-    WHERE cp.car_id = ${carId} ${startedIn(sql, 'cp.start_date', window)}
-    ORDER BY cp.start_date DESC LIMIT ${window.limit}
+    WHERE ${where}
+    ORDER BY cp.start_date DESC LIMIT ${limit}
   `;
 }
 

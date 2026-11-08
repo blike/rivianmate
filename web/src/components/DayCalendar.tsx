@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Select } from './Select';
 import { localKey } from '../lib/drives';
 
@@ -15,7 +15,7 @@ const tintOf = (count: number, max: number) =>
   TINTS[Math.min(TINTS.length - 1, Math.ceil((count / max) * TINTS.length) - 1)]!;
 const tint = (pct: number) => `color-mix(in srgb, var(--accent) ${pct}%, transparent)`;
 
-const CalendarIcon = (props: { className: string }) => (
+export const CalendarIcon = (props: { className: string }) => (
   <svg
     viewBox="0 0 16 16"
     className={props.className}
@@ -73,13 +73,73 @@ export function DayCalendar(props: {
   onOpen?: () => void;
   className?: string;
 }) {
+  return (
+    <CalendarPopover
+      label="Go to a date"
+      className={`relative ${props.className ?? ''}`}
+      panelClassName="right-0 w-[20rem] max-w-[calc(100vw-2rem)]"
+      onOpen={props.onOpen}
+      trigger={(t) => (
+        <button
+          {...t}
+          type="button"
+          aria-label={`Pick a day to show ${props.noun}s from`}
+          title="Go to a date"
+          className={`grid h-8 w-8 place-items-center rounded-full border border-(--hairline) transition-colors hover:bg-(--surface-2) hover:text-(--text-primary) ${
+            t['aria-expanded']
+              ? 'bg-(--surface-2) text-(--text-primary)'
+              : 'text-(--text-secondary)'
+          }`}
+        >
+          <CalendarIcon className="h-5 w-5" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <CalendarMonth
+          {...props}
+          onPick={(key) => {
+            props.onPick(key);
+            close(true);
+          }}
+        />
+      )}
+    </CalendarPopover>
+  );
+}
+
+/**
+ * A calendar opened from a trigger, below it: Escape or a click elsewhere
+ * closes it. The trigger gets what it needs spread onto its button. Unless
+ * `className` positions the root, the panel lines up with the nearest
+ * positioned ancestor, so a narrow field's calendar can use a wider row.
+ */
+export function CalendarPopover(props: {
+  /** Names the opened calendar. */
+  label: string;
+  trigger: (t: {
+    id: string;
+    onClick: () => void;
+    disabled?: boolean;
+    'aria-haspopup': 'dialog';
+    'aria-expanded': boolean;
+  }) => ReactNode;
+  /** Its edge and width, e.g. "right-0 w-[20rem]". */
+  panelClassName: string;
+  /** Called as it opens, to start loading. */
+  onOpen?: () => void;
+  disabled?: boolean;
+  className?: string;
+  children: (close: (refocus?: boolean) => void) => ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Found by id, not a ref, so what's inside can be handed `close`.
+  const triggerId = useId();
 
   const close = (refocus = false) => {
     setOpen(false);
-    if (refocus) triggerRef.current?.focus();
+    if (refocus) document.getElementById(triggerId)?.focus();
   };
 
   useEffect(() => {
@@ -94,7 +154,7 @@ export function DayCalendar(props: {
   return (
     <div
       ref={rootRef}
-      className={`relative ${props.className ?? ''}`}
+      className={props.className ?? 'relative'}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && open) {
           e.stopPropagation();
@@ -102,37 +162,24 @@ export function DayCalendar(props: {
         }
       }}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={`Pick a day to show ${props.noun}s from`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        title="Go to a date"
-        onClick={() => {
+      {props.trigger({
+        id: triggerId,
+        disabled: props.disabled,
+        'aria-haspopup': 'dialog',
+        'aria-expanded': open,
+        onClick: () => {
           if (!open) props.onOpen?.();
           setOpen(!open);
-        }}
-        className={`grid h-8 w-8 place-items-center rounded-full border border-(--hairline) transition-colors hover:bg-(--surface-2) hover:text-(--text-primary) ${
-          open ? 'bg-(--surface-2) text-(--text-primary)' : 'text-(--text-secondary)'
-        }`}
-      >
-        <CalendarIcon className="h-5 w-5" />
-      </button>
+        },
+      })}
 
-      {open && (
+      {open && !props.disabled && (
         <div
           role="dialog"
-          aria-label="Go to a date"
-          className="card absolute top-full right-0 z-1100 mt-2 w-[20rem] max-w-[calc(100vw-2rem)] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.5)]"
+          aria-label={props.label}
+          className={`card absolute top-full z-1100 mt-2 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.5)] ${props.panelClassName}`}
         >
-          <CalendarMonth
-            {...props}
-            onPick={(key) => {
-              props.onPick(key);
-              close(true);
-            }}
-          />
+          {props.children(close)}
         </div>
       )}
     </div>
@@ -141,31 +188,41 @@ export function DayCalendar(props: {
 
 /**
  * One month of the calendar: steps to the months either side, and each
- * day with how many records started on it. Days without any can't be picked.
+ * day with how many records started on it. Days without any can't be
+ * picked, unless `pickAny`: then it's picking a date, the counts a guide.
  */
 export function CalendarMonth(props: {
   noun: string;
+  /** The noun for more than one, when adding "s" won't do. */
+  nouns?: string;
   month: Date;
   onMonthChange: (month: Date) => void;
   counts: ReadonlyMap<string, number> | undefined;
   selectedKey: string | null;
   onPick: (key: string) => void;
   earliest?: Date | null;
+  /** The last month that can be reached; this one, unless given. */
+  latest?: Date;
+  pickAny?: boolean;
+  /** Days before this key can't be picked. */
+  minKey?: string;
+  /** Days outlined as a span, both ends included. */
+  range?: { from: string; to: string } | null;
   /** Today, for tests. */
   now?: Date;
 }) {
   const now = props.now ?? new Date();
   const today = localKey(now);
   const month = monthStart(props.month);
-  const atLatest = month.getTime() >= monthStart(now).getTime();
+  const last = monthStart(props.latest ?? now);
+  const atLatest = month.getTime() >= last.getTime();
   const atEarliest =
     props.earliest != null && month.getTime() <= monthStart(props.earliest).getTime();
   const max = props.counts ? Math.max(0, ...props.counts.values()) : 0;
 
   // Months that can be reached: from the first with records (or some years
-  // back) to this one. A month or year picked past either end stops there.
+  // back) to the latest. A month or year picked past either end stops there.
   const first = monthStart(props.earliest ?? new Date(now.getFullYear() - YEARS_BACK, 0, 1));
-  const last = monthStart(now);
   const go = (year: number, monthIndex: number) => {
     const t = new Date(year, monthIndex, 1).getTime();
     props.onMonthChange(new Date(Math.min(Math.max(t, first.getTime()), last.getTime())));
@@ -235,6 +292,9 @@ export function CalendarMonth(props: {
           const count = props.counts?.get(key) ?? 0;
           const selected = key === props.selectedKey;
           const isToday = key === today;
+          const pickable =
+            (props.pickAny || count > 0) && (props.minKey == null || key >= props.minKey);
+          const inRange = props.range != null && key >= props.range.from && key <= props.range.to;
           const label = day.toLocaleDateString([], {
             weekday: 'long',
             month: 'long',
@@ -244,18 +304,28 @@ export function CalendarMonth(props: {
             <button
               key={key}
               type="button"
-              disabled={count === 0}
+              disabled={!pickable}
               aria-pressed={selected}
-              aria-label={`${label}: ${count} ${props.noun}${count === 1 ? '' : 's'}`}
+              aria-label={`${label}: ${count} ${count === 1 ? props.noun : (props.nouns ?? `${props.noun}s`)}`}
               onClick={() => props.onPick(key)}
               style={!selected && count > 0 ? { background: tint(tintOf(count, max)) } : undefined}
               className={`relative flex h-11 flex-col items-center justify-center gap-1 rounded-xl text-sm tabular-nums transition-shadow disabled:cursor-default ${
                 selected
                   ? 'bg-(--accent) font-semibold text-(--on-accent)'
-                  : count > 0
-                    ? 'font-medium hover:ring-1 hover:ring-(--accent) hover:ring-inset'
-                    : 'text-(--text-muted) opacity-40'
-              } ${isToday && !selected ? 'ring-1 ring-(--text-muted) ring-inset' : ''}`}
+                  : !pickable
+                    ? 'text-(--text-muted) opacity-40'
+                    : `hover:ring-1 hover:ring-(--accent) hover:ring-inset ${
+                        count > 0 ? 'font-medium' : 'text-(--text-secondary)'
+                      }`
+              } ${
+                selected
+                  ? ''
+                  : inRange
+                    ? 'ring-1 ring-[color-mix(in_srgb,var(--accent)_55%,transparent)] ring-inset'
+                    : isToday
+                      ? 'ring-1 ring-(--text-muted) ring-inset'
+                      : ''
+              }`}
             >
               <span className="leading-none">{day.getDate()}</span>
               {/* Held even on days without any, so every date sits at the same height. */}

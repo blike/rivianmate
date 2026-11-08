@@ -10,6 +10,7 @@ import {
   HistoryIcon,
   OverviewIcon,
   SettingsIcon,
+  TripsIcon,
 } from './AppIcons';
 import { Dot } from './Dot';
 import { VehicleMenu, vehicleName } from './VehicleMenu';
@@ -18,6 +19,7 @@ export const NAV = [
   { to: '/', label: 'Overview', icon: <OverviewIcon /> },
   { to: '/history', label: 'History', icon: <HistoryIcon /> },
   { to: '/drives', label: 'Drives', icon: <DrivesIcon /> },
+  { to: '/trips', label: 'Trips', icon: <TripsIcon /> },
   { to: '/charging', label: 'Charging', icon: <ChargingIcon /> },
   { to: '/health', label: 'Health', icon: <HealthIcon /> },
 ];
@@ -72,7 +74,9 @@ function SideLink(props: { to: string; label: string; icon: ReactNode }) {
       to={props.to}
       end={props.to === '/'}
       className={({ isActive }) =>
-        `group relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors ${
+        // Focused, it lights like the current page with a hairline ring, not an
+        // outline crowding its neighbours.
+        `group relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors outline-none focus-visible:bg-(--surface-2) focus-visible:text-(--text-primary) focus-visible:ring-1 focus-visible:ring-[color-mix(in_srgb,var(--accent)_40%,transparent)] focus-visible:ring-inset ${
           isActive
             ? 'bg-(--surface-2) text-(--text-primary)'
             : 'text-(--text-secondary) hover:bg-[color-mix(in_srgb,var(--surface-2)_55%,transparent)] hover:text-(--text-primary)'
@@ -89,7 +93,7 @@ function SideLink(props: { to: string; label: string; icon: ReactNode }) {
             className={
               isActive
                 ? 'text-(--accent)'
-                : 'text-(--text-muted) group-hover:text-(--text-secondary)'
+                : 'text-(--text-muted) group-hover:text-(--text-secondary) group-focus-visible:text-(--text-secondary)'
             }
           >
             {props.icon}

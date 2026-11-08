@@ -1,7 +1,13 @@
 import { and, desc, eq, gte, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
-import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
+import {
+  chargingCurvePoints,
+  chargingSessions,
+  tripActivities,
+  wallboxReadings,
+  wallboxes,
+} from '../db/schema.js';
 import type { RivianApi } from '../rivian/client.js';
 import {
   type ChargeBreakdown,
@@ -983,8 +989,19 @@ export class ChargingMonitor {
           sql`NOT EXISTS (SELECT 1 FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id} AND p.power_kw > 0)`,
         ),
       )
-      .returning({ id: chargingSessions.id });
-    return deleted.length > 0;
+      .returning({ vehicleId: chargingSessions.vehicleId });
+    const vehicleId = deleted[0]?.vehicleId;
+    if (vehicleId == null) return false;
+    await this.db
+      .delete(tripActivities)
+      .where(
+        and(
+          eq(tripActivities.vehicleId, vehicleId),
+          eq(tripActivities.kind, 'charge'),
+          eq(tripActivities.activityId, id),
+        ),
+      );
+    return true;
   }
 }
 

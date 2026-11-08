@@ -2,34 +2,43 @@ import { and, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { drives, locationPoints } from '../db/schema.js';
 import { isPosition } from '../geo.js';
-import type { GnssLocation, NavLocation, TimeStampedValue, VehicleState } from '../rivian/types.js';
-import { haversineKm, stateLocation, stateNumber } from './state-utils.js';
+import type { GnssLocation, TimeStampedValue, VehicleState } from '../rivian/types.js';
+import { haversineKm, NAV_COVERS_MS, stateLocation, stateNumber } from './state-utils.js';
 
 export const MIN_MOVE_KM = 0.015;
 /** Speed, heading and altitude count for a fix only if stamped this close to it. */
 const SAME_FIX_MS = 60_000;
-/**
- * A navigation fix stands in for the GNSS one only while it's this recent: a
- * minute, one GNSS cadence, so a gap in a live navigation stream hands back to
- * GNSS and a finished trip does too. Not the same question as the decoder's
- * `FIX_WITHIN_MS` (a frame's time against its own fix) or `SAME_FIX_MS` (a
- * reading against a fix it belongs to): this one is the fix against the clock.
- */
-const NAV_FIX_FRESH_MS = 60_000;
+/** Navigation spans kept per vehicle, for GNSS fixes delivered late. */
+const NAV_SPANS_KEPT = 64;
 /** A fix this recent with no drive around it belongs to the drive under way. */
 const LIVE_FIX_MS = 5 * 60_000;
 
+/** What became of a fix: a row now, one already there, or why neither. */
+type WriteResult = 'stored' | 'already-stored' | 'back-step' | 'unchanged';
+
 interface PerVehicle {
+  /** The newest fix stored, to measure movement from. */
   lastLocation: { lat: number; lon: number; ts: string } | null;
   currentDriveId: number | null;
+  /**
+   * The last navigation fix looked at, and the last GNSS fix settled (stored,
+   * or left to navigation), so a state repeating one skips it. A GNSS fix
+   * skipped as no move isn't settled: its speed can come in a later delta.
+   */
+  seenNav: string | null;
+  seenGnss: string | null;
+  /** When navigation fixes ran: runs of fixes under NAV_COVERS_MS apart. */
+  navSpans: { from: number; to: number }[];
 }
 
 /**
  * Persists location points on movement, with speed, heading and altitude
  * when they were stamped with the fix.
  *
- * The fix comes from the navigation stream while the vehicle is navigating
- * (a point every few seconds) and from GNSS otherwise; see `liveFix`.
+ * Every navigation fix is stored (a point every few seconds while the
+ * vehicle is navigating), and a GNSS fix wherever no navigation fix is within
+ * NAV_COVERS_MS of it. Both are judged by their own times, not by when they
+ * arrived, so a late fix of either kind is filed like any other.
  *
  * A point is stored at its fix's time and belongs to the drive under way
  * then: Rivian can deliver fixes hours late (after the vehicle had no
@@ -67,28 +76,67 @@ export class LocationWriter {
     pv: PerVehicle,
     state: VehicleState,
   ): Promise<void> {
-    const live = liveFix(state, this.now());
-    if (!live) return;
-    const { location, fromNav } = live;
-    const at = Date.parse(location.timeStamp);
-    if (!Number.isFinite(at)) return;
-    // Rivian reports speed in m/s. A navigation fix carries its own readings;
-    // the GNSS ones were taken at a different instant, so only altitude comes
-    // from them (navigation sends none, and height changes slowly).
-    const speed = fromNav ? (location.speedMps ?? null) : alongside(state, 'gnssSpeed', at);
+    const nav = state.navLocation;
+    if (nav && nav.timeStamp !== pv.seenNav && isPosition(nav.latitude, nav.longitude)) {
+      pv.seenNav = nav.timeStamp;
+      const at = Date.parse(nav.timeStamp);
+      if (Number.isFinite(at)) {
+        // A navigation fix carries its own readings; the GNSS ones were taken
+        // at a different instant, so only altitude comes from them
+        // (navigation sends none, and height changes slowly).
+        const result = await this.write(vehicleId, pv, state, nav, at, {
+          speed: nav.speedMps ?? null,
+          bearing: nav.bearing ?? null,
+        });
+        // A fix refused for stepping the track back stores no point, so it
+        // must not claim the moment: its span would mute the GNSS fix that is
+        // the only point there.
+        if (result !== 'back-step') noteNavFix(pv, at);
+      }
+    }
+    const gnss = stateLocation(state);
+    if (gnss && gnss.timeStamp !== pv.seenGnss) {
+      const at = Date.parse(gnss.timeStamp);
+      if (!Number.isFinite(at)) return;
+      if (navCovers(pv, at)) {
+        pv.seenGnss = gnss.timeStamp;
+        return;
+      }
+      // Rivian reports gnssSpeed in m/s.
+      const result = await this.write(vehicleId, pv, state, gnss, at, {
+        speed: alongside(state, 'gnssSpeed', at),
+        bearing: alongside(state, 'gnssBearing', at),
+      });
+      if (result === 'stored' || result === 'already-stored') pv.seenGnss = gnss.timeStamp;
+    }
+  }
+
+  private async write(
+    vehicleId: string,
+    pv: PerVehicle,
+    state: VehicleState,
+    location: GnssLocation,
+    at: number,
+    readings: { speed: number | null; bearing: number | null },
+  ): Promise<WriteResult> {
+    const { speed } = readings;
     const last = pv.lastLocation;
+    const lastAt = last ? Date.parse(last.ts) : Number.NaN;
     if (last) {
-      if (last.ts === location.timeStamp) return;
+      if (last.ts === location.timeStamp) return 'already-stored';
       // A live fix stamped before the last one came from the other stream, a
       // second away: storing it would step the track back. An old one is a fix
       // delivered late, which belongs to the drive it was taken on.
-      if (at < Date.parse(last.ts) && this.now() - at < LIVE_FIX_MS) return;
+      if (at < lastAt && this.now() - at < LIVE_FIX_MS) return 'back-step';
       const movedKm = haversineKm(last.lat, last.lon, location.latitude, location.longitude);
       // The same fix re-sent under a newer stamp, often with a speed.
-      if (movedKm === 0) return;
-      if (movedKm < MIN_MOVE_KM && (speed ?? 0) <= 0) return;
+      if (movedKm === 0) return 'unchanged';
+      if (movedKm < MIN_MOVE_KM && (speed ?? 0) <= 0) return 'unchanged';
     }
-    pv.lastLocation = { lat: location.latitude, lon: location.longitude, ts: location.timeStamp };
+    // A late fix is stored but isn't where the vehicle is now.
+    if (!last || at > lastAt) {
+      pv.lastLocation = { lat: location.latitude, lon: location.longitude, ts: location.timeStamp };
+    }
     await this.db
       .insert(locationPoints)
       .values({
@@ -97,12 +145,13 @@ export class LocationWriter {
         lat: location.latitude,
         lon: location.longitude,
         speedKmh: speed == null ? null : speed * 3.6,
-        bearing: fromNav ? (location.bearing ?? null) : alongside(state, 'gnssBearing', at),
+        bearing: readings.bearing,
         altitude: alongside(state, 'gnssAltitude', at),
         driveId: await this.driveAt(vehicleId, pv, at),
       })
       // Already stored (e.g. Rivian's last fix again after a restart).
       .onConflictDoNothing();
+    return 'stored';
   }
 
   /** The drive under way at `at`, by the drives' recorded times. */
@@ -128,7 +177,13 @@ export class LocationWriter {
   private ensure(vehicleId: string): PerVehicle {
     let pv = this.perVehicle.get(vehicleId);
     if (!pv) {
-      pv = { lastLocation: null, currentDriveId: null };
+      pv = {
+        lastLocation: null,
+        currentDriveId: null,
+        seenNav: null,
+        seenGnss: null,
+        navSpans: [],
+      };
       this.perVehicle.set(vehicleId, pv);
     }
     return pv;
@@ -143,28 +198,19 @@ function alongside(state: VehicleState, key: string, at: number): number | null 
   return stateNumber(state, key);
 }
 
-/**
- * The fix to store: a navigation frame's own while it's recent — a point every
- * few seconds, where a car without legacy GPS only has the GNSS one a minute —
- * else the GNSS fix. One track, one source: the two streams run about a second
- * apart, so switching per fix would put two clocks' worth of readings in one
- * track. "Recent" is either side of the clock, since the vehicle's clock and
- * ours differ by a second or two.
- */
-function liveFix(
-  state: VehicleState,
-  now: number,
-): { location: NavLocation; fromNav: true } | { location: GnssLocation; fromNav: false } | null {
-  const nav = state.navLocation;
-  const navAt = nav ? Date.parse(nav.timeStamp) : Number.NaN;
-  if (
-    nav &&
-    isPosition(nav.latitude, nav.longitude) &&
-    Number.isFinite(navAt) &&
-    Math.abs(now - navAt) <= NAV_FIX_FRESH_MS
-  ) {
-    return { location: nav, fromNav: true };
+/** Records a navigation fix at `at`, joining it to a span it falls beside. */
+function noteNavFix(pv: PerVehicle, at: number): void {
+  const span = pv.navSpans.find((s) => at >= s.from - NAV_COVERS_MS && at <= s.to + NAV_COVERS_MS);
+  if (span) {
+    span.from = Math.min(span.from, at);
+    span.to = Math.max(span.to, at);
+    return;
   }
-  const gnss = stateLocation(state);
-  return gnss ? { location: gnss, fromNav: false } : null;
+  pv.navSpans.push({ from: at, to: at });
+  if (pv.navSpans.length > NAV_SPANS_KEPT) pv.navSpans.shift();
+}
+
+/** Whether a navigation fix stands for the moment `at`. */
+function navCovers(pv: PerVehicle, at: number): boolean {
+  return pv.navSpans.some((s) => at >= s.from - NAV_COVERS_MS && at <= s.to + NAV_COVERS_MS);
 }

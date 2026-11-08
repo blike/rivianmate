@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react';
-import { dangerButton, secondaryButton } from '../features/settings/SettingsControls';
+import { useScrollLock } from './Dialog';
 
 /**
  * Asks before something that can't be undone, in the app's own style. The
@@ -22,6 +22,7 @@ export function ConfirmDialog(props: {
     if (props.open && !dialog.open) dialog.showModal();
     if (!props.open && dialog.open) dialog.close();
   }, [props.open]);
+  useScrollLock(props.open);
 
   return (
     <dialog
@@ -44,12 +45,12 @@ export function ConfirmDialog(props: {
           <div className="mt-1.5 text-sm text-(--text-secondary)">{props.children}</div>
         )}
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" className={secondaryButton} onClick={props.onCancel} autoFocus>
+          <button type="button" className="btn-secondary" onClick={props.onCancel} autoFocus>
             Cancel
           </button>
           <button
             type="button"
-            className={dangerButton}
+            className="btn-danger"
             disabled={props.busy}
             onClick={props.onConfirm}
           >

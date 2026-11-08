@@ -17,6 +17,7 @@ import type {
   ImportChargePreview,
   ImportDraftDto,
   ImportDrivePreview,
+  ImportFormat,
   ImportPreviewDto,
   ImportSelection,
   ImportSessionAddition,
@@ -45,13 +46,31 @@ import type {
   NotificationSettingsUpdate,
   NotificationTestResult,
   TeslaMateSettingsDto,
+  TripActivityKind,
+  TripActivityRef,
+  TripAssignmentDto,
+  TripCandidatesDto,
+  TripDetailDto,
+  TripDto,
+  TripInput,
+  TripRouteDto,
+  TripSummaryDto,
 } from '@server/api-types';
 
 export type {
+  TripActivityKind,
+  TripActivityRef,
+  TripAssignmentDto,
+  TripDetailDto,
+  TripDto,
+  TripInput,
+  TripRouteDto,
+  TripSummaryDto,
   ImportBatchDto,
   ImportChargePreview,
   ImportDraftDto,
   ImportDrivePreview,
+  ImportFormat,
   ImportPreviewDto,
   ImportSelection,
   ImportSessionAddition,
@@ -121,6 +140,8 @@ const listQuery = (q: { from?: Date; to?: Date; before?: Date }) => {
   const query = params.toString();
   return query ? `?${query}` : '';
 };
+
+const tripsPath = (vehicleId: string) => `/api/vehicles/${vehicleId}/trips`;
 
 export const api = {
   status: () => request<StatusResponse>('/api/status'),
@@ -238,6 +259,43 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ driverId }),
     }),
+  trips: (vehicleId: string) => request<TripSummaryDto[]>(tripsPath(vehicleId)),
+  trip: (vehicleId: string, tripId: number) =>
+    request<TripDetailDto>(`${tripsPath(vehicleId)}/${tripId}`),
+  tripRoute: (vehicleId: string, tripId: number) =>
+    request<TripRouteDto[]>(`${tripsPath(vehicleId)}/${tripId}/route`),
+  createTrip: (vehicleId: string, input: TripInput) =>
+    request<TripDto>(tripsPath(vehicleId), { method: 'POST', body: JSON.stringify(input) }),
+  updateTrip: (vehicleId: string, tripId: number, input: TripInput) =>
+    request<TripDto>(`${tripsPath(vehicleId)}/${tripId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteTrip: (vehicleId: string, tripId: number) =>
+    request<void>(`${tripsPath(vehicleId)}/${tripId}`, { method: 'DELETE' }),
+  addTripActivities: (
+    vehicleId: string,
+    tripId: number,
+    items: TripActivityRef[],
+    move: boolean,
+    exclude: TripActivityRef[] = [],
+  ) =>
+    request<void>(`${tripsPath(vehicleId)}/${tripId}/activities`, {
+      method: 'POST',
+      body: JSON.stringify({ items, move, exclude }),
+    }),
+  removeTripActivity: (vehicleId: string, tripId: number, kind: TripActivityKind, id: number) =>
+    request<void>(`${tripsPath(vehicleId)}/${tripId}/activities/${kind}/${id}`, {
+      method: 'DELETE',
+    }),
+  tripAssignments: (vehicleId: string) =>
+    request<TripAssignmentDto[]>(`/api/vehicles/${vehicleId}/trip-assignments`),
+  tripCandidates: (vehicleId: string, from: Date, to: Date, tripId?: number) =>
+    request<TripCandidatesDto>(
+      `/api/vehicles/${vehicleId}/trip-candidates?from=${from.toISOString()}&to=${to.toISOString()}${
+        tripId != null ? `&tripId=${tripId}` : ''
+      }`,
+    ),
   /** As `drives`, for charging sessions. */
   chargingSessions: (id: string, q: { from?: Date; to?: Date; before?: Date } = {}) =>
     request<ChargingSessionDto[]>(`/api/vehicles/${id}/charging-sessions${listQuery(q)}`),
@@ -269,8 +327,8 @@ export const api = {
     ),
   imports: () => request<ImportsDto>('/api/imports'),
   /** Sent as is, gzipped or not: the server works out which. */
-  uploadImportFile: (file: File, draftId: string | undefined) => {
-    const params = new URLSearchParams({ name: file.name });
+  uploadImportFile: (file: File, draftId: string | undefined, format: ImportFormat) => {
+    const params = new URLSearchParams({ name: file.name, format });
     if (draftId) params.set('draft', draftId);
     return request<ImportDraftDto>(`/api/imports/files?${params}`, {
       method: 'POST',

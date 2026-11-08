@@ -1,3 +1,10 @@
+/** The browser's time zone, e.g. "America/Chicago". */
+export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** "1 drive", "3 drives". */
+export const plural = (n: number, one: string) =>
+  `${n.toLocaleString()} ${one}${n === 1 ? '' : 's'}`;
+
 /** An ISO timestamp or epoch milliseconds. */
 type When = string | number;
 

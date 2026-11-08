@@ -1,6 +1,17 @@
 import { isPosition } from '../geo.js';
 import type { GnssLocation, TimeStampedValue, VehicleState } from '../rivian/types.js';
 
+/**
+ * A GNSS fix this close in time to a navigation fix is left out of the track,
+ * and off the dashboard's map: the two streams run about a second apart, so
+ * using both would put two clocks' worth of readings in one line. Three
+ * navigation intervals (every 5 s), so GNSS fills in only once navigation has
+ * actually stopped. Not the same question as the decoder's `FIX_WITHIN_MS` (a
+ * frame's time against its own fix) or the location writer's `SAME_FIX_MS` (a
+ * reading against a fix it belongs to).
+ */
+export const NAV_COVERS_MS = 15_000;
+
 const INVALID_SENSOR_STATES = new Set(['fault', 'signal_not_available', 'undefined']);
 /** Fields where "undefined" is a real reading: preconditioning off. */
 const UNDEFINED_IS_A_VALUE = new Set(['cabinPreconditioningStatus']);

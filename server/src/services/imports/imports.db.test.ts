@@ -12,6 +12,7 @@ import { createDb, runMigrations } from '../../db/client.js';
 import {
   chargingCurvePoints,
   chargingSessions,
+  drivers,
   drives,
   importBatches,
   importSessionFills,
@@ -20,20 +21,23 @@ import {
   stateChanges,
   stateFields,
   stateHeartbeats,
+  tripActivities,
+  trips,
   vehicles,
 } from '../../db/schema.js';
 import { HistoryKeys } from '../history-keys.js';
 import { changesBetween, latestChanges } from '../state-history.js';
 import { loadStateSpans } from '../state-spans.js';
-import { ElectraFiImports, ImportError } from './imports.js';
+import { ImportError, Imports } from './imports.js';
 import { asleep, awake, chargeRows, csvOf, driveRows } from '../../testing/electrafi-rows.js';
+import { roamerExport } from '../../testing/roamer-archive.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe.skipIf(!url)('ElectraFi import with Postgres', () => {
   let handle: ReturnType<typeof createDb>;
-  let imports: ElectraFiImports;
+  let imports: Imports;
   let lookups: ReturnType<typeof vi.fn>;
   const NOW = Date.parse('2026-11-15T00:00:00Z');
   const selection = {
@@ -77,16 +81,10 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     await handle.sql.end();
   });
   beforeEach(async () => {
-    await handle.sql`TRUNCATE vehicles, state_fields, import_batches, saved_locations RESTART IDENTITY CASCADE`;
+    await handle.sql`TRUNCATE trips, vehicles, state_fields, import_batches, saved_locations RESTART IDENTITY CASCADE`;
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
     lookups = vi.fn();
-    imports = new ElectraFiImports(
-      handle.db,
-      new HistoryKeys(handle.db),
-      undefined,
-      lookups,
-      () => NOW,
-    );
+    imports = new Imports(handle.db, new HistoryKeys(handle.db), undefined, lookups, () => NOW);
   });
 
   it('imports a drive with its route and history, and queues its lookups', async () => {
@@ -119,6 +117,22 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     expect(gear.map((c) => c.value)).toEqual(['park', 'drive', 'park']);
     const tires = await latestChanges(handle.db, 'v1', ['tirePressureFrontRight'], null);
     expect(tires[0]!.value).toBe(3.35);
+  });
+
+  it('gives a drive the driver ElectraFi named, matching one RivianMate knows', async () => {
+    const [laura] = await handle.db
+      .insert(drivers)
+      .values({ vehicleId: 'v1', profileId: 'p-laura', reportedName: 'Laura V.' })
+      .returning();
+    const preview = await imports.preview(
+      (await upload(csvOf(driveRows().map((r) => ({ ...r, autopark_state_v2: 'Laura V.' }))))).id,
+      selection,
+    );
+    expect(preview.drives.map((d) => d.driver)).toEqual(['Laura V.']);
+    await importCsv(csvOf(driveRows().map((r) => ({ ...r, autopark_state_v2: 'Laura V.' }))));
+    const [drive] = await handle.db.select().from(drives);
+    expect(drive).toMatchObject({ driverId: laura!.id, driverSource: 'profile' });
+    expect(await handle.db.select().from(drivers)).toHaveLength(1);
   });
 
   it('gives History what it needs to show awake, asleep, driving and charging', async () => {
@@ -164,7 +178,7 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
   });
 
   it('refuses a file over the limit, gzipped or not', async () => {
-    const small = new ElectraFiImports(
+    const small = new Imports(
       handle.db,
       new HistoryKeys(handle.db),
       undefined,
@@ -510,6 +524,31 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     expect((await imports.list()).batches).toEqual([]);
   });
 
+  it('undo takes what it removes out of trips, leaving what stays', async () => {
+    const batch = await importCsv(csvOf(driveRows()));
+    const [imported] = await handle.db.select().from(drives);
+    const [kept] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: 'v1', startedAt: new Date('2026-01-05T00:00:00Z') })
+      .returning();
+    const [trip] = await handle.db.insert(trips).values({ vehicleId: 'v1', name: 'A' }).returning();
+    const link = { tripId: trip!.id, kind: 'drive' as const };
+    await handle.db.insert(tripActivities).values([
+      { ...link, vehicleId: 'v1', activityId: imported!.id },
+      { ...link, vehicleId: 'v1', activityId: kept!.id },
+      // TeslaMate's ids are its own, so one of its drives can share this id.
+      { ...link, vehicleId: 'tm-1', activityId: imported!.id },
+    ]);
+
+    await imports.undo(batch.id);
+
+    const left = await handle.db.select().from(tripActivities);
+    expect(left.map((l) => [l.vehicleId, l.activityId])).toEqual([
+      ['v1', kept!.id],
+      ['tm-1', imported!.id],
+    ]);
+  });
+
   describe('undo of what an import filled in', () => {
     const CHARGE = new Date('2026-05-01T10:00:00Z');
     const existingSession = async (source: 'rivian' | 'live' | 'live+rivian') => {
@@ -770,5 +809,264 @@ describe.skipIf(!url)('ElectraFi import with Postgres', () => {
     const second = await upload(csvOf(driveRows('2026-10-31')));
     await expect(imports.start(second.id, selection)).rejects.toThrow(/already running/);
     await imports.idle();
+  });
+
+  describe('a Roamer export', () => {
+    const exported = (vin = 'VIN1') =>
+      roamerExport(
+        {
+          drive_sessions: [
+            {
+              started_at: '2026-03-01T10:00:00',
+              ended_at: '2026-03-01T10:30:00',
+              start_odometer: 100,
+              end_odometer: 120,
+              start_battery_level: 80,
+              end_battery_level: 75,
+              total_distance: 20,
+              primary_drive_mode: 'everyday',
+            },
+          ],
+          charging_sessions: [
+            {
+              started_at: '2026-03-01T12:00:00',
+              ended_at: '2026-03-01T13:00:00',
+              periods: [{ started_at: '2026-03-01T12:00:00Z', ended_at: '2026-03-01T12:50:00Z' }],
+              start_battery_level: 50,
+              end_battery_level: 60,
+              total_energy_kwh: 11,
+              pack_kwh: 10.5,
+              thermal_kwh: 0.2,
+              latitude: 33.1,
+              longitude: -117.2,
+            },
+          ],
+          vehicle_metrics: [
+            {
+              created_at: '2026-03-01T09:50:00+00:00',
+              vehicle_mileage: 100000,
+              gear_status: 'park',
+              power_state: 'ready',
+              battery_capacity: 110,
+            },
+            { created_at: '2026-03-01T10:01:00+00:00', gear_status: 'drive', power_state: 'go' },
+            {
+              created_at: '2026-03-01T10:30:00+00:00',
+              gear_status: 'park',
+              vehicle_mileage: 120000,
+            },
+            {
+              created_at: '2026-03-01T12:10:00+00:00',
+              battery_level: 52,
+              charger_state: 'charging_active',
+            },
+          ],
+          location_metrics: [
+            {
+              created_at: '2026-03-01T10:05:00+00:00',
+              latitude: 33.1,
+              longitude: -117.2,
+              speed: 10,
+            },
+            {
+              created_at: '2026-03-01T10:15:00+00:00',
+              latitude: 33.2,
+              longitude: -117.2,
+              speed: 12,
+            },
+            // Parked: not a new place, and not moving.
+            {
+              created_at: '2026-03-01T10:40:00+00:00',
+              latitude: 33.2,
+              longitude: -117.2,
+              speed: 0,
+            },
+          ],
+          charging_metrics: [
+            { created_at: '2026-03-01T12:05:00+00:00', state: 3, power_kw: 7.4 },
+            { created_at: '2026-03-01T12:15:00+00:00', state: 3, power_kw: 7.5 },
+          ],
+        },
+        vin,
+      );
+    const uploadArchive = (bytes: Buffer, draft?: string) =>
+      imports.addFile(draft, 'roamer.zip', Readable.from(bytes), 'roamer');
+
+    it('imports its drives, charges, routes and history', async () => {
+      const draft = await uploadArchive(exported());
+      expect(draft).toMatchObject({ format: 'roamer', files: ['roamer.zip'], vehicleIds: ['v1'] });
+      const batch = await imports.start(draft.id, selection);
+      await imports.idle();
+      const [row] = await handle.db.select().from(importBatches);
+      expect(row).toMatchObject({ id: batch.id, format: 'roamer', status: 'done' });
+      expect(row!.counts).toMatchObject({ drives: 1, sessions: 1, locationPoints: 2 });
+
+      const [drive] = await handle.db.select().from(drives);
+      expect(drive).toMatchObject({
+        startMileageM: 100000,
+        endMileageM: 120000,
+        distanceKm: 20,
+        batteryCapacityKwh: 110,
+        driveMode: 'everyday',
+      });
+      const points = await handle.db.select().from(locationPoints).orderBy(asc(locationPoints.ts));
+      expect(points.map((p) => p.driveId)).toEqual([drive!.id, drive!.id]);
+      expect(points[0]!.speedKmh).toBeCloseTo(36);
+
+      const [session] = await handle.db.select().from(chargingSessions);
+      expect(session).toMatchObject({
+        source: 'roamer',
+        chargingSeconds: 50 * 60,
+        energyKwh: 11,
+        packKwh: 10.5,
+        startSoc: 50,
+      });
+      expect(session!.thermalKwh).toBeCloseTo(0.2);
+      const curve = await handle.db
+        .select()
+        .from(chargingCurvePoints)
+        .orderBy(asc(chargingCurvePoints.ts));
+      expect(curve.map((p) => [p.source, p.powerKw, p.soc])).toEqual([
+        ['roamer', expect.closeTo(7.4), 50],
+        ['roamer', expect.closeTo(7.5), 52],
+      ]);
+
+      const gear = await changesBetween(
+        handle.db,
+        'v1',
+        ['gearStatus'],
+        new Date(0),
+        new Date('2027-01-01'),
+      );
+      expect(gear.map((c) => c.value)).toEqual(['park', 'drive', 'park']);
+    });
+
+    it('brings who drove, where navigation was headed, and saved places, which undo keeps', async () => {
+      const [mitch] = await handle.db
+        .insert(drivers)
+        .values({ vehicleId: 'v1', profileId: 'p-mitch', reportedName: 'Mitch V.' })
+        .returning();
+      await handle.db
+        .insert(savedLocations)
+        .values({ name: 'My house', lat: 33.0715, lon: -117.2566, radiusM: 150, isHome: true });
+      const trip = (hour: number, driver: string) => ({
+        started_at: `2026-03-01T${hour}:00:00`,
+        ended_at: `2026-03-01T${hour}:30:00`,
+        start_odometer: hour,
+        end_odometer: hour + 10,
+        total_distance: 10,
+        primary_driver_profile: driver,
+      });
+      const draft = await uploadArchive(
+        roamerExport(
+          {
+            drive_sessions: [trip(10, 'Mitch V.'), trip(12, 'Laura V.')],
+            navigation_metrics: [
+              {
+                observed_at: '2026-03-01T12:05:00+00:00',
+                navigation_active: true,
+                destination_name: 'Beach',
+                destination_latitude: 32.7,
+                destination_longitude: -117.1,
+              },
+            ],
+            saved_places: [
+              {
+                id: 'h',
+                name: 'Home',
+                latitude: 33.0715,
+                longitude: -117.2566,
+                radius_meters: 100,
+              },
+              { id: 'w', name: 'Work', latitude: 32.88, longitude: -117.22, radius_meters: 100 },
+            ],
+            rivian_favorites: [{ key: 'home', tagged_location_id: 'h' }],
+          },
+          'VIN1',
+        ),
+      );
+      const preview = await imports.preview(draft.id, selection);
+      expect(preview).toMatchObject({ placesNew: ['Work'], placesRecorded: 1 });
+      expect(preview.drives.map((d) => d.driver)).toEqual(['Mitch V.', 'Laura V.']);
+
+      const batch = await imports.start(draft.id, selection);
+      await imports.idle();
+      const [row] = await handle.db.select().from(importBatches);
+      expect(row!.counts).toMatchObject({ drives: 2, places: 1 });
+
+      const imported = await handle.db.select().from(drives).orderBy(asc(drives.startedAt));
+      const laura = (await handle.db.select().from(drivers)).find((d) => d.id !== mitch!.id)!;
+      expect(laura).toMatchObject({ reportedName: 'Laura V.', profileId: null });
+      expect(imported.map((d) => [d.driverId, d.driverSource])).toEqual([
+        [mitch!.id, 'profile'],
+        [laura.id, 'profile'],
+      ]);
+      expect(imported.map((d) => d.destinationName)).toEqual([null, 'Beach']);
+      const places = await handle.db.select().from(savedLocations).orderBy(asc(savedLocations.id));
+      expect(places.map((p) => [p.name, p.isHome])).toEqual([
+        ['My house', true],
+        ['Work', false],
+      ]);
+
+      // The drives go; the people and places stay.
+      await imports.undo(batch.id);
+      expect(await handle.db.select().from(drives)).toHaveLength(0);
+      expect((await handle.db.select().from(drivers)).map((d) => d.id)).toEqual([
+        mitch!.id,
+        laura.id,
+      ]);
+      expect((await handle.db.select().from(savedLocations)).map((p) => p.name)).toEqual([
+        'My house',
+        'Work',
+      ]);
+    });
+
+    it('has only the vehicles it holds data for to import to', async () => {
+      const draft = await uploadArchive(exported('SOMEONE-ELSE'));
+      expect(draft.vehicleIds).toEqual([]);
+      await expect(imports.preview(draft.id, selection)).rejects.toThrow(
+        /no data for that vehicle/,
+      );
+    });
+
+    it('is one file: another upload replaces it, and nothing is added to it', async () => {
+      const first = await uploadArchive(exported());
+      await expect(uploadArchive(exported(), first.id)).rejects.toThrow(/single file/);
+      await expect(
+        imports.addFile(first.id, 'export.csv', Readable.from(csvOf(driveRows())), 'electrafi'),
+      ).rejects.toThrow(/one kind of export/);
+      const second = await uploadArchive(exported());
+      expect((await imports.list()).draft?.id).toBe(second.id);
+      await expect(uploadArchive(Buffer.from(csvOf(driveRows())))).rejects.toThrow(/Roamer export/);
+    });
+
+    it('adds the breakdown to a charge Rivian recorded without one', async () => {
+      await handle.db.insert(chargingSessions).values({
+        vehicleId: 'v1',
+        source: 'rivian',
+        rivianTransactionId: 'tx1',
+        startedAt: new Date('2026-03-01T12:00:30Z'),
+        endedAt: new Date('2026-03-01T13:00:00Z'),
+        energyKwh: 11.2,
+      });
+      const [before] = await handle.db.select().from(chargingSessions);
+      const draft = await uploadArchive(exported());
+      const preview = await imports.preview(draft.id, selection);
+      expect(preview.charges[0]).toMatchObject({ status: 'enrich' });
+      expect(preview.charges[0]!.adds).toContain('breakdown');
+      expect(preview.charges[0]!.adds).not.toContain('energy');
+      const batch = await imports.start(draft.id, selection);
+      await imports.idle();
+      const [session] = await handle.db.select().from(chargingSessions);
+      expect(session).toMatchObject({ source: 'rivian', energyKwh: 11.2, packKwh: 10.5 });
+      expect(await handle.db.select().from(chargingCurvePoints)).toHaveLength(2);
+
+      // Undo puts the charge back as Rivian had it.
+      await imports.undo(batch.id);
+      const [after] = await handle.db.select().from(chargingSessions);
+      expect(after).toEqual({ ...before!, id: after!.id });
+      expect(await handle.db.select().from(chargingCurvePoints)).toHaveLength(0);
+      expect(await handle.db.select().from(importSessionFills)).toHaveLength(0);
+    });
   });
 });

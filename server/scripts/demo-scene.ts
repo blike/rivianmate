@@ -11,13 +11,13 @@
  * Sign in to the mock once beforehand, so the app reconnects on start and
  * the mock picks the drive up where this leaves it. Meant for a demo
  * database: it replaces open drives, the week's finished drives, and
- * earlier demo charges.
+ * earlier demo charges. It also makes a trip of the latest few drives and charges.
  *
  * This week then reads 272 mi, 26 drives, 2.84 mi/kWh and 97 kWh charged.
  * The drive home carries on at 56 mph, so take screenshots within about half
  * a minute of starting the app, or run this again.
  */
-import { and, eq, gte, inArray, isNotNull, isNull, lt, sql as raw } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql as raw } from 'drizzle-orm';
 import { createDb } from '../src/db/client.js';
 import {
   chargingCurvePoints,
@@ -26,10 +26,14 @@ import {
   locationPoints,
   parallaxLatest,
   savedLocations,
+  tripActivities,
+  trips as tripsTable,
   vehicles,
 } from '../src/db/schema.js';
 import { MOCK_VEHICLE_ID, MOCK_VIN, driveHomeSoFar } from '../src/rivian/mock.js';
 import { coldWeather } from '../src/rivian/parallax/index.js';
+
+const DEMO_TRIP = 'Weekend in Bloomington';
 
 const { DATABASE_URL } = process.env;
 if (!DATABASE_URL) {
@@ -340,6 +344,47 @@ await db
   .where(
     and(eq(parallaxLatest.vehicleId, MOCK_VEHICLE_ID), eq(parallaxLatest.rvm, coldWeather.rvm)),
   );
+
+// Something on the Trips page: the latest finished drives and charges.
+await db
+  .delete(tripsTable)
+  .where(and(eq(tripsTable.vehicleId, MOCK_VEHICLE_ID), eq(tripsTable.name, DEMO_TRIP)));
+const [trip] = await db
+  .insert(tripsTable)
+  .values({ vehicleId: MOCK_VEHICLE_ID, name: DEMO_TRIP, notes: 'A few days away.' })
+  .returning();
+const finished = <T extends { id: number }>(rows: T[], kind: 'drive' | 'charge') =>
+  rows.map((r) => ({
+    tripId: trip!.id,
+    vehicleId: MOCK_VEHICLE_ID,
+    kind,
+    activityId: r.id,
+  }));
+await db
+  .insert(tripActivities)
+  .values([
+    ...finished(
+      await db
+        .select({ id: drives.id })
+        .from(drives)
+        .where(and(eq(drives.vehicleId, MOCK_VEHICLE_ID), isNotNull(drives.endedAt)))
+        .orderBy(desc(drives.startedAt))
+        .limit(8),
+      'drive',
+    ),
+    ...finished(
+      await db
+        .select({ id: chargingSessions.id })
+        .from(chargingSessions)
+        .where(
+          and(eq(chargingSessions.vehicleId, MOCK_VEHICLE_ID), isNotNull(chargingSessions.endedAt)),
+        )
+        .orderBy(desc(chargingSessions.startedAt))
+        .limit(2),
+      'charge',
+    ),
+  ])
+  .onConflictDoNothing();
 
 await sql.end();
 

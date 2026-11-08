@@ -16,7 +16,7 @@ import { seedAppPassword } from './routes/auth.js';
 import { getLookupSettings } from './routes/settings.js';
 import { DrivePlaces, nominatimGeocoder, nominatimSearch } from './services/drive-places.js';
 import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js';
-import { ElectraFiImports } from './services/electrafi/imports.js';
+import { Imports } from './services/imports/imports.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
 import { LoginThrottle } from './services/login-throttle.js';
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   );
   notifications.start(bus);
 
-  const imports = new ElectraFiImports(db, historyKeys, logger.child({ component: 'import' }), () =>
+  const imports = new Imports(db, historyKeys, logger.child({ component: 'import' }), () =>
     monitor.queueDriveLookups(),
   );
   await imports.recover();

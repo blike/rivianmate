@@ -148,6 +148,13 @@
       "when": 1793575563192,
       "tag": "0020_electrafi_import",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793596393204,
+      "tag": "0021_trips",
+      "breakpoints": true
     }
   ]
 }

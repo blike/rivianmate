@@ -221,6 +221,18 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(done!.energyKwh).toBeCloseTo(25 * 0.153);
   });
 
+  it('reads a car’s drives and charges by id, for trips, and no other car’s', async () => {
+    const drives = await source.drivesByIds('tm-1', [1, 999], home);
+    expect(drives.map((d) => d.id)).toEqual([1]);
+    expect(await source.drivesByIds('tm-2', [1], home)).toEqual([]);
+    const sessions = await source.chargingSessionsByIds('tm-1', [1, 2], home);
+    expect(sessions.map((s) => s.id)).toEqual([1]);
+    expect(await source.chargingSessionsByIds('tm-1', [], home)).toEqual([]);
+    const points = await source.drivePoints('tm-1', [1]);
+    expect(points.map((p) => p.driveId)).toEqual([1, 1, 1]);
+    expect(await source.drivePoints('tm-2', [1])).toEqual([]);
+  });
+
   it('counts repeated coordinates between GPS updates as moving', async () => {
     await admin.unsafe(`SET search_path TO ${SCHEMA};
       INSERT INTO drives (id, car_id, start_date, end_date, distance, start_km, end_km)

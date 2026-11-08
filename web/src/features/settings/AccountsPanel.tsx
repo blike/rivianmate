@@ -12,7 +12,7 @@ import { Skeleton } from '../../components/LoadingState';
 import { relativeTime } from '../../lib/freshness';
 import { RivianConnectPage } from '../auth/RivianConnectPage';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { SettingRow, SettingsGroup, dangerButton, secondaryButton } from './SettingsControls';
+import { SettingRow, SettingsGroup } from './SettingsControls';
 
 type Kind = 'rivian' | 'teslamate';
 
@@ -47,7 +47,7 @@ export function AccountsPanel() {
       <div className="fixed inset-0 z-1200 overflow-auto bg-(--surface-0)">
         <button
           type="button"
-          className={`${secondaryButton} absolute right-4 top-4 z-10`}
+          className={`btn-secondary absolute right-4 top-4 z-10`}
           onClick={() => setRivianSignIn(null)}
         >
           Cancel
@@ -98,12 +98,12 @@ export function AccountsPanel() {
               }
             >
               {rivianExpired && (
-                <button className={secondaryButton} onClick={() => setRivianSignIn('reauth')}>
+                <button className="btn-secondary" onClick={() => setRivianSignIn('reauth')}>
                   Reconnect
                 </button>
               )}
               <button
-                className={dangerButton}
+                className="btn-danger"
                 disabled={disconnect.isPending}
                 onClick={() => setConfirming('rivian')}
               >
@@ -150,11 +150,11 @@ export function AccountsPanel() {
             >
               {hasTeslaMate && !editingTeslaMate && (
                 <>
-                  <button className={secondaryButton} onClick={() => setEditingTeslaMate(true)}>
+                  <button className="btn-secondary" onClick={() => setEditingTeslaMate(true)}>
                     Edit
                   </button>
                   <button
-                    className={dangerButton}
+                    className="btn-danger"
                     disabled={remove.isPending}
                     onClick={() => setConfirming('teslamate')}
                   >
@@ -244,13 +244,13 @@ function TeslaMateForm(props: { replacing: boolean; onDone: () => void }) {
           onChange={(e) => setUrl(e.target.value)}
           aria-invalid={save.isError}
           aria-describedby={save.isError ? 'teslamate-error' : undefined}
-          className="min-w-0 flex-1 rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 font-mono text-sm outline-none focus:border-(--text-muted)"
+          className="min-w-0 flex-1 field font-mono"
         />
         <div className="flex gap-2">
           <button type="submit" className="btn-primary" disabled={!url.trim() || save.isPending}>
             {save.isPending ? 'Checking…' : props.replacing ? 'Save' : 'Connect'}
           </button>
-          <button type="button" className={secondaryButton} onClick={done}>
+          <button type="button" className="btn-secondary" onClick={done}>
             Cancel
           </button>
         </div>

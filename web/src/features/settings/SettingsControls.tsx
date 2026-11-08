@@ -122,10 +122,3 @@ export function Switch(props: {
     </button>
   );
 }
-
-/** The quiet outlined button used for secondary actions in settings. */
-export const secondaryButton =
-  'rounded-md border border-[color-mix(in_srgb,var(--border)_60%,var(--text-muted))] bg-(--surface-2) px-3 py-1.5 text-sm font-medium text-(--text-primary) transition-colors hover:bg-[color-mix(in_srgb,var(--surface-2)_75%,var(--text-muted))] disabled:opacity-50 disabled:hover:bg-(--surface-2)';
-
-export const dangerButton =
-  'rounded-md border border-[color-mix(in_srgb,var(--status-critical)_55%,var(--border))] bg-[color-mix(in_srgb,var(--status-critical)_10%,var(--surface-1))] px-3 py-1.5 text-sm font-medium text-(--status-critical) transition-colors hover:bg-[color-mix(in_srgb,var(--status-critical)_20%,var(--surface-1))]';

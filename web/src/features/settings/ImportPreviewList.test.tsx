@@ -19,6 +19,7 @@ const drive: ImportDrivePreview = {
   endBattery: 57.2,
   startPlace: 'Home',
   endPlace: null,
+  driver: null,
 };
 
 const preview = (p: Partial<ImportPreviewDto>): ImportPreviewDto => ({
@@ -33,6 +34,9 @@ const preview = (p: Partial<ImportPreviewDto>): ImportPreviewDto => ({
   sessionsEnriched: 0,
   readingsNew: 0,
   readingsRecorded: 0,
+  readingsNewer: 0,
+  placesNew: [],
+  placesRecorded: 0,
   warnings: [],
   drives: [],
   charges: [],
@@ -56,6 +60,7 @@ describe('ImportPreviewList', () => {
     expect(html).not.toContain('Home');
     expect(html).not.toContain('?');
     expect(render({ drives: [{ ...drive, endPlace: 'Work' }] })).toContain('Home → Work');
+    expect(render({ drives: [{ ...drive, driver: 'Laura V.' }] })).toContain('Laura V.');
     expect(html).toContain('3.6 mi');
     expect(html).toContain('11 min');
     expect(html).toContain('58% → 57%');

@@ -10,6 +10,8 @@ import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
 
 /** When a session started charging; the plug-in time when that wasn't recorded. */
 export const chargeStart = (s: ChargingSessionDto) => s.chargingStartedAt ?? s.startedAt;
+/** When it stopped charging, else when it was unplugged. */
+export const chargeEnd = (s: ChargingSessionDto) => s.chargingEndedAt ?? s.endedAt;
 
 /** Plugged in but not charging yet, so it has no charging curve to show. */
 export const notStarted = (s: ChargingSessionDto) =>

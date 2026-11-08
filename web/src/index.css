@@ -28,9 +28,19 @@
   --accent: #f5c518;
   /* Text on the accent: white on yellow is unreadable. */
   --on-accent: #1a1a19;
+  /* Map markers' dark face and outline: a touch above the page, to stand off the map. */
+  --map-ink: #121211;
 }
 
 @layer base {
+  /* The accent ring buttons and pickers use, not the browser's blue. A solid
+     outline, unlike the browser's, rings the element alone, not the active-page
+     bar hanging off a nav link. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   input[type='checkbox'],
   input[type='radio'] {
     accent-color: var(--accent);
@@ -66,6 +76,18 @@
     cursor: not-allowed;
     opacity: 0.5;
   }
+  /* The quiet outlined button for everything that isn't the main action. */
+  .btn-secondary {
+    @apply rounded-md border border-[color-mix(in_srgb,var(--border)_60%,var(--text-muted))] bg-(--surface-2) px-3 py-1.5 text-sm font-medium text-(--text-primary) transition-colors hover:bg-[color-mix(in_srgb,var(--surface-2)_75%,var(--text-muted))] disabled:opacity-50 disabled:hover:bg-(--surface-2);
+  }
+  /* For what can't be undone. */
+  .btn-danger {
+    @apply rounded-md border border-[color-mix(in_srgb,var(--status-critical)_55%,var(--border))] bg-[color-mix(in_srgb,var(--status-critical)_10%,var(--surface-1))] px-3 py-1.5 text-sm font-medium text-(--status-critical) transition-colors hover:bg-[color-mix(in_srgb,var(--status-critical)_20%,var(--surface-1))] disabled:opacity-50;
+  }
+  /* A text field; where it sits and how wide is the caller's. */
+  .field {
+    @apply rounded-md border border-(--border) bg-(--surface-2) px-2.5 py-1.5 text-sm outline-none focus:border-(--text-muted) disabled:opacity-50;
+  }
 }
 
 html,
@@ -87,6 +109,23 @@ body {
   border: 1px solid var(--hairline);
   border-radius: 1rem;
   box-shadow: inset 0 1px 0 rgb(255 255 240 / 0.025);
+}
+
+/*
+ * A card that's a link: its edge warms on hover. Unlayered like .card, so it
+ * wins where a hover utility wouldn't. --live: a trip under way, edged in the accent.
+ */
+.card-link {
+  transition: border-color 150ms;
+}
+.card-link:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+}
+.card-link--live {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--hairline));
+}
+.card-link--live:hover {
+  border-color: color-mix(in srgb, var(--accent) 75%, var(--hairline));
 }
 
 /* Small capitals: section and figure labels. */
@@ -184,6 +223,135 @@ body {
   animation: rm-pulse 2.4s ease-out infinite;
 }
 
+/* A stop on a trip's map: the face inside the marker, which MapLibre positions. */
+.rm-journey-stop {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 13px;
+  background: var(--map-ink);
+  border: 2px solid var(--text-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.55);
+  transition:
+    opacity 200ms,
+    scale 150ms;
+}
+.rm-journey-stop:hover {
+  scale: 1.1;
+}
+.rm-journey-stop--end {
+  background: var(--text-primary);
+  color: var(--map-ink);
+}
+.rm-journey-stop__icon {
+  width: 14px;
+  height: 14px;
+}
+.rm-journey-stop--selected {
+  background: var(--accent);
+  border-color: #ffffff;
+  color: var(--on-accent);
+  scale: 1.15;
+}
+.rm-journey-stop--quiet {
+  opacity: 0.25;
+}
+.rm-journey-stop--hidden {
+  visibility: hidden;
+}
+.rm-journey-stop__badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 15px;
+  height: 15px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* The icons draw in currentColor, so the badge sets color, not fill. */
+  color: var(--on-accent);
+  box-shadow: 0 0 0 1.5px var(--map-ink);
+}
+.rm-journey-stop__badge--night {
+  right: auto;
+  left: -7px;
+  background: #33406a;
+  color: #e6ecff;
+}
+.rm-journey-head {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--map-ink);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.rm-journey-player {
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
+  border: 1px solid var(--hairline);
+  backdrop-filter: blur(6px);
+}
+.rm-map .maplibregl-popup-content {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-sans);
+}
+.rm-map .maplibregl-popup-tip {
+  display: none;
+}
+/* Over the map's own controls and the replay bar. */
+.rm-map .maplibregl-popup {
+  z-index: 3;
+}
+.rm-journey-popup__title {
+  margin-bottom: 0.375rem;
+  font-size: 13px;
+  font-weight: 600;
+}
+/* A place visited many times scrolls rather than run off the map. */
+.rm-journey-popup__visits {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  max-height: 9.5rem;
+  overflow-y: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rm-journey-popup__visit {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.rm-journey-popup__detail {
+  color: var(--text-secondary);
+}
+.rm-stop-number {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  border: 1.5px solid var(--text-secondary);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
 /* A numbered stop on navigation's route, as on the drive card's bar. */
 .rm-stop {
   display: grid;
@@ -191,7 +359,7 @@ body {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #121211;
+  background: var(--map-ink);
   border: 2px solid var(--accent);
   color: var(--accent);
   font-size: 11px;
@@ -202,6 +370,11 @@ body {
 }
 
 /* App-styled confirmation dialogs (components/ConfirmDialog). */
+/* Scrolling inside a dialog doesn't reach the page behind it. */
+.rm-dialog {
+  overscroll-behavior: contain;
+}
+
 .rm-dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
   backdrop-filter: blur(2px);
@@ -218,7 +391,7 @@ body {
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
   background: var(--accent);
-  border: 2px solid #121211;
+  border: 2px solid var(--map-ink);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
   pointer-events: none;
 }
@@ -228,7 +401,7 @@ body {
   position: absolute;
   inset: 5px;
   border-radius: 50%;
-  background: #121211;
+  background: var(--map-ink);
 }
 
 .rm-vehicle__puck {
@@ -238,7 +411,7 @@ body {
   place-items: center;
   border-radius: 50%;
   background: var(--accent);
-  border: 2px solid #121211;
+  border: 2px solid var(--map-ink);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent),
     0 0 18px color-mix(in srgb, var(--accent) 55%, transparent);
@@ -247,7 +420,7 @@ body {
 .rm-vehicle__puck svg {
   width: 15px;
   height: 15px;
-  fill: #121211;
+  fill: var(--map-ink);
   opacity: 0;
 }
 

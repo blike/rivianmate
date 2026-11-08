@@ -2,7 +2,14 @@
 import type { LiveSessionData } from '../rivian/types.js';
 
 export type CurveSource =
-  'observed' | 'graph' | 'push_chart' | 'push_live' | 'forecast' | 'electrafi' | 'legacy';
+  | 'observed'
+  | 'graph'
+  | 'push_chart'
+  | 'push_live'
+  | 'forecast'
+  | 'roamer'
+  | 'electrafi'
+  | 'legacy';
 
 export interface CurvePoint {
   source: CurveSource;
@@ -14,7 +21,8 @@ export interface CurvePoint {
 /**
  * Recorded series, most trusted first: Parallax's charging graph is the
  * vehicle's own record; the push feed's chart is Rivian's; its current
- * readings are snapshots; an ElectraFi export is another app's samples. Rows
+ * readings are snapshots, which a Roamer export keeps too; an ElectraFi
+ * export is another app's samples. Rows
  * from before sources were kept apart come last. The forecast is never a
  * recorded series.
  */
@@ -22,6 +30,7 @@ const SOURCE_ORDER: readonly CurveSource[] = [
   'graph',
   'push_chart',
   'push_live',
+  'roamer',
   'electrafi',
   'legacy',
 ];

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
-import { ImportError } from '../services/electrafi/imports.js';
+import { ImportError } from '../services/imports/format.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const selectionSchema = z.object({
@@ -14,7 +14,8 @@ const selectionSchema = z.object({
 });
 const uploadQuery = z.object({
   draft: z.string().min(1).max(64).optional(),
-  name: z.string().max(1000).default('export.csv'),
+  name: z.string().max(1000).default('export'),
+  format: z.enum(['electrafi', 'roamer']).default('electrafi'),
 });
 
 export async function importRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
@@ -38,11 +39,11 @@ export async function importRoutes(app: FastifyInstance, ctx: AppContext): Promi
   app.get('/api/imports', async () => ctx.imports.list());
 
   app.post('/api/imports/files', async (request) => {
-    const { draft, name } = uploadQuery.parse(request.query);
+    const { draft, name, format } = uploadQuery.parse(request.query);
     if (request.headers['content-type'] !== 'application/octet-stream') {
       throw new ImportError('Upload the file as a binary body.', 415);
     }
-    return ctx.imports.addFile(draft, name, request.body as Readable);
+    return ctx.imports.addFile(draft, name, request.body as Readable, format);
   });
 
   app.delete<{ Params: { id: string } }>('/api/imports/drafts/:id', async (request, reply) => {
