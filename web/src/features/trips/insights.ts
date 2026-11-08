@@ -14,6 +14,9 @@ const MIN_COMPARE_KM = 5;
 export const totalClimbM = (drives: readonly DriveDto[]) =>
   drives.reduce((sum, d) => sum + (d.elevationGainM ?? 0), 0);
 
+export const totalDescentM = (drives: readonly DriveDto[]) =>
+  drives.reduce((sum, d) => sum + (d.elevationLossM ?? 0), 0);
+
 /** The place farthest from where the journey set out, and how far as the crow flies. */
 export function farthestPoint(
   drives: readonly DriveDto[],
@@ -196,6 +199,7 @@ export interface Fact {
   key: string;
   label: string;
   value: string;
+  sub?: string;
 }
 
 /** Things worth knowing about the journey; only what the data can back up. */
@@ -207,25 +211,26 @@ export function tripFacts(
   const facts: Fact[] = [];
   const { stats, drives, sessions } = trip;
 
-  const altitudes = routes.flatMap((r) => r.profile);
-  const highest = altitudes.reduce<(typeof altitudes)[number] | null>(
-    (best, p) => (!best || p.altitudeM > best.altitudeM ? p : best),
-    null,
-  );
-  if (highest && altitudes.length > 1) {
+  const altitudes = routes.flatMap((r) => r.profile.map((p) => p.altitudeM));
+  if (altitudes.length > 1) {
+    // A long trip's profile is too many points to spread into Math.min.
+    const lowest = altitudes.reduce((a, b) => Math.min(a, b));
+    const highest = altitudes.reduce((a, b) => Math.max(a, b));
     facts.push({
-      key: 'highest',
-      label: 'Highest point',
-      value: u.formatElevation(highest.altitudeM),
+      key: 'elevation',
+      label: 'Elevation',
+      value: `${u.formatElevation(lowest)} – ${u.formatElevation(highest)}`,
     });
   }
 
   const climb = totalClimbM(drives);
-  if (climb >= 100) {
+  const descent = totalDescentM(drives);
+  if (climb >= 100 || descent >= 100) {
     facts.push({
       key: 'climb',
-      label: 'Total climb',
-      value: u.formatElevation(climb),
+      label: 'Climb / descent',
+      value: `↑ ${u.formatElevation(climb)}`,
+      sub: `↓ ${u.formatElevation(descent)}`,
     });
   }
 
@@ -254,29 +259,18 @@ export function tripFacts(
     });
   }
 
-  // The lowest the battery was left by a drive.
-  const levels = drives.flatMap((d) => (d.endBattery != null ? [d.endBattery] : []));
-  if (levels.length > 0) {
+  // The lowest the battery was left by a drive, and where.
+  const lowest = drives.reduce<DriveDto | null>(
+    (best, d) => (d.endBattery != null && (!best || d.endBattery < best.endBattery!) ? d : best),
+    null,
+  );
+  if (lowest) {
     facts.push({
       key: 'low',
-      label: 'Closest call',
-      value: `${fmt(Math.min(...levels), 0)}%`,
+      label: 'Lowest battery',
+      value: `${fmt(lowest.endBattery, 0)}%`,
+      sub: lowest.end ? `Arriving at ${placeName(lowest.end)}` : undefined,
     });
-  }
-
-  const temps = drives.flatMap((d) =>
-    d.weather ? [{ min: d.weather.minC, max: d.weather.maxC }] : [],
-  );
-  if (temps.length > 0) {
-    const min = Math.min(...temps.map((t) => t.min));
-    const max = Math.max(...temps.map((t) => t.max));
-    if (u.temperature(max)! - u.temperature(min)! >= 5) {
-      facts.push({
-        key: 'weather',
-        label: 'Weather swing',
-        value: `${u.formatTemperature(min)} – ${u.formatTemperature(max)}`,
-      });
-    }
   }
 
   const [cost] = stats.costs;

@@ -11,9 +11,9 @@ import {
   sessionCost,
 } from '../../lib/charging';
 import { clock } from '../../lib/format';
-import { sessionEnergy } from '../../lib/sessionEnergy';
+import { averagePowerKw, sessionEnergy } from '../../lib/sessionEnergy';
 import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
-import { localKey } from '../../lib/drives';
+import { localKey, movingSpeedKmh } from '../../lib/drives';
 import { chargeEnd, chargeStart } from '../charging/sessions';
 import { driveFacts, driveTitle } from '../drives/format';
 import { type JourneyStop, journeyDays, journeyStops } from './journey';
@@ -303,6 +303,7 @@ function DriveRow(props: {
 }) {
   const u = useUnits();
   const d = props.drive;
+  const movingSpeed = movingSpeedKmh(d.distanceKm, d.movingSeconds);
   return (
     <ActivityRow
       time={clock(d.startedAt)}
@@ -315,6 +316,15 @@ function DriveRow(props: {
     >
       <Row label="Distance" value={u.formatDistance(d.distanceKm, 1)} />
       <Row label="Duration" value={fmtDuration(d.startedAt, d.endedAt)} />
+      {movingSpeed != null && <Row label="Avg moving" value={u.formatSpeed(movingSpeed)} />}
+      <Row
+        label="Battery"
+        value={
+          d.startBattery != null && d.endBattery != null
+            ? `${fmt(d.startBattery, 0)}% → ${fmt(d.endBattery, 0)}%`
+            : '—'
+        }
+      />
       <Row label="Efficiency" value={u.formatEfficiency(d.distanceKm, d.energyKwh)} />
       <Row label="Energy used" value={d.energyKwh != null ? `≈ ${fmt(d.energyKwh, 1)} kWh` : '—'} />
       {d.driver && <Row label="Driver" value={d.driver.name} />}
@@ -329,11 +339,13 @@ function ChargeRow(props: {
   onSelect: (selection: Selection) => void;
   onRemove: (kind: 'drive' | 'charge', id: number) => void;
 }) {
+  const u = useUnits();
   const s = props.session;
   const energy = sessionEnergy(s, null);
   const energyLabel = energy ? `${energy.estimated ? '≈ ' : ''}${fmt(energy.kwh, 1)} kWh` : '—';
   const cost = sessionCost(s);
   const seconds = chargingSecondsNow(s);
+  const average = s.avgPowerKw ?? averagePowerKw(energy?.kwh ?? null, seconds);
   const city = sessionCity(s);
   return (
     <ActivityRow
@@ -350,6 +362,20 @@ function ChargeRow(props: {
     >
       <Row label="Location" value={city ?? chargerLabel(s)} />
       <Row label="Energy added" value={energyLabel} />
+      {s.rangeAddedKm != null && (
+        <Row label="Range added" value={u.formatDistance(s.rangeAddedKm)} />
+      )}
+      {(average != null || s.maxPowerKw != null) && (
+        <Row
+          label="Power"
+          value={[
+            average != null && `${fmt(average, 1)} kW avg`,
+            s.maxPowerKw != null && `${fmt(s.maxPowerKw, 1)} kW peak`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        />
+      )}
       <Row label="Time charging" value={seconds != null ? fmtSeconds(seconds) : '—'} />
       <Row label="Plugged in" value={fmtDuration(s.startedAt, s.endedAt)} />
       <Row

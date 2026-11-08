@@ -206,6 +206,26 @@ describe('TripTimeline', () => {
     expect(html).toMatch(/<button[^>]*>Undo<\/button>/);
   });
 
+  it('opens a drive with its battery levels and moving speed', () => {
+    const drive = { ...drives[0]!, movingSeconds: 1800 };
+    const html = render({
+      trip: { ...summary, drives: [drive], sessions: [], missing: 0 },
+      selected: { kind: 'drive', id: drive.id },
+    });
+    expect(html).toContain('82% → 78%');
+    expect(html).toContain('Avg moving');
+  });
+
+  it('opens a charge with its power and range added', () => {
+    const session = { ...sessions[0]!, rangeAddedKm: 100 };
+    const html = render({
+      trip: { ...summary, drives: [], sessions: [session], missing: 0 },
+      selected: { kind: 'charge', id: session.id },
+    });
+    expect(html).toContain('10.0 kW avg · 11.0 kW peak');
+    expect(html).toContain('Range added');
+  });
+
   it('holds off undoing until the removal is saved', () => {
     const html = render({ removed: { kind: 'drive', drive: drives[0]! }, onUndo: null });
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Undo<\/button>/);

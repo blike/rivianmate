@@ -128,7 +128,15 @@ export function TripMap(props: {
         <DayStepper days={days} focusDay={focusDay} onShow={showDay} />
       )}
       {canReplay && (
-        <div className="rm-journey-player absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-lg px-3 py-2 sm:right-auto sm:w-[min(30rem,calc(100%-7rem))]">
+        // Just the button and its label until it plays; then wide enough to scrub.
+        // One height either way, so pressing play doesn't make it jump.
+        <div
+          className={`rm-journey-player absolute bottom-3 left-3 flex h-12 items-center gap-3 rounded-lg pl-3 ${
+            progress == null
+              ? 'pr-3.5'
+              : 'right-3 pr-3 sm:right-auto sm:w-[min(30rem,calc(100%-7rem))]'
+          }`}
+        >
           <button
             type="button"
             aria-label={playing ? 'Pause replay' : 'Replay the journey'}
@@ -153,7 +161,7 @@ export function TripMap(props: {
           ) : (
             <>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs text-(--text-secondary)">
+                <div className="truncate text-xs leading-4 text-(--text-secondary)">
                   {currentLeg ? driveTitle(currentLeg.title) : ''}
                 </div>
                 <input
@@ -166,7 +174,7 @@ export function TripMap(props: {
                     setPlaying(false);
                     setProgress(Number(e.target.value) / 1000);
                   }}
-                  className="block w-full accent-(--accent)"
+                  className="block h-4 w-full accent-(--accent)"
                 />
               </div>
               <button

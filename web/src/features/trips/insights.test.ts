@@ -253,7 +253,7 @@ describe('tripFacts', () => {
       }),
     );
     expect(k).not.toContain('climb');
-    expect(k).not.toContain('highest');
+    expect(k).not.toContain('elevation');
     expect(k).not.toContain('low');
   });
 
@@ -263,7 +263,21 @@ describe('tripFacts', () => {
       [],
       u,
     ).find((f) => f.key === 'climb');
-    expect(climb?.value).toBe(u.formatElevation(900));
+    expect(climb?.value).toBe(`↑ ${u.formatElevation(900)}`);
+    expect(climb?.sub).toBe(`↓ ${u.formatElevation(300)}`);
+  });
+
+  it('gives the lowest battery and where the drive left it', () => {
+    const low = tripFacts(
+      trip([
+        drive(1, { endBattery: 40 }),
+        drive(2, { endBattery: 12, end: place('Lee Vining, CA') }),
+      ]),
+      [],
+      u,
+    ).find((f) => f.key === 'low');
+    expect(low?.value).toBe('12%');
+    expect(low?.sub).toBe('Arriving at Lee Vining');
   });
 
   it('gives cost per mile only when every charge has a cost in one currency', () => {
@@ -285,7 +299,7 @@ describe('tripFacts', () => {
     ).not.toContain('perDistance');
   });
 
-  it('finds the highest point from the route', () => {
+  it('gives the lowest to highest point from the route', () => {
     const fact = tripFacts(
       trip([drive(1)]),
       [
@@ -299,8 +313,8 @@ describe('tripFacts', () => {
         },
       ],
       u,
-    ).find((f) => f.key === 'highest');
-    expect(fact?.value).toContain('6,562');
+    ).find((f) => f.key === 'elevation');
+    expect(fact?.value).toBe(`${u.formatElevation(100)} – ${u.formatElevation(2000)}`);
   });
 });
 

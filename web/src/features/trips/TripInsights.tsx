@@ -15,6 +15,7 @@ import {
   roadProfile,
   timeSplit,
   totalClimbM,
+  totalDescentM,
   stayRoute,
   tripFacts,
   tripStays,
@@ -86,6 +87,7 @@ export function TripInsights(props: {
   }, [road, u]);
   if (trip.stats.drives + trip.stats.charges === 0) return null;
   const climb = totalClimbM(trip.drives);
+  const descent = totalDescentM(trip.drives);
   // The axis marks where each day's driving began, and says which day it is.
   const roadDays = road.days.map((d) => ({
     at: u.distance(d.km) ?? 0,
@@ -172,19 +174,6 @@ export function TripInsights(props: {
     <div className="space-y-4">
       <SectionRule>Insights</SectionRule>
 
-      {facts.length > 0 && (
-        <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-(--hairline) bg-(--hairline) md:grid-cols-3 xl:grid-cols-4">
-          {facts.map((f) => (
-            <li key={f.key} className="bg-(--surface-1) p-5">
-              <div className="eyebrow">{f.label}</div>
-              <div className="readout mt-3 text-[1.75rem] font-semibold sm:text-[2.25rem]">
-                {f.value}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
       {days.length > 1 && (
         <Panel title="Day by day">
           <ul className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1">
@@ -246,6 +235,23 @@ export function TripInsights(props: {
         </Panel>
       )}
 
+      {facts.length > 0 && (
+        // As many columns as fit, so a wide screen takes the facts in one row.
+        <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-(--hairline) bg-(--hairline) sm:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]">
+          {facts.map((f) => (
+            <li key={f.key} className="bg-(--surface-1) px-5 py-4">
+              <div className="eyebrow">{f.label}</div>
+              <div className="readout mt-2 text-2xl font-semibold">{f.value}</div>
+              {f.sub && (
+                <div className="mt-1 truncate text-xs text-(--text-secondary) tabular-nums">
+                  {f.sub}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {road.points.length >= 2 && (road.hasElevation || hasBattery) && (
         <Panel title="Along the way">
           {road.hasElevation && (
@@ -254,6 +260,7 @@ export function TripInsights(props: {
                 label="Elevation"
                 aside={[
                   climb > 0 && `${u.formatElevation(climb)} climbed`,
+                  descent > 0 && `${u.formatElevation(descent)} descended`,
                   road.unmappedKm >= 1 && `no route for ${u.formatDistance(road.unmappedKm)}`,
                   road.missingKm >= 1 && `~${u.formatDistance(road.missingKm)} not in trip`,
                 ]
