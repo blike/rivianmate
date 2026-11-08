@@ -16,14 +16,16 @@ export function SummaryCard(props: {
   drives: Parameters<typeof distanceByPeriod>[0];
   from: Date;
   to: Date;
-  hours: number;
 }) {
   const u = useUnits();
   const loading = useLoading();
   const s = props.summary;
   const movingSpeed = movingSpeedKmh(s.movingDistanceKm, s.movingSeconds);
-  // A bar a day, until there are too many to see: a year is a bar a week.
-  const unit = props.hours > 24 * 90 ? 'week' : 'day';
+  // A bar a day, until there are too many to see: past 90 days a bar a week, past
+  // two years a bar a month. Measured on the window, so all time draws what its own
+  // history can show rather than what its label says.
+  const spanDays = (props.to.getTime() - props.from.getTime()) / 86_400_000;
+  const unit = spanDays > 730 ? 'month' : spanDays > 90 ? 'week' : 'day';
   const buckets = useMemo(
     () => distanceByPeriod(props.drives, props.from.getTime(), props.to.getTime(), unit),
     [props.drives, props.from, props.to, unit],
@@ -36,14 +38,24 @@ export function SummaryCard(props: {
     null,
   );
   const when = (ts: number) =>
-    unit === 'week'
-      ? `Week of ${shortDate(ts)}`
-      : new Date(ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    unit === 'month'
+      ? new Date(ts).toLocaleDateString([], { month: 'long', year: 'numeric' })
+      : unit === 'week'
+        ? `Week of ${shortDate(ts)}`
+        : new Date(ts).toLocaleDateString([], {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+          });
   // A week fits a weekday under every bar; longer ranges label about five.
   const weekdays = unit === 'day' && buckets.length <= 7;
   const every = weekdays ? 1 : Math.ceil(buckets.length / 5);
   const label = (ts: number) =>
-    weekdays ? new Date(ts).toLocaleDateString([], { weekday: 'short' }) : shortDate(ts);
+    unit === 'month'
+      ? new Date(ts).toLocaleDateString([], { month: 'short', year: 'numeric' })
+      : weekdays
+        ? new Date(ts).toLocaleDateString([], { weekday: 'short' })
+        : shortDate(ts);
   // Gaps of their own would leave no room for bars past a month's worth.
   const gap = buckets.length > 31 ? 'gap-px' : 'gap-0.75';
 

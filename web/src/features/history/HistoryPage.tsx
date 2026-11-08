@@ -5,9 +5,7 @@ import { api } from '../../api/client';
 import {
   chargingSessionsQuery,
   drivesQuery,
-  useChargingSessions,
   useDriveCoverage,
-  useDrives,
   useLookupSettings,
 } from '../../api/hooks';
 import { ContentFrame, LoadingNote, LoadingScope } from '../../components/LoadingState';
@@ -27,7 +25,8 @@ import {
 } from './history';
 import {
   DEFAULT_RANGE,
-  neighbours,
+  isAllTime,
+  prefetchRanges,
   PREFETCH_FRESH_MS,
   type Range,
   type RangeLabel,
@@ -72,19 +71,35 @@ const locationsQuery = (vehicleId: string, range: Range, w: Window) =>
 export function HistoryPage(props: { vehicleId: string }) {
   const [rangeLabel, setRangeLabel] = useState<RangeLabel>(DEFAULT_RANGE);
   const range = rangeOf(rangeLabel);
-  const { from, to } = useMemo(() => rangeWindow(range.hours, new Date()), [range.hours]);
-
-  // Everything in the window, not just the newest few hundred.
-  const drivesResult = useDrives(props.vehicleId, from);
-  const sessionsResult = useChargingSessions(props.vehicleId, from);
-  const { data: drives, isPending: drivesPending } = drivesResult;
-  const { data: sessions, isPending: sessionsPending } = sessionsResult;
   const coverageResult = useDriveCoverage(props.vehicleId);
   const { data: coverage } = coverageResult;
+  // All time has no fixed length: it runs from the first drive recorded.
+  const drivesSince = coverage?.since;
+  const anchor = isAllTime(range) ? drivesSince : undefined;
+  const { from, to } = useMemo(
+    () => rangeWindow(range.hours, new Date(), anchor),
+    [range.hours, anchor],
+  );
   const { data: lookups } = useLookupSettings();
+  // That window waits on a request. The three queries below that key on the period
+  // alone would otherwise cache an empty answer under the key the view then uses.
+  const windowReady = !isAllTime(range) || coverage !== undefined;
+  // A failed read can't say where the history starts, and waiting for it would sit
+  // the page on skeletons forever, so it says so and offers to try again. Only a
+  // failure with nothing to fall back on: a refetch that fails keeps its data.
+  const coverageFailed = isAllTime(range) && coverageResult.isError && coverage === undefined;
+
+  // Everything in the window, not just the newest few hundred. Until the anchor lands
+  // their window is zero-width, so they would draw empty figures rather than wait.
+  const drivesResult = useQuery({ ...drivesQuery(props.vehicleId, from), enabled: windowReady });
+  const sessionsResult = useQuery({
+    ...chargingSessionsQuery(props.vehicleId, from),
+    enabled: windowReady,
+  });
+  const { data: drives, isPending: drivesPending } = drivesResult;
+  const { data: sessions, isPending: sessionsPending } = sessionsResult;
   // The battery over the energy ledger's period, which starts no earlier than the drives
   // and ends where the ledger does.
-  const drivesSince = coverage?.since;
   const balanceFrom = useMemo(() => {
     const since = drivesSince ? new Date(drivesSince) : null;
     return since && since > from ? since : from;
@@ -97,9 +112,18 @@ export function HistoryPage(props: { vehicleId: string }) {
     placeholderData: keepPreviousData,
   });
   const { data: battery } = batteryResult;
-  const chargeSpansResult = useQuery(chargeSpansQuery(props.vehicleId, range, { from, to }));
-  const stateSpansResult = useQuery(stateSpansQuery(props.vehicleId, range, { from, to }));
-  const trailResult = useQuery(locationsQuery(props.vehicleId, range, { from, to }));
+  const chargeSpansResult = useQuery({
+    ...chargeSpansQuery(props.vehicleId, range, { from, to }),
+    enabled: windowReady,
+  });
+  const stateSpansResult = useQuery({
+    ...stateSpansQuery(props.vehicleId, range, { from, to }),
+    enabled: windowReady,
+  });
+  const trailResult = useQuery({
+    ...locationsQuery(props.vehicleId, range, { from, to }),
+    enabled: windowReady,
+  });
   const { data: chargeSpans, isPending: chargeSpansPending } = chargeSpansResult;
   const { data: stateSpans, isPending: stateSpansPending } = stateSpansResult;
   const { data: trail, isPending: trailPending } = trailResult;
@@ -135,7 +159,7 @@ export function HistoryPage(props: { vehicleId: string }) {
   useEffect(() => {
     if (!shownLoaded) return;
     const now = new Date();
-    for (const other of neighbours(range)) {
+    for (const other of prefetchRanges(range)) {
       const w = rangeWindow(other.hours, now);
       const fresh = { staleTime: PREFETCH_FRESH_MS };
       void queryClient.query({ ...drivesQuery(props.vehicleId, w.from), ...fresh }).catch(() => {});
@@ -190,11 +214,13 @@ export function HistoryPage(props: { vehicleId: string }) {
   return (
     <>
       <PageHeader
-        kicker={`Last ${range.title}`}
+        kicker={isAllTime(range) ? 'All time' : `Last ${range.title}`}
         title="History"
         action={
           <div className="flex items-center gap-3">
-            <span role="status">{loading && <LoadingNote className="delayed-fade-in" />}</span>
+            <span role="status">
+              {loading && !coverageFailed && <LoadingNote className="delayed-fade-in" />}
+            </span>
             <Select
               label="Period"
               value={rangeLabel}
@@ -207,16 +233,22 @@ export function HistoryPage(props: { vehicleId: string }) {
       />
 
       <div className="space-y-10">
+        {coverageFailed && (
+          <p role="alert" className="text-sm text-(--status-critical)">
+            Couldn’t load when your history starts, so the whole of it can’t be drawn.{' '}
+            <button
+              type="button"
+              onClick={() => void coverageResult.refetch()}
+              className="text-(--accent) hover:underline"
+            >
+              Try again
+            </button>
+          </p>
+        )}
         <div className="space-y-4">
           {/* Totals from the last period would mislead, so they wait for this one's. */}
           <LoadingScope loading={activityPending || activityStale}>
-            <SummaryCard
-              summary={summary}
-              drives={drives ?? []}
-              from={from}
-              to={to}
-              hours={range.hours}
-            />
+            <SummaryCard summary={summary} drives={drives ?? []} from={from} to={to} />
           </LoadingScope>
 
           <Timeline
@@ -233,6 +265,7 @@ export function HistoryPage(props: { vehicleId: string }) {
             }
             onHover={setHoverTs}
             onLoading={setTimelineLoading}
+            ready={windowReady}
           />
         </div>
 

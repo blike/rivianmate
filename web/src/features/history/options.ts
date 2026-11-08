@@ -9,6 +9,10 @@ export const RANGES = [
   { label: '90d', title: '90 days', hours: 24 * 90, bucket: '15m' },
   { label: '6m', title: '6 months', hours: 24 * 182, bucket: '1h' },
   { label: '12m', title: '12 months', hours: 24 * 365, bucket: '1h' },
+  // Everything recorded: no fixed length, so the window starts at the first
+  // drive (see `rangeWindow`). Six hours a point, because day buckets are cut
+  // in UTC, so each would straddle two local days.
+  { label: 'all', title: 'All time', hours: Number.POSITIVE_INFINITY, bucket: '6h' },
 ] as const;
 
 export type Range = (typeof RANGES)[number];
@@ -20,10 +24,18 @@ export const DEFAULT_RANGE: RangeLabel = '7d';
 export const rangeOf = (label: RangeLabel): Range =>
   RANGES.find((r) => r.label === label) ?? RANGES[1];
 
-/** The periods either side of one in the list: the likeliest to be picked next, so loaded ahead. */
-export function neighbours(range: Range): Range[] {
+/** Whether a period has no fixed length, running from the first record instead. */
+export const isAllTime = (range: Range): boolean => !Number.isFinite(range.hours);
+
+/**
+ * The periods beside this one that are worth loading ahead — the likeliest to be
+ * picked next. All time is left out: its window is the whole history, which can be
+ * arbitrarily heavier than the period on screen, and loading it unprompted would ask
+ * for that without being asked.
+ */
+export function prefetchRanges(range: Range): Range[] {
   const i = RANGES.findIndex((r) => r.label === range.label);
-  return [RANGES[i - 1], RANGES[i + 1]].filter((r): r is Range => r != null);
+  return [RANGES[i - 1], RANGES[i + 1]].filter((r): r is Range => r != null && !isAllTime(r));
 }
 
 /** How long another period loaded ahead stays fresh enough not to load again. */
