@@ -1,4 +1,16 @@
-import { and, asc, desc, eq, isNotNull, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { drivers, drives } from '../db/schema.js';
 import { type Logger, silentLogger } from '../logger.js';
@@ -142,11 +154,44 @@ export class Drivers {
     this.pendingNames.delete(vehicleId);
     const profileId = this.current.get(vehicleId)?.profileId;
     if (!name || !profileId) return;
-    await this.driverFor(vehicleId, profileId, null);
+    const driverId = await this.driverFor(vehicleId, profileId, null);
     await this.db
       .update(drivers)
       .set({ reportedName: name })
       .where(and(eq(drivers.vehicleId, vehicleId), eq(drivers.profileId, profileId)));
+    await this.adoptImported(vehicleId, driverId, name);
+  }
+
+  /**
+   * An import makes a driver from a name when the vehicle hasn't reported
+   * that profile yet: the only kind with a reported name and no profile.
+   * Once the vehicle reports the name, the profile's driver takes over its
+   * drives, and the name the user gave it if the profile has none.
+   */
+  private async adoptImported(vehicleId: string, driverId: number, name: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const imported = await tx
+        .select({ id: drivers.id, name: drivers.name })
+        .from(drivers)
+        .where(
+          and(
+            eq(drivers.vehicleId, vehicleId),
+            isNull(drivers.profileId),
+            sql`lower(trim(${drivers.reportedName})) = ${name.trim().toLowerCase()}`,
+          ),
+        );
+      if (imported.length === 0) return;
+      const ids = imported.map((d) => d.id);
+      await tx.update(drives).set({ driverId }).where(inArray(drives.driverId, ids));
+      const given = imported.find((d) => d.name)?.name;
+      if (given) {
+        await tx
+          .update(drivers)
+          .set({ name: given })
+          .where(and(eq(drivers.id, driverId), isNull(drivers.name)));
+      }
+      await tx.delete(drivers).where(inArray(drivers.id, ids));
+    });
   }
 
   /** The driver for a profile, created the first time it's seen. */

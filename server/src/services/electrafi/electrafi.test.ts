@@ -2,16 +2,17 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { TimeZoneClock } from '../imports/time-zone.js';
 import {
   NotAnExportError,
-  TimeZoneClock,
   firstDataId,
   parseLocalTime,
   parseRow,
   readRows,
   rowState,
 } from './parse.js';
-import { type Existing, buildPlan, odometerFits, rangeOf, scanFiles } from './plan.js';
+import { type Existing, buildPlan, odometerFits, rangeOf } from '../imports/plan.js';
+import { scanFiles } from './format.js';
 import { asleep, awake, chargeRows, csvOf, driveRows } from '../../testing/electrafi-rows.js';
 
 let dir: string;
@@ -206,6 +207,26 @@ describe('finding drives', () => {
     expect(new Date(drives[0]!.endedAt).toISOString()).toBe('2025-12-16T19:30:00.000Z');
   });
 
+  it('takes the driver whose profile was active as the drive set off', async () => {
+    const { drives } = await scanOf([
+      awake('2026-10-30 10:00:00', { autopark_state_v2: 'Mitch V.' }),
+      awake('2026-10-30 10:01:00', {
+        shift_state: 'D',
+        odometer: 1,
+        autopark_state_v2: 'Laura V.',
+      }),
+      awake('2026-10-30 10:02:00', {
+        shift_state: 'D',
+        odometer: 2,
+        autopark_state_v2: 'Mitch V.',
+      }),
+      awake('2026-10-30 10:03:00', { odometer: 3 }),
+      awake('2026-10-30 10:30:00', { shift_state: 'D', odometer: 4 }),
+      awake('2026-10-30 10:31:00', { odometer: 5 }),
+    ]);
+    expect(drives.map((d) => d.driverName)).toEqual(['Laura V.', null]);
+  });
+
   it('ignores asleep rows and ends a drive open at the last row', async () => {
     const { drives } = await scanOf([
       awake('2026-10-30 10:00:00', { shift_state: 'D', odometer: 1 }),
@@ -249,7 +270,10 @@ describe('finding charges', () => {
       ...chargeRows(new Date('2026-01-02T20:00:00Z'), 5, 5),
       ...chargeRows(new Date('2026-01-03T20:00:00Z'), 5, 6),
     ]);
-    expect(charges.map((c) => c.chargeNumber)).toEqual([5, 6]);
+    expect(charges.map((c) => new Date(c.startedAt).toISOString())).toEqual([
+      '2026-01-02T20:00:00.000Z',
+      '2026-01-03T20:00:00.000Z',
+    ]);
   });
 });
 
@@ -261,6 +285,7 @@ describe('planning', () => {
     drives: [],
     sessions: [],
     mileage: [],
+    places: [],
   };
   const all = { from: at('2026-01-01T00:00:00Z'), to: at('2027-01-01T00:00:00Z') };
   const now = at('2026-10-31T00:00:00Z');

@@ -199,13 +199,16 @@ Configure notification providers and alert preferences under **Settings → Noti
 Bring your history across from another app under **Settings → Import Data**: choose **New import**,
 pick the source, add its export files, and check the preview before importing.
 
-| Source    | Getting the export                                                       | Files             |
-| --------- | ------------------------------------------------------------------------ | ----------------- |
-| ElectraFi | **Settings → Account → Advanced → Download Data**, then **Download All** | `.csv`, `.csv.gz` |
+| Source        | Getting the export                                                                                                  | Files             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| Rivian Roamer | **Account** (from the menu by your name) → **Data → Download a copy**; request it, then **Download ZIP** once ready | one `.zip`        |
+| ElectraFi     | **Settings → Account → Advanced → Download Data**, then **Download All**                                            | `.csv`, `.csv.gz` |
 
 - Imports add drives, charging sessions, and vehicle history.
+- A Rivian Roamer copy is matched to your Rivian by VIN, and brings each charge's curve and energy
+  breakdown.
 - Anything already recorded stays as it is, and an existing charge only gets what it's missing.
-- **Undo** removes what an import added.
+- **Undo** removes what an import added, apart from drivers and saved places, which stay.
 
 ### TeslaMate
 

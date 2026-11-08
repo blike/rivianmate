@@ -1,4 +1,5 @@
 import { elevationChange } from '../drive-metrics.js';
+import type { ChargeSegment, DriveSegment, Readings } from '../imports/format.js';
 import { haversineKm } from '../state-utils.js';
 import type { ElectraFiRow } from './parse.js';
 
@@ -9,48 +10,6 @@ export const DRIVE_GAP_MS = 15 * 60_000;
 const CHARGE_GAP_MS = 5 * 60_000;
 /** A charge's first row with more energy than this was already under way. */
 const MID_CHARGE_KWH = 0.5;
-
-export interface Readings {
-  mileageM: number | null;
-  battery: number | null;
-  rangeKm: number | null;
-  lat: number | null;
-  lon: number | null;
-}
-
-export interface DriveSegment {
-  startedAt: number;
-  endedAt: number;
-  start: Readings;
-  end: Readings;
-  batteryCapacityKwh: number | null;
-  driveMode: string | null;
-  distanceKm: number | null;
-  elevationGainM: number | null;
-  elevationLossM: number | null;
-}
-
-export interface CurveSample {
-  at: number;
-  powerKw: number | null;
-  soc: number | null;
-}
-
-export interface ChargeSegment {
-  chargeNumber: number;
-  startedAt: number;
-  endedAt: number;
-  chargingSeconds: number;
-  startSoc: number | null;
-  endSoc: number | null;
-  energyKwh: number | null;
-  rangeAddedKm: number | null;
-  avgPowerKw: number | null;
-  maxPowerKw: number | null;
-  lat: number | null;
-  lon: number | null;
-  curve: CurveSample[];
-}
 
 interface Timed {
   row: ElectraFiRow;
@@ -184,11 +143,15 @@ export class DriveSegmenter {
       distanceKm: byOdometer || (open.gpsKm > 0 ? open.gpsKm : byOdometer),
       elevationGainM: elevation?.gainM ?? null,
       elevationLossM: elevation?.lossM ?? null,
+      // As live: the profile active as it set off, not one switched to on the way.
+      driverName: open.first.row.driverName ?? open.start.row.driverName,
+      destination: null,
     });
   }
 }
 
 interface OpenCharge extends ChargeSegment {
+  chargeNumber: number;
   firstEnergy: number | null;
   powerSum: number;
   powerCount: number;
@@ -216,6 +179,8 @@ export class ChargeSegmenter {
       startSoc: null,
       endSoc: null,
       energyKwh: null,
+      packKwh: null,
+      thermalKwh: null,
       rangeAddedKm: null,
       avgPowerKw: null,
       maxPowerKw: null,
@@ -261,13 +226,14 @@ export class ChargeSegmenter {
     this.open = null;
     if (!open) return;
     done.push({
-      chargeNumber: open.chargeNumber,
       startedAt: open.startedAt,
       endedAt: open.endedAt,
       chargingSeconds: Math.round(open.chargingSeconds),
       startSoc: (open.firstEnergy ?? 0) > MID_CHARGE_KWH ? null : open.startSoc,
       endSoc: open.endSoc,
       energyKwh: open.energyKwh,
+      packKwh: null,
+      thermalKwh: null,
       rangeAddedKm: open.rangeAddedKm,
       avgPowerKw: open.powerCount > 0 ? open.powerSum / open.powerCount : null,
       maxPowerKw: open.maxPowerKw,

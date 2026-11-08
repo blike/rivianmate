@@ -5,14 +5,10 @@ import type {
   ImportSessionAddition,
 } from '../../api-types.js';
 import { isListedDrive } from '../drive-metrics.js';
-import { type Spot, nearbySpot } from '../locations.js';
-import {
-  type ChargeSegment,
-  ChargeSegmenter,
-  type DriveSegment,
-  DriveSegmenter,
-} from './segment.js';
-import { type ReadStats, TimeZoneClock, readRows } from './parse.js';
+import { DEFAULT_RADIUS_M, type Spot, nearbySpot } from '../locations.js';
+import { haversineKm } from '../state-utils.js';
+import type { ChargeSegment, DriveSegment, ImportPlace, Scan } from './format.js';
+import { TimeZoneClock } from './time-zone.js';
 
 /**
  * A row this close to a heartbeat is time RivianMate was already recording.
@@ -23,18 +19,6 @@ const COVERED_MS = 20 * 60_000;
 const ODOMETER_SLACK_M = 1000;
 /** A row later than this past now has the wrong time zone. */
 const FUTURE_SLACK_MS = 5 * 60_000;
-
-export interface Scan extends ReadStats {
-  rows: number;
-  firstAt: number | null;
-  lastAt: number | null;
-  firstMileage: { at: number; value: number } | null;
-  lastMileage: { at: number; value: number } | null;
-  drives: DriveSegment[];
-  charges: ChargeSegment[];
-  /** When each row with readings was taken, so a new date range needn't read the files again. */
-  readingTimes: number[];
-}
 
 /** What's already stored for the vehicle. */
 export interface Existing {
@@ -50,6 +34,7 @@ export interface Existing {
     imported: boolean;
   }[];
   mileage: readonly { at: number; value: number }[];
+  places: readonly (Spot & { isHome: boolean })[];
 }
 
 export interface PlannedCharge {
@@ -67,6 +52,9 @@ export interface Plan {
   /** Each drive and charge starting in the range, and what happens to it. */
   driveDecisions: { segment: DriveSegment; status: ImportItemStatus }[];
   chargeDecisions: { segment: ChargeSegment; status: ImportItemStatus; sessionId: number | null }[];
+  /** Saved places to add; one where a place is already saved is left out. */
+  places: ImportPlace[];
+  placesRecorded: number;
 }
 
 type Span = readonly [number, number];
@@ -134,7 +122,7 @@ export class RowScope {
 
 /** Decides what an import of the range adds, leaving what's already stored alone. */
 export function buildPlan(
-  scan: Pick<Scan, 'drives' | 'charges'>,
+  scan: Pick<Scan, 'drives' | 'charges'> & Partial<Pick<Scan, 'places'>>,
   existing: Existing,
   range: { from: number; to: number },
   now: number,
@@ -188,6 +176,7 @@ export function buildPlan(
     charges.push({ segment, sessionId: session?.id ?? null });
   }
 
+  const places = newPlaces(scan.places ?? [], existing.places);
   return {
     from: range.from,
     to: range.to,
@@ -195,6 +184,8 @@ export function buildPlan(
     charges,
     driveDecisions,
     chargeDecisions,
+    places,
+    placesRecorded: (scan.places?.length ?? 0) - places.length,
     scope: new RowScope(
       { ...range, lastLiveAt: existing.lastLiveAt },
       existing.heartbeats,
@@ -204,6 +195,26 @@ export function buildPlan(
       mergeSpans(dropped),
     ),
   };
+}
+
+/**
+ * The places not already saved: one whose circle overlaps a saved one's is
+ * the same place. Home stays with a home already set.
+ */
+function newPlaces(places: readonly ImportPlace[], saved: Existing['places']): ImportPlace[] {
+  const out: ImportPlace[] = [];
+  let hasHome = saved.some((p) => p.isHome);
+  for (const place of places) {
+    const overlaps = [...saved, ...out].some(
+      (p) =>
+        haversineKm(p.lat, p.lon, place.lat, place.lon) * 1000 <=
+        Math.max(p.radiusM ?? DEFAULT_RADIUS_M, place.radiusM),
+    );
+    if (overlaps) continue;
+    out.push({ ...place, isHome: place.isHome && !hasHome });
+    hasHome ||= place.isHome;
+  }
+  return out;
 }
 
 function closestOverlap(
@@ -239,38 +250,6 @@ export function odometerFits(
   return true;
 }
 
-export async function scanFiles(paths: readonly string[], timeZone: string): Promise<Scan> {
-  const scan: Scan = {
-    rows: 0,
-    unreadable: 0,
-    firstAt: null,
-    lastAt: null,
-    firstMileage: null,
-    lastMileage: null,
-    drives: [],
-    charges: [],
-    readingTimes: [],
-  };
-  const driveFinder = new DriveSegmenter();
-  const chargeFinder = new ChargeSegmenter();
-  for await (const { row, at } of readRows(paths, timeZone, scan)) {
-    scan.rows += 1;
-    scan.firstAt = Math.min(scan.firstAt ?? at, at);
-    scan.lastAt = Math.max(scan.lastAt ?? at, at);
-    if (row.mileageM != null) {
-      const reading = { at, value: row.mileageM };
-      scan.firstMileage ??= reading;
-      scan.lastMileage = reading;
-      scan.readingTimes.push(at);
-    }
-    scan.drives.push(...driveFinder.push(row, at));
-    scan.charges.push(...chargeFinder.push(row, at));
-  }
-  scan.drives.push(...driveFinder.flush());
-  scan.charges.push(...chargeFinder.flush());
-  return scan;
-}
-
 /** The instants a selection's dates start and end (exclusive), in its time zone. */
 export function rangeOf(from: string, to: string, timeZone: string): { from: number; to: number } {
   const clock = new TimeZoneClock(timeZone);
@@ -298,7 +277,7 @@ export function previewOf(
   scan: Scan,
   plan: Plan,
   existing: Existing,
-  counted: { readingsNew: number; readingsRecorded: number },
+  counted: { readingsNew: number; readingsRecorded: number; readingsNewer: number },
   context: {
     timeZone: string;
     now: number;
@@ -348,6 +327,9 @@ export function previewOf(
     sessionsEnriched: charges.filter((c) => c.status === 'enrich').length,
     readingsNew: counted.readingsNew,
     readingsRecorded: counted.readingsRecorded,
+    readingsNewer: counted.readingsNewer,
+    placesNew: plan.places.map((p) => p.name),
+    placesRecorded: plan.placesRecorded,
     warnings: [
       ...(fits(scan.firstMileage) && fits(scan.lastMileage) ? [] : (['odometer'] as const)),
       ...(scan.lastAt != null && scan.lastAt > context.now + FUTURE_SLACK_MS
@@ -363,6 +345,7 @@ export function previewOf(
       endBattery: d.end.battery,
       startPlace: placeName(d.start.lat, d.start.lon, context.places),
       endPlace: placeName(d.end.lat, d.end.lon, context.places),
+      driver: d.driverName,
     })),
     charges,
   };

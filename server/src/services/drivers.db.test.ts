@@ -174,6 +174,28 @@ describe.skipIf(!url)('Drivers with Postgres', () => {
       { profileId: BEN, reportedName: 'Ben', lastSeenAt: at(2) },
     ]);
   });
+
+  it('takes over a driver an import made from the name, with its drives', async () => {
+    const [imported] = await handle.db
+      .insert(drivers)
+      .values({ vehicleId: 'v1', reportedName: 'Ben V.', name: 'Benny' })
+      .returning({ id: drivers.id });
+    const id = await drive(0);
+    await handle.db
+      .update(drives)
+      .set({ driverId: imported!.id, driverSource: 'profile' })
+      .where(eq(drives.id, id));
+
+    await service.noteProfile('v1', BEN, at(10));
+    service.noteName('v1', ' ben v. ');
+    await service.flushNames();
+
+    const rows = await handle.db
+      .select({ id: drivers.id, profileId: drivers.profileId, name: drivers.name })
+      .from(drivers);
+    expect(rows).toEqual([{ id: await driverId(BEN), profileId: BEN, name: 'Benny' }]);
+    expect(await driveDriver(id)).toEqual({ driverId: await driverId(BEN), source: 'profile' });
+  });
 });
 
 async function waitFor(check: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {

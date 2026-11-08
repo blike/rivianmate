@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { nearbySpot, wallboxSpots } from './locations.js';
 import type { Db } from '../db/client.js';
 import { type Logger, silentLogger } from '../logger.js';
@@ -192,7 +192,7 @@ export class DrivePlaces {
         .from(chargingSessions)
         .where(
           and(
-            eq(chargingSessions.source, 'electrafi'),
+            inArray(chargingSessions.source, ['electrafi', 'roamer']),
             isNull(chargingSessions.placesCheckedAt),
             isNull(chargingSessions.vendor),
             isNull(chargingSessions.city),

@@ -1,16 +1,22 @@
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import { type ImportDraftDto, type ImportPreviewDto, type VehicleDto, api } from '../../api/client';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type ImportDraftDto,
+  type ImportFormat,
+  type ImportPreviewDto,
+  type VehicleDto,
+  api,
+} from '../../api/client';
 import { StepDots } from '../../components/AuthCard';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ImportPreviewList } from './ImportPreviewList';
 import { Select } from '../../components/Select';
-import { SettingRow, secondaryButton } from './SettingsControls';
+import { SettingRow, dangerButton, secondaryButton } from './SettingsControls';
 
+const linkButton =
+  'font-medium text-(--text-secondary) underline decoration-dotted underline-offset-2 hover:text-(--text-primary)';
 const fieldClass = 'rounded-lg border border-(--border) bg-(--surface-2) px-3 py-1.5 text-sm';
 const primaryButton = 'btn-primary rounded-md px-3 py-1.5 text-sm font-medium';
-const textButton =
-  'font-medium text-(--text-secondary) underline decoration-dotted underline-offset-2 hover:text-(--text-primary) disabled:opacity-50';
 
 /** Wider than any export, for reading what its files cover. */
 const ALL_DATES = { from: '0001-01-01', to: '9999-12-31' };
@@ -23,15 +29,21 @@ export function timeZoneOptions(current: string): string[] {
   return known.includes(current) ? known : [current, ...known];
 }
 
+/** "a", "a and b", "a, b and c". */
+const listOf = (parts: readonly string[]) =>
+  parts.length < 2 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+
 const plural = (n: number, one: string) => `${n.toLocaleString()} ${one}${n === 1 ? '' : 's'}`;
 
 export interface ImportSource {
-  id: string;
+  id: ImportFormat;
   label: string;
   description: string;
   /** Where to get the files. */
   instructions: string;
   accept: string;
+  /** Whether an export comes as several files; otherwise another upload replaces it. */
+  multiple: boolean;
   vehicleHelp: string;
   timeZoneHelp: string;
 }
@@ -39,15 +51,25 @@ export interface ImportSource {
 /** Each kind of export that can be imported. */
 export const IMPORT_SOURCES: readonly ImportSource[] = [
   {
+    id: 'roamer',
+    label: 'Rivian Roamer',
+    description: 'Drives, charges, routes, history, drivers and places.',
+    instructions:
+      'In Rivian Roamer: Account → Data → Download a copy. Request a copy, then Download ZIP once it’s ready.',
+    accept: '.zip,application/zip',
+    multiple: false,
+    vehicleHelp: 'Matched by VIN.',
+    timeZoneHelp: 'Sets where each day starts.',
+  },
+  {
     id: 'electrafi',
     label: 'ElectraFi',
-    description: 'Drives, charges, routes and vehicle history.',
-    instructions:
-      'In ElectraFi, go to Settings → Account → Advanced → Download Data and choose Download All. Add the .csv or .csv.gz files it gives you.',
+    description: 'Drives, charges, routes, history and drivers.',
+    instructions: 'In ElectraFi: Settings → Account → Advanced → Download Data → Download All.',
     accept: '.csv,.gz,text/csv,application/gzip',
-    vehicleHelp: 'ElectraFi is one account per car, so choose which one this is.',
-    timeZoneHelp:
-      'Exports have local times with no zone: use the one your ElectraFi account shows.',
+    multiple: true,
+    vehicleHelp: 'The car this export is from.',
+    timeZoneHelp: 'The one your ElectraFi account uses.',
   },
 ];
 
@@ -138,8 +160,13 @@ export function ImportFlow(props: {
   const [saved] = useState(() => loadChoices(draft?.id));
   const [requestedStep, setStep] = useState<ImportStep>(props.initialStep);
   const step = reachableStep(requestedStep, !!draft);
-  const [sourceId, setSourceId] = useState(IMPORT_SOURCES[0]!.id);
+  const [sourceId, setSourceId] = useState(draft?.format ?? IMPORT_SOURCES[0]!.id);
   const source = IMPORT_SOURCES.find((s) => s.id === sourceId) ?? IMPORT_SOURCES[0]!;
+  // An upload from another source is replaced by the next one.
+  const sourceDraft = draft?.format === source.id ? draft : null;
+  const eligible = draft?.vehicleIds
+    ? props.vehicles.filter((v) => draft.vehicleIds!.includes(v.id))
+    : props.vehicles;
   const [vehicleId, setVehicleId] = useState(saved?.vehicleId ?? '');
   const [timeZone, setTimeZone] = useState(saved?.timeZone ?? browserTimeZone());
   const [from, setFrom] = useState(saved?.from ?? '');
@@ -148,16 +175,14 @@ export function ImportFlow(props: {
   const [covered, setCovered] = useState(saved?.covered ?? null);
   const [discarding, setDiscarding] = useState(false);
   const [uploading, setUploading] = useState<{ at: number; of: number } | null>(null);
-  const chosen = props.vehicles.some((v) => v.id === vehicleId)
-    ? vehicleId
-    : (props.vehicles[0]?.id ?? '');
+  const chosen = eligible.some((v) => v.id === vehicleId) ? vehicleId : (eligible[0]?.id ?? '');
 
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
-      let id = draft?.id;
+      let id = source.multiple ? sourceDraft?.id : undefined;
       for (const [i, file] of files.entries()) {
         setUploading({ at: i + 1, of: files.length });
-        id = (await api.uploadImportFile(file, id)).id;
+        id = (await api.uploadImportFile(file, id, source.id)).id;
       }
     },
     onSettled: () => {
@@ -222,10 +247,10 @@ export function ImportFlow(props: {
   const error = upload.error ?? preview.error ?? start.error;
   const stepNumber = IMPORT_STEPS.findIndex((s) => s.id === step) + 1;
   const title = {
-    source: 'Where is this import from?',
-    files: `Add your ${source.label} files`,
+    source: 'Choose a source',
+    files: `Add your ${source.label} export`,
     settings: 'Choose what to import',
-    review: 'Check and import',
+    review: 'Review',
   }[step];
 
   return (
@@ -267,19 +292,41 @@ export function ImportFlow(props: {
         {step === 'files' && (
           <SettingRow
             label="Export files"
-            description={draft ? draft.files.join(', ') : source.instructions}
+            // The instructions stay, and the files take one line under them, so adding some
+            // doesn't move what's below.
+            description={
+              <>
+                <span className="block">{source.instructions}</span>
+                <span
+                  className="mt-1 block truncate text-(--text-secondary)"
+                  title={sourceDraft?.files.join(', ')}
+                >
+                  {sourceDraft
+                    ? sourceDraft.files.join(', ')
+                    : source.multiple
+                      ? 'No files added yet.'
+                      : 'No file added yet.'}
+                </span>
+              </>
+            }
           >
             <label
-              className={`${draft ? secondaryButton : primaryButton} cursor-pointer focus-within:outline-2`}
+              className={`${sourceDraft ? secondaryButton : primaryButton} cursor-pointer focus-within:outline-2`}
             >
               {uploading
-                ? `Uploading ${uploading.at} of ${uploading.of}…`
-                : draft
-                  ? 'Add more'
-                  : 'Choose files'}
+                ? source.multiple
+                  ? `Uploading ${uploading.at} of ${uploading.of}…`
+                  : 'Uploading…'
+                : !sourceDraft
+                  ? source.multiple
+                    ? 'Choose files'
+                    : 'Choose file'
+                  : source.multiple
+                    ? 'Add more'
+                    : 'Choose another'}
               <input
                 type="file"
-                multiple
+                multiple={source.multiple}
                 accept={source.accept}
                 className="sr-only"
                 disabled={upload.isPending}
@@ -298,20 +345,29 @@ export function ImportFlow(props: {
 
         {step === 'settings' && (
           <>
-            <SettingRow label="Vehicle" htmlFor="import-vehicle" description={source.vehicleHelp}>
-              <Select
-                id="import-vehicle"
-                label="Vehicle"
-                value={chosen}
-                options={props.vehicles.map((v) => ({
-                  value: v.id,
-                  label: v.name ?? `${v.modelYear ?? ''} ${v.model ?? 'Vehicle'}`.trim(),
-                }))}
-                onChange={(value) => {
-                  setVehicleId(value);
-                  stale();
-                }}
-              />
+            <SettingRow
+              label="Vehicle"
+              htmlFor={eligible.length > 0 ? 'import-vehicle' : undefined}
+              description={
+                eligible.length > 0 ? source.vehicleHelp : 'No vehicle in this export is connected.'
+              }
+            >
+              {draft?.vehicleIds && eligible.length === 1 ? (
+                <span className="text-sm font-medium">{vehicleName(eligible[0]!)}</span>
+              ) : (
+                eligible.length > 0 && (
+                  <Select
+                    id="import-vehicle"
+                    label="Vehicle"
+                    value={chosen}
+                    options={eligible.map((v) => ({ value: v.id, label: vehicleName(v) }))}
+                    onChange={(value) => {
+                      setVehicleId(value);
+                      stale();
+                    }}
+                  />
+                )
+              )}
             </SettingRow>
             <SettingRow label="Time zone" htmlFor="import-zone" description={source.timeZoneHelp}>
               <Select
@@ -328,13 +384,32 @@ export function ImportFlow(props: {
             <SettingRow
               label="Dates"
               description={
-                readingForDates
-                  ? 'Reading your files… Large exports can take a minute.'
-                  : `${
-                      covered?.first && covered.last
-                        ? `Your files cover ${formatDay(covered.first)} to ${formatDay(covered.last)}. `
-                        : ''
-                    }A drive or charge that starts in the range is imported whole.`
+                <>
+                  <span className="block">
+                    Drives and charges starting in the range are imported whole.
+                  </span>
+                  <SteadyText
+                    shown={readingForDates ? 0 : covered?.first && covered.last ? 1 : 2}
+                    texts={[
+                      'Reading files…',
+                      <>
+                        Files cover {formatDay(covered?.first ?? '2026-09-30')} to{' '}
+                        {formatDay(covered?.last ?? '2026-09-30')}.{' '}
+                        {/* Its space is kept, so it showing doesn't re-wrap the line. */}
+                        <button
+                          className={`${linkButton} ${narrowed ? '' : 'invisible'}`}
+                          onClick={() => {
+                            stale();
+                            setNarrowed(false);
+                          }}
+                        >
+                          Use all dates
+                        </button>
+                      </>,
+                      'Choose the dates.',
+                    ]}
+                  />
+                </>
               }
             >
               <input
@@ -358,17 +433,6 @@ export function ImportFlow(props: {
                 max={covered?.last ?? undefined}
                 onChange={(e) => narrow(setTo, e.target.value)}
               />
-              {narrowed && (
-                <button
-                  className={secondaryButton}
-                  onClick={() => {
-                    stale();
-                    setNarrowed(false);
-                  }}
-                >
-                  All dates
-                </button>
-              )}
             </SettingRow>
           </>
         )}
@@ -376,9 +440,10 @@ export function ImportFlow(props: {
         {step === 'review' && (
           <div className="px-4 py-3.5">
             <p className="text-sm font-medium">
-              {preview.isPending ? 'Reading your files…' : (summary?.label ?? 'No preview yet')}
+              {preview.isPending ? 'Reading files…' : (summary?.label ?? 'No preview yet')}
             </p>
-            <div className="mt-1 text-sm text-(--text-secondary)">
+            {/* Room for the usual two lines, so the summary arriving doesn't push the buttons down. */}
+            <div className="mt-1 min-h-10 text-sm text-(--text-secondary)">
               {preview.isPending
                 ? 'Large exports can take a minute.'
                 : summary?.details.map((line) => <div key={line}>{line}</div>)}
@@ -396,10 +461,10 @@ export function ImportFlow(props: {
 
         {/* Above the review's list, so its length never puts these out of reach. */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
             {step !== 'source' && (
               <button
-                className={textButton}
+                className={secondaryButton}
                 disabled={upload.isPending || start.isPending}
                 onClick={() => setStep(IMPORT_STEPS[stepNumber - 2]!.id)}
               >
@@ -407,7 +472,7 @@ export function ImportFlow(props: {
               </button>
             )}
             <button
-              className={textButton}
+              className={secondaryButton}
               disabled={upload.isPending || start.isPending}
               onClick={props.onExit}
             >
@@ -415,9 +480,7 @@ export function ImportFlow(props: {
             </button>
             {draft && (
               <button
-                className={
-                  'font-medium text-(--status-critical) underline decoration-dotted underline-offset-2 disabled:opacity-50'
-                }
+                className={`${dangerButton} disabled:opacity-50`}
                 disabled={upload.isPending || start.isPending}
                 onClick={() => setDiscarding(true)}
               >
@@ -434,7 +497,7 @@ export function ImportFlow(props: {
           {step === 'files' && (
             <button
               className={primaryButton}
-              disabled={!draft || upload.isPending}
+              disabled={!sourceDraft || upload.isPending}
               onClick={() => setStep('settings')}
             >
               Continue
@@ -475,6 +538,29 @@ export function ImportFlow(props: {
   );
 }
 
+const vehicleName = (v: VehicleDto) =>
+  v.name ?? `${v.modelYear ?? ''} ${v.model ?? 'Vehicle'}`.trim();
+
+/**
+ * One of several texts, in a space as tall as the longest wraps to, so
+ * changing which shows doesn't move what's below.
+ */
+export function SteadyText(props: { texts: readonly ReactNode[]; shown: number }) {
+  return (
+    <span className="grid" aria-live="polite">
+      {props.texts.map((text, i) => (
+        <span
+          key={i}
+          aria-hidden={i !== props.shown || undefined}
+          className={`[grid-area:1/1] ${i === props.shown ? '' : 'invisible'}`}
+        >
+          {text}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** A calendar date like 2026-10-30, as "Oct 30, 2026". */
 export function formatDay(date: string): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -491,7 +577,8 @@ export function importSummary(p: ImportPreviewDto): {
   details: string[];
   canImport: boolean;
 } {
-  const canImport = p.drivesNew + p.sessionsNew + p.sessionsEnriched + p.readingsNew > 0;
+  const canImport =
+    p.drivesNew + p.sessionsNew + p.sessionsEnriched + p.readingsNew + p.placesNew.length > 0;
   if (!canImport) {
     return {
       label: 'Nothing new to import',
@@ -501,14 +588,17 @@ export function importSummary(p: ImportPreviewDto): {
   }
   const also = [
     p.readingsNew > 0 && `${plural(p.readingsNew, 'history reading')}`,
-    p.sessionsEnriched > 0 && `detail on ${plural(p.sessionsEnriched, 'existing charge')}`,
-  ].filter(Boolean);
+    p.sessionsEnriched > 0 && `detail on ${plural(p.sessionsEnriched, 'charge')}`,
+    p.placesNew.length > 0 && `${plural(p.placesNew.length, 'place')} (${p.placesNew.join(', ')})`,
+  ].filter((part): part is string => !!part);
   return {
     label: `Import ${plural(p.drivesNew, 'drive')} and ${plural(p.sessionsNew, 'charge')}`,
     details: [
-      also.length > 0 && `Also adds ${also.join(' and ')}.`,
+      also.length > 0 && `Also adds ${listOf(also)}.`,
       p.readingsRecorded > 0 &&
-        `Skips ${plural(p.readingsRecorded, 'history reading')} from times RivianMate was already recording.`,
+        `Skips ${plural(p.readingsRecorded, 'reading')} RivianMate already has.`,
+      p.placesRecorded > 0 && `Skips ${plural(p.placesRecorded, 'place')} already saved.`,
+      p.readingsNewer > 0 && `Leaves ${plural(p.readingsNewer, 'newer reading')} to live tracking.`,
     ].filter((line): line is string => !!line),
     canImport,
   };
@@ -522,13 +612,11 @@ export function PreviewRows(props: { preview: ImportPreviewDto }) {
       {p.unreadableRows > 0 && (
         <SettingRow
           label="Unreadable rows"
-          description={`${plural(p.unreadableRows, 'row')} had no readable date and will be left out.`}
+          description={`${plural(p.unreadableRows, 'row')} will be left out.`}
         />
       )}
       {p.warnings.includes('future') && (
-        <Warning>
-          Some rows would be in the future in this time zone, so it’s probably not the export’s.
-        </Warning>
+        <Warning>Some rows land in the future in this time zone. Check the time zone.</Warning>
       )}
     </>
   );
@@ -537,8 +625,7 @@ export function PreviewRows(props: { preview: ImportPreviewDto }) {
 export function OdometerWarning() {
   return (
     <p role="alert" className="px-4 py-3 text-sm text-(--status-warning)">
-      The odometer in this file doesn’t fit this vehicle’s recorded mileage. Check that it’s the
-      right car and time zone.
+      The odometer doesn’t match this vehicle’s mileage. Check the vehicle and time zone.
     </p>
   );
 }
