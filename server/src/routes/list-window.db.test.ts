@@ -150,6 +150,44 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     });
   });
 
+  it("averages a long window's points per drive, and keeps a short one's", async () => {
+    const [drive] = await handle.db
+      .insert(drives)
+      .values({ vehicleId: 'v1', startedAt: day(10), endedAt: day(10), distanceKm: 5 })
+      .returning();
+    // A point a second for a minute, heading north, from a bucket's start.
+    const t0 = Date.UTC(2026, 9, 10, 12, 0, 0);
+    await handle.db.insert(locationPoints).values(
+      Array.from({ length: 60 }, (_, i) => ({
+        vehicleId: 'v1',
+        ts: new Date(t0 + i * 1000),
+        lat: 40 + i * 0.0001,
+        lon: -88,
+        bearing: 0,
+        driveId: drive!.id,
+      })),
+    );
+    type Point = { ts: string; lat: number; driveId: number | null };
+    const at = (from: Date, to: Date) =>
+      get<Point[]>(`/api/vehicles/v1/locations?from=${from.toISOString()}&to=${to.toISOString()}`);
+
+    // A straight line simplifies to its ends either way; what differs is where they are.
+    const short = await at(day(9), day(12));
+    expect(short.map((p) => p.ts)).toEqual([
+      new Date(t0).toISOString(),
+      new Date(t0 + 59_000).toISOString(),
+    ]);
+    // Over a year, 15 seconds a point: the first averages the first 15.
+    const long = await at(new Date(t0 - 300 * 86_400_000), day(20));
+    expect(long[0]!.ts).toBe(new Date(t0).toISOString());
+    expect(long[0]!.lat).toBeCloseTo(40 + 7 * 0.0001, 6);
+    expect(long.at(-1)!.ts).toBe(new Date(t0 + 45_000).toISOString());
+    expect(new Set([...short, ...long].map((p) => p.driveId))).toEqual(
+      new Set([short[0]!.driveId]),
+    );
+    expect(Number(long[0]!.driveId)).toBe(drive!.id);
+  });
+
   it('counts time moving, leaving out stops even between readings at speed', async () => {
     const [row] = await handle.db
       .insert(drives)

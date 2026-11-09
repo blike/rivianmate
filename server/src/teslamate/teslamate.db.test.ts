@@ -362,6 +362,12 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     const trail = await source.locations('tm-1', from, to);
     // Each drive keeps its route's ends (drive 1 runs straight); parked points stay apart.
     expect(trail.map((p) => p.driveId ?? null)).toEqual([1, 1, null, 2, 2]);
+    // Over a long window positions are averaged per drive in SQL; these are minutes
+    // apart, so each is its own bucket and comes back as it was.
+    const long = await source.locations('tm-1', new Date(Date.now() - 60 * 86_400_000), to);
+    expect(long.map((p) => p.driveId ?? null)).toEqual([1, 1, null, 2, 2]);
+    expect(long.map(({ lat, lon }) => [lat, lon])).toEqual(trail.map(({ lat, lon }) => [lat, lon]));
+    expect(typeof long[0]!.speedKmh).toBe('number');
   });
 
   it('reads what the car was doing: awake, then the drive under way', async () => {

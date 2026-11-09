@@ -50,10 +50,11 @@ export function simplifyTrack(
 
 /**
  * At most this many points for a window's routes. A year of daily driving
- * simplified at 20 m is around 50,000; past this, points are dropped evenly
+ * simplified at 20 m is around 50,000, and three years of a heavily driven
+ * car around 185,000, so all time fits; past this, points are dropped evenly
  * and routes start cutting corners.
  */
-export const MAX_TRACK_POINTS = 60_000;
+export const MAX_TRACK_POINTS = 200_000;
 
 /**
  * How far a simplified drive may stray from its recorded points: tighter for
@@ -62,6 +63,19 @@ export const MAX_TRACK_POINTS = 60_000;
 export function trackToleranceM(from: Date, to: Date): number {
   const days = (to.getTime() - from.getTime()) / 86400_000;
   return days <= 7 ? 5 : days <= 31 ? 10 : 20;
+}
+
+/**
+ * How many seconds of a drive's positions are averaged into one before it is
+ * simplified, as TeslaMate's Grafana maps do: none up to a week, so close-up
+ * routes keep every point; 5 up to a month; 15 past that. Fifteen seconds keeps
+ * routes within about 25 m of the road 95% of the time, while reading a tenth
+ * of the rows or fewer; a minute, as TeslaMate's Visited map uses, cuts corners
+ * by hundreds of metres.
+ */
+export function trackBucketSeconds(from: Date, to: Date): number | null {
+  const days = (to.getTime() - from.getTime()) / 86400_000;
+  return days <= 7 ? null : days <= 31 ? 5 : 15;
 }
 
 /**

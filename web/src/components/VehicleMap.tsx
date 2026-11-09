@@ -9,6 +9,7 @@ export const MAP_HEIGHT = '20rem';
 const ROUTE = 'route';
 const ROUTE_START = 'route-start';
 const ROUTE_HOVER = 'route-hover';
+const ROUTE_GAPS = 'route-gaps';
 const PLAN = 'plan';
 const PLAN_END = 'plan-end';
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -61,6 +62,20 @@ function addRouteLayers(map: MapLibreMap, history: boolean) {
       'circle-color': MAP_THEME.background,
       'circle-stroke-color': MAP_THEME.accent,
       'circle-stroke-width': 3,
+    },
+  });
+  // Breaks in the record between drives, faint and dashed so they don't read as roads.
+  map.addSource(ROUTE_GAPS, { type: 'geojson', data: EMPTY });
+  map.addLayer({
+    id: 'route-gaps',
+    type: 'line',
+    source: ROUTE_GAPS,
+    layout: { 'line-cap': 'round' },
+    paint: {
+      'line-color': MAP_THEME.accent,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 16, 2],
+      'line-opacity': 0.35,
+      'line-dasharray': [2, 3],
     },
   });
   map.addSource(ROUTE, { type: 'geojson', data: EMPTY, lineMetrics: true });
@@ -154,11 +169,17 @@ const FIT = { padding: 48, maxZoom: 16 };
 /** The box around a route, or null when there isn't one to frame. */
 function routeBounds(trail: [number, number][] | undefined): LngLatBoundsLike | null {
   if (!trail || trail.length < 2) return null;
-  const lats = trail.map((p) => p[0]);
-  const lons = trail.map((p) => p[1]);
+  // A loop, not Math.min(...): spreading a long history's points overflows the stack.
+  let [minLat, minLon, maxLat, maxLon] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [lat, lon] of trail) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+  }
   return [
-    [Math.min(...lons), Math.min(...lats)],
-    [Math.max(...lons), Math.max(...lats)],
+    [minLon, minLat],
+    [maxLon, maxLat],
   ];
 }
 
@@ -189,6 +210,8 @@ export function VehicleMap(props: {
   trail?: [number, number][];
   /** Separate trips, as [lat, lon] lines; in place of `trail`. */
   trips?: [number, number][][];
+  /** Stretches with nothing recorded, as two-point [lat, lon] lines drawn dashed. */
+  gaps?: [number, number][][];
   height?: string;
   follow?: boolean;
   /** History is an overview: no endpoint markers or time-based fade. */
@@ -343,6 +366,19 @@ export function VehicleMap(props: {
         }
       : EMPTY;
     (map.getSource(ROUTE) as GeoJSONSource | undefined)?.setData(line);
+    const gaps = latest.current.gaps ?? [];
+    (map.getSource(ROUTE_GAPS) as GeoJSONSource | undefined)?.setData(
+      gaps.length
+        ? {
+            type: 'FeatureCollection',
+            features: gaps.map((g) => ({
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'LineString', coordinates: g.map(toLngLat) },
+            })),
+          }
+        : EMPTY,
+    );
     (map.getSource(ROUTE_START) as GeoJSONSource | undefined)?.setData(start);
     const route = framing(latest.current);
     if (route) map.fitBounds(route, { ...FIT, duration: 0 });

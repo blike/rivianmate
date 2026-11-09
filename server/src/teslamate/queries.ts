@@ -660,44 +660,41 @@ export interface LocationRow {
 }
 
 /**
- * The car's positions over [from, to], about `max` of them spread evenly
- * through it, plus its first and last, in time order.
- *
- * Numbering every position to pick evenly sorts millions over a year, so
- * positions are picked by id instead: ids rise as positions arrive, and
- * every nth is kept, with n from how many ids the window spans. The span
- * comes from the window's first and last full reports (a few in a hundred
- * positions, with an index of their own), and every position up to the
- * first or from the last is kept too, so the window's ends are. Other
- * cars' positions share the ids, so with several cars each gets fewer;
- * positions imported later with old dates are thinned more.
+ * The car's positions over [from, to], in time order. With `bucketSeconds`,
+ * each drive's positions are averaged into one per that many seconds, as
+ * TeslaMate's own Grafana maps do: TeslaMate logs a position every second or
+ * so while driving, far more than a route needs over a long window, and
+ * averaging in SQL keeps the read to a few hundred thousand rows over years
+ * rather than millions. Without it, every position.
  */
 export function locations(
   sql: Sql,
   carId: number,
   from: Date,
   to: Date,
-  max: number,
+  bucketSeconds: number | null,
 ): Promise<LocationRow[]> {
-  const reports = sql`
-    SELECT id, date FROM positions
-    WHERE car_id = ${carId} AND ideal_battery_range_km IS NOT NULL
-      AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
-  `;
+  const where = sql`car_id = ${carId} AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}`;
+  if (bucketSeconds == null) {
+    return sql<LocationRow[]>`
+      SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
+             speed, elevation, drive_id::int AS drive_id
+      FROM positions WHERE ${where}
+      ORDER BY date
+    `;
+  }
   return sql<LocationRow[]>`
-    WITH span AS MATERIALIZED (
-      SELECT f.date AS first_date, l.date AS last_date,
-             GREATEST(1, CEIL(ABS(l.id - f.id) / ${max}::float8))::int AS step
-      FROM (${reports} ORDER BY date LIMIT 1) f, (${reports} ORDER BY date DESC LIMIT 1) l
-    )
-    SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
-           speed, elevation, drive_id::int AS drive_id
-    FROM positions
-    WHERE car_id = ${carId} AND date BETWEEN ${at(sql, from)} AND ${at(sql, to)}
-      -- Without a full report there's no span, and every position is kept: there are few.
-      AND (id % COALESCE((SELECT step FROM span), 1) = 0
-           OR date <= (SELECT first_date FROM span) OR date >= (SELECT last_date FROM span))
-    ORDER BY date
+    SELECT (MIN(date) AT TIME ZONE 'UTC') AS ts,
+           AVG(latitude)::float8 AS lat, AVG(longitude)::float8 AS lon,
+           ROUND(AVG(speed))::int AS speed, ROUND(AVG(elevation))::int AS elevation,
+           drive_id::int AS drive_id
+    FROM (
+      SELECT date, latitude, longitude, speed, elevation, drive_id,
+             date_bin(${`${bucketSeconds} seconds`}::interval, date, TIMESTAMP '2000-01-01') AS bucket
+      FROM positions WHERE ${where}
+    ) p
+    GROUP BY drive_id, bucket
+    ORDER BY 1
   `;
 }
 
