@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   activityBands,
   distanceByPeriod,
+  tripGaps,
   tripLines,
   periodSummary,
   positionAt,
@@ -232,5 +233,26 @@ describe('tripLines', () => {
         [6, 0],
       ],
     ]);
+  });
+});
+
+describe('tripGaps', () => {
+  // About 11 m per 0.0001° of latitude.
+  const trip = (...lats: number[]) => lats.map((lat) => [lat, -119.9] as [number, number]);
+
+  it("joins one drive's end to the next one's start when the car moved unrecorded", () => {
+    const trips = [trip(37.5, 37.52), trip(37.68, 37.7)];
+    expect(tripGaps(trips)).toEqual([
+      [
+        [37.52, -119.9],
+        [37.68, -119.9],
+      ],
+    ]);
+  });
+
+  it('leaves drives that pick up where the last one ended', () => {
+    // 100 m apart: parked and drove on.
+    expect(tripGaps([trip(37.5, 37.52), trip(37.5209, 37.53)])).toEqual([]);
+    expect(tripGaps([trip(37.5)])).toEqual([]);
   });
 });

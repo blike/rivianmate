@@ -30,7 +30,7 @@ import { type PlaceContext, placeContext } from './charging.js';
 import { listLimit, listWindowSchema } from './list-window.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
-import { thinTrack, trackToleranceM } from '../services/simplify-track.js';
+import { thinTrack, trackBucketSeconds, trackToleranceM } from '../services/simplify-track.js';
 import { bucketSeries, latestNumber, numericSeries } from '../services/state-history.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
@@ -151,13 +151,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
         bearing: number | null;
         altitude: number | null;
         drive_id: number | null;
-      }>(sql`
-        SELECT ts, lat, lon, speed_kmh, bearing, altitude, drive_id
-        FROM location_points
-        WHERE vehicle_id = ${request.params.id}
-          AND ts BETWEEN ${q.from.toISOString()}::timestamptz AND ${q.to.toISOString()}::timestamptz
-        ORDER BY ts
-      `);
+      }>(locationRows(request.params.id, q.from, q.to));
       const kept = thinTrack(rows, (r) => r.drive_id, trackToleranceM(q.from, q.to));
       return kept.map((r) => ({
         ts: new Date(r.ts).toISOString(),
@@ -283,6 +277,35 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
 }
 
 /** A vehicle's recorded drives as the API shows them. */
+/**
+ * A vehicle's location points over [from, to], in time order: each drive's
+ * averaged into one per `trackBucketSeconds`, as TeslaMate's are, or every
+ * point for a short window. A bucket's bearing is its first, since bearings
+ * don't average across north.
+ */
+function locationRows(vehicleId: string, from: Date, to: Date) {
+  const where = sql`vehicle_id = ${vehicleId}
+    AND ts BETWEEN ${from.toISOString()}::timestamptz AND ${to.toISOString()}::timestamptz`;
+  const bucketSeconds = trackBucketSeconds(from, to);
+  if (bucketSeconds == null) {
+    return sql`
+      SELECT ts, lat, lon, speed_kmh, bearing, altitude, drive_id
+      FROM location_points WHERE ${where}
+      ORDER BY ts
+    `;
+  }
+  return sql`
+    SELECT MIN(ts) AS ts, AVG(lat) AS lat, AVG(lon) AS lon, AVG(speed_kmh) AS speed_kmh,
+           (ARRAY_AGG(bearing ORDER BY ts))[1] AS bearing, AVG(altitude) AS altitude, drive_id
+    FROM (
+      SELECT *, date_bin(${`${bucketSeconds} seconds`}::interval, ts, TIMESTAMPTZ '2000-01-01') AS bucket
+      FROM location_points WHERE ${where}
+    ) p
+    GROUP BY drive_id, bucket
+    ORDER BY 1
+  `;
+}
+
 export async function driveDtos(
   ctx: AppContext,
   vehicleId: string,

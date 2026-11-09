@@ -23,6 +23,7 @@ import {
   positionAt,
   rangeWindow,
   stateRows,
+  tripGaps,
   tripLines,
 } from './history';
 import {
@@ -168,6 +169,7 @@ export function HistoryPage(props: { vehicleId: string }) {
     () => tripLines((trail ?? []).filter((p) => isPosition(p.lat, p.lon))),
     [trail],
   );
+  const gaps = useMemo(() => tripGaps(trips), [trips]);
   const lastPosition = fixes.at(-1);
   // Hovering the timeline marks where the vehicle was at that moment.
   const [hoverTs, setHoverTs] = useState<number | null>(null);
@@ -269,6 +271,7 @@ export function HistoryPage(props: { vehicleId: string }) {
                         lat={lastPosition.lat}
                         lon={lastPosition.lon}
                         trips={trips}
+                        gaps={gaps}
                         variant="history"
                         height="100%"
                         follow={false}

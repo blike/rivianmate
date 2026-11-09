@@ -22,7 +22,7 @@ import { type Logger, silentLogger } from '../logger.js';
 import type { VehicleState } from '../rivian/types.js';
 import { type DrainSnapshot, parkedLoss, phantomDrain } from '../services/health.js';
 import type { LiveBus } from '../services/live-bus.js';
-import { thinTrack, trackToleranceM } from '../services/simplify-track.js';
+import { thinTrack, trackBucketSeconds, trackToleranceM } from '../services/simplify-track.js';
 import { stateNumber } from '../services/state-utils.js';
 import { teslamateCarId } from './ids.js';
 import {
@@ -62,11 +62,6 @@ const CARS_REFRESH_MS = 10 * 60_000;
  */
 const ACTIVE_STALE_MS = 30 * 60_000;
 
-/**
- * TeslaMate logs a position every few seconds; a long window is thinned
- * evenly to about this many before its drives are simplified.
- */
-const MAX_LOCATION_ROWS = 200_000;
 const MAX_DRIVE_POINTS = 10_000;
 /** Energy used while parked over the last day and week. */
 const PARKED_WINDOW_MINUTES = [24 * 60, 7 * 24 * 60];
@@ -580,7 +575,7 @@ export class TeslaMateSource {
   async locations(vehicleId: string, from: Date, to: Date): Promise<LocationPointDto[]> {
     const car = this.need(vehicleId);
     if (!car) return [];
-    const rows = await q.locations(this.db(), car.row.id, from, to, MAX_LOCATION_ROWS);
+    const rows = await q.locations(this.db(), car.row.id, from, to, trackBucketSeconds(from, to));
     const kept = thinTrack(rows, (r) => r.drive_id, trackToleranceM(from, to));
     return kept.map((r) => ({
       ts: r.ts.toISOString(),

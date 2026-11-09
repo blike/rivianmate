@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { simplifyTrack, thinTrack } from './simplify-track.js';
+import { simplifyTrack, thinTrack, trackBucketSeconds } from './simplify-track.js';
 
 // About 11 m per 0.0001° of latitude.
 const p = (lat: number, lon: number) => ({ lat, lon });
@@ -48,5 +48,15 @@ describe('thinTrack', () => {
     expect(kept.length).toBeLessThanOrEqual(11);
     expect(kept[0]).toBe(parked[0]);
     expect(kept.at(-1)).toBe(parked[99]);
+  });
+});
+
+describe('trackBucketSeconds', () => {
+  const span = (days: number) => [new Date(0), new Date(days * 86_400_000)] as const;
+  it('keeps every point up to a week, then averages more coarsely', () => {
+    expect(trackBucketSeconds(...span(7))).toBeNull();
+    expect(trackBucketSeconds(...span(30))).toBe(5);
+    expect(trackBucketSeconds(...span(365))).toBe(15);
+    expect(trackBucketSeconds(...span(3 * 365))).toBe(15);
   });
 });

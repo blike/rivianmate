@@ -1,5 +1,7 @@
 /** Pure calculations for the History page. */
 
+import { haversineKm } from '../../lib/geo';
+
 export interface PeriodDrive {
   startedAt: string;
   endedAt: string | null;
@@ -295,4 +297,32 @@ export function tripLines(
     trips.at(-1)!.push([p.lat, p.lon]);
   }
   return trips;
+}
+
+/** How far apart one drive's end and the next one's start must be to draw a gap between them. */
+export const GAP_MIN_M = 300;
+
+/**
+ * Where the record breaks between drives: from each drive's last point to the
+ * next one's first, when they're more than `minM` apart. The car moved with
+ * nothing logged (no signal, or offline), so these are drawn as gaps rather
+ * than joined up as though they were roads.
+ */
+export function tripGaps(
+  trips: readonly (readonly [number, number])[][],
+  minM = GAP_MIN_M,
+): [number, number][][] {
+  const gaps: [number, number][][] = [];
+  for (let i = 1; i < trips.length; i++) {
+    const end = trips[i - 1]!.at(-1);
+    const start = trips[i]![0];
+    if (!end || !start) continue;
+    if (haversineKm(end[0], end[1], start[0], start[1]) * 1000 > minM) {
+      gaps.push([
+        [end[0], end[1]],
+        [start[0], start[1]],
+      ]);
+    }
+  }
+  return gaps;
 }
