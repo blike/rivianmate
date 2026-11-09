@@ -48,7 +48,7 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
           limit: listLimit(q),
         });
       }
-      const rows = await ctx.db
+      const query = ctx.db
         .select()
         .from(chargingSessions)
         .where(
@@ -60,7 +60,9 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
           ),
         )
         .orderBy(desc(chargingSessions.startedAt))
-        .limit(listLimit(q));
+        .$dynamic();
+      const limit = listLimit(q);
+      const rows = await (limit ? query.limit(limit) : query);
       return sessionDtos(ctx, request.params.id, rows);
     },
   );

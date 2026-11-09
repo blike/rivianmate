@@ -32,7 +32,6 @@ import { tripStats } from '../services/trip-stats.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 import { placeContext, sessionDtos } from './charging.js';
 import { driveDtos } from './history.js';
-import { WINDOW_LIMIT } from './list-window.js';
 
 const MAX_NAME = 120;
 const MAX_NOTES = 5000;
@@ -310,7 +309,7 @@ export async function tripRoutes(app: FastifyInstance, ctx: AppContext): Promise
         items.filter((i) => i.endedAt != null);
       if (isTeslaMateVehicle(vehicleId)) {
         const places = await placeContext(ctx);
-        const window = { from, to, limit: WINDOW_LIMIT };
+        const window = { from, to };
         return {
           drives: finished(await ctx.teslamate.drives(vehicleId, places, window)),
           sessions: finished(await ctx.teslamate.chargingSessions(vehicleId, places, window)),
@@ -322,14 +321,12 @@ export async function tripRoutes(app: FastifyInstance, ctx: AppContext): Promise
         .select()
         .from(drives)
         .where(drivesBetween(vehicleId, from, to))
-        .orderBy(desc(drives.startedAt))
-        .limit(WINDOW_LIMIT);
+        .orderBy(desc(drives.startedAt));
       const sessionRows = await ctx.db
         .select()
         .from(chargingSessions)
         .where(sessionsBetween(vehicleId, from, to))
-        .orderBy(desc(chargingSessions.startedAt))
-        .limit(WINDOW_LIMIT);
+        .orderBy(desc(chargingSessions.startedAt));
       return {
         drives: await driveDtos(ctx, vehicleId, driveRows),
         sessions: await sessionDtos(ctx, vehicleId, sessionRows),
@@ -567,7 +564,7 @@ async function activitiesBetween(
     items.filter((i) => i.endedAt != null).map((i) => ({ kind, activityId: i.id }));
   if (isTeslaMateVehicle(vehicleId)) {
     const places = await placeContext(ctx);
-    const window = { from, to, limit: WINDOW_LIMIT };
+    const window = { from, to };
     return [
       ...refs('drive', await ctx.teslamate.drives(vehicleId, places, window)),
       ...refs('charge', await ctx.teslamate.chargingSessions(vehicleId, places, window)),
@@ -576,13 +573,11 @@ async function activitiesBetween(
   const driveRows = await ctx.db
     .select({ id: drives.id, endedAt: drives.endedAt })
     .from(drives)
-    .where(drivesBetween(vehicleId, from, to))
-    .limit(WINDOW_LIMIT);
+    .where(drivesBetween(vehicleId, from, to));
   const sessionRows = await ctx.db
     .select({ id: chargingSessions.id, endedAt: chargingSessions.endedAt })
     .from(chargingSessions)
-    .where(sessionsBetween(vehicleId, from, to))
-    .limit(WINDOW_LIMIT);
+    .where(sessionsBetween(vehicleId, from, to));
   return [...refs('drive', driveRows), ...refs('charge', sessionRows)];
 }
 

@@ -197,7 +197,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           limit: listLimit(q),
         });
       }
-      const rows = await ctx.db
+      const query = ctx.db
         .select()
         .from(drives)
         .where(
@@ -215,7 +215,9 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           ),
         )
         .orderBy(desc(drives.startedAt))
-        .limit(listLimit(q));
+        .$dynamic();
+      const limit = listLimit(q);
+      const rows = await (limit ? query.limit(limit) : query);
       return driveDtos(ctx, request.params.id, rows);
     },
   );
