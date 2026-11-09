@@ -154,11 +154,17 @@ const FIT = { padding: 48, maxZoom: 16 };
 /** The box around a route, or null when there isn't one to frame. */
 function routeBounds(trail: [number, number][] | undefined): LngLatBoundsLike | null {
   if (!trail || trail.length < 2) return null;
-  const lats = trail.map((p) => p[0]);
-  const lons = trail.map((p) => p[1]);
+  // A loop, not Math.min(...): spreading a long history's points overflows the stack.
+  let [minLat, minLon, maxLat, maxLon] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [lat, lon] of trail) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+  }
   return [
-    [Math.min(...lons), Math.min(...lats)],
-    [Math.max(...lons), Math.max(...lats)],
+    [minLon, minLat],
+    [maxLon, maxLat],
   ];
 }
 

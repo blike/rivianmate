@@ -86,8 +86,9 @@ export function TimeTrace(props: {
   const [lo, hi] = useMemo(() => {
     if (props.domain) return props.domain;
     if (values.length === 0) return [0, 1];
-    let min = Math.min(...values);
-    let max = Math.max(...values);
+    // Reduced, not spread: a long history has more values than a call takes arguments.
+    let min = values.reduce((a, b) => (b < a ? b : a), Infinity);
+    let max = values.reduce((a, b) => (b > a ? b : a), -Infinity);
     if (max - min < 1e-6) {
       min -= 1;
       max += 1;

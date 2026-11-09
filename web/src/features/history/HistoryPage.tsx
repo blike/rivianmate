@@ -28,6 +28,7 @@ import {
   isAllTime,
   prefetchRanges,
   PREFETCH_FRESH_MS,
+  refreshOf,
   type Range,
   type RangeLabel,
   RANGES,
@@ -76,6 +77,7 @@ export function HistoryPage(props: { vehicleId: string }) {
   // All time has no fixed length: it runs from the first drive recorded.
   const drivesSince = coverage?.since;
   const anchor = isAllTime(range) ? drivesSince : undefined;
+  const refresh = refreshOf(range);
   const { from, to } = useMemo(
     () => rangeWindow(range.hours, new Date(), anchor),
     [range.hours, anchor],
@@ -91,9 +93,14 @@ export function HistoryPage(props: { vehicleId: string }) {
 
   // Everything in the window, not just the newest few hundred. Until the anchor lands
   // their window is zero-width, so they would draw empty figures rather than wait.
-  const drivesResult = useQuery({ ...drivesQuery(props.vehicleId, from), enabled: windowReady });
+  const drivesResult = useQuery({
+    ...drivesQuery(props.vehicleId, from),
+    ...refresh,
+    enabled: windowReady,
+  });
   const sessionsResult = useQuery({
     ...chargingSessionsQuery(props.vehicleId, from),
+    ...refresh,
     enabled: windowReady,
   });
   const { data: drives, isPending: drivesPending } = drivesResult;
@@ -110,18 +117,22 @@ export function HistoryPage(props: { vehicleId: string }) {
     enabled: coverage !== undefined,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
+    ...refresh,
   });
   const { data: battery } = batteryResult;
   const chargeSpansResult = useQuery({
     ...chargeSpansQuery(props.vehicleId, range, { from, to }),
+    ...refresh,
     enabled: windowReady,
   });
   const stateSpansResult = useQuery({
     ...stateSpansQuery(props.vehicleId, range, { from, to }),
+    ...refresh,
     enabled: windowReady,
   });
   const trailResult = useQuery({
     ...locationsQuery(props.vehicleId, range, { from, to }),
+    ...refresh,
     enabled: windowReady,
   });
   const { data: chargeSpans, isPending: chargeSpansPending } = chargeSpansResult;

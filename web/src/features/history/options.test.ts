@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAllTime, prefetchRanges, RANGES, rangeOf } from './options';
+import { isAllTime, prefetchRanges, RANGES, rangeOf, refreshOf } from './options';
 
 describe('periods', () => {
   it('ends the list with all time, the only period of no fixed length', () => {
@@ -14,5 +14,11 @@ describe('periods', () => {
     expect(prefetchRanges(rangeOf('7d')).map((r) => r.label)).toEqual(['24h', '14d']);
     // All time still loads the bounded period beside it.
     expect(prefetchRanges(rangeOf('all')).map((r) => r.label)).toEqual(['12m']);
+  });
+
+  it('reads all time once instead of polling it', () => {
+    expect(refreshOf(rangeOf('all'))).toMatchObject({ refetchInterval: false });
+    // Fixed-length periods keep their own polling.
+    expect(refreshOf(rangeOf('12m'))).toEqual({});
   });
 });

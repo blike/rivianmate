@@ -7,7 +7,7 @@ import { ContentFrame } from '../../components/LoadingState';
 import { Panel, PanelSection } from '../../components/Panel';
 import { type TraceBand, TimeTrace } from '../../components/TimeTrace';
 import { type ActivityBand, type StateSegment, rangeWindow } from './history';
-import { METRICS, prefetchRanges, PREFETCH_FRESH_MS, type Range } from './options';
+import { METRICS, prefetchRanges, PREFETCH_FRESH_MS, type Range, refreshOf } from './options';
 import { Segmented } from '../../components/Segmented';
 import { StateStrip } from './StateStrip';
 
@@ -78,6 +78,7 @@ export function Timeline(props: {
     isPlaceholderData,
   } = useQuery({
     ...historyQuery(props.vehicleId, metric.key, range, from, to),
+    ...refreshOf(range),
     enabled: props.ready,
   });
 

@@ -41,6 +41,14 @@ export function prefetchRanges(range: Range): Range[] {
 /** How long another period loaded ahead stays fresh enough not to load again. */
 export const PREFETCH_FRESH_MS = 5 * 60_000;
 
+/**
+ * How a period's queries refresh, spread over their options. All time is the whole
+ * history, so it is read when picked and not polled; switching away and straight back
+ * reuses that read rather than making it again.
+ */
+export const refreshOf = (range: Range) =>
+  isAllTime(range) ? ({ refetchInterval: false, staleTime: PREFETCH_FRESH_MS } as const) : {};
+
 type MetricKind = 'percent' | 'distance';
 
 /** Raw values: range in km, odometer in metres. */
