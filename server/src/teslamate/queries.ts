@@ -286,18 +286,23 @@ function startedIn(sql: Sql, column: string, window: ListWindow) {
   `;
 }
 
+/** A LIMIT clause, or none when there's no limit. */
+const limitTo = (sql: Sql, limit: number | undefined) =>
+  limit == null ? sql`` : sql`LIMIT ${limit}`;
+
 export interface ListWindow {
   from?: Date;
   to?: Date;
   /** Only those that started before this: the next page. */
   before?: Date;
-  limit: number;
+  /** At most this many, newest first; all of them when left out. */
+  limit?: number;
 }
 
 export function drives(sql: Sql, carId: number, window: ListWindow): Promise<DriveRow[]> {
   return sql<DriveRow[]>`
     ${driveSelect(sql)} WHERE d.car_id = ${carId} ${startedIn(sql, 'd.start_date', window)}
-    ORDER BY d.start_date DESC LIMIT ${window.limit}
+    ORDER BY d.start_date DESC ${limitTo(sql, window.limit)}
   `;
 }
 
@@ -463,7 +468,7 @@ export function chargingProcessesByIds(
 function processRows(
   sql: Sql,
   where: ReturnType<Sql>,
-  limit: number,
+  limit?: number,
 ): Promise<ChargingProcessRow[]> {
   return sql<ChargingProcessRow[]>`
     SELECT cp.id::int AS id, (cp.start_date AT TIME ZONE 'UTC') AS started_at,
@@ -505,7 +510,7 @@ function processRows(
       ORDER BY date DESC LIMIT 1
     ) latest ON true
     WHERE ${where}
-    ORDER BY cp.start_date DESC LIMIT ${limit}
+    ORDER BY cp.start_date DESC ${limitTo(sql, limit)}
   `;
 }
 

@@ -112,6 +112,31 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     expect(rest[0]!.startedAt).toBe(start(0).toISOString());
   });
 
+  it('lists every drive and session in a window, past the old 5,000 cap', async () => {
+    const n = 5_001;
+    const at = (i: number) => new Date(day(1).getTime() + i * 60_000);
+    await handle.db.insert(drives).values(
+      Array.from({ length: n }, (_, i) => ({
+        vehicleId: 'v1',
+        startedAt: at(i),
+        endedAt: new Date(at(i).getTime() + 30_000),
+        distanceKm: 5,
+      })),
+    );
+    await handle.db
+      .insert(chargingSessions)
+      .values(Array.from({ length: n }, (_, i) => ({ vehicleId: 'v1', startedAt: at(i) })));
+    const window = `from=${day(1).toISOString()}&to=${day(20).toISOString()}`;
+
+    const listed = await get<DriveDto[]>(`/api/vehicles/v1/drives?${window}`);
+    expect(listed).toHaveLength(n);
+    // The oldest is there too, not just the newest 5,000.
+    expect(listed.at(-1)!.startedAt).toBe(at(0).toISOString());
+    expect(
+      await get<ChargingSessionDto[]>(`/api/vehicles/v1/charging-sessions?${window}`),
+    ).toHaveLength(n);
+  });
+
   it('says when drive history starts', async () => {
     expect(await get<DriveCoverageDto>('/api/vehicles/v1/drive-coverage')).toEqual({
       since: null,
