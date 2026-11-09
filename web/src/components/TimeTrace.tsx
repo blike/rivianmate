@@ -1,5 +1,5 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { timeTicks } from '../features/history/timeAxis';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { fitTimeTicks, labelAlign } from '../features/history/timeAxis';
 import type { StateSegment } from '../features/history/history';
 import { STATE_STYLE } from '../features/history/states';
 import { dateTime } from '../lib/format';
@@ -86,8 +86,9 @@ export function TimeTrace(props: {
   const [lo, hi] = useMemo(() => {
     if (props.domain) return props.domain;
     if (values.length === 0) return [0, 1];
-    let min = Math.min(...values);
-    let max = Math.max(...values);
+    // Reduced, not spread: a long history has more values than a call takes arguments.
+    let min = values.reduce((a, b) => (b < a ? b : a), Infinity);
+    let max = values.reduce((a, b) => (b > a ? b : a), -Infinity);
     if (max - min < 1e-6) {
       min -= 1;
       max += 1;
@@ -136,9 +137,34 @@ export function TimeTrace(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.points, props.from, props.to, lo, hi, height]);
 
+  // The label strip's width, so the axis keeps only as many ticks as have room.
+  const labelsRef = useRef<HTMLDivElement>(null);
+  const [labelsWidth, setLabelsWidth] = useState(0);
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+  useEffect(() => {
+    const el = labelsRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setLabelsWidth(entry?.contentRect.width ?? 0));
+    ro.observe(el);
+    // Labels measured before the web font lands come out in the fallback's widths.
+    let live = true;
+    void document.fonts?.ready.then(() => live && setFontsLoaded(true));
+    return () => {
+      live = false;
+      ro.disconnect();
+    };
+  }, []);
   const xAxis = useMemo(
-    () => timeTicks(props.from, props.to, props.maxTicks ?? 7),
-    [props.from, props.to, props.maxTicks],
+    () =>
+      fitTimeTicks(
+        props.from,
+        props.to,
+        props.maxTicks ?? 7,
+        labelsWidth,
+        labelMeasurer(labelsRef.current),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fontsLoaded remeasures in the loaded font
+    [props.from, props.to, props.maxTicks, labelsWidth, fontsLoaded],
   );
 
   const at = (clientX: number) => {
@@ -309,16 +335,20 @@ export function TimeTrace(props: {
           )}
         </div>
 
-        <div className="relative mt-2 h-4 text-[11px] text-(--text-muted) tabular-nums">
+        <div
+          ref={labelsRef}
+          className="relative mt-2 h-4 text-[11px] text-(--text-muted) tabular-nums"
+        >
           {xAxis.ticks.map((t) => {
             const f = (t - props.from) / span;
+            const align = labelAlign(f);
             return (
               <span
                 key={t}
                 className="absolute whitespace-nowrap"
                 style={{
                   left: `${f * 100}%`,
-                  transform: `translateX(${f < 0.04 ? '0' : f > 0.96 ? '-100%' : '-50%'})`,
+                  transform: `translateX(${align === 'start' ? '0' : align === 'end' ? '-100%' : '-50%'})`,
                 }}
               >
                 {xAxis.format(t)}
@@ -329,4 +359,27 @@ export function TimeTrace(props: {
       </div>
     </div>
   );
+}
+
+let measureCanvas: HTMLCanvasElement | null = null;
+
+/**
+ * Measures a label in the strip's own font. Where there's no canvas to measure
+ * with (tests), it estimates from the length at the strip's 11px.
+ */
+function labelMeasurer(el: HTMLElement | null): (label: string) => number {
+  const estimate = (label: string) => label.length * 6.5;
+  if (!el || typeof document === 'undefined') return estimate;
+  let ctx: CanvasRenderingContext2D | null;
+  try {
+    measureCanvas ??= document.createElement('canvas');
+    ctx = measureCanvas.getContext('2d');
+  } catch {
+    ctx = null;
+  }
+  if (!ctx) return estimate;
+  const style = getComputedStyle(el);
+  ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const c = ctx;
+  return (label) => c.measureText(label).width;
 }

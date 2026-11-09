@@ -7,7 +7,7 @@ import { ContentFrame } from '../../components/LoadingState';
 import { Panel, PanelSection } from '../../components/Panel';
 import { type TraceBand, TimeTrace } from '../../components/TimeTrace';
 import { type ActivityBand, type StateSegment, rangeWindow } from './history';
-import { METRICS, neighbours, PREFETCH_FRESH_MS, type Range } from './options';
+import { METRICS, prefetchRanges, PREFETCH_FRESH_MS, type Range, refreshOf } from './options';
 import { Segmented } from '../../components/Segmented';
 import { StateStrip } from './StateStrip';
 
@@ -60,6 +60,8 @@ export function Timeline(props: {
   segments: StateSegment[];
   /** The bands or segments are still the last period's. */
   stale: boolean;
+  /** Whether this period's window is known yet; all time waits on the first drive. */
+  ready: boolean;
   onHover?: (ts: number | null) => void;
   /** Whether the metric for this period is still on its way. */
   onLoading?: (loading: boolean) => void;
@@ -74,7 +76,11 @@ export function Timeline(props: {
     isPending,
     isSuccess,
     isPlaceholderData,
-  } = useQuery(historyQuery(props.vehicleId, metric.key, range, from, to));
+  } = useQuery({
+    ...historyQuery(props.vehicleId, metric.key, range, from, to),
+    ...refreshOf(range),
+    enabled: props.ready,
+  });
 
   // As the page does: the metric over the other periods, loaded behind this one.
   const queryClient = useQueryClient();
@@ -87,7 +93,7 @@ export function Timeline(props: {
   useEffect(() => {
     if (!shownLoaded) return;
     const now = new Date();
-    for (const other of neighbours(range)) {
+    for (const other of prefetchRanges(range)) {
       const w = rangeWindow(other.hours, now);
       void queryClient
         .query({

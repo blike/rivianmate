@@ -43,8 +43,24 @@ export interface PeriodSummary {
  * The window a range covers, ending now. Ranges of days start at local
  * midnight, so "7 days" is today and the six before it rather than 168
  * hours reaching partway into an eighth day; 24 hours stays rolling.
+ *
+ * A range of no fixed length (`all time`) starts at `since`, the first
+ * drive there is. Until that is known its window is empty rather than
+ * reaching back to 1970, which would ask for decades of buckets; a `since`
+ * that doesn't parse, or one from ahead of us, is treated the same way, so a
+ * bad stamp can't throw while the page is rendering or start a window that
+ * ends before it begins.
  */
-export function rangeWindow(hours: number, now: Date): { from: Date; to: Date } {
+export function rangeWindow(
+  hours: number,
+  now: Date,
+  since?: string | null,
+): { from: Date; to: Date } {
+  if (!Number.isFinite(hours)) {
+    const from = since ? new Date(since) : new Date(now);
+    if (Number.isNaN(from.getTime()) || from > now) return { from: new Date(now), to: now };
+    return { from, to: now };
+  }
   if (hours <= 24) return { from: new Date(now.getTime() - hours * 3600_000), to: now };
   const from = new Date(now);
   from.setHours(0, 0, 0, 0);
@@ -140,22 +156,26 @@ export function activityBands(
 }
 
 /**
- * Distance driven per local day, or week from Monday, every bucket in the
- * window included so quiet days show as gaps. A drive counts toward the
- * bucket it started in.
+ * Distance driven per local day, week from Monday or calendar month, every
+ * bucket in the window included so quiet days show as gaps. A drive counts
+ * toward the bucket it started in.
  */
 export function distanceByPeriod(
   drives: readonly PeriodDrive[],
   from: number,
   to: number,
-  unit: 'day' | 'week',
+  unit: 'day' | 'week' | 'month',
 ): { ts: number; km: number }[] {
   const start = new Date(from);
   start.setHours(0, 0, 0, 0);
   if (unit === 'week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-  const days = unit === 'week' ? 7 : 1;
-  // setDate steps by calendar day, so DST weeks keep their Monday midnight.
-  const step = (d: Date) => d.setDate(d.getDate() + days);
+  if (unit === 'month') start.setDate(1);
+  // setDate and setMonth step by the calendar, so DST weeks keep their Monday
+  // midnight and months their first.
+  const step = (d: Date) =>
+    unit === 'month'
+      ? d.setMonth(d.getMonth() + 1)
+      : d.setDate(d.getDate() + (unit === 'week' ? 7 : 1));
 
   const buckets: { ts: number; km: number }[] = [];
   for (const d = new Date(start); d.getTime() <= to; step(d))

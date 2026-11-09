@@ -111,6 +111,25 @@ describe('distanceByPeriod', () => {
   it('includes every day in the window', () => {
     expect(distanceByPeriod([], from, to, 'day').length).toBeGreaterThanOrEqual(2);
   });
+
+  it('buckets distance by calendar month, each from the first of it', () => {
+    const start = new Date(2024, 0, 5, 12).getTime();
+    const end = new Date(2024, 3, 5, 12).getTime();
+    const on = (month: number, km: number) => ({
+      startedAt: new Date(2024, month, 10, 9).toISOString(),
+      endedAt: new Date(2024, month, 10, 10).toISOString(),
+      distanceKm: km,
+      energyKwh: null,
+    });
+    const buckets = distanceByPeriod([on(0, 30), on(2, 12)], start, end, 'month');
+    expect(buckets.map((b) => new Date(b.ts))).toEqual([
+      new Date(2024, 0, 1),
+      new Date(2024, 1, 1),
+      new Date(2024, 2, 1),
+      new Date(2024, 3, 1),
+    ]);
+    expect(buckets.map((b) => b.km)).toEqual([30, 0, 12, 0]);
+  });
 });
 
 describe('positionAt', () => {
@@ -144,6 +163,22 @@ describe('rangeWindow', () => {
 
   it('keeps 24 hours rolling', () => {
     expect(rangeWindow(24, now).from).toEqual(new Date(2026, 9, 10, 14, 30));
+  });
+
+  it('starts all time at the first record', () => {
+    const since = '2024-03-05T09:15:00.000Z';
+    const { from, to } = rangeWindow(Number.POSITIVE_INFINITY, now, since);
+    expect(from).toEqual(new Date(since));
+    expect(to).toBe(now);
+  });
+
+  it('shows nothing for all time until a usable first record is known', () => {
+    const ahead = new Date(now.getTime() + 3600_000).toISOString();
+    for (const since of [undefined, 'not a date', ahead]) {
+      const { from, to } = rangeWindow(Number.POSITIVE_INFINITY, now, since);
+      expect(from, String(since)).toEqual(now);
+      expect(to, String(since)).toBe(now);
+    }
   });
 });
 
