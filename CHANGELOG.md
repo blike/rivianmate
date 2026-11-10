@@ -1,5 +1,115 @@
 # Changelog
 
+## v0.11.0 — 2026-11-09
+
+This update brings **trips**, **imports from Rivian Roamer**, an **all-time view of your history**
+and **more detailed drive maps on the R2**.
+
+### What's new
+
+#### Trips
+
+Group a road trip's drives and charges together and see the whole journey in one place.
+
+- Open the new **Trips** page and create a trip by picking the days it covered. Every drive and
+  charge from those days is added for you, and you can untick anything that wasn't part of it.
+- Each trip has its own page with a map colored by day, a replay of the journey, and a day-by-day
+  timeline of drives, stops, overnight stays and charges.
+- See trip totals and highlights: distance, time driving and charging, cost, the longest drive, the
+  fastest charge, the biggest climb, and who drove.
+- Add a drive or charge to a trip straight from its own page.
+
+#### Import from Rivian Roamer
+
+- If you used Rivian Roamer, you can bring your history across. In Roamer, go to **Account → Data →
+  Download a copy**, then upload that file in RivianMate under **Settings → Import Data**.
+- Your drives, charges, drivers and saved places come with it.
+- Nothing you already have is duplicated or overwritten, and an import can be undone.
+- ElectraFi imports now include who was driving, too.
+
+#### See all of your history
+
+- History has a new **All time** option that goes back to your first drive.
+- There are also new 24-hour, 14-day, 90-day and 6-month views, and switching between them is
+  faster.
+
+#### Drives and charging
+
+- Jump to any day on the Drives and Charging pages with a new calendar that shows how busy each day
+  was.
+- Choose who was driving on any drive, or mark it as no one in particular.
+- When you used navigation, a drive shows the name of where you were headed (for example, "Jumbo
+  Rocks Campground") instead of a street address.
+
+### Improvements
+
+- **More detailed drive maps on the R2.** While navigation is running, your route is recorded about
+  every 5 seconds instead of once a minute, so maps follow the road much more closely.
+- **Cleaner History map.** Routes over months or years now follow the roads you actually drove, and
+  a faint dashed line shows where a stretch of driving wasn't recorded.
+- **Faster History for TeslaMate users.** A year of history now loads in about 3 seconds instead of
+  about 15.
+- **Better on phones.** The Drives and Charging pages fit a phone screen, and History's dates no
+  longer overlap or repeat.
+- History now shows when it's loading, so you don't mistake old figures for new ones.
+- **Grafana dashboards** show drive mode, who was driving and efficiency per drive, and use the
+  same  
+  units as the app (miles or kilometers, °F or °C, and your currency).
+
+### Fixes
+
+- History totals were too low for long periods with lots of driving. They now count every drive and
+  charge.
+- Average moving speed could come out slightly wrong when the vehicle sent the same location twice.
+
+### How to update
+
+1. Back up your database.
+2. Keep your existing `APP_SECRET` and database volume.
+3. Run `docker compose pull && docker compose up -d`.
+
+The update sets up what trips need on its own the first time it starts.
+
+**If you use the Grafana dashboards,** re-run `contrib/grafana/readonly-role.sql` after updating so
+the new driver and unit features work.
+
+Technical details
+
+#### Migrations
+
+- `0021_trips`: adds the `trips`, `trip_activities` and `trip_exclusions` tables. #98
+
+#### Performance
+
+- History's 12-month and all-time routes are averaged per drive. They are more accurate but slower:
+  about 1.5–4 s for a multi-year TeslaMate history. #106
+- The TeslaMate connection pool grows from 3 to 6 connections. #96
+
+#### API
+
+- New: `GET`/`POST /api/vehicles/:id/trips`, `GET`/`PATCH`/`DELETE /api/vehicles/:id/trips/:tripId`,
+  `POST /api/vehicles/:id/trips/:tripId/activities`,
+  `DELETE /api/vehicles/:id/trips/:tripId/activities/:kind/:activityId`,
+  `GET /api/vehicles/:id/trips/:tripId/route`, `GET /api/vehicles/:id/trip-assignments` and
+  `GET /api/vehicles/:id/trip-candidates`. #98
+- New: `GET /api/vehicles/:id/drivers` and `PUT /api/drives/:driveId/driver`. #94
+- `/drives` and `/charging-sessions` return every row in a window, not just the newest 5,000.
+  Listings without a window still page at 200. #104
+- `/vehicles/:id/locations` returns up to 200,000 points, up from 20,000. #96 #106
+- A charging session's `source` can be `roamer`. #97
+- Responses are compressed when the client accepts it. #96
+
+#### Pull requests
+
+#90 #92 #93 #94 #95 #96 #97 #98 #99 #104 #105 #106
+
+### Thanks
+
+@MrSerious0 @edasque
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.10.0...v0.11.0](https://github.com/blike/rivianmate/compare/v0.10.0...v0.11.0)
+
 ## v0.10.0 — 2026-11-01
 
 RivianMate `v0.10.0` brings **ElectraFi imports**, **a better view of software updates**, and
