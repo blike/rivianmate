@@ -7,7 +7,8 @@ import {
   useUnits,
   useVehicleState,
 } from '../../api/hooks';
-import { api } from '../../api/client';
+import type { LocationPointDto } from '@server/api-types';
+import { api, type DriveDetailDto } from '../../api/client';
 import { DayCalendar } from '../../components/DayCalendar';
 import { PageHeader } from '../../components/PageHeader';
 import {
@@ -33,7 +34,6 @@ import { formatMinutes, tooltipTime } from './format';
 
 export function DrivesPage(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const u = useUnits();
 
   const pages = useDrivePages(props.vehicleId);
   const { items: drives, isPending: drivesPending } = pages;
@@ -71,30 +71,7 @@ export function DrivesPage(props: { vehicleId: string }) {
     earliest: coverage?.since ? new Date(coverage.since) : null,
   });
   const calendar = <DayCalendar noun="drive" {...goTo.calendar} />;
-  // The drive under way shows where navigation is taking it, and the
-  // vehicle's latest fix and heading, until it ends.
-  const { data: insights } = useInsights(props.vehicleId);
-  const { data: state } = useVehicleState(props.vehicleId);
-  const navigation = insights?.navigation;
   const underWay = detail != null && !detail.endedAt && detail.id === drives?.[0]?.id;
-  const trail = useLiveTrail(props.vehicleId, underWay ? detail : null, detail?.points ?? []);
-  const lastPoint = trail.at(-1);
-  const plan = underWay && navigation ? routePlan(navigation) : null;
-
-  const profile = useMemo(() => {
-    if (!detail) return [];
-    // The map draws every point; the chart, enough to look the same.
-    return evenly(driveProfile(detail.points, detail.startedAt), CHART_POINTS).map((p) => ({
-      minutes: p.minutes,
-      speed: u.distance(p.speedKmh),
-      elevation: u.elevation(p.altitudeM),
-      lat: p.lat,
-      lon: p.lon,
-    }));
-  }, [detail, u]);
-  // The chart point under the pointer, marked on the route map.
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const hoverPosition = hoverIndex != null ? profilePosition(profile, hoverIndex) : null;
 
   if (!drivesPending && !drives?.length) {
     return (
@@ -143,70 +120,13 @@ export function DrivesPage(props: { vehicleId: string }) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Panel
-            title="Route"
-            className={`flex flex-col transition-opacity ${showingPreviousDrive ? 'opacity-50' : ''}`}
-          >
-            <div className="relative h-88 overflow-hidden rounded-lg lg:h-104">
-              {loading ? (
-                <SkeletonBlock height="100%" />
-              ) : detail && lastPoint ? (
-                <div className="absolute inset-0">
-                  <VehicleMap
-                    key={detail.id}
-                    lat={lastPoint[0]}
-                    lon={lastPoint[1]}
-                    bearing={underWay ? (location(state)?.bearing ?? null) : null}
-                    trail={trail}
-                    height="100%"
-                    follow={false}
-                    highlight={hoverPosition}
-                    plan={plan}
-                  />
-                </div>
-              ) : (
-                <p className="flex h-full items-center justify-center text-sm text-(--text-muted)">
-                  No GPS from the vehicle during this drive (it may have had no signal).
-                </p>
-              )}
-            </div>
-            <div className="mt-4">
-              <ContentFrame
-                height={150}
-                loading={loading}
-                empty={profile.length < 2}
-                emptyText="No speed or altitude readings for this drive."
-              >
-                <TrendChart
-                  data={profile}
-                  xKey="minutes"
-                  height={150}
-                  onHover={setHoverIndex}
-                  xTicks={minuteTicks(profile[0]?.minutes ?? 0, profile.at(-1)?.minutes ?? 0)}
-                  xFormatter={formatMinutes(profile.at(-1)?.minutes ?? 0)}
-                  tooltipLabel={detail ? tooltipTime(detail.startedAt) : undefined}
-                  series={[
-                    {
-                      key: 'speed',
-                      label: 'Speed',
-                      color: 'var(--accent)',
-                      unit: u.speedUnit,
-                      digits: 0,
-                    },
-                    {
-                      key: 'elevation',
-                      label: 'Elevation',
-                      color: 'var(--series-1)',
-                      mark: 'line',
-                      right: true,
-                      unit: u.elevationUnit,
-                      digits: 0,
-                    },
-                  ]}
-                />
-              </ContentFrame>
-            </div>
-          </Panel>
+          <RoutePanel
+            vehicleId={props.vehicleId}
+            detail={detail}
+            loading={loading}
+            dimmed={showingPreviousDrive}
+            underWay={underWay}
+          />
 
           <Panel title="All drives" className="hidden flex-col lg:flex" action={calendar}>
             <div className="relative min-h-0 flex-1">
@@ -246,3 +166,122 @@ export function DrivesPage(props: { vehicleId: string }) {
     </>
   );
 }
+
+/**
+ * A drive's route and its speed and elevation over time; hovering the
+ * chart marks the spot on the map. The pointer moves only this: the
+ * chart is drawn once per drive, and the list beside it not at all.
+ */
+function RoutePanel(props: {
+  vehicleId: string;
+  detail: DriveDetailDto | undefined;
+  loading: boolean;
+  /** The previous drive, shown while the next loads. */
+  dimmed: boolean;
+  underWay: boolean;
+}) {
+  const { detail, loading, underWay } = props;
+  const u = useUnits();
+  // The drive under way shows where navigation is taking it, and the
+  // vehicle's latest fix and heading, until it ends.
+  const { data: insights } = useInsights(props.vehicleId);
+  const { data: state } = useVehicleState(props.vehicleId);
+  const navigation = insights?.navigation;
+  const trail = useLiveTrail(
+    props.vehicleId,
+    underWay ? detail! : null,
+    detail?.points ?? NO_POINTS,
+  );
+  const lastPoint = trail.at(-1);
+  const plan = underWay && navigation ? routePlan(navigation) : null;
+
+  const profile = useMemo(() => {
+    if (!detail) return [];
+    // The map draws every point; the chart, enough to look the same.
+    return evenly(driveProfile(detail.points, detail.startedAt), CHART_POINTS).map((p) => ({
+      minutes: p.minutes,
+      speed: u.distance(p.speedKmh),
+      elevation: u.elevation(p.altitudeM),
+      lat: p.lat,
+      lon: p.lon,
+    }));
+  }, [detail, u]);
+  // The chart point under the pointer, marked on the route map.
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const hoverPosition = hoverIndex != null ? profilePosition(profile, hoverIndex) : null;
+
+  const startedAt = detail?.startedAt;
+  const chart = useMemo(() => {
+    const end = profile.at(-1)?.minutes ?? 0;
+    return (
+      <ContentFrame
+        height={150}
+        loading={loading}
+        empty={profile.length < 2}
+        emptyText="No speed or altitude readings for this drive."
+      >
+        <TrendChart
+          data={profile}
+          xKey="minutes"
+          height={150}
+          onHover={setHoverIndex}
+          xTicks={minuteTicks(profile[0]?.minutes ?? 0, end)}
+          xFormatter={formatMinutes(end)}
+          tooltipLabel={startedAt ? tooltipTime(startedAt) : undefined}
+          series={[
+            {
+              key: 'speed',
+              label: 'Speed',
+              color: 'var(--accent)',
+              unit: u.speedUnit,
+              digits: 0,
+            },
+            {
+              key: 'elevation',
+              label: 'Elevation',
+              color: 'var(--series-1)',
+              mark: 'line',
+              right: true,
+              unit: u.elevationUnit,
+              digits: 0,
+            },
+          ]}
+        />
+      </ContentFrame>
+    );
+  }, [profile, loading, startedAt, u]);
+
+  return (
+    <Panel
+      title="Route"
+      className={`flex flex-col transition-opacity ${props.dimmed ? 'opacity-50' : ''}`}
+    >
+      <div className="relative h-88 overflow-hidden rounded-lg lg:h-104">
+        {loading ? (
+          <SkeletonBlock height="100%" />
+        ) : detail && lastPoint ? (
+          <div className="absolute inset-0">
+            <VehicleMap
+              key={detail.id}
+              lat={lastPoint[0]}
+              lon={lastPoint[1]}
+              bearing={underWay ? (location(state)?.bearing ?? null) : null}
+              trail={trail}
+              height="100%"
+              follow={false}
+              highlight={hoverPosition}
+              plan={plan}
+            />
+          </div>
+        ) : (
+          <p className="flex h-full items-center justify-center text-sm text-(--text-muted)">
+            No GPS from the vehicle during this drive (it may have had no signal).
+          </p>
+        )}
+      </div>
+      <div className="mt-4">{chart}</div>
+    </Panel>
+  );
+}
+
+const NO_POINTS: LocationPointDto[] = [];

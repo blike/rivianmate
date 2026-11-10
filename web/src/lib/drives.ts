@@ -25,11 +25,11 @@ export function driveProfile(
 }
 
 /**
- * About how many points a drive's chart draws: a few per pixel at its
- * widest. A long drive's every position (tens of thousands) would be
- * drawn again on every hover, for nothing anyone could see.
+ * About how many points a drive's chart draws: more than one a pixel at
+ * its widest. A long drive's every position (tens of thousands) would make
+ * every hover slower, for detail no one could see.
  */
-export const CHART_POINTS = 2000;
+export const CHART_POINTS = 1000;
 
 /** At most about `max` of `items`, every nth evenly, always keeping the last. */
 export function evenly<T>(items: readonly T[], max: number): T[] {

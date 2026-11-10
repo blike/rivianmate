@@ -100,8 +100,11 @@ export function useLiveFixes(vehicleId: string): LiveFix[] {
     enabled: false,
     staleTime: Infinity,
   });
-  return data ?? [];
+  // The same empty list each time, so what's built from it can be kept.
+  return data ?? NO_FIXES;
 }
+
+const NO_FIXES: LiveFix[] = [];
 
 export function useLiveCharging(vehicleId: string | undefined) {
   return useQuery<LiveSessionData | null>({
