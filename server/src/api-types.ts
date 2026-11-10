@@ -206,6 +206,11 @@ export interface DriveCoverageDto {
   since: string | null;
 }
 
+/** When charging history starts: the first session's start, for going to a date. */
+export interface ChargingCoverageDto {
+  since: string | null;
+}
+
 export interface DrivePlaceDto {
   /** A saved location's name ("Work"), "Home", a place navigation named, or a short address, e.g. "306 West Willow Street, Normal". */
   label: string;

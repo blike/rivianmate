@@ -5,6 +5,7 @@
  * to float8 so they arrive as numbers.
  */
 import type postgres from 'postgres';
+import { afterStart } from '../list-page.js';
 import { STOPPED_KMH } from '../services/drive-detector.js';
 import type {
   ActivityInterval,
@@ -283,8 +284,18 @@ function startedIn(sql: Sql, column: string, window: ListWindow) {
     ${window.from ? sql`AND ${sql(column)} >= ${at(sql, window.from)}` : sql``}
     ${window.to ? sql`AND ${sql(column)} <= ${at(sql, window.to)}` : sql``}
     ${window.before ? sql`AND ${sql(column)} < ${at(sql, window.before)}` : sql``}
+    ${window.after ? sql`AND ${sql(column)} >= ${at(sql, afterStart(window.after))}` : sql``}
   `;
 }
+
+/**
+ * Newest first, but a page above (`after`) is the oldest LIMIT after it,
+ * so it's read oldest first and turned round.
+ */
+const listOrder = (sql: Sql, column: string, window: ListWindow) =>
+  window.after ? sql`ORDER BY ${sql(column)} ASC` : sql`ORDER BY ${sql(column)} DESC`;
+const newestFirst = <T>(window: ListWindow, rows: T[]): T[] =>
+  window.after ? [...rows].reverse() : rows;
 
 /** A LIMIT clause, or none when there's no limit. */
 const limitTo = (sql: Sql, limit: number | undefined) =>
@@ -295,15 +306,18 @@ export interface ListWindow {
   to?: Date;
   /** Only those that started before this: the next page. */
   before?: Date;
+  /** Only those that started after this: the page above, nearest it first. */
+  after?: Date;
   /** At most this many, newest first; all of them when left out. */
   limit?: number;
 }
 
-export function drives(sql: Sql, carId: number, window: ListWindow): Promise<DriveRow[]> {
-  return sql<DriveRow[]>`
+export async function drives(sql: Sql, carId: number, window: ListWindow): Promise<DriveRow[]> {
+  const rows = await sql<DriveRow[]>`
     ${driveSelect(sql)} WHERE d.car_id = ${carId} ${startedIn(sql, 'd.start_date', window)}
-    ORDER BY d.start_date DESC ${limitTo(sql, window.limit)}
+    ${listOrder(sql, 'd.start_date', window)} ${limitTo(sql, window.limit)}
   `;
+  return newestFirst(window, rows);
 }
 
 export function drivesByIds(sql: Sql, carId: number, ids: number[]): Promise<DriveRow[]> {
@@ -317,6 +331,14 @@ export function drivesByIds(sql: Sql, carId: number, ids: number[]): Promise<Dri
 export async function firstDriveStart(sql: Sql, carId: number): Promise<Date | null> {
   const [row] = await sql<{ started_at: Date | null }[]>`
     SELECT MIN(${utc(sql, 'start_date')}) AS started_at FROM drives WHERE car_id = ${carId}
+  `;
+  return row?.started_at ?? null;
+}
+
+export async function firstChargeStart(sql: Sql, carId: number): Promise<Date | null> {
+  const [row] = await sql<{ started_at: Date | null }[]>`
+    SELECT MIN(${utc(sql, 'start_date')}) AS started_at FROM charging_processes
+    WHERE car_id = ${carId}
   `;
   return row?.started_at ?? null;
 }
@@ -336,17 +358,17 @@ export interface PointRow {
   elevation: number | null;
 }
 
-export function drivePoints(
-  sql: Sql,
-  driveId: number,
-  limit: number,
-  abandoned = false,
-): Promise<PointRow[]> {
+/**
+ * Every one of a drive's positions, in time order. Not capped: streaming
+ * records several a second, so a long drive runs to tens of thousands, and
+ * a cap cut its route short. What draws them thins them to what it needs.
+ */
+export function drivePoints(sql: Sql, driveId: number, abandoned = false): Promise<PointRow[]> {
   return sql<PointRow[]>`
     SELECT ${utc(sql, 'date')} AS ts, latitude::float8 AS lat, longitude::float8 AS lon,
            speed, elevation
     FROM positions WHERE drive_id = ${driveId} ${upToStop(sql, driveId, abandoned)}
-    ORDER BY date LIMIT ${limit}
+    ORDER BY date
   `;
 }
 
@@ -453,6 +475,7 @@ export function chargingProcesses(
     sql,
     sql`cp.car_id = ${carId} ${startedIn(sql, 'cp.start_date', window)}`,
     window.limit,
+    window,
   );
 }
 
@@ -465,12 +488,13 @@ export function chargingProcessesByIds(
   return processRows(sql, sql`cp.car_id = ${carId} AND cp.id IN ${sql(ids)}`, ids.length);
 }
 
-function processRows(
+async function processRows(
   sql: Sql,
   where: ReturnType<Sql>,
   limit?: number,
+  window: ListWindow = {},
 ): Promise<ChargingProcessRow[]> {
-  return sql<ChargingProcessRow[]>`
+  const rows = await sql<ChargingProcessRow[]>`
     SELECT cp.id::int AS id, (cp.start_date AT TIME ZONE 'UTC') AS started_at,
            (cp.end_date AT TIME ZONE 'UTC') AS ended_at,
            cp.charge_energy_added::float8 AS charge_energy_added,
@@ -510,8 +534,9 @@ function processRows(
       ORDER BY date DESC LIMIT 1
     ) latest ON true
     WHERE ${where}
-    ORDER BY cp.start_date DESC ${limitTo(sql, limit)}
+    ${listOrder(sql, 'cp.start_date', window)} ${limitTo(sql, limit)}
   `;
+  return newestFirst(window, rows);
 }
 
 export interface CurveRow {

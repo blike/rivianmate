@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   driveProfile,
   drivesByDay,
+  evenly,
   minuteTicks,
   movingSpeedKmh,
   profilePosition,
@@ -49,6 +50,27 @@ describe('driveProfile', () => {
         '2026-10-01T15:00:00Z',
       ),
     ).toEqual([{ minutes: 0, speedKmh: 30, altitudeM: null, lat: 40.1, lon: -88.2 }]);
+  });
+});
+
+describe('evenly', () => {
+  const n = (length: number) => Array.from({ length }, (_, i) => i);
+
+  it('keeps everything up to the most it may', () => {
+    expect(evenly(n(5), 5)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('keeps every nth of a long run, start to finish', () => {
+    // 29,922 positions, as a long streamed drive: every 15th, and the last.
+    const kept = evenly(n(29_922), 2000);
+    expect(kept.length).toBeLessThanOrEqual(2001);
+    expect(kept.slice(0, 3)).toEqual([0, 15, 30]);
+    expect(kept.at(-1)).toBe(29_921);
+  });
+
+  it("doesn't keep the last twice when it falls on the step", () => {
+    expect(evenly(n(7), 3)).toEqual([0, 3, 6]);
+    expect(evenly(n(8), 3)).toEqual([0, 3, 6, 7]);
   });
 });
 

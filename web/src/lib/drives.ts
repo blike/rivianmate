@@ -24,6 +24,22 @@ export function driveProfile(
     });
 }
 
+/**
+ * About how many points a drive's chart draws: more than one a pixel at
+ * its widest. A long drive's every position (tens of thousands) would make
+ * every hover slower, for detail no one could see.
+ */
+export const CHART_POINTS = 1000;
+
+/** At most about `max` of `items`, every nth evenly, always keeping the last. */
+export function evenly<T>(items: readonly T[], max: number): T[] {
+  if (items.length <= max) return [...items];
+  const step = Math.ceil(items.length / max);
+  const kept = items.filter((_, i) => i % step === 0);
+  if ((items.length - 1) % step !== 0) kept.push(items.at(-1)!);
+  return kept;
+}
+
 export interface ProfilePoint {
   minutes: number;
   speedKmh: number | null;

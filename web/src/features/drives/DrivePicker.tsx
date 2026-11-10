@@ -1,6 +1,7 @@
 import type { DriveDto } from '@server/api-types';
 import { useMemo } from 'react';
 import { useUnits } from '../../api/hooks';
+import type { ListEnd, NewerEnd } from '../../components/LoadOlder';
 import { RecordPicker } from '../../components/RecordPicker';
 import { drivesByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
@@ -11,7 +12,8 @@ export function DrivePicker(props: {
   drives: DriveDto[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  older?: { has: boolean; loading: boolean; load: () => void };
+  older?: ListEnd;
+  newer?: NewerEnd;
   className?: string;
 }) {
   const u = useUnits();
@@ -39,6 +41,7 @@ export function DrivePicker(props: {
       selectedId={props.selectedId}
       onSelect={props.onSelect}
       older={props.older}
+      newer={props.newer}
       className={props.className}
     />
   );

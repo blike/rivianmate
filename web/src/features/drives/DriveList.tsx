@@ -2,9 +2,10 @@ import type { DriveDto, DrivePlaceDto } from '@server/api-types';
 import { useMemo } from 'react';
 import { useUnits } from '../../api/hooks';
 import { InProgressTag } from '../../components/InProgressTag';
+import { LoadNewer, type NewerEnd } from '../../components/LoadOlder';
 import { drivesByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
-import { useRevealed } from '../../lib/goToDate';
+import { useHeldInPlace, useRevealed } from '../../lib/goToDate';
 import { placeName, driveFacts, destination } from './format';
 
 /** Home or a saved location, which stand out from plain addresses. */
@@ -18,12 +19,23 @@ export function DriveList(props: {
   /** A drive picked from outside the list (by date), scrolled into view once listed. */
   revealId?: number | null;
   onRevealed?: () => void;
+  /** Opened part way back (at a date): the newer drives above. */
+  newer?: NewerEnd;
 }) {
   const u = useUnits();
   const days = useMemo(() => drivesByDay(props.drives), [props.drives]);
   const rootRef = useRevealed(props.revealId, props.onRevealed, days);
+  const held = useHeldInPlace(rootRef, props.drives[0]?.id);
   return (
     <div ref={rootRef}>
+      {props.newer?.has && (
+        <LoadNewer
+          nouns="drives"
+          loading={props.newer.loading}
+          onLoad={held(props.newer.load)}
+          onLatest={props.newer.latest}
+        />
+      )}
       {days.map((day) => (
         <section key={day.key}>
           <h4 className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-(--border) bg-(--surface-1) px-4 py-2 text-xs">

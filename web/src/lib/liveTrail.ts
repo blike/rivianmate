@@ -1,4 +1,5 @@
 import type { LocationPointDto } from '@server/api-types';
+import { useMemo } from 'react';
 import { type LiveFix, useLiveFixes } from '../api/hooks';
 import { isPosition } from './geo';
 
@@ -14,12 +15,16 @@ export function useLiveTrail(
   points: LocationPointDto[],
 ): [number, number][] {
   const fixes = useLiveFixes(vehicleId);
-  if (!drive) return liveTrail(points, []);
-  const since = Date.parse(drive.startedAt);
-  return liveTrail(
-    points,
-    fixes.filter((f) => Date.parse(f.ts) >= since),
-  );
+  const startedAt = drive?.startedAt;
+  // A long drive runs to tens of thousands of points: built again only when they change.
+  return useMemo(() => {
+    if (startedAt == null) return liveTrail(points, []);
+    const since = Date.parse(startedAt);
+    return liveTrail(
+      points,
+      fixes.filter((f) => Date.parse(f.ts) >= since),
+    );
+  }, [points, fixes, startedAt]);
 }
 
 /** The stored points, then the live fixes newer than them. */

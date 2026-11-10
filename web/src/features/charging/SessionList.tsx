@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import type { ChargingSessionDto } from '../../api/client';
 import { InProgressTag } from '../../components/InProgressTag';
+import { LoadNewer, type NewerEnd } from '../../components/LoadOlder';
 import { chargerLabel, sessionCity } from '../../lib/charging';
 import { groupByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
-import { useRevealed } from '../../lib/goToDate';
+import { useHeldInPlace, useRevealed } from '../../lib/goToDate';
 import { fmt } from '../../lib/state';
 import { chargeStart, dayTotals, sessionFacts } from './sessions';
 
@@ -16,12 +17,23 @@ export function SessionList(props: {
   /** A session picked from outside the list (by date), scrolled into view once listed. */
   revealId?: number | null;
   onRevealed?: () => void;
+  /** Opened part way back (at a date): the newer sessions above. */
+  newer?: NewerEnd;
 }) {
   // Listed by when each started charging, which can be hours after plug-in.
   const days = useMemo(() => groupByDay(props.sessions, new Date(), chargeStart), [props.sessions]);
   const rootRef = useRevealed(props.revealId, props.onRevealed, days);
+  const held = useHeldInPlace(rootRef, props.sessions[0]?.id);
   return (
     <div ref={rootRef}>
+      {props.newer?.has && (
+        <LoadNewer
+          nouns="sessions"
+          loading={props.newer.loading}
+          onLoad={held(props.newer.load)}
+          onLatest={props.newer.latest}
+        />
+      )}
       {days.map((day) => {
         return (
           <section key={day.key}>

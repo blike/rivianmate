@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { ChargingSessionDto } from '../../api/client';
+import type { ListEnd, NewerEnd } from '../../components/LoadOlder';
 import { RecordPicker } from '../../components/RecordPicker';
 import { chargerLabel, sessionCity } from '../../lib/charging';
 import { groupByDay } from '../../lib/drives';
@@ -12,7 +13,8 @@ export function SessionPicker(props: {
   sessions: ChargingSessionDto[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  older?: { has: boolean; loading: boolean; load: () => void };
+  older?: ListEnd;
+  newer?: NewerEnd;
   className?: string;
 }) {
   const groups = useMemo(
@@ -40,6 +42,7 @@ export function SessionPicker(props: {
       selectedId={props.selectedId}
       onSelect={props.onSelect}
       older={props.older}
+      newer={props.newer}
       className={props.className}
     />
   );
