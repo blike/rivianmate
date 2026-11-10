@@ -298,6 +298,51 @@ describe.skipIf(!url)('TeslaMateSource with Postgres', () => {
     expect(Date.parse(coverage.since!)).toBeLessThan(day.getTime());
   });
 
+  it('reads the page above a list opened part way back, nearest first, newest at the top', async () => {
+    const [, oldest] = await source.drives('tm-1', home, { limit: 200 });
+    // Listed to the millisecond, stored to the microsecond: the drive itself isn't read again.
+    const above = await source.drives('tm-1', home, {
+      after: new Date(oldest!.startedAt),
+      limit: 1,
+    });
+    expect(above.map((d) => d.id)).toEqual([2]);
+    const sessions = await source.chargingSessions('tm-1', home, { limit: 200 });
+    const after = await source.chargingSessions('tm-1', home, {
+      after: new Date(sessions.at(-1)!.startedAt),
+      limit: 200,
+    });
+    expect(after.map((s) => s.id)).toEqual(sessions.slice(0, -1).map((s) => s.id));
+  });
+
+  it('says when charging history starts', async () => {
+    const coverage = await source.chargingCoverage('tm-1');
+    // The charge left open ten days ago is the first.
+    expect(Date.now() - Date.parse(coverage.since!)).toBeGreaterThan(14_000 * 60_000);
+    expect(await source.chargingCoverage('tm-9')).toEqual({ since: null });
+  });
+
+  it("reads a long drive's every position, so its route runs the whole way", async () => {
+    // 25,000 positions a fifth of a second apart, from 3,000 minutes ago.
+    await admin.unsafe(`SET search_path TO ${SCHEMA};
+      INSERT INTO drives (id, car_id, start_date, end_date, distance, start_km, end_km)
+        VALUES (5, 1, ${ago(3000)}, ${ago(3000)} + interval '5000 seconds', 100, 900, 1000);
+      INSERT INTO positions (id, car_id, drive_id, date, latitude, longitude, speed, odometer)
+        SELECT 1000 + i, 1, 5, ${ago(3000)} + i * interval '200 milliseconds',
+               37 + i * 0.00001, -122, 90, 900 + i * 0.004
+        FROM generate_series(0, 24999) AS i;`);
+    try {
+      const points = (await source.drive('tm-1', 5, home))!.points;
+      expect(points).toHaveLength(25_000);
+      expect(points[0]!.lat).toBeCloseTo(37, 6);
+      expect(points.at(-1)!.lat).toBeCloseTo(37 + 24999 * 0.00001, 6);
+      const ts = points.map((p) => Date.parse(p.ts));
+      expect(ts.every((t, i) => i === 0 || t > ts[i - 1]!)).toBe(true);
+    } finally {
+      await admin.unsafe(`SET search_path TO ${SCHEMA};
+        DELETE FROM positions WHERE drive_id = 5; DELETE FROM drives WHERE id = 5;`);
+    }
+  });
+
   it('reads a drive’s route, and only for its own car', async () => {
     const detail = await source.drive('tm-1', 1, home);
     expect(detail?.points.map((p) => p.speedKmh)).toEqual([0, 90, 0]);

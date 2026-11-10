@@ -27,7 +27,7 @@ import type { VehicleState } from '../rivian/types.js';
 import { stateNumber } from '../services/state-utils.js';
 import { nearbySpot } from '../services/locations.js';
 import { type PlaceContext, placeContext } from './charging.js';
-import { listLimit, listWindowSchema } from './list-window.js';
+import { afterStart, listLimit, listWindowSchema } from './list-window.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
 import { thinTrack, trackBucketSeconds, trackToleranceM } from '../services/simplify-track.js';
@@ -200,6 +200,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
             q.from ? gte(drives.startedAt, q.from) : undefined,
             q.to ? lte(drives.startedAt, q.to) : undefined,
             q.before ? lt(drives.startedAt, q.before) : undefined,
+            q.after ? gte(drives.startedAt, afterStart(q.after)) : undefined,
             // A drive under way, or one with no distance, still shows.
             or(
               isNull(drives.endedAt),
@@ -208,11 +209,12 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
             ),
           ),
         )
-        .orderBy(desc(drives.startedAt))
+        // A page above is the oldest after it, turned round below.
+        .orderBy(q.after ? asc(drives.startedAt) : desc(drives.startedAt))
         .$dynamic();
       const limit = listLimit(q);
       const rows = await (limit ? query.limit(limit) : query);
-      return driveDtos(ctx, request.params.id, rows);
+      return driveDtos(ctx, request.params.id, q.after ? rows.reverse() : rows);
     },
   );
 
@@ -375,12 +377,12 @@ async function rivianDriveDetail(
   const rows = await ctx.db.select().from(drives).where(eq(drives.id, driveId)).limit(1);
   const drive = rows[0];
   if (!drive || (vehicleId != null && drive.vehicleId !== vehicleId)) return null;
+  // Every point, so a long drive's route runs the whole way; the chart thins them.
   const points = await ctx.db
     .select()
     .from(locationPoints)
     .where(eq(locationPoints.driveId, driveId))
-    .orderBy(locationPoints.ts)
-    .limit(10_000);
+    .orderBy(locationPoints.ts);
   const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
   const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
   const moving = (await movingSeconds(ctx.db, [drive.id])).get(drive.id) ?? null;

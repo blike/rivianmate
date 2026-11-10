@@ -5,6 +5,7 @@ import type {
   ChargeSpanDto,
   ChargingCurvePointDto,
   ChargingSessionDto,
+  ChargingCoverageDto,
   DriveCoverageDto,
   DriveDetailDto,
   DriveDto,
@@ -62,7 +63,6 @@ const CARS_REFRESH_MS = 10 * 60_000;
  */
 const ACTIVE_STALE_MS = 30 * 60_000;
 
-const MAX_DRIVE_POINTS = 10_000;
 /** Energy used while parked over the last day and week. */
 const PARKED_WINDOW_MINUTES = [24 * 60, 7 * 24 * 60];
 
@@ -423,7 +423,7 @@ export class TeslaMateSource {
     const tracks = await Promise.all(
       rows.map(async (row) => {
         const abandoned = row.ended_at == null && row.superseded;
-        const points = await q.drivePoints(sql, row.id, MAX_DRIVE_POINTS, abandoned);
+        const points = await q.drivePoints(sql, row.id, abandoned);
         return points.map((p) => ({
           ts: p.ts,
           lat: p.lat,
@@ -444,6 +444,13 @@ export class TeslaMateSource {
     return { since: first?.toISOString() ?? null };
   }
 
+  async chargingCoverage(vehicleId: string): Promise<ChargingCoverageDto> {
+    const car = this.need(vehicleId);
+    if (!car) return { since: null };
+    const first = await q.firstChargeStart(this.db(), car.row.id);
+    return { since: first?.toISOString() ?? null };
+  }
+
   async drive(vehicleId: string, driveId: number, places: Places): Promise<DriveDetailDto | null> {
     const car = this.need(vehicleId);
     if (!car || !Number.isSafeInteger(driveId)) return null;
@@ -451,7 +458,7 @@ export class TeslaMateSource {
     const row = await q.drive(sql, car.row.id, driveId);
     if (!row) return null;
     const abandoned = row.ended_at == null && row.superseded;
-    const points = await q.drivePoints(sql, driveId, MAX_DRIVE_POINTS, abandoned);
+    const points = await q.drivePoints(sql, driveId, abandoned);
     const movingSeconds = await q.driveMovingSeconds(sql, driveId, abandoned);
     const progress =
       row.ended_at == null

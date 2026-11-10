@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type WallboxDto } from '../../api/client';
-import { useChargingPages, useLiveCharging, useVehicleState } from '../../api/hooks';
+import {
+  useChargingCoverage,
+  useChargingPages,
+  useLiveCharging,
+  useVehicleState,
+} from '../../api/hooks';
 import { AddToTrip } from '../../components/AddToTrip';
 import { DayCalendar } from '../../components/DayCalendar';
 import { PageHeader } from '../../components/PageHeader';
@@ -30,6 +35,16 @@ export function ChargingPage(props: { vehicleId: string }) {
   const pages = useChargingPages(props.vehicleId);
   const { items: sessions, isPending: sessionsPending } = pages;
   const older = { has: pages.hasOlder, loading: pages.loadingOlder, load: pages.loadOlder };
+  const newer = {
+    has: pages.hasNewer,
+    loading: pages.loadingNewer,
+    load: pages.loadNewer,
+    // Back to the newest, and to showing it.
+    latest: () => {
+      pages.jumpTo(null);
+      setSelectedSessionId(null);
+    },
+  };
   // TeslaMate is read-only, and schedules and wallboxes are Rivian's.
   const teslamate = isTeslaMateVehicle(props.vehicleId);
 
@@ -58,15 +73,17 @@ export function ChargingPage(props: { vehicleId: string }) {
   const session = sessions?.find((s) => s.id === selectedSessionId) ?? sessions?.[0];
 
   // Going to a date: a calendar of the month with each day's sessions, by
-  // the day each started charging, as they're listed.
+  // the day each started charging, as they're listed, back to the first.
+  const { data: coverage } = useChargingCoverage(props.vehicleId);
   const goTo = useGoToDate({
     queryKey: ['chargingSessions', props.vehicleId],
     fetchWindow: (from, to) => api.chargingSessions(props.vehicleId, { from, to }),
     listed: sessions,
-    pages,
+    jumpTo: pages.jumpTo,
     selected: session,
     onSelect: setSelectedSessionId,
     dayOf: chargeStart,
+    earliest: coverage?.since ? new Date(coverage.since) : null,
   });
   const calendar = <DayCalendar noun="session" {...goTo.calendar} />;
   const showingOpen = session != null && !session.endedAt && session.id === sessions?.[0]?.id;
@@ -117,6 +134,7 @@ export function ChargingPage(props: { vehicleId: string }) {
             selectedId={session?.id ?? null}
             onSelect={setSelectedSessionId}
             older={older}
+            newer={newer}
             className="sticky top-2 z-20 lg:hidden"
           />
         )}
@@ -158,7 +176,11 @@ export function ChargingPage(props: { vehicleId: string }) {
 
           <Panel title="All sessions" className="hidden flex-col lg:flex" action={calendar}>
             <div className="relative min-h-0 flex-1">
-              <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
+              <div
+                className={`-mx-4 max-h-112 overflow-auto transition-opacity lg:absolute lg:inset-0 lg:max-h-none ${
+                  pages.moving ? 'opacity-50' : ''
+                }`}
+              >
                 {sessionsPending ? (
                   <div className="px-4">
                     <SkeletonRows rows={8} />
@@ -171,6 +193,7 @@ export function ChargingPage(props: { vehicleId: string }) {
                       onSelect={setSelectedSessionId}
                       revealId={goTo.revealId}
                       onRevealed={goTo.clearReveal}
+                      newer={newer}
                     />
                     {older.has && (
                       <LoadOlder

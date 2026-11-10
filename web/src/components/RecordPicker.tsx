@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { InProgressTag } from './InProgressTag';
-import { LoadOlder } from './LoadOlder';
+import { LoadNewer, LoadOlder, type ListEnd, type NewerEnd } from './LoadOlder';
+import { useHeldInPlace } from '../lib/goToDate';
 
 export interface PickerItem {
   id: number;
@@ -31,13 +32,18 @@ export interface PickerGroup {
  * through the list in its order (newest first): right moves down it, to
  * older records; the middle opens the list. With `older`, the list is read a
  * page at a time: its end, and stepping past the last record, read the next.
+ * With `newer`, it was opened part way back: its top, and stepping before
+ * the first record, read the page above.
  */
 export function RecordPicker(props: {
   label: string;
   groups: PickerGroup[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  older?: { has: boolean; loading: boolean; load: () => void };
+  older?: ListEnd;
+  newer?: NewerEnd;
+  /** What's listed, plural, e.g. "drives"; the label with an "s", unless given. */
+  nouns?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -54,6 +60,9 @@ export function RecordPicker(props: {
   const newer = index > 0 ? flat[index - 1] : undefined;
   const older = index >= 0 ? flat[index + 1] : undefined;
   const moreOlder = props.older?.has ?? false;
+  const moreNewer = props.newer?.has ?? false;
+  const nouns = props.nouns ?? `${props.label.toLowerCase()}s`;
+  const held = useHeldInPlace(listRef, flat[0]?.id);
 
   const show = () => {
     setActive(Math.max(index, 0));
@@ -115,8 +124,8 @@ export function RecordPicker(props: {
         <div className="card flex items-stretch overflow-hidden bg-[color-mix(in_srgb,var(--surface-1)_88%,transparent)] backdrop-blur">
           <StepButton
             label={`Newer ${props.label.toLowerCase()}`}
-            disabled={!newer}
-            onClick={() => newer && props.onSelect(newer.id)}
+            disabled={!newer && (!moreNewer || props.newer!.loading)}
+            onClick={() => (newer ? props.onSelect(newer.id) : props.newer?.load())}
           >
             <path d="M10 3.5 5.5 8l4.5 4.5" />
           </StepButton>
@@ -141,7 +150,10 @@ export function RecordPicker(props: {
             <span className="min-w-0 flex-1">
               <span className="block text-[11px] font-medium uppercase tracking-wide text-(--text-muted)">
                 {current
-                  ? `${current.day} at ${current.time} · ${index + 1} of ${flat.length}${moreOlder ? '+' : ''}`
+                  ? // Opened part way back, how far down it is says nothing.
+                    moreNewer
+                    ? `${current.day} at ${current.time}`
+                    : `${current.day} at ${current.time} · ${index + 1} of ${flat.length}${moreOlder ? '+' : ''}`
                   : props.label}
               </span>
               {/* The figure keeps its place; the title gives way. */}
@@ -185,6 +197,17 @@ export function RecordPicker(props: {
             onKeyDown={onListKey}
             className="card absolute inset-x-0 top-full z-30 mt-2 max-h-[min(60vh,28rem)] overflow-auto shadow-[0_12px_32px_rgba(0,0,0,0.45)] outline-none"
           >
+            {moreNewer && (
+              <LoadNewer
+                nouns={nouns}
+                loading={props.newer!.loading}
+                onLoad={held(props.newer!.load)}
+                onLatest={() => {
+                  props.newer!.latest();
+                  close(true);
+                }}
+              />
+            )}
             {props.groups.map((g) => (
               <div key={g.key} role="group" aria-label={g.label}>
                 <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b border-(--border) bg-(--surface-1) px-4 py-2 text-xs">
@@ -203,6 +226,7 @@ export function RecordPicker(props: {
                       key={item.id}
                       id={`${listId}-${i}`}
                       data-index={i}
+                      data-record-id={item.id}
                       role="option"
                       aria-selected={selected}
                       onClick={() => choose(item.id)}
@@ -241,7 +265,7 @@ export function RecordPicker(props: {
             ))}
             {moreOlder && (
               <LoadOlder
-                label={`Show older ${props.label.toLowerCase()}s`}
+                label={`Show older ${nouns}`}
                 loading={props.older!.loading}
                 onLoad={props.older!.load}
               />

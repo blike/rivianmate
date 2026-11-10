@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
 import { localKey } from '../lib/drives';
@@ -132,47 +132,87 @@ export function useDrives(vehicleId: string, since?: Date) {
   return useQuery(drivesQuery(vehicleId, since));
 }
 
+/** Which page to read: the newest (neither), the next older, or the next newer. */
+export type PageParam = { before?: Date; after?: Date };
+
 /**
  * A listing read a page at a time, newest first: `items` so far, and
- * `loadOlder` for the next page while there may be more.
+ * `loadOlder` for the next page while there may be more. `jumpTo` opens
+ * it part way back instead, at the records that started before a time,
+ * so going to a date years back reads one page rather than every page
+ * since; `loadNewer` then reads the pages above, and `jumpTo(null)` goes
+ * back to the newest.
  */
-function usePages<T extends { startedAt: string }>(
+export function usePages<T extends { startedAt: string }>(
   queryKey: readonly unknown[],
-  fetchPage: (before?: Date) => Promise<T[]>,
+  fetchPage: (page: PageParam) => Promise<T[]>,
   refetchInterval: (items: T[]) => number,
 ) {
+  const [anchor, setAnchor] = useState<Date | null>(null);
   const query = useInfiniteQuery({
-    queryKey,
+    queryKey: anchor ? [...queryKey, 'before', anchor.toISOString()] : queryKey,
     queryFn: ({ pageParam }) => fetchPage(pageParam),
-    initialPageParam: undefined as Date | undefined,
+    initialPageParam: (anchor ? { before: anchor } : {}) as PageParam,
     // A full page may have more behind it.
-    getNextPageParam: (last: T[]) =>
-      last.length >= LIST_LIMIT ? new Date(last.at(-1)!.startedAt) : undefined,
-    // A refresh refetches every page loaded, so once older ones are, less often.
+    getNextPageParam: (last: T[]): PageParam | undefined =>
+      last.length >= LIST_LIMIT ? { before: new Date(last.at(-1)!.startedAt) } : undefined,
+    // Above a list opened part way back: the newer ones, while a page of them comes back full.
+    getPreviousPageParam: (first: T[], _all, firstParam): PageParam | undefined => {
+      const top = first[0];
+      if (!top) return undefined;
+      if (firstParam.after)
+        return first.length >= LIST_LIMIT ? { after: new Date(top.startedAt) } : undefined;
+      return firstParam.before ? { after: new Date(top.startedAt) } : undefined;
+    },
+    // A refresh refetches every page loaded, so once more than one is, less often.
     refetchInterval: (q) => {
       const pages = q.state.data?.pages ?? [];
       const ms = refetchInterval(pages.flat());
       return pages.length > 1 ? Math.max(ms, OLDER_PAGES_REFRESH_MS) : ms;
     },
+    // Opening it elsewhere keeps what's listed until the new place is read.
+    placeholderData: keepPreviousData,
   });
   const items = useMemo(() => query.data?.pages.flat(), [query.data]);
+  const { hasNextPage, hasPreviousPage, isFetchingNextPage, isFetchingPreviousPage } = query;
+  const { fetchNextPage, fetchPreviousPage } = query;
+  const loadOlder = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const loadNewer = useCallback(() => {
+    if (hasPreviousPage && !isFetchingPreviousPage) void fetchPreviousPage();
+  }, [hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
+  // Anything at or past now is the newest.
+  const jumpTo = useCallback(
+    (before: Date | null) => setAnchor(before && before.getTime() <= Date.now() ? before : null),
+    [],
+  );
   return {
     items,
     isPending: query.isPending,
-    hasOlder: query.hasNextPage,
-    loadingOlder: query.isFetchingNextPage,
-    loadOlder: () => {
-      if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
-    },
+    /** Still showing the last place while one it's been opened at is read. */
+    moving: query.isPlaceholderData,
+    hasOlder: hasNextPage,
+    loadingOlder: isFetchingNextPage,
+    loadOlder,
+    /** Opened part way back, so there are newer ones above. */
+    hasNewer: hasPreviousPage,
+    loadingNewer: isFetchingPreviousPage,
+    loadNewer,
+    jumpTo,
   };
 }
+
+export type Pages<T extends { startedAt: string } = { startedAt: string }> = ReturnType<
+  typeof usePages<T>
+>;
 
 /** Every drive, a page at a time, for the Drives page. */
 export function useDrivePages(vehicleId: string) {
   // Under the drives key, so whatever refreshes drives refreshes these.
   return usePages(
     ['drives', vehicleId, 'pages'],
-    (before) => api.drives(vehicleId, { before }),
+    (page) => api.drives(vehicleId, page),
     (items) => (items.some((d) => !d.endedAt) ? LIVE_REFRESH_MS : 60_000),
   );
 }
@@ -181,7 +221,7 @@ export function useDrivePages(vehicleId: string) {
 export function useChargingPages(vehicleId: string) {
   return usePages(
     ['chargingSessions', vehicleId, 'pages'],
-    (before) => api.chargingSessions(vehicleId, { before }),
+    (page) => api.chargingSessions(vehicleId, page),
     () => 60_000,
   );
 }
@@ -191,6 +231,15 @@ export function useDriveCoverage(vehicleId: string) {
   return useQuery({
     queryKey: ['driveCoverage', vehicleId],
     queryFn: () => api.driveCoverage(vehicleId),
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** When charging history starts, so going to a date reaches back no further. */
+export function useChargingCoverage(vehicleId: string) {
+  return useQuery({
+    queryKey: ['chargingCoverage', vehicleId],
+    queryFn: () => api.chargingCoverage(vehicleId),
     staleTime: 10 * 60_000,
   });
 }

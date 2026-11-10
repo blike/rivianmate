@@ -1,5 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { monthStart } from '../components/DayCalendar';
 import { groupByDay, localKey } from './drives';
 
@@ -10,9 +18,10 @@ const byStart = (item: { startedAt: string }) => item.startedAt;
 /**
  * Going to a date in a list read a page at a time (drives, sessions): a
  * month's records for the calendar, read once it's first opened, and
- * picking a day selects its latest record, reading older pages until the
- * list holds it. Spread `calendar` into a DayCalendar; hand `revealId` and
- * `clearReveal` to the list so it scrolls there once it has.
+ * picking a day selects its latest record. One the list doesn't hold yet
+ * opens the list there, rather than reading every page back to it (years
+ * of them, for a long history). Spread `calendar` into a DayCalendar; hand
+ * `revealId` and `clearReveal` to the list so it scrolls there once it has.
  */
 export function useGoToDate<T extends Listed>(options: {
   /** The listing's query key; each month is read under it, so what refreshes the list refreshes these. */
@@ -21,7 +30,8 @@ export function useGoToDate<T extends Listed>(options: {
   fetchWindow: (from: Date, to: Date) => Promise<T[]>;
   /** What the list has read so far, newest first. */
   listed: readonly T[] | undefined;
-  pages: { hasOlder: boolean; loadOlder: () => void };
+  /** Opens the list at the records that started before a time. */
+  jumpTo: (before: Date) => void;
   selected: T | null | undefined;
   onSelect: (id: number) => void;
   /** When a record counts as on its day, as the list groups it; when it started, unless given. */
@@ -49,14 +59,10 @@ export function useGoToDate<T extends Listed>(options: {
     [days],
   );
 
-  // The picked record, until the list has read back far enough to show it.
+  // The picked record, until the list shows it and has scrolled there.
   const [revealId, setRevealId] = useState<number | null>(null);
   const clearReveal = useCallback(() => setRevealId(null), []);
-  const { listed, pages, onSelect, selected } = options;
-  useEffect(() => {
-    if (revealId == null || !listed || listed.some((r) => r.id === revealId)) return;
-    if (pages.hasOlder) pages.loadOlder();
-  }, [revealId, listed, pages]);
+  const { listed, jumpTo, onSelect, selected } = options;
 
   return {
     revealId,
@@ -71,6 +77,10 @@ export function useGoToDate<T extends Listed>(options: {
         if (!latest) return;
         onSelect(latest.id);
         setRevealId(latest.id);
+        // Opened just above it, so it heads the list. Listed to the millisecond.
+        if (!listed?.some((r) => r.id === latest.id)) {
+          jumpTo(new Date(Date.parse(latest.startedAt) + 1));
+        }
       },
       earliest: options.earliest,
       onOpen: () => {
@@ -103,10 +113,44 @@ export function useRevealed(
   return rootRef;
 }
 
-/** Scrolls the nearest scrolling box around `el` so `el` sits at its top, leaving the page be. */
-function scrollToTop(el: Element) {
+/**
+ * For a list of records (each marked `data-record-id`) that reads newer
+ * ones in above what's shown: wraps that read so the record that headed
+ * the list stays where it was once they arrive, rather than being pushed
+ * a page down. `firstId` is the record heading the list.
+ */
+export function useHeldInPlace(
+  rootRef: RefObject<HTMLElement | null>,
+  firstId: number | undefined,
+) {
+  const held = useRef<{ el: Element; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const h = held.current;
+    if (!h) return;
+    held.current = null;
+    const box = h.el.isConnected ? scrollBox(h.el) : null;
+    if (box) box.scrollTop += h.el.getBoundingClientRect().top - h.top;
+  }, [firstId]);
+  return useCallback(
+    (load: () => void) => () => {
+      const el = rootRef.current?.querySelector('[data-record-id]');
+      if (el) held.current = { el, top: el.getBoundingClientRect().top };
+      load();
+    },
+    [rootRef],
+  );
+}
+
+/** The nearest box around `el` that scrolls. */
+function scrollBox(el: Element): HTMLElement | null {
   let box = el.parentElement;
   while (box && !/auto|scroll/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+  return box;
+}
+
+/** Scrolls the nearest scrolling box around `el` so `el` sits at its top, leaving the page be. */
+function scrollToTop(el: Element) {
+  const box = scrollBox(el);
   if (!box) return;
   box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top;
 }

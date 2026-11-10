@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { ChargingSessionDto, DriveCoverageDto, DriveDto } from '../api-types.js';
+import type {
+  ChargingCoverageDto,
+  ChargingSessionDto,
+  DriveCoverageDto,
+  DriveDto,
+} from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { createDb, runMigrations } from '../db/client.js';
 import { chargingSessions, drivers, drives, locationPoints, vehicles } from '../db/schema.js';
@@ -110,6 +115,55 @@ describe.skipIf(!url)('listing drives and charging sessions in a window', () => 
     );
     expect([first.length, rest.length]).toEqual([200, 1]);
     expect(rest[0]!.startedAt).toBe(start(0).toISOString());
+  });
+
+  it('reads the page above a list opened part way back, newest first, with nothing twice', async () => {
+    const start = (i: number) => new Date(day(1).getTime() + i * 60_000);
+    await handle.db.insert(drives).values(
+      Array.from({ length: 450 }, (_, i) => ({
+        vehicleId: 'v1',
+        startedAt: start(i),
+        endedAt: new Date(start(i).getTime() + 30_000),
+        distanceKm: 5,
+      })),
+    );
+    await handle.db.insert(chargingSessions).values(
+      Array.from({ length: 3 }, (_, i) => ({
+        vehicleId: 'v1',
+        startedAt: start(i),
+        energyKwh: 1,
+      })),
+    );
+
+    // Opened at drive 100: the 200 above it are 101-300, newest first.
+    const above = await get<DriveDto[]>(
+      `/api/vehicles/v1/drives?after=${start(100).toISOString()}`,
+    );
+    expect(above.map((d) => d.startedAt)).toEqual(
+      Array.from({ length: 200 }, (_, i) => start(300 - i).toISOString()),
+    );
+    const top = await get<DriveDto[]>(`/api/vehicles/v1/drives?after=${above[0]!.startedAt}`);
+    expect([top.length, top[0]!.startedAt]).toEqual([149, start(449).toISOString()]);
+
+    const sessions = await get<ChargingSessionDto[]>(
+      `/api/vehicles/v1/charging-sessions?after=${start(0).toISOString()}`,
+    );
+    expect(sessions.map((s) => s.startedAt)).toEqual(
+      [start(2), start(1)].map((d) => d.toISOString()),
+    );
+  });
+
+  it('says when charging history starts', async () => {
+    expect(await get<ChargingCoverageDto>('/api/vehicles/v1/charging-coverage')).toEqual({
+      since: null,
+    });
+    await handle.db.insert(chargingSessions).values([
+      { vehicleId: 'v1', startedAt: day(5) },
+      { vehicleId: 'v1', startedAt: day(2) },
+    ]);
+    expect(await get<ChargingCoverageDto>('/api/vehicles/v1/charging-coverage')).toEqual({
+      since: day(2).toISOString(),
+    });
   });
 
   it('lists every drive and session in a window, past the old 5,000 cap', async () => {

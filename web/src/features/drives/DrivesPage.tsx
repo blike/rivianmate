@@ -21,7 +21,7 @@ import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { VehicleMap } from '../../components/VehicleMap';
-import { driveProfile, minuteTicks, profilePosition } from '../../lib/drives';
+import { CHART_POINTS, driveProfile, evenly, minuteTicks, profilePosition } from '../../lib/drives';
 import { useGoToDate } from '../../lib/goToDate';
 import { useLiveTrail } from '../../lib/liveTrail';
 import { routePlan } from '../../lib/navigation';
@@ -38,6 +38,16 @@ export function DrivesPage(props: { vehicleId: string }) {
   const pages = useDrivePages(props.vehicleId);
   const { items: drives, isPending: drivesPending } = pages;
   const older = { has: pages.hasOlder, loading: pages.loadingOlder, load: pages.loadOlder };
+  const newer = {
+    has: pages.hasNewer,
+    loading: pages.loadingNewer,
+    load: pages.loadNewer,
+    // Back to the newest, and to showing it.
+    latest: () => {
+      pages.jumpTo(null);
+      setSelectedId(null);
+    },
+  };
   // The newest drive until one is picked.
   const driveId = selectedId ?? drives?.[0]?.id ?? null;
 
@@ -55,7 +65,7 @@ export function DrivesPage(props: { vehicleId: string }) {
     queryKey: ['drives', props.vehicleId],
     fetchWindow: (from, to) => api.drives(props.vehicleId, { from, to }),
     listed: drives,
-    pages,
+    jumpTo: pages.jumpTo,
     selected: detail,
     onSelect: setSelectedId,
     earliest: coverage?.since ? new Date(coverage.since) : null,
@@ -73,7 +83,8 @@ export function DrivesPage(props: { vehicleId: string }) {
 
   const profile = useMemo(() => {
     if (!detail) return [];
-    return driveProfile(detail.points, detail.startedAt).map((p) => ({
+    // The map draws every point; the chart, enough to look the same.
+    return evenly(driveProfile(detail.points, detail.startedAt), CHART_POINTS).map((p) => ({
       minutes: p.minutes,
       speed: u.distance(p.speedKmh),
       elevation: u.elevation(p.altitudeM),
@@ -108,6 +119,7 @@ export function DrivesPage(props: { vehicleId: string }) {
             selectedId={driveId}
             onSelect={setSelectedId}
             older={older}
+            newer={newer}
             className="sticky top-2 z-20 lg:hidden"
           />
         )}
@@ -198,7 +210,11 @@ export function DrivesPage(props: { vehicleId: string }) {
 
           <Panel title="All drives" className="hidden flex-col lg:flex" action={calendar}>
             <div className="relative min-h-0 flex-1">
-              <div className="-mx-4 max-h-112 overflow-auto lg:absolute lg:inset-0 lg:max-h-none">
+              <div
+                className={`-mx-4 max-h-112 overflow-auto transition-opacity lg:absolute lg:inset-0 lg:max-h-none ${
+                  pages.moving ? 'opacity-50' : ''
+                }`}
+              >
                 {drivesPending ? (
                   <div className="px-4">
                     <SkeletonRows rows={8} />
@@ -211,6 +227,7 @@ export function DrivesPage(props: { vehicleId: string }) {
                       onSelect={setSelectedId}
                       revealId={goTo.revealId}
                       onRevealed={goTo.clearReveal}
+                      newer={newer}
                     />
                     {older.has && (
                       <LoadOlder

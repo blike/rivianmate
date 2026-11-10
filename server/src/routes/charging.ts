@@ -1,7 +1,12 @@
-import { and, desc, eq, gte, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, lte, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { ChargingCurvePointDto, ChargingSessionDto, WallboxDto } from '../api-types.js';
+import type {
+  ChargingCoverageDto,
+  ChargingCurvePointDto,
+  ChargingSessionDto,
+  WallboxDto,
+} from '../api-types.js';
 import type { AppContext } from '../context.js';
 import {
   type ChargingSettings,
@@ -12,7 +17,7 @@ import {
   sessionRate,
   wallboxSpots,
 } from '../services/locations.js';
-import { listLimit, listWindowSchema } from './list-window.js';
+import { afterStart, listLimit, listWindowSchema } from './list-window.js';
 import { loadLocations } from './locations.js';
 import { getChargingSettings, getLookupSettings } from './settings.js';
 import { chargingCurvePoints, chargingSessions, wallboxReadings, wallboxes } from '../db/schema.js';
@@ -57,13 +62,31 @@ export async function chargingRoutes(app: FastifyInstance, ctx: AppContext): Pro
             q.from ? gte(chargingSessions.startedAt, q.from) : undefined,
             q.to ? lte(chargingSessions.startedAt, q.to) : undefined,
             q.before ? lt(chargingSessions.startedAt, q.before) : undefined,
+            q.after ? gte(chargingSessions.startedAt, afterStart(q.after)) : undefined,
           ),
         )
-        .orderBy(desc(chargingSessions.startedAt))
+        // A page above is the oldest after it, turned round below.
+        .orderBy(q.after ? asc(chargingSessions.startedAt) : desc(chargingSessions.startedAt))
         .$dynamic();
       const limit = listLimit(q);
       const rows = await (limit ? query.limit(limit) : query);
-      return sessionDtos(ctx, request.params.id, rows);
+      return sessionDtos(ctx, request.params.id, q.after ? rows.reverse() : rows);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/charging-coverage',
+    async (request): Promise<ChargingCoverageDto> => {
+      if (isTeslaMateVehicle(request.params.id)) {
+        return ctx.teslamate.chargingCoverage(request.params.id);
+      }
+      const [first] = await ctx.db
+        .select({ startedAt: chargingSessions.startedAt })
+        .from(chargingSessions)
+        .where(eq(chargingSessions.vehicleId, request.params.id))
+        .orderBy(asc(chargingSessions.startedAt))
+        .limit(1);
+      return { since: first ? first.startedAt.toISOString() : null };
     },
   );
 
