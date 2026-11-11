@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useLayoutEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useLiveState, useOrders, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
-import { DeliveryIcon, VehicleIcon } from './components/AppIcons';
+import { DeliveryIcon } from './components/AppIcons';
 import { MobileBar, NAV, Sidebar } from './components/AppNav';
 import { PageHeader } from './components/PageHeader';
 import { ChargingPage } from './features/charging/ChargingPage';
@@ -19,9 +19,8 @@ import { SetupPage } from './features/auth/SetupPage';
 import { AwaitingDeliveryPage, DeliveryPage } from './features/orders/OrderPages';
 import { modelName } from './features/orders/journey';
 
-/** On its way: the order is home. Delivered: the vehicle's own page, from order to handover. */
+/** On its way: the order is home. Delivered, Overview's Vehicle section links to it. */
 const DELIVERY_NAV = { to: '/', label: 'Delivery', icon: <DeliveryIcon /> };
-const VEHICLE_NAV = { to: '/vehicle', label: 'Vehicle', icon: <VehicleIcon /> };
 
 export default function App() {
   const { data: status, isLoading, refetch } = useStatus();
@@ -57,7 +56,19 @@ export default function App() {
   return <Shell />;
 }
 
+/**
+ * A new page opens at its top, not at the last page's scroll position. Only
+ * the path counts: a page changing its own query (a date, a selection) stays put.
+ */
+function useScrollToTopOnPageChange() {
+  const { pathname } = useLocation();
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+}
+
 function Shell() {
+  useScrollToTopOnPageChange();
   const { data: vehicles, isPending: vehiclesPending } = useVehicles();
   // Wait for units too, so values don't re-render from the default units.
   const { isPending: unitsPending } = useUnitPreferences();
@@ -75,7 +86,7 @@ function Shell() {
     vehicles,
     vehicleId,
     onSelectVehicle: setSelectedId,
-    items: vehicleId ? (hasJourney ? [...NAV, VEHICLE_NAV] : NAV) : [DELIVERY_NAV],
+    items: vehicleId ? NAV : [DELIVERY_NAV],
     pending: !vehicleId && waiting ? { name: modelName(waiting), detail: 'On its way' } : undefined,
   };
 
@@ -93,7 +104,13 @@ function Shell() {
                 <>
                   <Route
                     path="/"
-                    element={<DashboardPage vehicleId={vehicleId} vehicle={vehicle} />}
+                    element={
+                      <DashboardPage
+                        vehicleId={vehicleId}
+                        vehicle={vehicle}
+                        hasJourney={hasJourney}
+                      />
+                    }
                   />
                   <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
                   <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />

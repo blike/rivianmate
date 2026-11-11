@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { VehicleDto } from '@server/api-types';
 import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { useInsights, useVehicleState } from '../../api/hooks';
@@ -20,7 +21,12 @@ import { VehiclePlan } from './VehiclePlan';
 const SPECS =
   'grid grid-cols-1 gap-x-10 text-sm md:grid-cols-2 [&>div]:border-t [&>div]:border-(--hairline) [&>div]:py-2.5';
 
-export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }) {
+export function DashboardPage(props: {
+  vehicleId: string;
+  vehicle?: VehicleDto;
+  /** Rivian has the order it was delivered from: the Vehicle section links to its page. */
+  hasJourney?: boolean;
+}) {
   const { data: state, isPending } = useVehicleState(props.vehicleId);
   const { data: insights, isPending: insightsPending } = useInsights(props.vehicleId);
   const v = props.vehicle;
@@ -53,7 +59,31 @@ export function DashboardPage(props: { vehicleId: string; vehicle?: VehicleDto }
         {!teslamate && <SchedulesSection vehicleId={props.vehicleId} />}
 
         <section>
-          <SectionRule>Vehicle</SectionRule>
+          <SectionRule
+            action={
+              // Looked at once or twice after delivery: a quiet way in, at the foot of the page.
+              props.hasJourney && (
+                <Link
+                  to="/vehicle"
+                  className="eyebrow inline-flex shrink-0 items-center gap-1 text-(--text-secondary) transition-colors hover:text-(--accent) focus-visible:text-(--accent)"
+                >
+                  Build &amp; delivery
+                  <svg
+                    viewBox="0 0 12 12"
+                    className="h-2.5 w-2.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    aria-hidden
+                  >
+                    <path d="M4.5 2.5 8 6l-3.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </Link>
+              )
+            }
+          >
+            Vehicle
+          </SectionRule>
           <LoadingScope loading={isPending}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
               {/* Spans both rows at xl; the plan centers in whatever height they make. */}
