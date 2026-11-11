@@ -30,6 +30,40 @@ export const GET_USER_INFO = `query getUserInfo { currentUser { __typename id ve
  */
 export const GET_VEHICLE_DETAILS = `query getVehicleDetails { currentUser { __typename vehicles { id vehicle { __typename actualGeneralAssemblyDate mobileConfiguration { trimOption { optionName } driveSystemOption { optionName } exteriorColorOption { optionName } interiorColorOption { optionName } wheelOption { optionName } tonneauOption { optionName } } } } } }`;
 
+/**
+ * Rivian's orders service. orderSnapshots exists only here: the gateway
+ * answers GRAPHQL_VALIDATION_FAILED, which reads like "no orders". Host and
+ * fields as verified against a live account by the MIT-licensed
+ * rivian-order-view (github.com/MrSerious0/rivian-order-view).
+ */
+export const GRAPHQL_ORDERS = 'https://rivian.com/api/gql/orders/graphql/';
+
+/**
+ * The account's orders, including vehicles not yet delivered (which aren't
+ * in currentUser.vehicles until Rivian provisions them). Only fields seen
+ * answering a live account: one unknown field rejects the whole document.
+ */
+export const GET_ORDER_SNAPSHOTS = `query getOrderSnapshots { user { orderSnapshots(filterTypes: [PRE_ORDER, VEHICLE, RETAIL]) { id state configurationStatus fulfillmentSummaryStatus vehicleId vin } } }`;
+
+/**
+ * One order (orders service): the vehicle's build record and status, the
+ * configured options and the estimated delivery window. A subset of
+ * rivian-order-view's verified selection; money, payments and addresses are
+ * deliberately not requested.
+ */
+export const GET_ORDER = `query order($id: String!) { order(id: $id) { id orderDate state type vin vehicleId configurationStatus fulfillmentSummaryStatus vehicle { vehicleId vin modelYear model make plannedBuildDate expectedBuildDate actualGeneralAssemblyDate expectedGeneralAssemblyStartDate status } items { title type configuration { options { optionId optionName groupId } } } fulfillmentInfo { fulfillments { fulfillmentStatus estimatedDeliveryWindow { startDate endDate } } } } }`;
+
+/**
+ * An order's delivery appointment (gateway). Answers on the session headers
+ * alone (seen live, Nov 2026), so no Bearer token is needed; rivian-order-view
+ * sees it refused with an expired Bearer token. It still answers after
+ * delivery, with the appointment that was kept.
+ */
+export const GET_DELIVERY = `query delivery($orderId: ID!) { delivery(orderId: $orderId) { status carrier vehicleVIN appointmentDetails { appointmentId startDateTime endDateTime timeZone } deliveryAddress { addressLine1 addressLine2 city state zipcode } } }`;
+
+/** Renders of each ordered vehicle in its configuration, keyed by order id. */
+export const GET_ORDER_IMAGES = `query getVehicleOrderImages($version: String) { getVehicleOrderMobileImages(version: $version) { orderId url resolution size design placement } }`;
+
 /** Rendered images of each vehicle in its own paint and wheels, at every angle and resolution. Version 3 is the set the current app uses. */
 export const GET_VEHICLE_IMAGES = `query getVehicleImages($version: String) { getVehicleMobileImages(version: $version) { vehicleId url resolution size design placement } }`;
 

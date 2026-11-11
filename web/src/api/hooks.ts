@@ -36,6 +36,20 @@ export function useVehicles(enabled = true) {
   return useQuery({ queryKey: ['vehicles'], queryFn: api.vehicles, enabled });
 }
 
+/**
+ * Each vehicle order's journey. Rivian is asked every 15 minutes about
+ * orders on their way, so checking the server more often finds nothing new.
+ */
+export function useOrders(enabled = true) {
+  return useQuery({
+    queryKey: ['orders'],
+    queryFn: api.orders,
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data && query.state.data.checkedAt == null ? 10_000 : 5 * 60_000,
+  });
+}
+
 export function useVehicleState(vehicleId: string | undefined) {
   return useQuery({
     queryKey: ['vehicleState', vehicleId],

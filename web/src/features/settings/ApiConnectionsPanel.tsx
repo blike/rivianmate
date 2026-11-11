@@ -511,6 +511,103 @@ function ParallaxTopics(props: { feeds: Feed[]; now: number }) {
   );
 }
 
+type OrderDiagnostics = RivianDiagnosticsResponse['monitor']['orders'];
+type OrderSnapshot = OrderDiagnostics['orders'][number];
+
+function orderStatus(
+  order: OrderSnapshot,
+  journey: OrderDiagnostics['journeys'][number] | undefined,
+): { label: string; color: string; help: string } {
+  if (order.state === 'CANCELLED') {
+    return { label: 'Cancelled', color: 'var(--text-muted)', help: 'Not followed.' };
+  }
+  if (!journey) {
+    return {
+      label: 'Not followed',
+      color: 'var(--text-muted)',
+      help: 'Not a vehicle order, or past the three orders on their way that are followed.',
+    };
+  }
+  if (!journey.detail.ok || (journey.delivery && !journey.delivery.ok)) {
+    return {
+      label: 'Lookup failed',
+      color: 'var(--status-critical)',
+      help: 'Rivian refused or didn’t answer a lookup; open the row for the error.',
+    };
+  }
+  return journey.delivered
+    ? { label: 'Delivered', color: 'var(--status-good)', help: 'In the account, and logged.' }
+    : { label: 'On its way', color: 'var(--accent)', help: 'Asked about every 15 minutes.' };
+}
+
+function OrdersGroup(props: { orders: OrderDiagnostics; now: number }) {
+  const { orders, journeys, checkedAt, nextCheckAt, lastError } = props.orders;
+  const next = nextCheckAt ? Date.parse(nextCheckAt) - props.now : null;
+  return (
+    <SettingsGroup
+      ariaLabel="Orders"
+      title="Orders"
+      action={
+        <span className="text-xs text-(--text-muted)" title={receivedAt(checkedAt)}>
+          {checkedAt ? `Checked ${ago(checkedAt, props.now)}` : 'Not checked yet'}
+          {next != null && ` · next in ${Math.max(1, Math.round(next / 60_000))} min`}
+        </span>
+      }
+    >
+      {lastError && (
+        <p
+          className="px-4 py-2.5 text-xs text-(--status-critical)"
+          title={receivedAt(lastError.at)}
+        >
+          Listing orders failed {ago(lastError.at, props.now)}: {lastError.message}
+        </p>
+      )}
+      {orders.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-(--text-secondary)">
+          {checkedAt || lastError ? 'Rivian lists no orders on this account.' : 'Not asked yet.'}
+        </p>
+      ) : (
+        orders.map((order) => {
+          const journey = journeys.find((j) => j.snapshot.id === order.id);
+          const status = orderStatus(order, journey);
+          return (
+            <ExpandRow
+              key={order.id}
+              summary={
+                <>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium tabular-nums">
+                    {order.id}
+                  </span>
+                  <span className="hidden truncate text-xs text-(--text-muted) sm:block">
+                    {order.fulfillmentSummaryStatus ?? order.state}
+                  </span>
+                  <EndSlot>
+                    <span
+                      className="shrink-0 text-xs font-medium"
+                      style={{ color: status.color }}
+                      title={status.help}
+                    >
+                      {status.label}
+                    </span>
+                  </EndSlot>
+                </>
+              }
+            >
+              {() => (
+                <div className="px-4 pb-3 pl-10 text-xs">
+                  <pre className="max-h-96 overflow-auto rounded-md bg-(--surface-2) p-2 font-mono text-[11px] leading-snug">
+                    {JSON.stringify(journey ?? { snapshot: order }, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </ExpandRow>
+          );
+        })
+      )}
+    </SettingsGroup>
+  );
+}
+
 export function ApiConnectionsPanel({
   diagnostics,
   loading,
@@ -565,6 +662,11 @@ export function ApiConnectionsPanel({
         <SettingsHero {...connectionSummary(diagnostics, mockMode, lastData, now)}>
           {diagnostics && !mockMode && <HealthTiles diagnostics={diagnostics} now={now} />}
         </SettingsHero>
+      )}
+
+      {/* Account-wide, so above the per-vehicle feeds and their vehicle switcher. */}
+      {!loading && diagnostics?.monitor.orders && (
+        <OrdersGroup orders={diagnostics.monitor.orders} now={now} />
       )}
 
       {loading ? (

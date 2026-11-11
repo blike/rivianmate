@@ -67,6 +67,96 @@ export interface UserVehicle {
   } | null;
 }
 
+/**
+ * One of the account's orders, from the orders service. Observed values:
+ * `state` ORDERED, CANCELLED (stays ORDERED after delivery);
+ * `configurationStatus` SOFT_LOCKED; `fulfillmentSummaryStatus`
+ * PENDING_FULFILLMENT, READY_FOR_FULFILLMENT, VEHICLE_DELIVERED.
+ * These lag the physical car by days to weeks: an order can still read
+ * PENDING_FULFILLMENT after the vehicle is built.
+ */
+export interface OrderSnapshot {
+  id: string;
+  state: string;
+  configurationStatus: string | null;
+  fulfillmentSummaryStatus: string | null;
+  /** Set once Rivian ties the order to a vehicle (getUserInfo's vehicles[].id). */
+  vehicleId: string | null;
+  /** Often null for weeks after the vehicle has one; the order's vehicle record has it first. */
+  vin: string | null;
+}
+
+/** One order in detail, from the orders service's `order(id)`. */
+export interface OrderDetail {
+  id: string;
+  /** VEHICLE for a vehicle order; gear and accessories have other types. */
+  type: string | null;
+  state: string | null;
+  orderDate: string | null;
+  configurationStatus: string | null;
+  fulfillmentSummaryStatus: string | null;
+  /** Rivian's build record, once the order is assigned to one. */
+  vehicle: OrderVehicle | null;
+  items: OrderItem[];
+  /** The earliest estimated delivery window among the order's fulfillments. */
+  estimatedDelivery: { start: string | null; end: string | null } | null;
+}
+
+/**
+ * The build record behind an order. `actualGeneralAssemblyDate` is what
+ * happened; the planned and expected dates are schedules Rivian revises, so
+ * one falling after the actual date is normal.
+ */
+export interface OrderVehicle {
+  /** Rivian's internal id (getUserInfo's vehicles[].id), not a VIN. */
+  vehicleId: string | null;
+  /** The VIN to trust: the order's own `vin` lags this by weeks. */
+  vin: string | null;
+  modelYear: string | null;
+  model: string | null;
+  make: string | null;
+  plannedBuildDate: string | null;
+  expectedBuildDate: string | null;
+  expectedGeneralAssemblyStartDate: string | null;
+  actualGeneralAssemblyDate: string | null;
+  /**
+   * Observed: FACTORY_OK, FACTORY_GATED, STAGED_FOR_PDI, PDI_COMPLETED,
+   * VEHICLE_PREPPED, DELIVERED. Steps can be skipped, and it lags the car by days.
+   */
+  status: string | null;
+}
+
+export interface OrderItem {
+  type: string | null;
+  title: string | null;
+  /** Configured options, e.g. { group: "PAINT", id: "…", name: "Launch Green" }. */
+  options: { group: string | null; id: string | null; name: string | null }[];
+}
+
+/** An order's delivery appointment, from the gateway's `delivery(orderId)`. */
+export interface Delivery {
+  /** e.g. DELIVERY_ACCEPTED. */
+  status: string | null;
+  /** e.g. THIRD_PARTY. */
+  carrier: string | null;
+  vin: string | null;
+  appointment: {
+    id: string | null;
+    /** Local wall-clock times in `timeZone` (no offset), e.g. 2027-02-06T10:30:00. */
+    start: string | null;
+    end: string | null;
+    /** IANA zone, e.g. America/Indiana/Indianapolis. */
+    timeZone: string | null;
+  } | null;
+  address: {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    zipcode: string | null;
+  } | null;
+}
+
 /** How the vehicle left the factory. Option names are Rivian's, e.g. "R1S Dual". */
 export interface VehicleDetails {
   /** Local date the vehicle finished general assembly, YYYY-MM-DD. */

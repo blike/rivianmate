@@ -15,7 +15,13 @@ import {
 import { Dot } from './Dot';
 import { VehicleMenu, vehicleName } from './VehicleMenu';
 
-export const NAV = [
+export interface NavItem {
+  to: string;
+  label: string;
+  icon: ReactNode;
+}
+
+export const NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: <OverviewIcon /> },
   { to: '/history', label: 'History', icon: <HistoryIcon /> },
   { to: '/drives', label: 'Drives', icon: <DrivesIcon /> },
@@ -32,6 +38,10 @@ interface NavProps {
   vehicles: VehicleDto[] | undefined;
   vehicleId: string | undefined;
   onSelectVehicle: (id: string) => void;
+  /** The sections; NAV unless there's no vehicle yet. */
+  items?: NavItem[];
+  /** With no vehicle yet: the one on its way, in the vehicle's place. */
+  pending?: { name: string; detail: string };
 }
 
 function Wordmark() {
@@ -54,7 +64,7 @@ export function Sidebar(props: NavProps) {
 
       <nav aria-label="Main" className="mt-6 flex flex-1 flex-col">
         <ul className="space-y-0.5">
-          {NAV.map((item) => (
+          {(props.items ?? NAV).map((item) => (
             <li key={item.to}>
               <SideLink {...item} />
             </li>
@@ -127,7 +137,20 @@ function VehicleBlock(props: NavProps) {
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
   }, []);
-  if (!vehicle) return <div className="mt-6 h-15" />;
+  if (!vehicle) {
+    if (!props.pending) return <div className="mt-6 h-15" />;
+    return (
+      <div className="mt-6">
+        <div className="block rounded-xl border border-(--hairline) bg-(--surface-1) px-3 py-2.5">
+          <span className="block truncate text-sm font-medium">{props.pending.name}</span>
+          <span className="mt-1 flex items-center gap-1.5 text-xs text-(--text-secondary)">
+            <Dot color="var(--accent)" pulse />
+            {props.pending.detail}
+          </span>
+        </div>
+      </div>
+    );
+  }
   const f = freshness(state, now);
   const multiple = (props.vehicles?.length ?? 0) > 1;
   const model = [vehicle.modelYear, vehicle.model].filter(Boolean).join(' ');
@@ -215,15 +238,41 @@ export function MobileBar(props: NavProps) {
   }, [open]);
 
   const multiple = props.vehicles != null && props.vehicles.length > 1;
-  const items = [...NAV, SETTINGS];
+  const items = [...(props.items ?? NAV), SETTINGS];
 
   return (
     <header className="px-4 py-4 sm:px-6 lg:hidden">
       <div ref={rowRef} className={`flex h-8 items-center ${open ? 'relative z-1100' : ''}`}>
         <Wordmark />
+        {multiple && (
+          <div className="mr-2 ml-auto min-w-0">
+            <VehicleMenu
+              vehicles={props.vehicles!}
+              value={props.vehicleId}
+              onChange={(id) => {
+                props.onSelectVehicle(id);
+                close();
+              }}
+              fitList
+              className="flex h-8 max-w-44 items-center gap-1.5 rounded-full border border-(--hairline) bg-(--surface-1) pr-2.5 pl-3 text-sm font-medium [-webkit-tap-highlight-color:transparent]"
+            >
+              {(menuOpen) => {
+                const current = props.vehicles!.find((v) => v.id === props.vehicleId);
+                return (
+                  <>
+                    <span className="min-w-0 truncate">{current ? vehicleName(current) : '—'}</span>
+                    <Chevron
+                      className={`shrink-0 text-(--text-muted) transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+                    />
+                  </>
+                );
+              }}
+            </VehicleMenu>
+          </div>
+        )}
         <button
           type="button"
-          className="-mr-1.5 ml-auto grid h-8 w-8 place-items-center rounded-md text-(--text-primary) [-webkit-tap-highlight-color:transparent]"
+          className={`-mr-1.5 grid h-8 w-8 shrink-0 place-items-center rounded-md text-(--text-primary) [-webkit-tap-highlight-color:transparent] ${multiple ? '' : 'ml-auto'}`}
           aria-expanded={open}
           aria-controls={menuId}
           aria-label={open ? 'Close menu' : 'Open menu'}
@@ -249,7 +298,7 @@ export function MobileBar(props: NavProps) {
             className="rm-sheet-in fixed inset-x-0 top-0 z-1095 border-b border-(--hairline) bg-(--surface-0) shadow-[0_24px_48px_-24px_rgba(0,0,0,0.9)]"
             style={{ paddingTop: sheetTop + 12 }}
           >
-            <nav aria-label="Main" className={`px-4 sm:px-6 ${multiple ? 'pb-5' : 'pb-2'}`}>
+            <nav aria-label="Main" className="px-4 pb-2 sm:px-6">
               <ul>
                 {items.map((item, i) => (
                   <li
@@ -274,37 +323,6 @@ export function MobileBar(props: NavProps) {
                   </li>
                 ))}
               </ul>
-              {multiple && (
-                <div
-                  className="rm-item-in mt-5"
-                  style={{ animationDelay: `${40 + items.length * 25}ms` }}
-                >
-                  <span className="eyebrow mb-1.5 block">Vehicle</span>
-                  <VehicleMenu
-                    vehicles={props.vehicles!}
-                    value={props.vehicleId}
-                    onChange={(id) => {
-                      props.onSelectVehicle(id);
-                      close();
-                    }}
-                    className="flex h-11 items-center gap-2 rounded-lg border border-(--border) bg-(--surface-1) px-3 text-base"
-                  >
-                    {(open) => {
-                      const current = props.vehicles!.find((v) => v.id === props.vehicleId);
-                      return (
-                        <>
-                          <span className="min-w-0 flex-1 truncate">
-                            {current ? vehicleName(current) : '—'}
-                          </span>
-                          <Chevron
-                            className={`shrink-0 text-(--text-muted) transition-transform ${open ? 'rotate-180' : ''}`}
-                          />
-                        </>
-                      );
-                    }}
-                  </VehicleMenu>
-                </div>
-              )}
             </nav>
           </div>
         </>

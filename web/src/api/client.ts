@@ -25,6 +25,7 @@ import type {
   ImportsDto,
   LocationPointDto,
   RivianDiagnosticsResponse,
+  OrdersDto,
   OtaTimelineDto,
   PhantomDrainDto,
   SchedulesDto,
@@ -229,6 +230,7 @@ export const api = {
   rivianDisconnect: () => request<{ ok: boolean }>('/api/rivian/disconnect', { method: 'POST' }),
 
   vehicles: () => request<VehicleDto[]>('/api/vehicles'),
+  orders: () => request<OrdersDto>('/api/orders'),
   vehicleState: (id: string) => request<VehicleState>(`/api/vehicles/${id}/state`),
   history: (id: string, metric: HistoryMetric, from: Date, to: Date, bucket: string) =>
     request<HistoryPoint[]>(

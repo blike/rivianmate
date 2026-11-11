@@ -744,3 +744,80 @@ body {
     animation: none;
   }
 }
+
+/* ---- Order journey ---- */
+
+/* The page's own glow: warm from above, as on the sign-in screens, but wider. */
+.journey-backdrop {
+  background:
+    radial-gradient(56rem 28rem at 70% -8rem, rgb(245 197 24 / 0.07), transparent 70%),
+    radial-gradient(40rem 22rem at 10% 30rem, rgb(57 135 229 / 0.035), transparent 70%);
+}
+
+/* The vehicle on a lit floor: a soft spotlight behind, a shadow under the wheels. */
+.journey-stage {
+  position: relative;
+  isolation: isolate;
+}
+.journey-stage::before {
+  content: '';
+  position: absolute;
+  inset: -6% -8% 4%;
+  z-index: -2;
+  background:
+    radial-gradient(50% 46% at 50% 54%, rgb(255 255 240 / 0.075), transparent 72%),
+    radial-gradient(64% 58% at 50% 60%, rgb(245 197 24 / 0.06), transparent 74%);
+}
+.journey-stage::after {
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 10%;
+  height: 10%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.8), rgb(0 0 0 / 0.35) 55%, transparent);
+  filter: blur(8px);
+}
+/* Enters once, rising a little; children can stagger with --rise-delay. */
+.journey-rise {
+  animation: journey-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--rise-delay, 0ms) both;
+}
+@keyframes journey-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+.journey-render {
+  animation: journey-render 1100ms cubic-bezier(0.16, 0.8, 0.24, 1) 120ms both;
+}
+@keyframes journey-render {
+  from {
+    opacity: 0;
+    transform: translateX(3%) scale(0.98);
+  }
+}
+
+/* The step under way: an accent ring breathing around its dot. */
+.journey-current {
+  box-shadow: 0 0 0 0 rgb(245 197 24 / 0.45);
+  animation: journey-breathe 2.4s ease-out infinite;
+}
+@keyframes journey-breathe {
+  70% {
+    box-shadow: 0 0 0 9px rgb(245 197 24 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(245 197 24 / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .journey-rise,
+  .journey-render,
+  .journey-current {
+    animation: none;
+  }
+}

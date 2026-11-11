@@ -51,8 +51,10 @@ export function Select<T extends string>(props: {
   align?: 'left' | 'right';
   /** The trigger's content in place of the chip, given whether the list is open. */
   trigger?: (open: boolean) => ReactNode;
-  /** Classes for a custom trigger; its list is as wide as it. */
+  /** Classes for a custom trigger; its list is as wide as it, unless `fitList`. */
   triggerClassName?: string;
+  /** A custom trigger's list sized to its options, for a trigger narrower than them. */
+  fitList?: boolean;
   /** Labels the chip is kept as wide as the widest of, so it holds its width whatever is chosen. */
   widthOf?: readonly string[];
   onChange: (value: T) => void;
@@ -189,7 +191,7 @@ export function Select<T extends string>(props: {
         <div
           onKeyDown={onKey}
           className={`card absolute top-full z-1100 mt-2 overflow-hidden text-(--text-primary) shadow-[0_12px_32px_rgba(0,0,0,0.45)] ${
-            custom
+            custom && !props.fitList
               ? 'inset-x-0'
               : `w-max max-w-[min(20rem,calc(100vw-2rem))] min-w-full ${left ? 'left-0' : 'right-0'}`
           }`}
@@ -217,7 +219,8 @@ export function Select<T extends string>(props: {
             tabIndex={-1}
             aria-label={props.label}
             aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
-            className="max-h-[min(50vh,20rem)] overflow-auto py-1 outline-none"
+            // Rows inset with rounded highlights, so none meets the card's edge.
+            className="max-h-[min(50vh,20rem)] overflow-auto p-1 outline-none"
           >
             {shown.length === 0 && (
               <div className="px-3 py-2 text-sm text-(--text-muted)">No matches</div>
@@ -231,7 +234,7 @@ export function Select<T extends string>(props: {
                 <div key={o.value}>
                   {startsGroup && (
                     <div
-                      className={`eyebrow px-3 pt-2 pb-1 ${i > 0 ? 'mt-1 border-t border-(--hairline)' : ''}`}
+                      className={`eyebrow px-2.5 pt-2 pb-1 ${i > 0 ? 'mt-1 border-t border-(--hairline)' : ''}`}
                     >
                       {group}
                     </div>
@@ -242,12 +245,15 @@ export function Select<T extends string>(props: {
                     aria-selected={selected}
                     onClick={() => choose(o.value)}
                     onPointerMove={() => setActive(i)}
-                    className={`relative flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm ${
+                    className={`relative flex cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-2 text-sm ${
                       i === active ? 'bg-(--surface-2)' : ''
                     }`}
                   >
                     {selected && (
-                      <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-(--accent)" />
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-(--accent)"
+                      />
                     )}
                     <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
                       <span className={`truncate ${selected ? 'font-medium' : ''}`}>{o.label}</span>

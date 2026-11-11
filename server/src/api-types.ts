@@ -5,8 +5,12 @@
 import type { RivianTrafficSnapshot } from './rivian/governor.js';
 import type {
   ChargingSchedule,
+  Delivery,
   DepartureSchedule,
   LiveSessionData,
+  OrderDetail,
+  OrderItem,
+  OrderVehicle,
   VehicleState,
   VehicleView,
 } from './rivian/types.js';
@@ -16,7 +20,11 @@ import type { MonitorDiagnostics } from './services/vehicle-monitor.js';
 
 export type {
   ChargingSchedule,
+  Delivery,
   DepartureSchedule,
+  OrderDetail,
+  OrderItem,
+  OrderVehicle,
   FeedLatestData,
   FeedTopic,
   LiveSessionData,
@@ -24,6 +32,36 @@ export type {
   VehicleState,
   VehicleView,
 };
+
+/**
+ * What a lookup came back with. A failure stays one: a refused delivery
+ * lookup is "unknown", never "no delivery scheduled".
+ */
+export type LookupDto<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** A vehicle order, from the order to the delivery: the same story before and after. */
+export interface OrderJourneyDto {
+  orderId: string;
+  /** Whether the vehicle is in the account (so being logged): delivered. */
+  delivered: boolean;
+  /** Rivian's vehicle id once the order has one; matches VehicleDto.id once delivered. */
+  vehicleId: string | null;
+  state: string;
+  fulfillmentSummaryStatus: string | null;
+  detail: LookupDto<OrderDetail | null>;
+  /** Null when not asked: the order isn't for a vehicle. */
+  delivery: LookupDto<Delivery | null> | null;
+  /** Views of the ordered vehicle's render, served at `/api/orders/:orderId/render/:view`. */
+  renders: VehicleView[];
+}
+
+export interface OrdersDto {
+  journeys: OrderJourneyDto[];
+  /** When Rivian was last asked; null before the first answer. */
+  checkedAt: string | null;
+  /** How often orders not yet delivered are asked about again. */
+  refreshMinutes: number;
+}
 
 export interface SchedulesDto {
   /** null when not fetched yet or Rivian didn't provide it. */

@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { useLiveState, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
-import { MobileBar, Sidebar } from './components/AppNav';
+import { useLayoutEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useLiveState, useOrders, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
+import { DeliveryIcon } from './components/AppIcons';
+import { MobileBar, NAV, Sidebar } from './components/AppNav';
 import { PageHeader } from './components/PageHeader';
 import { ChargingPage } from './features/charging/ChargingPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -15,6 +16,11 @@ import { TripPage } from './features/trips/TripPage';
 import { TripsPage } from './features/trips/TripsPage';
 import { OutsideServicesPage } from './features/auth/OutsideServicesPage';
 import { SetupPage } from './features/auth/SetupPage';
+import { AwaitingDeliveryPage, DeliveryPage } from './features/orders/OrderPages';
+import { modelName } from './features/orders/journey';
+
+/** On its way: the order is home. Delivered, Overview's Vehicle section links to it. */
+const DELIVERY_NAV = { to: '/', label: 'Delivery', icon: <DeliveryIcon /> };
 
 export default function App() {
   const { data: status, isLoading, refetch } = useStatus();
@@ -50,7 +56,19 @@ export default function App() {
   return <Shell />;
 }
 
+/**
+ * A new page opens at its top, not at the last page's scroll position. Only
+ * the path counts: a page changing its own query (a date, a selection) stays put.
+ */
+function useScrollToTopOnPageChange() {
+  const { pathname } = useLocation();
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+}
+
 function Shell() {
+  useScrollToTopOnPageChange();
   const { data: vehicles, isPending: vehiclesPending } = useVehicles();
   // Wait for units too, so values don't re-render from the default units.
   const { isPending: unitsPending } = useUnitPreferences();
@@ -58,8 +76,19 @@ function Shell() {
   const vehicleId = selectedId ?? vehicles?.[0]?.id;
   const vehicle = vehicles?.find((v) => v.id === vehicleId);
   useLiveState(vehicleId);
+  const { data: status } = useStatus();
+  const { data: orders } = useOrders(status?.rivianConnected ?? false);
 
-  const nav = { vehicles, vehicleId, onSelectVehicle: setSelectedId };
+  // Before delivery the account lists no vehicle: home is the order on its way.
+  const waiting = orders?.journeys.find((j) => !j.delivered);
+  const hasJourney = orders?.journeys.some((j) => j.delivered && j.vehicleId === vehicleId);
+  const nav = {
+    vehicles,
+    vehicleId,
+    onSelectVehicle: setSelectedId,
+    items: vehicleId ? NAV : [DELIVERY_NAV],
+    pending: !vehicleId && waiting ? { name: modelName(waiting), detail: 'On its way' } : undefined,
+  };
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
@@ -75,12 +104,22 @@ function Shell() {
                 <>
                   <Route
                     path="/"
-                    element={<DashboardPage vehicleId={vehicleId} vehicle={vehicle} />}
+                    element={
+                      <DashboardPage
+                        vehicleId={vehicleId}
+                        vehicle={vehicle}
+                        hasJourney={hasJourney}
+                      />
+                    }
                   />
                   <Route path="/history" element={<HistoryPage vehicleId={vehicleId} />} />
                   <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />
                   <Route path="/trips" element={<TripsPage vehicleId={vehicleId} />} />
                   <Route path="/trips/:tripId" element={<TripPage vehicleId={vehicleId} />} />
+                  <Route
+                    path="/vehicle"
+                    element={<DeliveryPage vehicleId={vehicleId} vehicleName={vehicle?.name} />}
+                  />
                   <Route path="/charging" element={<ChargingPage vehicleId={vehicleId} />} />
                   <Route
                     path="/health"
@@ -94,17 +133,18 @@ function Shell() {
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </>
               ) : (
-                <Route
-                  path="*"
-                  element={
-                    <p className="text-(--text-muted)">
-                      {vehicles ? 'No vehicles found.' : "Couldn't load vehicles."}{' '}
-                      <Link to="/settings" className="text-(--accent) hover:underline">
-                        Check your connections in Settings.
-                      </Link>
-                    </p>
-                  }
-                />
+                <>
+                  <Route
+                    path="/"
+                    element={
+                      <AwaitingDeliveryPage
+                        vehiclesFailed={!vehicles}
+                        rivianConnected={status?.rivianConnected ?? false}
+                      />
+                    }
+                  />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </>
               )}
             </Routes>
           )}

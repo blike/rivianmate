@@ -8,6 +8,7 @@ import { isTeslaMateVehicle } from '../teslamate/ids.js';
 import { NO_SCHEDULES } from '../teslamate/source.js';
 import { placeContext } from './charging.js';
 import { drivePlace } from './history.js';
+import { sendRender } from './render-proxy.js';
 
 /** The views a vehicle has a render for. */
 const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
@@ -34,9 +35,6 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
     ];
   });
 
-  // Rivian's render URLs carry a token, so the server fetches them and keeps
-  // each one, keyed by its URL, until discovery stores a new one.
-  const renderCache = new Map<string, { type: string; body: Buffer }>();
   app.get<{ Params: { id: string; view: string } }>(
     '/api/vehicles/:id/render/:view',
     async (request, reply) => {
@@ -45,23 +43,7 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
         .select({ images: vehicles.images })
         .from(vehicles)
         .where(eq(vehicles.id, request.params.id));
-      const url = view && row?.images?.[view];
-      if (!url) return reply.code(404).send({ error: 'No render' });
-
-      let render = renderCache.get(url);
-      if (!render) {
-        const res = await fetch(url);
-        if (!res.ok) return reply.code(502).send({ error: 'Render unavailable' });
-        render = {
-          type: res.headers.get('content-type') ?? 'image/png',
-          body: Buffer.from(await res.arrayBuffer()),
-        };
-        renderCache.set(url, render);
-      }
-      return reply
-        .header('Content-Type', render.type)
-        .header('Cache-Control', 'private, max-age=86400')
-        .send(render.body);
+      return sendRender(reply, view && row?.images?.[view]);
     },
   );
 

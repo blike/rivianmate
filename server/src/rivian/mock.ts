@@ -10,7 +10,10 @@ import {
   ChargeSessionSummary,
   ChargingSchedule,
   LiveSessionData,
+  Delivery,
   LoginResult,
+  OrderDetail,
+  OrderSnapshot,
   OtaUpdateDetails,
   RivianInvalidOtpError,
   RivianTokens,
@@ -37,6 +40,7 @@ import {
 } from './parallax/index.js';
 import { b64, double, float, int, message, string } from './parallax/encode.js';
 import { ROUTE_HOME } from './mock-route-home.js';
+import { type MockOrder, awaitingOrder, deliveredOrder } from './mock-orders.js';
 import type { TemperatureLookup } from '../services/drive-weather.js';
 
 /** Made-up addresses for mock drives (no real lookups in mock mode). */
@@ -212,7 +216,7 @@ const PHASE_TICKS: Record<Exclude<Phase, 'driving'>, number> = {
 const altitudeAt = (tick: number) => Math.round(240 + 35 * Math.sin(tick / 8));
 
 /** Demo scenes the mock can start in instead of parked at home (MOCK_SCENE). */
-export type MockScene = 'drive-home';
+export type MockScene = 'drive-home' | 'awaiting-delivery';
 
 /**
  * The drive-home scene: this far along the drive home, which began at
@@ -345,6 +349,8 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   }
 
   async getUserInfo(): Promise<UserInfo> {
+    // Before delivery, Rivian lists no vehicle on the account.
+    if (this.scene === 'awaiting-delivery') return { id: 'mock-user-1', vehicles: [] };
     return {
       id: 'mock-user-1',
       vehicles: [
@@ -387,6 +393,29 @@ export class MockRivian implements RivianApi, VehicleStateStream {
   }
 
   async getVehicleImageUrls(): Promise<Record<string, VehicleImageUrls>> {
+    return {};
+  }
+
+  /** The account's orders: the mock vehicle's, or the scene's R2 on its way. */
+  private orders(): MockOrder[] {
+    return this.scene === 'awaiting-delivery'
+      ? [awaitingOrder()]
+      : [deliveredOrder(MOCK_VEHICLE_ID, MOCK_VIN)];
+  }
+
+  async getOrderSnapshots(): Promise<OrderSnapshot[]> {
+    return this.orders().map((o) => o.snapshot);
+  }
+
+  async getOrder(orderId: string): Promise<OrderDetail | null> {
+    return this.orders().find((o) => o.snapshot.id === orderId)?.detail ?? null;
+  }
+
+  async getDelivery(orderId: string): Promise<Delivery | null> {
+    return this.orders().find((o) => o.snapshot.id === orderId)?.delivery ?? null;
+  }
+
+  async getOrderImageUrls(): Promise<Record<string, VehicleImageUrls>> {
     return {};
   }
 

@@ -89,3 +89,13 @@ export function SettingsIcon() {
     </Icon>
   );
 }
+
+/** A key: the vehicle's delivery, from the order to the handover. */
+export function DeliveryIcon() {
+  return (
+    <Icon>
+      <circle cx="8" cy="15" r="3.5" />
+      <path d="m10.5 12.5 8.5-8.5M16 7l2 2M13.5 9.5 15 11" />
+    </Icon>
+  );
+}
