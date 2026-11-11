@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { useLiveState, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
-import { MobileBar, Sidebar } from './components/AppNav';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { useLiveState, useOrders, useStatus, useUnitPreferences, useVehicles } from './api/hooks';
+import { DeliveryIcon, VehicleIcon } from './components/AppIcons';
+import { MobileBar, NAV, Sidebar } from './components/AppNav';
 import { PageHeader } from './components/PageHeader';
 import { ChargingPage } from './features/charging/ChargingPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -15,6 +16,12 @@ import { TripPage } from './features/trips/TripPage';
 import { TripsPage } from './features/trips/TripsPage';
 import { OutsideServicesPage } from './features/auth/OutsideServicesPage';
 import { SetupPage } from './features/auth/SetupPage';
+import { AwaitingDeliveryPage, DeliveryPage } from './features/orders/OrderPages';
+import { modelName } from './features/orders/journey';
+
+/** On its way: the order is home. Delivered: the vehicle's own page, from order to handover. */
+const DELIVERY_NAV = { to: '/', label: 'Delivery', icon: <DeliveryIcon /> };
+const VEHICLE_NAV = { to: '/vehicle', label: 'Vehicle', icon: <VehicleIcon /> };
 
 export default function App() {
   const { data: status, isLoading, refetch } = useStatus();
@@ -58,8 +65,19 @@ function Shell() {
   const vehicleId = selectedId ?? vehicles?.[0]?.id;
   const vehicle = vehicles?.find((v) => v.id === vehicleId);
   useLiveState(vehicleId);
+  const { data: status } = useStatus();
+  const { data: orders } = useOrders(status?.rivianConnected ?? false);
 
-  const nav = { vehicles, vehicleId, onSelectVehicle: setSelectedId };
+  // Before delivery the account lists no vehicle: home is the order on its way.
+  const waiting = orders?.journeys.find((j) => !j.delivered);
+  const hasJourney = orders?.journeys.some((j) => j.delivered && j.vehicleId === vehicleId);
+  const nav = {
+    vehicles,
+    vehicleId,
+    onSelectVehicle: setSelectedId,
+    items: vehicleId ? (hasJourney ? [...NAV, VEHICLE_NAV] : NAV) : [DELIVERY_NAV],
+    pending: !vehicleId && waiting ? { name: modelName(waiting), detail: 'On its way' } : undefined,
+  };
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
@@ -81,6 +99,10 @@ function Shell() {
                   <Route path="/drives" element={<DrivesPage vehicleId={vehicleId} />} />
                   <Route path="/trips" element={<TripsPage vehicleId={vehicleId} />} />
                   <Route path="/trips/:tripId" element={<TripPage vehicleId={vehicleId} />} />
+                  <Route
+                    path="/vehicle"
+                    element={<DeliveryPage vehicleId={vehicleId} vehicleName={vehicle?.name} />}
+                  />
                   <Route path="/charging" element={<ChargingPage vehicleId={vehicleId} />} />
                   <Route
                     path="/health"
@@ -94,17 +116,18 @@ function Shell() {
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </>
               ) : (
-                <Route
-                  path="*"
-                  element={
-                    <p className="text-(--text-muted)">
-                      {vehicles ? 'No vehicles found.' : "Couldn't load vehicles."}{' '}
-                      <Link to="/settings" className="text-(--accent) hover:underline">
-                        Check your connections in Settings.
-                      </Link>
-                    </p>
-                  }
-                />
+                <>
+                  <Route
+                    path="/"
+                    element={
+                      <AwaitingDeliveryPage
+                        vehiclesFailed={!vehicles}
+                        rivianConnected={status?.rivianConnected ?? false}
+                      />
+                    }
+                  />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </>
               )}
             </Routes>
           )}

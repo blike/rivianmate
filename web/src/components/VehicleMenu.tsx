@@ -16,6 +16,8 @@ export function VehicleMenu(props: {
   onChange: (id: string) => void;
   /** Classes for the trigger button. */
   className: string;
+  /** The list sized to the vehicles' names rather than the trigger. */
+  fitList?: boolean;
   children: (open: boolean) => ReactNode;
 }) {
   const rivian = props.vehicles.filter((v) => v.source !== 'teslamate');
@@ -26,7 +28,8 @@ export function VehicleMenu(props: {
       value: v.id,
       label: vehicleName(v),
       detail: model && model !== v.name ? model : undefined,
-      group: v.source === 'teslamate' ? 'TeslaMate' : 'Rivian',
+      // The car's make: TeslaMate is only where its data comes from.
+      group: v.source === 'teslamate' ? 'Tesla' : 'Rivian',
     };
   });
   return (
@@ -37,6 +40,7 @@ export function VehicleMenu(props: {
       onChange={props.onChange}
       trigger={props.children}
       triggerClassName={props.className}
+      fitList={props.fitList}
     />
   );
 }

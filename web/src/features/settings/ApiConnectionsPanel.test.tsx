@@ -19,6 +19,45 @@ const diagnostics: RivianDiagnosticsResponse = {
     consecutiveAuthFailures: 0,
     parallaxMode: 'classic',
     parallaxModes: {},
+    orders: {
+      checkedAt: '2026-10-05T01:00:00Z',
+      nextCheckAt: null,
+      lastError: null,
+      orders: [
+        {
+          id: '2743465156',
+          state: 'ORDERED',
+          configurationStatus: 'SOFT_LOCKED',
+          fulfillmentSummaryStatus: 'VEHICLE_DELIVERED',
+          vehicleId: 'v1',
+          vin: null,
+        },
+        {
+          id: '272972785',
+          state: 'CANCELLED',
+          configurationStatus: null,
+          fulfillmentSummaryStatus: null,
+          vehicleId: null,
+          vin: null,
+        },
+      ],
+      journeys: [
+        {
+          snapshot: {
+            id: '2743465156',
+            state: 'ORDERED',
+            configurationStatus: 'SOFT_LOCKED',
+            fulfillmentSummaryStatus: 'VEHICLE_DELIVERED',
+            vehicleId: 'v1',
+            vin: null,
+          },
+          delivered: true,
+          detail: { ok: true, value: null },
+          delivery: { ok: false, error: 'INTERNAL_SERVER_ERROR: User is unauthenticated' },
+          renders: ['three-quarter'],
+        },
+      ],
+    },
     subscriptions: {
       state: 'connected',
       lastMessageAt: '2026-10-05T01:00:00Z',
@@ -212,6 +251,19 @@ describe('API connections', () => {
       />,
     );
     expect(never).toContain('Never archived');
+  });
+
+  it('lists every order with its standing, a failed lookup marked as one', () => {
+    const html = render(diagnostics);
+    for (const text of [
+      'aria-label="Orders"',
+      '2743465156',
+      'VEHICLE_DELIVERED',
+      'Lookup failed',
+      '272972785',
+      'Cancelled',
+    ])
+      expect(html).toContain(text);
   });
 
   it('does not present a failed diagnostics request as a stopped monitor', () => {

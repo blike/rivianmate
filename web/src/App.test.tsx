@@ -1,4 +1,4 @@
-import type { StatusResponse } from '@server/api-types';
+import type { OrdersDto, StatusResponse } from '@server/api-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
@@ -7,8 +7,15 @@ import App from './App';
 import { DEFAULT_UNITS } from './lib/units';
 
 /** Signed in with a source connected, but no vehicles came back from it. */
-function render(path: string, status: Partial<StatusResponse> = {}) {
+function render(path: string, status: Partial<StatusResponse> = {}, orders?: Partial<OrdersDto>) {
   const client = new QueryClient();
+  if (orders)
+    client.setQueryData(['orders'], {
+      journeys: [],
+      checkedAt: null,
+      refreshMinutes: 15,
+      ...orders,
+    });
   client.setQueryData(['status'], {
     needsSetup: false,
     authed: true,
@@ -33,15 +40,64 @@ function render(path: string, status: Partial<StatusResponse> = {}) {
 }
 
 describe('App without vehicles', () => {
-  it('says so on the vehicle pages and points to Settings', () => {
-    const html = render('/history');
-    expect(html).toContain('No vehicles found.');
+  it('says there is no vehicle yet, and points to the connections', () => {
+    const html = render('/', {}, { journeys: [], checkedAt: '2026-11-10T15:00:00Z' });
+    expect(html).toContain('No vehicle connected yet');
     expect(html).toContain('href="/settings"');
+  });
+
+  it('with Rivian connected and nothing on order, says so', () => {
+    const html = render(
+      '/',
+      { rivianConnected: true },
+      { journeys: [], checkedAt: '2026-11-10T15:00:00Z', refreshMinutes: 15 },
+    );
+    expect(html).toContain('No Rivian here yet');
+  });
+
+  it('shows the order on its way as home, with Delivery as the only section', () => {
+    const html = render(
+      '/',
+      { rivianConnected: true },
+      {
+        checkedAt: '2026-11-10T15:00:00Z',
+        refreshMinutes: 15,
+        journeys: [
+          {
+            orderId: 'o1',
+            delivered: false,
+            vehicleId: null,
+            state: 'ORDERED',
+            fulfillmentSummaryStatus: 'PENDING_FULFILLMENT',
+            detail: {
+              ok: true,
+              value: {
+                id: 'o1',
+                type: 'VEHICLE',
+                state: 'ORDERED',
+                orderDate: '2026-04-02T15:20:11.000Z',
+                configurationStatus: null,
+                fulfillmentSummaryStatus: null,
+                vehicle: null,
+                items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }],
+                estimatedDelivery: null,
+              },
+            },
+            delivery: { ok: true, value: null },
+            renders: [],
+          },
+        ],
+      },
+    );
+    expect(html).toContain('Your R2 is on order');
+    expect(html).toContain('On its way');
+    expect(html).toContain('>Delivery<');
+    expect(html).not.toContain('>Drives<');
   });
 
   it('still opens Settings, to fix the connection', () => {
     const html = render('/settings');
-    expect(html).not.toContain('No vehicles found.');
+    expect(html).not.toContain('No vehicle connected yet');
     expect(html).toContain('>Settings</div>');
     expect(html).toContain('General</h1>');
   });
@@ -53,7 +109,7 @@ describe('App during first-run setup', () => {
     expect(html).toContain('Outside services');
     expect(html).toContain('306 W Willow St');
     expect(html).toContain('Step 4 of 4');
-    expect(html).not.toContain('No vehicles found.');
+    expect(html).not.toContain('No vehicle connected yet');
   });
 
   it('shows signing in as step 1 when APP_PASSWORD set the password', () => {

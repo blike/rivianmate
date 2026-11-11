@@ -5,6 +5,10 @@ import {
   CREATE_CSRF_TOKEN,
   GET_CHARGING_SCHEDULE,
   GET_COMPLETED_SESSION_SUMMARIES,
+  GET_DELIVERY,
+  GET_ORDER,
+  GET_ORDER_IMAGES,
+  GET_ORDER_SNAPSHOTS,
   GET_OTA_UPDATE_DETAILS,
   GET_REGISTERED_WALLBOXES,
   GET_USER_INFO,
@@ -12,6 +16,7 @@ import {
   GET_VEHICLE_IMAGES,
   GRAPHQL_CHARGING,
   GRAPHQL_GATEWAY,
+  GRAPHQL_ORDERS,
   LOGIN,
   LOGIN_WITH_OTP,
   VEHICLE_STATE_PROPERTIES,
@@ -21,7 +26,11 @@ import { RivianGovernor, parseRetryAfter } from './governor.js';
 import {
   ChargeSessionSummary,
   ChargingSchedule,
+  Delivery,
   LoginResult,
+  OrderDetail,
+  OrderSnapshot,
+  OrderVehicle,
   OtaReleaseNotes,
   OtaUpdateDetails,
   RivianApiError,
@@ -67,6 +76,14 @@ export interface RivianApi {
   getVehicleDetails(): Promise<Record<string, VehicleDetails>>;
   /** Renders of each vehicle in its own paint and wheels, keyed by vehicle id. */
   getVehicleImageUrls(): Promise<Record<string, VehicleImageUrls>>;
+  /** The account's orders, delivered or not. */
+  getOrderSnapshots(): Promise<OrderSnapshot[]>;
+  /** One order in detail; null when Rivian has no such order. */
+  getOrder(orderId: string): Promise<OrderDetail | null>;
+  /** An order's delivery appointment; null when Rivian answers with none. */
+  getDelivery(orderId: string): Promise<Delivery | null>;
+  /** Renders of each ordered vehicle in its configuration, keyed by order id. */
+  getOrderImageUrls(): Promise<Record<string, VehicleImageUrls>>;
   /** `vehicleId` is the id from getUserInfo's vehicles[].id, not the VIN. */
   getVehicleState(vehicleId: string, properties?: readonly string[]): Promise<VehicleState>;
   getRegisteredWallboxes(): Promise<Wallbox[]>;
@@ -240,40 +257,181 @@ export class RivianClient implements RivianApi {
   }
 
   async getVehicleImageUrls(): Promise<Record<string, VehicleImageUrls>> {
-    type Image = {
-      vehicleId: string;
-      url: string;
-      resolution: string;
-      size: string;
-      design: string;
-      placement: string;
+    const data = await this.authenticatedRequest<{
+      getVehicleMobileImages: (RenderImage & { vehicleId: string })[];
+    }>(GRAPHQL_GATEWAY, {
+      operationName: 'getVehicleImages',
+      query: GET_VEHICLE_IMAGES,
+      variables: { version: '3' },
+    });
+    return bestRenders(data.getVehicleMobileImages, (i) => i.vehicleId);
+  }
+
+  async getOrderImageUrls(): Promise<Record<string, VehicleImageUrls>> {
+    const data = await this.authenticatedRequest<{
+      getVehicleOrderMobileImages: (RenderImage & { orderId: string | null })[] | null;
+    }>(GRAPHQL_GATEWAY, {
+      operationName: 'getVehicleOrderImages',
+      query: GET_ORDER_IMAGES,
+      variables: { version: '3' },
+    });
+    return bestRenders(data.getVehicleOrderMobileImages ?? [], (i) => i.orderId);
+  }
+
+  async getOrderSnapshots(): Promise<OrderSnapshot[]> {
+    const data = await this.ordersRequest<{
+      user: { orderSnapshots: Partial<OrderSnapshot>[] | null } | null;
+    }>({ operationName: 'getOrderSnapshots', query: GET_ORDER_SNAPSHOTS, variables: null });
+    return (data.user?.orderSnapshots ?? []).map((o) => ({
+      id: String(o.id),
+      state: o.state ?? '',
+      configurationStatus: o.configurationStatus ?? null,
+      fulfillmentSummaryStatus: o.fulfillmentSummaryStatus ?? null,
+      vehicleId: o.vehicleId ?? null,
+      vin: o.vin ?? null,
+    }));
+  }
+
+  async getOrder(orderId: string): Promise<OrderDetail | null> {
+    type Window = { startDate: string | null; endDate: string | null };
+    type Raw = Partial<Omit<OrderDetail, 'vehicle' | 'items' | 'estimatedDelivery'>> & {
+      vehicle: (Partial<Omit<OrderVehicle, 'modelYear'>> & { modelYear?: string | number }) | null;
+      items:
+        | {
+            title: string | null;
+            type: string | null;
+            configuration: {
+              options:
+                | { optionId: string | null; optionName: string | null; groupId: string | null }[]
+                | null;
+            } | null;
+          }[]
+        | null;
+      fulfillmentInfo: {
+        fulfillments: { estimatedDeliveryWindow: Window | null }[] | null;
+      } | null;
     };
-    const data = await this.authenticatedRequest<{ getVehicleMobileImages: Image[] }>(
+    const data = await this.ordersRequest<{ order: Raw | null }>({
+      operationName: 'order',
+      query: GET_ORDER,
+      variables: { id: orderId },
+    });
+    const o = data.order;
+    if (!o) return null;
+    const v = o.vehicle;
+    const windows = (o.fulfillmentInfo?.fulfillments ?? [])
+      .map((f) => f.estimatedDeliveryWindow)
+      .filter((w): w is Window => Boolean(w?.startDate || w?.endDate))
+      .sort((a, b) => (a.startDate ?? '').localeCompare(b.startDate ?? ''));
+    const window = windows[0];
+    return {
+      id: String(o.id ?? orderId),
+      type: o.type ?? null,
+      state: o.state ?? null,
+      orderDate: o.orderDate ?? null,
+      configurationStatus: o.configurationStatus ?? null,
+      fulfillmentSummaryStatus: o.fulfillmentSummaryStatus ?? null,
+      vehicle: v
+        ? {
+            vehicleId: v.vehicleId ?? null,
+            vin: v.vin ?? null,
+            modelYear: v.modelYear != null ? String(v.modelYear) : null,
+            model: v.model ?? null,
+            make: v.make ?? null,
+            plannedBuildDate: v.plannedBuildDate ?? null,
+            expectedBuildDate: v.expectedBuildDate ?? null,
+            expectedGeneralAssemblyStartDate: v.expectedGeneralAssemblyStartDate ?? null,
+            actualGeneralAssemblyDate: v.actualGeneralAssemblyDate ?? null,
+            status: v.status ?? null,
+          }
+        : null,
+      items: (o.items ?? []).map((item) => ({
+        type: item.type ?? null,
+        title: item.title ?? null,
+        options: (item.configuration?.options ?? []).map((opt) => ({
+          group: opt.groupId ?? null,
+          id: opt.optionId ?? null,
+          name: opt.optionName ?? null,
+        })),
+      })),
+      estimatedDelivery: window
+        ? { start: window.startDate ?? null, end: window.endDate ?? null }
+        : null,
+    };
+  }
+
+  async getDelivery(orderId: string): Promise<Delivery | null> {
+    type Raw = {
+      status: string | null;
+      carrier: string | null;
+      vehicleVIN: string | null;
+      appointmentDetails: {
+        appointmentId: string | null;
+        startDateTime: string | null;
+        endDateTime: string | null;
+        timeZone: string | null;
+      } | null;
+      deliveryAddress: {
+        addressLine1: string | null;
+        addressLine2: string | null;
+        city: string | null;
+        state: string | null;
+        zipcode: string | null;
+      } | null;
+    };
+    if (!this.appSessionToken) await this.refreshSession();
+    // Not authenticatedRequest: it answers on the session headers, but a
+    // refusal may be the resolver's own (rivian-order-view sees one tied to
+    // the access token), which rotating the shared session can't fix.
+    const data = await this.request<{ delivery: Raw | null }>(
       GRAPHQL_GATEWAY,
-      {
-        operationName: 'getVehicleImages',
-        query: GET_VEHICLE_IMAGES,
-        variables: { version: '3' },
-      },
+      { operationName: 'delivery', query: GET_DELIVERY, variables: { orderId } },
+      this.sessionHeaders(),
     );
-    // Large @2x renders are 750px across, enough for a card at any density.
-    // Dark designs are drawn for dark backgrounds, which the app always has.
-    const rank = (i: Image) =>
-      (i.design === 'dark' ? 2 : 0) + (i.size === 'large' && i.resolution === '@2x' ? 1 : 0);
-    const best: Record<string, Partial<Record<VehicleView, Image>>> = {};
-    for (const image of data.getVehicleMobileImages) {
-      const view = VEHICLE_VIEWS.find((v) => v === image.placement);
-      if (!view) continue;
-      const views = (best[image.vehicleId] ??= {});
-      const current = views[view];
-      if (!current || rank(image) > rank(current)) views[view] = image;
+    const d = data.delivery;
+    if (!d) return null;
+    const appt = d.appointmentDetails;
+    const addr = d.deliveryAddress;
+    return {
+      status: d.status ?? null,
+      carrier: d.carrier ?? null,
+      vin: d.vehicleVIN ?? null,
+      appointment: appt
+        ? {
+            id: appt.appointmentId ?? null,
+            start: appt.startDateTime ?? null,
+            end: appt.endDateTime ?? null,
+            timeZone: appt.timeZone ?? null,
+          }
+        : null,
+      address: addr
+        ? {
+            line1: addr.addressLine1 ?? null,
+            line2: addr.addressLine2 ?? null,
+            city: addr.city ?? null,
+            state: addr.state ?? null,
+            zipcode: addr.zipcode ?? null,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * A call to the orders service. Only a stale CSRF token rotates the
+   * session (the service says so with CSRF_TOKEN_EXPIRED, over HTTP 200 and
+   * data: null). Any other auth error may just mean this service won't take
+   * the app's session, and rotating would churn the session every other
+   * caller shares.
+   */
+  private async ordersRequest<T>(body: GraphqlRequest): Promise<T> {
+    if (!this.appSessionToken) await this.refreshSession();
+    try {
+      return await this.request<T>(GRAPHQL_ORDERS, body, this.sessionHeaders());
+    } catch (err) {
+      if (!(err instanceof RivianApiError) || err.code !== 'CSRF_TOKEN_EXPIRED') throw err;
+      await this.refreshSession();
+      return await this.request<T>(GRAPHQL_ORDERS, body, this.sessionHeaders());
     }
-    return Object.fromEntries(
-      Object.entries(best).map(([id, views]) => [
-        id,
-        Object.fromEntries(Object.entries(views).map(([view, i]) => [view, i.url])),
-      ]),
-    );
   }
 
   async getVehicleState(
@@ -464,6 +622,42 @@ export class RivianClient implements RivianApi {
     }
     return json.data;
   }
+}
+
+interface RenderImage {
+  url: string;
+  resolution: string;
+  size: string;
+  design: string;
+  placement: string;
+}
+
+/**
+ * The best render of each view, grouped by `keyOf`. Large @2x renders are
+ * 750px across, enough for a card at any density; dark designs are drawn
+ * for dark backgrounds, which the app always has.
+ */
+function bestRenders<I extends RenderImage>(
+  images: readonly I[],
+  keyOf: (image: I) => string | null,
+): Record<string, VehicleImageUrls> {
+  const rank = (i: RenderImage) =>
+    (i.design === 'dark' ? 2 : 0) + (i.size === 'large' && i.resolution === '@2x' ? 1 : 0);
+  const best: Record<string, Partial<Record<VehicleView, RenderImage>>> = {};
+  for (const image of images) {
+    const key = keyOf(image);
+    const view = VEHICLE_VIEWS.find((v) => v === image.placement);
+    if (!key || !view) continue;
+    const views = (best[key] ??= {});
+    const current = views[view];
+    if (!current || rank(image) > rank(current)) views[view] = image;
+  }
+  return Object.fromEntries(
+    Object.entries(best).map(([key, views]) => [
+      key,
+      Object.fromEntries(Object.entries(views).map(([view, i]) => [view, i.url])),
+    ]),
+  );
 }
 
 export { APOLLO_CLIENT_NAME };

@@ -28,6 +28,7 @@ import {
 } from '../rivian/types.js';
 import { ChargeHistoryImporter } from './charge-history.js';
 import { ChargingMonitor } from './charging-monitor.js';
+import { type OrderDiagnostics, type OrderJourney, OrderTracker } from './order-tracker.js';
 import { DriveDetector } from './drive-detector.js';
 import { Drivers } from './drivers.js';
 import { HistoryKeys } from './history-keys.js';
@@ -103,6 +104,7 @@ export interface MonitorDiagnostics {
   /** Whether any monitored vehicle supports dynamics Parallax. */
   parallaxMode: 'classic' | 'parallax';
   parallaxModes: Record<string, 'classic' | 'parallax'>;
+  orders: OrderDiagnostics;
 }
 
 export interface MonitoredVehicle {
@@ -128,6 +130,7 @@ export interface RivianConnection {
 export class VehicleMonitor {
   private connection?: RivianConnection;
   private vehicles: MonitoredVehicle[] = [];
+  private readonly orders: OrderTracker;
   private states = new Map<string, VehicleState>();
   private readonly log: Logger;
   private locationWriter: LocationWriter;
@@ -200,6 +203,11 @@ export class VehicleMonitor {
       this.drivers.enqueue(driveId);
     };
     this.driveDetector.log = logger.child({ component: 'drive' });
+    this.orders = new OrderTracker(logger.child({ component: 'orders' }), () => {
+      void this.startIfConfigured().catch((err: unknown) =>
+        this.log.warn({ err }, 'reconnecting for the new vehicle failed'),
+      );
+    });
   }
 
   /** Turns the address and weather lookups on or off, as set in Settings. */
@@ -224,6 +232,14 @@ export class VehicleMonitor {
 
   getVehicles(): MonitoredVehicle[] {
     return this.vehicles;
+  }
+
+  getJourneys(): OrderJourney[] {
+    return this.orders.getJourneys();
+  }
+
+  get journeysChecked(): Date | null {
+    return this.orders.checked;
   }
 
   getState(vehicleId: string): VehicleState | undefined {
@@ -253,6 +269,7 @@ export class VehicleMonitor {
           vehicleSupportsParallax(v.supportedFeatures) ? 'parallax' : 'classic',
         ]),
       ),
+      orders: this.orders.diagnostics(),
     };
   }
 
@@ -319,6 +336,16 @@ export class VehicleMonitor {
     const superseded = () => generation !== this.generation;
     const info = await connection.api.getUserInfo();
     if (superseded()) return;
+    this.log.debug(
+      { vehicles: info.vehicles.map((v) => ({ id: v.id, state: v.state, roles: v.roles })) },
+      'vehicles from Rivian',
+    );
+    // Not awaited: vehicles don't depend on orders.
+    void this.orders.start(
+      connection.api,
+      info.vehicles.map((v) => v.id),
+      () => this.vehicles.map((v) => v.id),
+    );
     const supportedFeaturesOf = (uv: (typeof info.vehicles)[number]): string[] =>
       uv.vehicle?.vehicleState?.supportedFeatures
         ?.filter((f) => f.status === 'AVAILABLE')
@@ -494,6 +521,7 @@ export class VehicleMonitor {
   async stop(): Promise<void> {
     this.generation += 1;
     this.running = false;
+    this.orders.stop();
     this.connection?.stream.stop();
     this.chargingMonitor?.stop();
     this.chargingMonitor = undefined;

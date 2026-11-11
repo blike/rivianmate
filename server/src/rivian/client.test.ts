@@ -114,4 +114,238 @@ describe('RivianClient', () => {
     await Promise.all([client.refreshSession(), client.refreshSession()]);
     expect(calls).toHaveLength(1);
   });
+
+  const newClient = () =>
+    new RivianClient({ tokens, governor: new RivianGovernor({ minSpacingMs: 0 }) });
+
+  describe('getOrderSnapshots', () => {
+    const orderSnapshotsData = {
+      data: {
+        user: {
+          orderSnapshots: [
+            {
+              id: 1000000001,
+              state: 'ORDERED',
+              configurationStatus: 'SOFT_LOCKED',
+              fulfillmentSummaryStatus: 'PENDING_FULFILLMENT',
+              vehicleId: '01-000000001',
+              vin: null,
+            },
+          ],
+        },
+      },
+    };
+
+    it('asks the orders service, with the session', async () => {
+      const calls = stubFetch((op) =>
+        op === 'CreateCSRFToken' ? csrf() : json(orderSnapshotsData),
+      );
+      await expect(newClient().getOrderSnapshots()).resolves.toEqual([
+        {
+          id: '1000000001',
+          state: 'ORDERED',
+          configurationStatus: 'SOFT_LOCKED',
+          fulfillmentSummaryStatus: 'PENDING_FULFILLMENT',
+          vehicleId: '01-000000001',
+          vin: null,
+        },
+      ]);
+      const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
+      expect(urls.at(-1)).toBe('https://rivian.com/api/gql/orders/graphql/');
+      expect(calls.at(-1)!.headers['U-Sess']).toBe('usess');
+      expect(calls.at(-1)!.headers['Csrf-Token']).toMatch(/^csrf-/);
+    });
+
+    it('reads a missing user as no orders', async () => {
+      stubFetch((op) => (op === 'CreateCSRFToken' ? csrf() : json({ data: { user: null } })));
+      await expect(newClient().getOrderSnapshots()).resolves.toEqual([]);
+    });
+
+    it('rotates the session once when the CSRF token has expired', async () => {
+      let orderCalls = 0;
+      const calls = stubFetch((op) => {
+        if (op === 'CreateCSRFToken') return csrf();
+        orderCalls += 1;
+        return orderCalls === 1
+          ? json({
+              data: null,
+              errors: [
+                { message: 'Request a new CSRF token', extensions: { code: 'CSRF_TOKEN_EXPIRED' } },
+              ],
+            })
+          : json(orderSnapshotsData);
+      });
+      await expect(newClient().getOrderSnapshots()).resolves.toHaveLength(1);
+      expect(calls.filter((c) => c.op === 'CreateCSRFToken')).toHaveLength(2);
+    });
+
+    it("doesn't rotate the shared session on other auth errors", async () => {
+      const calls = stubFetch((op) =>
+        op === 'CreateCSRFToken'
+          ? csrf()
+          : json({ errors: [{ message: 'no', extensions: { code: 'UNAUTHENTICATED' } }] }),
+      );
+      await expect(newClient().getOrderSnapshots()).rejects.toBeInstanceOf(
+        RivianUnauthenticatedError,
+      );
+      expect(calls.filter((c) => c.op === 'CreateCSRFToken')).toHaveLength(1);
+      expect(calls.filter((c) => c.op === 'getOrderSnapshots')).toHaveLength(1);
+    });
+  });
+
+  describe('getOrder', () => {
+    it('reads the build record, options and the earliest delivery window', async () => {
+      stubFetch((op) =>
+        op === 'CreateCSRFToken'
+          ? csrf()
+          : json({
+              data: {
+                order: {
+                  id: 1000000001,
+                  type: 'VEHICLE',
+                  state: 'ORDERED',
+                  orderDate: '2026-11-20T09:30:00',
+                  vin: null,
+                  vehicleId: '01-000000001',
+                  configurationStatus: 'SOFT_LOCKED',
+                  fulfillmentSummaryStatus: 'PENDING_FULFILLMENT',
+                  vehicle: {
+                    vehicleId: '01-000000001',
+                    vin: '7PD2EAAB4VN000001',
+                    modelYear: 2027,
+                    model: 'R2',
+                    make: 'Rivian',
+                    plannedBuildDate: '2027-01-15',
+                    expectedBuildDate: '2026-12-20',
+                    actualGeneralAssemblyDate: '2027-01-12',
+                    expectedGeneralAssemblyStartDate: '2027-01-15',
+                    status: 'VEHICLE_PREPPED',
+                  },
+                  items: [
+                    {
+                      title: 'Rivian R2',
+                      type: 'VEHICLE',
+                      configuration: {
+                        options: [{ optionId: 'P1', optionName: 'Launch Green', groupId: 'PAINT' }],
+                      },
+                    },
+                  ],
+                  fulfillmentInfo: {
+                    fulfillments: [
+                      { estimatedDeliveryWindow: null },
+                      {
+                        estimatedDeliveryWindow: { startDate: '2027-02-10', endDate: '2027-02-20' },
+                      },
+                      {
+                        estimatedDeliveryWindow: { startDate: '2027-02-01', endDate: '2027-02-05' },
+                      },
+                    ],
+                  },
+                },
+              },
+            }),
+      );
+      const order = await newClient().getOrder('1000000001');
+      expect(order).toMatchObject({
+        id: '1000000001',
+        type: 'VEHICLE',
+        vehicle: { vin: '7PD2EAAB4VN000001', modelYear: '2027', status: 'VEHICLE_PREPPED' },
+        items: [
+          {
+            title: 'Rivian R2',
+            options: [{ group: 'PAINT', id: 'P1', name: 'Launch Green' }],
+          },
+        ],
+        estimatedDelivery: { start: '2027-02-01', end: '2027-02-05' },
+      });
+      const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
+      expect(urls.at(-1)).toBe('https://rivian.com/api/gql/orders/graphql/');
+    });
+
+    it('reads a missing order as null', async () => {
+      stubFetch((op) => (op === 'CreateCSRFToken' ? csrf() : json({ data: { order: null } })));
+      await expect(newClient().getOrder('nope')).resolves.toBeNull();
+    });
+  });
+
+  describe('getDelivery', () => {
+    it('reads the appointment from the gateway, with the session headers', async () => {
+      const calls = stubFetch((op) =>
+        op === 'CreateCSRFToken'
+          ? csrf()
+          : json({
+              data: {
+                delivery: {
+                  status: 'DELIVERY_ACCEPTED',
+                  carrier: 'THIRD_PARTY',
+                  vehicleVIN: '7PD2EAAB4VN000001',
+                  appointmentDetails: {
+                    appointmentId: 'appt-1',
+                    startDateTime: '2027-02-06T10:30:00',
+                    endDateTime: '2027-02-06T10:45:00',
+                    timeZone: 'America/Indiana/Indianapolis',
+                  },
+                  deliveryAddress: null,
+                },
+              },
+            }),
+      );
+      await expect(newClient().getDelivery('1000000001')).resolves.toEqual({
+        status: 'DELIVERY_ACCEPTED',
+        carrier: 'THIRD_PARTY',
+        vin: '7PD2EAAB4VN000001',
+        appointment: {
+          id: 'appt-1',
+          start: '2027-02-06T10:30:00',
+          end: '2027-02-06T10:45:00',
+          timeZone: 'America/Indiana/Indianapolis',
+        },
+        address: null,
+      });
+      const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
+      expect(urls.at(-1)).toBe('https://rivian.com/api/gql/gateway/graphql');
+      expect(calls.at(-1)!.headers['U-Sess']).toBe('usess');
+      expect(calls.at(-1)!.headers).not.toHaveProperty('Authorization');
+    });
+
+    it("doesn't rotate the shared session when the resolver refuses it", async () => {
+      const calls = stubFetch((op) =>
+        op === 'CreateCSRFToken'
+          ? csrf()
+          : json({ errors: [{ message: 'no', extensions: { code: 'UNAUTHENTICATED' } }] }),
+      );
+      await expect(newClient().getDelivery('1')).rejects.toBeInstanceOf(RivianUnauthenticatedError);
+      expect(calls.filter((c) => c.op === 'CreateCSRFToken')).toHaveLength(1);
+    });
+  });
+
+  describe('getOrderImageUrls', () => {
+    it('keeps the best render of each view, by order', async () => {
+      const image = (orderId: string | null, placement: string, design: string) => ({
+        orderId,
+        url: `https://render/${orderId}/${placement}/${design}.png`,
+        resolution: '@2x',
+        size: 'large',
+        design,
+        placement,
+      });
+      stubFetch((op) =>
+        op === 'CreateCSRFToken'
+          ? csrf()
+          : json({
+              data: {
+                getVehicleOrderMobileImages: [
+                  image('o1', 'three-quarter', 'light'),
+                  image('o1', 'three-quarter', 'dark'),
+                  image('o1', 'side', 'dark'),
+                  image(null, 'overhead', 'dark'),
+                ],
+              },
+            }),
+      );
+      await expect(newClient().getOrderImageUrls()).resolves.toEqual({
+        o1: { 'three-quarter': 'https://render/o1/three-quarter/dark.png' },
+      });
+    });
+  });
 });

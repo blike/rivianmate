@@ -9,7 +9,7 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === '1' || v === 'true'),
   /** With MOCK_RIVIAN, a demo scene to start in (see MockScene). */
-  MOCK_SCENE: z.enum(['drive-home']).optional(),
+  MOCK_SCENE: z.enum(['drive-home', 'awaiting-delivery']).optional(),
   APP_PASSWORD: z.string().optional(),
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),

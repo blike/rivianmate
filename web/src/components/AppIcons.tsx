@@ -89,3 +89,25 @@ export function SettingsIcon() {
     </Icon>
   );
 }
+
+/** A key: the vehicle's delivery, from the order to the handover. */
+export function DeliveryIcon() {
+  return (
+    <Icon>
+      <circle cx="8" cy="15" r="3.5" />
+      <path d="m10.5 12.5 8.5-8.5M16 7l2 2M13.5 9.5 15 11" />
+    </Icon>
+  );
+}
+
+/** A vehicle from the side: its own page, from the order to the day it came home. */
+export function VehicleIcon() {
+  return (
+    <Icon>
+      <path d="M3 15.5v-2.2c0-.6.3-1.1.8-1.4L7 10l2.2-3.1c.3-.4.8-.6 1.3-.6h4.6c.5 0 1 .3 1.3.7L18.5 10l1.8.6c.4.2.7.6.7 1v3.9" />
+      <path d="M3 15.5h1.6M9.4 15.5h5.2M19.4 15.5H21M7 10h11.5" />
+      <circle cx="7" cy="16" r="2" />
+      <circle cx="17" cy="16" r="2" />
+    </Icon>
+  );
+}

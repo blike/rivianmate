@@ -24,6 +24,7 @@ import { settingsRoutes } from './routes/settings.js';
 import { teslamateRoutes } from './routes/teslamate.js';
 import { tripRoutes } from './routes/trips.js';
 import { vehicleRoutes } from './routes/vehicles.js';
+import { orderRoutes } from './routes/orders.js';
 
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
 const ASSET_PATH_PATTERN = /\/[^/]+\.[^/]+$/;
@@ -92,6 +93,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await authRoutes(app, ctx);
   await rivianRoutes(app, ctx);
   await vehicleRoutes(app, ctx);
+  await orderRoutes(app, ctx);
   await historyRoutes(app, ctx);
   await chargingRoutes(app, ctx);
   await tripRoutes(app, ctx);

@@ -18,6 +18,7 @@ import {
   tripDateLabel,
   dayLabel,
 } from './trips';
+import { CALENDAR_PAGE, CalendarPage } from '../../components/CalendarPage';
 
 /** The vehicle's journeys: any under way up top, then those to come, then those done. */
 export function TripsPage(props: { vehicleId: string }) {
@@ -248,44 +249,11 @@ function Figure(props: { label: string; value: string; large?: boolean }) {
   );
 }
 
-/** One size for every calendar page, whatever the dates, so the cards line up. */
-const CALENDAR = 'h-[4.5rem] w-20 shrink-0 rounded-lg';
-
-/** The trip's dates as a tear-off calendar page. */
-function CalendarPage(props: { calendar: ReturnType<typeof tripCalendar> }) {
-  const c = props.calendar;
-  return (
-    <div
-      aria-label={c ? undefined : 'No dates yet'}
-      className={`${CALENDAR} flex flex-col overflow-hidden border border-(--border) bg-(--surface-2) text-center`}
-    >
-      <div
-        className={`h-4.5 shrink-0 truncate px-1 text-[10px] leading-4.5 font-semibold tracking-wide uppercase ${
-          c ? 'bg-(--accent) text-(--on-accent)' : 'bg-(--surface-3)'
-        }`}
-      >
-        {c?.month}
-      </div>
-      {/* A range sets smaller than a single day, in the same space. */}
-      <div
-        className={`flex min-h-0 flex-1 items-center justify-center px-1 leading-none font-semibold tracking-tight tabular-nums ${
-          (c?.days.length ?? 0) > 3 ? 'text-xl' : 'text-[1.75rem]'
-        }`}
-      >
-        {c?.days ?? <span className="text-(--text-muted)">—</span>}
-      </div>
-      <div className="h-4.5 shrink-0 text-[11px] leading-4 text-(--text-muted) tabular-nums">
-        {c?.year ?? ''}
-      </div>
-    </div>
-  );
-}
-
 /** A trip card's shape while the trips load. */
 function TripCardSkeleton() {
   return (
     <li aria-hidden className="card flex items-center gap-4 p-4">
-      <div className={`${CALENDAR} skeleton skeleton-block`} />
+      <div className={`${CALENDAR_PAGE} skeleton skeleton-block`} />
       <div className="min-w-0 flex-1">
         <div className="text-base lg:text-xl">
           <Skeleton className="w-[10em]" />
