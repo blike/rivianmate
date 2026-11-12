@@ -144,9 +144,9 @@ describe.each(SPANS)('the pack temperature chart on %s', (_name, span) => {
     const { container } = draw(span, QUIET);
 
     const ticked = ticks(container);
-    // 18 to 19 °C, framed 50 to 80 °F: seven labels, five apart.
-    expect(ticked).toEqual([50, 55, 60, 65, 70, 75, 80]);
-    expect(steps(ticked)).toEqual([5, 5, 5, 5, 5, 5]);
+    // 18 to 19 °C, framed 55 to 80 °F on the 5 °F grid: six labels, five apart.
+    expect(ticked).toEqual([55, 60, 65, 70, 75, 80]);
+    expect(steps(ticked)).toEqual([5, 5, 5, 5, 5]);
   });
 
   it('ticks a wide axis every ten degrees, so its labels are evenly spaced', () => {

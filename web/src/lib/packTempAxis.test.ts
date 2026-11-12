@@ -3,111 +3,137 @@ import { packTempAxis, packTempTickStep, packTempTicks } from './packTempAxis';
 
 /**
  * The pack temperatures a chart drew, in the unit read: the average, and the
- * band's two ends. `flat` is a short top-up in a cold garage; `wide` is a long
- * charge that moves the pack 30 degrees.
+ * band's two ends. `MEASURED_F` is the 31 Oct drive as the car recorded it — 68.7
+ * to 78.1 °F, the session that reported a 50…90 frame. `DC_F` is a real DC fast
+ * charge: the pack moves 40 °C, 72 °F.
  */
-const FLAT_C = [20.6, 26.7, 21.6, 23.1, 24.6];
-const WIDE_C = [10, 40];
-const FLAT_F = [69.1, 80.1, 73.6];
-/** A session that moves the pack a degree. */
-const ONE_C = [24.5, 25.5];
-/** A real DC fast charge: the pack moves 40 °C, which is 72 °F. */
-const DC_C = [10, 50];
+const MEASURED_F = [68.72, 78.08];
 const DC_F = [39, 111];
+const DC_C = [10, 50];
+/** FLAT is a short top-up in a cold garage: five and a half degrees drawn. */
+const FLAT_C = [20.6, 26.7, 21.6, 23.1, 24.6];
+const FLAT_F = [69.1, 80.1, 73.6];
 
 describe('packTempAxis', () => {
-  it('gives a session the same ten degrees Fahrenheit of air whatever it moves', () => {
-    // Ten degrees drawn, and thirty: five whole steps either way, so the padding
-    // shows through the snap exactly as the rule states it.
-    const [tenLow, tenHigh] = packTempAxis([60, 70], 'F');
-    const [thirtyLow, thirtyHigh] = packTempAxis([50, 80], 'F');
+  it('gives the measured 9 °F drive a 60 to 85 frame, ticked every five', () => {
+    // Nine drawn, five of air a side is 19, under the 20 °F floor: it holds the
+    // frame, centred on 72.5 and snapped out to the 5 °F grid.
+    const [low, high] = packTempAxis(MEASURED_F, 'F');
 
-    expect([tenLow, tenHigh]).toEqual([50, 80]);
-    expect(tenHigh - tenLow).toBe(10 + 2 * 10);
-    expect([thirtyLow, thirtyHigh]).toEqual([40, 90]);
-    expect(thirtyHigh - thirtyLow).toBe(30 + 2 * 10);
+    expect([low, high]).toEqual([60, 85]);
+    expect(high - low).toBe(25);
+    expect(low).toBeLessThanOrEqual(68.72);
+    expect(high).toBeGreaterThanOrEqual(78.08);
+    // Twenty-five is under the forty a ten-degree interval needs.
+    expect(packTempTicks([low, high], 'F')).toEqual([60, 65, 70, 75, 80, 85]);
   });
 
-  it('frames a 24 °F move at 44 °F within a step, so its labels stay put', () => {
+  it('gives a 24 °F move a 30 to 70 frame: a quarter of it each side', () => {
+    // 24 drawn, six of air either side, centred on 52 and snapped out.
     const [low, high] = packTempAxis([40, 64], 'F');
 
-    // 24 + 20 of air, centred on 52, snapped out to the steps either side.
-    expect([low, high]).toEqual([30, 80]);
-    expect(high - low).toBeGreaterThanOrEqual(44);
-    expect(high - low).toBeLessThanOrEqual(44 + 10);
-    expect(low).toBeLessThanOrEqual(40);
-    expect(high).toBeGreaterThanOrEqual(64);
+    expect([low, high]).toEqual([30, 70]);
+    // The frame the padding asks for is 36; the grid takes it to 40.
+    expect(high - low).toBe(40);
+    // Wide enough for ten-degree ticks and no wider.
+    expect(packTempTicks([low, high], 'F')).toEqual([30, 40, 50, 60, 70]);
   });
 
-  it('holds a 10 °F move above the floor, so a flat session is not the whole plot', () => {
-    const [low, high] = packTempAxis([60, 70], 'F');
+  it('holds a 4 °F move at the 20 °F floor rather than drawing a frame of nothing', () => {
+    const [low, high] = packTempAxis([68, 72], 'F');
 
-    expect(high - low).toBeGreaterThanOrEqual(20);
-    // The movement is a third of the frame, not all of it.
-    expect(10 / (high - low)).toBeLessThanOrEqual(1 / 3);
+    expect([low, high]).toEqual([60, 80]);
+    expect(high - low).toBe(20);
+    // The readings are a fifth of it, so they read as a band rather than a line.
+    expect(4 / (high - low)).toBeLessThanOrEqual(1 / 3);
+    expect(low).toBeLessThanOrEqual(68);
+    expect(high).toBeGreaterThanOrEqual(72);
   });
 
-  it('caps a 72 °F charge at 90 °F, rather than a hundred-degree axis', () => {
+  it('gives a 72 °F DC swing 108 °F, with both ends of the readings inside it', () => {
     const [low, high] = packTempAxis(DC_F, 'F');
 
-    // 72 + 20 of air is 92; the cap holds it to the nine steps of a whole frame.
-    expect([low, high]).toEqual([30, 120]);
-    expect(high - low).toBe(90);
-    expect(low).toBeLessThanOrEqual(DC_F[0]!);
-    expect(high).toBeGreaterThanOrEqual(DC_F[1]!);
+    // 72 drawn, 18 of air either side, centred on 75 and snapped out to 20…130.
+    expect([low, high]).toEqual([20, 130]);
+    expect(high - low).toBe(110);
+    // No cap: the padding alone is what keeps a swing this wide readable, and
+    // every reading sits a whole step or more inside the frame.
+    expect(DC_F[0]! - low).toBeGreaterThanOrEqual(18);
+    expect(high - DC_F[1]!).toBeGreaterThanOrEqual(18);
   });
 
-  it('holds the same charge at the Celsius cap, rather than past it', () => {
+  it('holds a drawn range wider than the old 90 °F cap, rather than clipping it', () => {
+    // A hundred degrees drawn would have been clamped to 90 by the cap and cut
+    // at both ends, since the frame is centred on the readings it holds.
+    const [low, high] = packTempAxis([0, 100], 'F');
+
+    expect([low, high]).toEqual([-25, 125]);
+    expect(high - low).toBeGreaterThan(90);
+    expect(low).toBeLessThanOrEqual(0);
+    expect(high).toBeGreaterThanOrEqual(100);
+  });
+
+  it('never excludes a reading, over a sweep of extents and positions', () => {
+    for (let drawn = 0; drawn <= 120; drawn++) {
+      for (const middle of [70, 72.5, 75, 77.5]) {
+        const values = [middle - drawn / 2, middle + drawn / 2];
+        const [low, high] = packTempAxis(values, 'F');
+
+        expect(low).toBeLessThanOrEqual(values[0]!);
+        expect(high).toBeGreaterThanOrEqual(values[1]!);
+        // The padding is a share of the movement above the floor, plus at most a
+        // step of grid at each end and a step of tick alignment — never a fixed
+        // slab on a wide session, which is what a cap would have cut off instead.
+        expect(high - low).toBeLessThanOrEqual(Math.max(20, 1.5 * drawn) + 15);
+      }
+    }
+  });
+
+  it('frames the same sessions in Celsius at half the numbers', () => {
+    // Five degrees drawn: a quarter is 1.3, under the three degrees of air the
+    // minimum gives, and 5.2 + 6 is just over the 11 °C floor.
+    expect(packTempAxis([20.4, 25.6], 'C')).toEqual([15, 30]);
+    // Ten degrees drawn, clear of the floor: 10 + 6, centred on 17 and snapped.
+    const [lowC, highC] = packTempAxis([12, 22], 'C');
+    expect([lowC, highC]).toEqual([7.5, 25]);
+    expect(highC - lowC).toBe(17.5);
+    // The same DC swing: 40 drawn, ten of air either side, and no cap to hold it.
     const [low, high] = packTempAxis(DC_C, 'C');
-
-    // 40 + 10 of air is the cap exactly: ten whole steps of five.
-    expect([low, high]).toEqual([5, 55]);
-    expect(high - low).toBe(50);
-  });
-
-  it('frames the same session in Celsius at half the numbers', () => {
-    // Ten degrees drawn and five of air either side, on steps of five.
-    const [lowC, highC] = packTempAxis([10, 20], 'C');
-    expect([lowC, highC]).toEqual([5, 25]);
-    expect(highC - lowC).toBe(10 + 2 * 5);
-  });
-
-  it('keeps a session that moves a degree off the floor’s edge, in the unit read', () => {
-    const [low, high] = packTempAxis(ONE_C, 'C');
-
-    // One degree in a frame of twenty at least is a twentieth of the plot.
-    expect([low, high]).toEqual([15, 35]);
-    expect(high - low).toBeGreaterThanOrEqual(11);
-    expect(low).toBeLessThanOrEqual(24.5);
-    expect(high).toBeGreaterThanOrEqual(25.5);
+    expect([low, high]).toEqual([0, 60]);
+    expect(low).toBeLessThanOrEqual(10);
+    expect(high).toBeGreaterThanOrEqual(50);
   });
 
   it('centres the frame on the readings it holds', () => {
     const [low, high] = packTempAxis(FLAT_C, 'C');
+    const middle = (Math.min(...FLAT_C) + Math.max(...FLAT_C)) / 2;
 
-    // The readings run 20.6 to 26.7; the frame is the nearest whole steps out.
-    expect([low, high]).toEqual([15, 35]);
-    expect((low + high) / 2).toBeGreaterThanOrEqual(20.6);
-    expect((low + high) / 2).toBeLessThanOrEqual(26.7);
-  });
-
-  it('snaps the bounds outward to whole steps, in the unit read', () => {
-    const [lowC, highC] = packTempAxis(FLAT_C, 'C');
-    expect([lowC % 5, highC % 5]).toEqual([0, 0]);
+    // The frame's own middle is the readings' middle, give or take the grid.
+    expect((low + high) / 2).toBeGreaterThanOrEqual(middle - 2.5);
+    expect((low + high) / 2).toBeLessThanOrEqual(middle + 2.5);
 
     const [lowF, highF] = packTempAxis(FLAT_F, 'F');
-    expect([lowF % 10, highF % 10]).toEqual([0, 0]);
+    const middleF = (Math.min(...FLAT_F) + Math.max(...FLAT_F)) / 2;
+    expect(lowF + highF).toBeGreaterThanOrEqual(2 * middleF - 5);
+    expect(lowF + highF).toBeLessThanOrEqual(2 * middleF + 5);
+  });
+
+  it('snaps the bounds outward to the fine grid, in the unit read', () => {
+    // Celsius bounds on the 2.5 °C grid, Fahrenheit on the 5 °F one — the coarse
+    // 10 °F grid is what inflated the measured drive's 29 °F frame to 40.
+    const [lowC, highC] = packTempAxis(FLAT_C, 'C');
+    expect([lowC % 2.5, highC % 2.5]).toEqual([0, 0]);
+
+    const [lowF, highF] = packTempAxis(FLAT_F, 'F');
+    expect([lowF % 5, highF % 5]).toEqual([0, 0]);
     expect(lowF).toBeLessThanOrEqual(69.1);
     expect(highF).toBeGreaterThanOrEqual(80.1);
+    // A multiple of five that is not a multiple of ten: the grid is the fine one.
+    expect(packTempAxis(MEASURED_F, 'F')).toEqual([60, 85]);
 
-    // The capped cases too: snapping only widens, so it never cuts a reading.
-    const [lowWideC, highWideC] = packTempAxis(WIDE_C, 'C');
-    expect([lowWideC % 5, highWideC % 5]).toEqual([0, 0]);
-    expect([lowWideC, highWideC]).toEqual([5, 45]);
-
-    const [lowCappedF, highCappedF] = packTempAxis(DC_F, 'F');
-    expect([lowCappedF % 10, highCappedF % 10]).toEqual([0, 0]);
-    expect([lowCappedF, highCappedF]).toEqual([30, 120]);
+    // The widest cases too: the grid holds there as well.
+    const [lowWideC, highWideC] = packTempAxis(DC_C, 'C');
+    expect([lowWideC % 2.5, highWideC % 2.5]).toEqual([0, 0]);
   });
 
   it('has nothing to frame without readings', () => {
@@ -121,50 +147,61 @@ describe('packTempAxis', () => {
 describe('packTempTickStep', () => {
   it('ticks a wide axis every ten degrees Fahrenheit, a narrow one every five', () => {
     expect(packTempTickStep(50, 'F')).toBe(10);
-    // The frame a 24 °F move is given, at 50 °F: ten-degree ticks still.
+    // The frame a 24 °F move is given, at 40 °F: ten-degree ticks still.
     expect(packTempTickStep(40, 'F')).toBe(10);
     expect(packTempTickStep(39, 'F')).toBe(5);
-    // The frame a 10 °F move is given.
-    expect(packTempTickStep(30, 'F')).toBe(5);
+    // The frame the measured drive is given, at 25 °F.
+    expect(packTempTickStep(25, 'F')).toBe(5);
   });
 
   it('draws the same line in Celsius, at half the numbers', () => {
     expect(packTempTickStep(25, 'C')).toBe(5);
     expect(packTempTickStep(22, 'C')).toBe(5);
     expect(packTempTickStep(21, 'C')).toBe(2.5);
-    expect(packTempTickStep(20, 'C')).toBe(2.5);
+    // The frame a 5 °C session is given.
+    expect(packTempTickStep(12.5, 'C')).toBe(2.5);
   });
 });
 
 describe('packTempTicks', () => {
   it('ticks a narrow frame evenly, at the five degrees its span picks', () => {
-    // The frame a 10 °F move is given: seven labels, five apart.
-    expect(packTempTicks([50, 80], 'F')).toEqual([50, 55, 60, 65, 70, 75, 80]);
+    expect(packTempTicks([60, 85], 'F')).toEqual([60, 65, 70, 75, 80, 85]);
   });
 
   it('ticks a wide frame evenly, at the ten degrees its span picks', () => {
     expect(packTempTicks([40, 100], 'F')).toEqual([40, 50, 60, 70, 80, 90, 100]);
-    // A capped fast charge: ten labels across the whole frame.
-    expect(packTempTicks([30, 120], 'F')).toHaveLength(10);
+    // A 72 °F charge, framed 20 to 130: twelve labels, ten apart.
+    expect(packTempTicks([20, 130], 'F')).toHaveLength(12);
   });
 
   it('carries the half degree a narrow Celsius frame is ticked at', () => {
-    expect(packTempTicks([15, 35], 'C')).toEqual([15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35]);
+    expect(packTempTicks([17.5, 30], 'C')).toEqual([17.5, 20, 22.5, 25, 27.5, 30]);
     // Wide enough for whole fives, and no further.
-    expect(packTempTicks([0, 60], 'C')).toEqual([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]);
+    expect(packTempTicks([0, 60], 'C')).toHaveLength(13);
   });
 
-  it('starts and ends on the frame’s own bounds', () => {
+  it('starts and ends on the frame’s own bounds, whatever the extent', () => {
     for (const [values, unit] of [
-      [[60, 70], 'F'],
+      [MEASURED_F, 'F'],
       [[40, 64], 'F'],
-      [[10, 50], 'C'],
+      [[0, 100], 'F'],
+      [DC_F, 'F'],
+      [[12, 22], 'C'],
+      [DC_C, 'C'],
       [FLAT_C, 'C'],
+      [FLAT_F, 'F'],
     ] as const) {
       const bounds = packTempAxis(values, unit);
       const ticked = packTempTicks(bounds, unit);
       expect(ticked[0]).toBe(bounds[0]);
       expect(ticked.at(-1)).toBe(bounds[1]);
+      // Evenly spaced, and every reading inside the labels' range.
+      const steps = ticked.slice(1).map((v, i) => Number((v - ticked[i]!).toFixed(2)));
+      expect(new Set(steps).size).toBe(1);
+      for (const value of values) {
+        expect(value).toBeGreaterThanOrEqual(ticked[0]!);
+        expect(value).toBeLessThanOrEqual(ticked.at(-1)!);
+      }
     }
   });
 });

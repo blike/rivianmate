@@ -4,31 +4,36 @@
  * band's two ends), in the unit shown.
  *
  * Fitted to the readings alone, a drive that moves the pack a degree or a charge
- * that tops it up a few fills the plot with a band that reads as noise, and the
- * axis is ticked at whatever its ends imply. So the axis is framed rather than
- * fitted: ten degrees Fahrenheit — five Celsius — of air on each side of the
- * readings, which is one step in either unit, so the frame's ends land on the
- * ticks they are drawn between.
+ * that tops it up a few fills the plot with a band that reads as noise. So the
+ * axis is framed rather than fitted: a quarter of the drawn extent of air on
+ * each side of the readings — proportional, so a band that moves a lot is given
+ * room in proportion — and never less than five degrees Fahrenheit, three
+ * Celsius, a side, so the frame's ends hold a curve off its own edge.
  *
- * That padding is flat, not a share of the readings' movement. The sessions this
- * chart is for move the band 10 to 25 °F: a quarter of that is two to six
- * degrees, not enough to hold a curve off the frame's edge — and a share wide
- * enough to help barely pads at all. The two rules only part company above a
- * 40 °F drawn extent, where a quarter is more than ten degrees; the cap below
- * takes over at 70, and between the two the share asks for a few degrees more on
- * a frame already seventy tall. A knob that barely fires is one rule too many,
- * so it went.
+ * A floor of 20 °F / 11 °C holds the bottom of the range. The measured 31 Oct
+ * drive draws 9 °F, which asks for a 19 °F frame and is given 20; the band then
+ * fills a third of the plot rather than all of it. Below that the frame is the
+ * floor, never nothing.
  *
- * Two limits hold the frame. A floor of 20 °F keeps a session that barely moves
- * the pack — a short top-up in a cold garage — from drawing a span of nothing. A
- * cap of 90 °F keeps a wide one — a real DC fast charge moves the pack 40 °C,
- * 72 °F — from being handed an axis so tall that its own movement reads as a
- * flat line.
+ * There is no cap. Proportional padding is what keeps a wide session from
+ * looking absurd, and a cap would clamp the width while the bounds stayed
+ * centred on the readings — so a big enough swing would have its own ends cut
+ * off. The widest session this chart is for, a 40 °C DC fast charge, draws 72 °F
+ * and asks for 108, and is given 110 once the bounds snap: room to move in, and
+ * every reading a step or more inside it.
  *
- * The bounds then snap outward to whole steps — 5 °C, 10 °F — so two similar
+ * The bounds then snap outward to the fine grid — 5 °F, 2.5 °C — so two similar
  * sessions share an axis and can be read against each other by eye. Snapping
- * only widens, so the floor holds through it, and the cap holds to within a step
- * at each end.
+ * only widens, so the floor holds through it. The grid is deliberately fine: on
+ * a 10 °F one the 31 Oct drive's 29 °F frame snapped out to 50…90, which is the
+ * width complaint this rule answers.
+ *
+ * The ticks then take one of two fixed intervals — 10 °F, 5 °C where the frame
+ * is 40 °F / 22 °C or wider, 5 °F / 2.5 °C below that. Two fixed choices and
+ * never the chart's own spacing, which lands on whatever the frame's ends imply
+ * and reads as labels like 60, 68, 76, 90. A frame the interval doesn't divide
+ * is widened to the next one, outward, so the first and last tick sit on the
+ * bounds and every reading stays inside.
  *
  * The drive page and the charge page draw the pack's temperature with the one
  * chart, so this is the axis behind both.
@@ -40,10 +45,23 @@ export function packTempAxis(values: readonly number[], unit: 'C' | 'F'): [numbe
   if (known.length === 0) return [-rule.empty, rule.empty];
   const low = Math.min(...known);
   const high = Math.max(...known);
+  const drawn = high - low;
   const middle = (low + high) / 2;
-  // Ten degrees of air each side, held between the floor and the cap.
-  const span = Math.min(Math.max(high - low + 2 * rule.padding, rule.floor), rule.cap);
-  return [snap(middle - span / 2, rule.step, -1), snap(middle + span / 2, rule.step, 1)];
+  // A quarter of the movement each side, and never less than the least air a
+  // side is given — five degrees Fahrenheit, three Celsius.
+  const pad = Math.max(rule.air, drawn * PAD_SHARE);
+  const span = Math.max(rule.floor, drawn + 2 * pad);
+  const settled: [number, number] = [
+    snap(middle - span / 2, rule.step, -1),
+    snap(middle + span / 2, rule.step, 1),
+  ];
+  // Ticks have to start and end on the frame's bounds, so a frame the interval
+  // doesn't divide widens to the next one — outward, so nothing moves inside it.
+  const step = packTempTickStep(settled[1] - settled[0], unit);
+  if (!divides(settled[1] - settled[0], step)) {
+    return [snap(settled[0], step, -1), snap(settled[1], step, 1)];
+  }
+  return settled;
 }
 
 /**
@@ -72,15 +90,18 @@ export function packTempTicks([low, high]: readonly [number, number], unit: 'C' 
   return Array.from({ length: count + 1 }, (_, i) => Number((low + i * step).toFixed(2)));
 }
 
+/** The share of the drawn extent given as air on each side of the readings. */
+const PAD_SHARE = 0.25;
+
 /**
- * The numbers behind the rule, in the unit read: the width of a step between
- * bounds, the padding on each side, the floor and the cap on the frame, half the
- * width of an axis with nothing on it, the span at which ticks go from close to
- * wide, and the two tick steps.
+ * The numbers behind the rule, in the unit read: the fine grid a bound snaps to,
+ * the least air a side is given, the floor under the frame, half the width of an
+ * axis with nothing on it, the span at which ticks go from close to wide, and
+ * the two tick steps.
  */
 const AXIS = {
-  C: { step: 5, padding: 5, floor: 11, cap: 50, empty: 5, wide: 22, wideStep: 5, closeStep: 2.5 },
-  F: { step: 10, padding: 10, floor: 20, cap: 90, empty: 10, wide: 40, wideStep: 10, closeStep: 5 },
+  C: { step: 2.5, air: 3, floor: 11, empty: 5, wide: 22, wideStep: 5, closeStep: 2.5 },
+  F: { step: 5, air: 5, floor: 20, empty: 10, wide: 40, wideStep: 10, closeStep: 5 },
 } as const;
 
 /**
@@ -93,4 +114,9 @@ function snap(value: number, step: number, direction: -1 | 1): number {
   const snapped = steps * step;
   // A bound that rounds to zero is zero, not a negative nothing.
   return snapped === 0 ? 0 : snapped;
+}
+
+/** Whether a frame's width is a whole number of tick intervals. */
+function divides(span: number, step: number): boolean {
+  return Math.abs(Math.round(span / step) * step - span) < 1e-9;
 }
