@@ -6,7 +6,7 @@ import { TrendChart } from '../../components/TrendChart';
 import { minuteTicks } from '../../lib/drives';
 import { clock } from '../../lib/format';
 import { packReadings } from '../../lib/packTemperature';
-import { packTempAxis } from '../../lib/packTempAxis';
+import { packTempAxis, packTempTicks } from '../../lib/packTempAxis';
 import { fmtSeconds } from '../../lib/state';
 import { formatMinutes, tooltipTime } from './format';
 import {
@@ -59,7 +59,8 @@ export function PackTempSection(props: {
     [readings, startMs, endMs, u],
   );
   // Framed around the readings rather than fitted to them, so a span that barely
-  // moves the pack doesn't draw as a band filling the plot.
+  // moves the pack doesn't draw as a band filling the plot, and ticked at a step
+  // the frame's span picks rather than at whatever its ends imply.
   const domain = useMemo(
     () =>
       packTempAxis(
@@ -68,6 +69,7 @@ export function PackTempSection(props: {
       ),
     [rows, u],
   );
+  const ticks = useMemo(() => packTempTicks(domain, u.units.temperature), [domain, u]);
   const spanName = span?.kind === 'charge' ? 'charge' : 'drive';
   const loading = props.loading || isPending;
   const series = packTempChartSeries(u);
@@ -120,6 +122,7 @@ export function PackTempSection(props: {
             xFormatter={formatMinutes(total)}
             tooltipLabel={span ? tooltipTime(span.from) : undefined}
             leftDomain={domain}
+            leftTicks={ticks}
             leftUnit={u.temperatureUnit}
             series={series}
           />

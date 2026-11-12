@@ -42,6 +42,25 @@ const FLAT: HistoryPoint[] = (
   ] as const
 ).map(([minutes, avg, min, max]) => ({ bucket: at(minutes), avg, min, max }));
 
+/**
+ * Two sessions either side of the span where the ticks change: the quiet one
+ * moves the band two degrees Fahrenheit, the long charge twenty-two.
+ */
+const QUIET: HistoryPoint[] = (
+  [
+    [0, 18.5, 18, 19],
+    [60, 18.5, 18, 19],
+  ] as const
+).map(([minutes, avg, min, max]) => ({ bucket: at(minutes), avg, min, max }));
+
+const LONG_CHARGE: HistoryPoint[] = (
+  [
+    [0, 12, 10, 14],
+    [30, 20, 18, 22],
+    [60, 28, 26, 30],
+  ] as const
+).map(([minutes, avg, min, max]) => ({ bucket: at(minutes), avg, min, max }));
+
 const DRIVE: PackTempSpan = { kind: 'drive', id: 2, from: at(0), to: at(60) };
 const CHARGE: PackTempSpan = { kind: 'charge', id: 7, from: at(0), to: at(60) };
 
@@ -72,6 +91,10 @@ const ticks = (container: HTMLElement) =>
       '.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value',
     ),
   ].map((tick) => Number.parseFloat(tick.textContent ?? ''));
+
+/** The gaps between those ticks, as the chart drew them. */
+const steps = (ticked: number[]) =>
+  ticked.slice(1).map((value, i) => Number((value - ticked[i]!).toFixed(2)));
 
 const fahrenheit = (celsius: number) => celsius * 1.8 + 32;
 
@@ -108,11 +131,30 @@ describe.each(SPANS)('the pack temperature chart on %s', (_name, span) => {
     const ticked = ticks(container);
     const low = ticked[0]!;
     const high = ticked.at(-1)!;
-    // At least the floor — 18 °F — where the readings themselves span five.
-    expect(high - low).toBeGreaterThanOrEqual(18);
-    // So the readings fill no more than a third of the height.
+    // Ten degrees of air each side of readings that span five, snapped out to
+    // whole steps: 50 to 90.
+    expect(high - low).toBeGreaterThanOrEqual(20);
+    // So the readings fill a fraction of the height, not the plot.
     expect((fahrenheit(23.1) - fahrenheit(20.1)) / (high - low)).toBeLessThanOrEqual(1 / 3);
     expect(low).toBeLessThanOrEqual(fahrenheit(20.1));
     expect(high).toBeGreaterThanOrEqual(fahrenheit(23.1));
+  });
+
+  it('ticks a narrow axis every five degrees, so its labels are evenly spaced', () => {
+    const { container } = draw(span, QUIET);
+
+    const ticked = ticks(container);
+    // 18 to 19 °C, framed 50 to 80 °F: seven labels, five apart.
+    expect(ticked).toEqual([50, 55, 60, 65, 70, 75, 80]);
+    expect(steps(ticked)).toEqual([5, 5, 5, 5, 5, 5]);
+  });
+
+  it('ticks a wide axis every ten degrees, so its labels are evenly spaced', () => {
+    const { container } = draw(span, LONG_CHARGE);
+
+    const ticked = ticks(container);
+    // 10 to 30 °C, framed 40 to 100 °F: seven labels, ten apart.
+    expect(ticked).toEqual([40, 50, 60, 70, 80, 90, 100]);
+    expect(steps(ticked)).toEqual([10, 10, 10, 10, 10, 10]);
   });
 });

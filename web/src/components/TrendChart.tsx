@@ -153,6 +153,14 @@ export function TrendChart(props: {
   /** Label every (n + 1)th category, even where labels would sit close; thinned to fit when left out. */
   xInterval?: number;
   leftDomain?: [number | 'auto', number | 'auto'];
+  /**
+   * The values the left axis is ticked at, where the chart should not pick them.
+   * A number axis is given a spacing only as the list of values it falls on:
+   * recharts' own `interval` counts ticks rather than adding to their values.
+   * Every one of them is labelled — the chart thinning them is what leaves a
+   * regular spacing reading as an irregular set of numbers.
+   */
+  leftTicks?: readonly number[];
   rightDomain?: [number | 'auto', number | 'auto'];
   /**
    * Bounds for a scale drawn on its own hidden axis, by the name it is shared
@@ -233,6 +241,8 @@ export function TrendChart(props: {
           <YAxis
             yAxisId="left"
             domain={props.leftDomain ?? ['auto', 'auto']}
+            ticks={props.leftTicks ? [...props.leftTicks] : undefined}
+            interval={props.leftTicks ? 0 : 'preserveEnd'}
             tick={tick}
             tickLine={false}
             axisLine={false}
