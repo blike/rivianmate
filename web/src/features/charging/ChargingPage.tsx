@@ -6,6 +6,7 @@ import {
   useChargingCoverage,
   useChargingPages,
   useLiveCharging,
+  usePackTemps,
   useVehicleState,
 } from '../../api/hooks';
 import { AddToTrip } from '../../components/AddToTrip';
@@ -24,7 +25,7 @@ import { LiveCard } from './LiveCard';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
-import { chargeStart, notStarted } from './sessions';
+import { chargeEnd, chargeStart, notStarted } from './sessions';
 import { WallboxPanel } from './WallboxPanel';
 
 export function ChargingPage(props: { vehicleId: string }) {
@@ -105,6 +106,14 @@ export function ChargingPage(props: { vehicleId: string }) {
     },
   });
 
+  // The pack's own temperature through the charge, which is what a slow one is
+  // usually down to. It is recorded apart from the curve, as state history, and
+  // read as the same banded series the drive page draws.
+  const { data: temperatures } = usePackTemps(
+    props.vehicleId,
+    session && { id: session.id, from: chargeStart(session), to: chargeEnd(session) },
+  );
+
   if (!sessionsPending && !sessions?.length) {
     return (
       <>
@@ -167,6 +176,7 @@ export function ChargingPage(props: { vehicleId: string }) {
           >
             <CurveChart
               curve={curve}
+              temperatures={temperatures}
               limit={session?.socLimit}
               loading={sessionsPending || (session != null && curvePending)}
               notStarted={session != null && notStarted(session)}

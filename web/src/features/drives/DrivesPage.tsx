@@ -8,6 +8,7 @@ import {
   useVehicleState,
 } from '../../api/hooks';
 import type { LocationPointDto } from '@server/api-types';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { api, type DriveDetailDto } from '../../api/client';
 import { DayCalendar } from '../../components/DayCalendar';
 import { PageHeader } from '../../components/PageHeader';
@@ -30,6 +31,7 @@ import { location } from '../../lib/state';
 import { DriveCard } from './DriveCard';
 import { DriveList } from './DriveList';
 import { DrivePicker } from './DrivePicker';
+import { PackTempSection } from './PackTempSection';
 import { formatMinutes, tooltipTime } from './format';
 
 export function DrivesPage(props: { vehicleId: string }) {
@@ -280,6 +282,10 @@ function RoutePanel(props: {
         )}
       </div>
       <div className="mt-4">{chart}</div>
+      {/* TeslaMate records no pack temperature, so there is nothing to show. */}
+      {!isTeslaMateVehicle(props.vehicleId) && (
+        <PackTempSection vehicleId={props.vehicleId} drive={detail} loading={loading} />
+      )}
     </Panel>
   );
 }

@@ -18,12 +18,23 @@ export interface TrendSeries {
   key: string;
   label: string;
   color: string;
-  /** "area" (default), "line" or "bar". */
+  /** "area" (default), "line" or "bar". A band ignores this. */
   mark?: 'area' | 'line' | 'bar';
   /** Put the series on a second Y axis on the right. */
   right?: boolean;
-  /** Scale the series on its own hidden axis; its values show in the tooltip. */
-  ownScale?: boolean;
+  /**
+   * Scale the series on its own hidden axis; its values show in the tooltip.
+   * A name instead of `true` lets several series share one scale.
+   */
+  ownScale?: boolean | string;
+  /**
+   * Draw as a min–max band: the row's value for the key is a `[min, max]` pair,
+   * or null where nothing was read. The band never spans a null, so it breaks
+   * with the line rather than filling a silence nothing was recorded in.
+   */
+  band?: boolean;
+  /** Layering among the marks; a lower one draws beneath the rest. */
+  zIndex?: number;
   unit?: string;
   digits?: number;
   /** Draw a dot per data point (for sparse series). */
@@ -45,7 +56,17 @@ export interface TrendReference {
   right?: boolean;
 }
 
-type Row = Record<string, number | null>;
+/** A series' value under the pointer: a reading, or a band's two ends. */
+type TooltipValue = number | [number, number];
+
+/** A value in the series' precision; a band as "min–max". */
+const valueText = (series: TrendSeries, value: TooltipValue): string =>
+  Array.isArray(value)
+    ? `${fmt(value[0], series.digits ?? 0)}–${fmt(value[1], series.digits ?? 0)}`
+    : fmt(value, series.digits ?? 1);
+
+/** A chart row: readings, a band's `[min, max]`, and null where there's none. */
+type Row = Record<string, number | [number, number] | null>;
 
 /** Small chart shared by drive, charging and health views. */
 export function TrendChart(props: {
@@ -79,7 +100,14 @@ export function TrendChart(props: {
   const [pointerIn, setPointerIn] = useState(false);
   const shown = props.series.filter((s) => !s.quiet);
   const hasRight = props.series.some((s) => s.right && !s.ownScale);
-  const axisOf = (s: TrendSeries) => (s.ownScale ? `own-${s.key}` : s.right ? 'right' : 'left');
+  const axisOf = (s: TrendSeries) =>
+    s.ownScale
+      ? `own-${typeof s.ownScale === 'string' ? s.ownScale : s.key}`
+      : s.right
+        ? 'right'
+        : 'left';
+  // One hidden axis per scale, however many series are drawn against it.
+  const ownAxes = [...new Set(props.series.filter((s) => s.ownScale).map(axisOf))];
   const tick = { fill: 'var(--text-muted)', fontSize: 11 };
   const xFormatter = props.xFormatter ?? ((x: number) => fmt(x, 0));
   // Axis ticks use the series' precision so narrow ranges don't repeat labels.
@@ -153,20 +181,23 @@ export function TrendChart(props: {
               }
             />
           )}
-          {props.series
-            .filter((s) => s.ownScale)
-            .map((s) => (
-              <YAxis key={s.key} yAxisId={axisOf(s)} domain={['auto', 'auto']} hide />
-            ))}
+          {ownAxes.map((axis) => (
+            <YAxis key={axis} yAxisId={axis} domain={['auto', 'auto']} hide />
+          ))}
           <Tooltip
             isAnimationActive={false}
             cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length || (props.syncId && !pointerIn)) return null;
               // One row per series, in declared order, skipping gaps.
-              const valueOf = (s: TrendSeries) => {
+              const valueOf = (s: TrendSeries): TooltipValue | null => {
                 const value = payload.find((p) => p.dataKey === s.key)?.value;
-                return typeof value === 'number' ? value : null;
+                if (typeof value === 'number') return value;
+                // A band's two ends.
+                if (Array.isArray(value) && value.every((v) => typeof v === 'number')) {
+                  return [value[0]!, value[1]!];
+                }
+                return null;
               };
               const rows = shown.flatMap((s) => {
                 const value = valueOf(s);
@@ -193,7 +224,7 @@ export function TrendChart(props: {
                         />
                         <span className="text-(--text-secondary)">{s.label}</span>
                         <span className="ml-auto pl-4 font-medium tabular-nums text-(--text-primary)">
-                          {fmt(value, s.digits ?? 1)}
+                          {valueText(s, value)}
                           {s.unit && (
                             <span className="ml-0.5 font-normal text-(--text-muted)">{s.unit}</span>
                           )}
@@ -232,9 +263,23 @@ export function TrendChart(props: {
               name: s.label,
               yAxisId: axisOf(s),
               isAnimationActive: false,
+              ...(s.zIndex != null && { zIndex: s.zIndex }),
               ...(s.quiet && { legendType: 'none' as const }),
             };
             if (s.mark === 'bar') return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
+            if (s.band) {
+              return (
+                <Area
+                  {...common}
+                  type={s.interpolation ?? 'monotone'}
+                  stroke="none"
+                  fill={s.color}
+                  fillOpacity={0.18}
+                  dot={false}
+                  connectNulls={false}
+                />
+              );
+            }
             if (s.mark === 'line') {
               return (
                 <Line

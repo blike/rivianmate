@@ -1,9 +1,10 @@
 /**
  * Records the history behind the mock's drive-home scene, so screenshots
  * can be taken without driving it first: the drive so far (from Lexington,
- * partway home), a home charge the night before, the rest of the week's
- * drives and charges, and Home as a saved location with its rate. Then
- * start the app with the scene:
+ * partway home) with the pack's temperatures along it, a home charge the night
+ * before with the pack warming through it, the rest of the week's drives and
+ * charges, and Home as a saved location with its rate. Then start the app with
+ * the scene:
  *
  *   DATABASE_URL=postgres://… pnpm --filter @rivianmate/server demo:scene
  *   MOCK_RIVIAN=1 MOCK_SCENE=drive-home pnpm dev
@@ -17,7 +18,7 @@
  * The drive home carries on at 56 mph, so take screenshots within about half
  * a minute of starting the app, or run this again.
  */
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql as raw } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql as raw } from 'drizzle-orm';
 import { createDb } from '../src/db/client.js';
 import {
   chargingCurvePoints,
@@ -26,10 +27,12 @@ import {
   locationPoints,
   parallaxLatest,
   savedLocations,
+  stateChanges,
   tripActivities,
   trips as tripsTable,
   vehicles,
 } from '../src/db/schema.js';
+import { HistoryKeys } from '../src/services/history-keys.js';
 import { MOCK_VEHICLE_ID, MOCK_VIN, driveHomeSoFar } from '../src/rivian/mock.js';
 import { coldWeather } from '../src/rivian/parallax/index.js';
 
@@ -116,6 +119,50 @@ await db.insert(chargingCurvePoints).values(
   }),
 );
 
+// The pack's own temperature through that charge, as the monitor records it
+// while the car is awake: a reading every few minutes, the cells' mean and
+// their hottest and coldest. A pack left out overnight starts cold and warms
+// as it takes energy, which is what the chart's band and line show.
+const TEMPERATURE_FIELDS = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
+const TEMPERATURE_STEP_MS = 6 * 60_000;
+const keys = new HistoryKeys(db);
+const vehicleSeq = (await keys.vehicleSeq(MOCK_VEHICLE_ID))!;
+const temperatureIds = await keys.fieldIds(TEMPERATURE_FIELDS);
+// Replaced on every run, like the charge it belongs to.
+await db
+  .delete(stateChanges)
+  .where(
+    and(
+      eq(stateChanges.vehicleSeq, vehicleSeq),
+      inArray(stateChanges.fieldId, [...temperatureIds.values()]),
+      gte(stateChanges.at, new Date(chargeStart - HOUR_MS)),
+      lte(stateChanges.at, new Date(chargeEnd + HOUR_MS)),
+    ),
+  );
+const tenths = (celsius: number) => Math.round(celsius * 10) / 10;
+await db.insert(stateChanges).values(
+  Array.from(
+    { length: Math.floor((chargeEnd - chargeStart) / TEMPERATURE_STEP_MS) + 1 },
+    (_, i) => {
+      const at = new Date(chargeStart + i * TEMPERATURE_STEP_MS);
+      // Warming quickly at first, then levelling off toward 24 °C.
+      const mean = 14 + 10 * Math.sqrt((at.getTime() - chargeStart) / (chargeEnd - chargeStart));
+      return (
+        [
+          ['batteryTempAvg', mean],
+          ['batteryTempMax', mean + 2.4],
+          ['batteryTempMin', mean - 1.9],
+        ] as const
+      ).map(([field, celsius]) => ({
+        vehicleSeq,
+        fieldId: temperatureIds.get(field)!,
+        at,
+        num: tenths(celsius),
+      }));
+    },
+  ).flat(),
+);
+
 // The drive home so far, left open for the mock to carry on.
 const open = await db
   .select({ id: drives.id })
@@ -149,6 +196,53 @@ const [driveRow] = await db
 await db
   .insert(locationPoints)
   .values(drive.points.map((p) => ({ ...p, vehicleId: MOCK_VEHICLE_ID, driveId: driveRow!.id })));
+
+// The pack warms over the drive so far, and its cells spread as it works, as the
+// state history the drive page reads its figures and trend from. The scene is
+// recorded ahead of the mock, so nothing else writes these: the mock's own
+// battery frames then carry on from where this leaves off, which is why the
+// last reading here is exactly what they report.
+const TEMP_FIELDS = ['batteryTempAvg', 'batteryTempMin', 'batteryTempMax'] as const;
+/** From 70 °F to the 75 °F the mock reports. */
+const TEMP_START = { batteryTempAvg: 21, batteryTempMin: 20, batteryTempMax: 22 };
+const TEMP_END = { batteryTempAvg: 24, batteryTempMin: 22, batteryTempMax: 27 };
+const seq = await keys.vehicleSeq(MOCK_VEHICLE_ID);
+const tempFields = await keys.fieldIds(TEMP_FIELDS);
+// Every reading of them over the drive, so a re-run leaves nothing of the drive
+// it replaced — and nothing of the charge the night before, which its own
+// readings above belong to.
+await db
+  .delete(stateChanges)
+  .where(
+    and(
+      eq(stateChanges.vehicleSeq, seq!),
+      inArray(stateChanges.fieldId, [...tempFields.values()]),
+      gte(stateChanges.at, drive.startedAt),
+      lte(stateChanges.at, new Date(now)),
+    ),
+  );
+const TEMP_EVERY_MS = 2 * 60_000;
+const tempSpan = now - drive.startedAt.getTime();
+const tempSteps = Math.max(1, Math.round(tempSpan / TEMP_EVERY_MS));
+const tenth = (n: number) => Math.round(n * 10) / 10;
+await db
+  .insert(stateChanges)
+  .values(
+    Array.from({ length: tempSteps + 1 }, (_, i) => {
+      const at = new Date(drive.startedAt.getTime() + (i * tempSpan) / tempSteps);
+      const along = i / tempSteps;
+      return TEMP_FIELDS.map((field) => ({
+        vehicleSeq: seq!,
+        fieldId: tempFields.get(field)!,
+        at,
+        num: tenth(TEMP_START[field] + (TEMP_END[field] - TEMP_START[field]) * along),
+      }));
+    }).flat(),
+  )
+  .onConflictDoUpdate({
+    target: [stateChanges.vehicleSeq, stateChanges.fieldId, stateChanges.at],
+    set: { num: raw`excluded.num` },
+  });
 
 // The rest of the week, in the same zone as the charge: today began 24 hours
 // after it did. The drive home counts toward the week's figures, so the

@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { localKey } from '../lib/drives';
 import { location, type VehicleFix } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
@@ -281,6 +282,29 @@ export function useDrivers(vehicleId: string, enabled = true) {
     queryFn: () => api.drivers(vehicleId),
     enabled,
     staleTime: 10 * 60_000,
+  });
+}
+
+/**
+ * The pack's cell temperatures over a span — a drive, or a charging session —
+ * from recorded state history: its average, and the coldest and hottest cell
+ * around it. Only Rivian's own state has them, so a TeslaMate vehicle asks for
+ * nothing.
+ */
+export function usePackTemps(
+  vehicleId: string,
+  span: { id: number; from: string; to: string | null } | undefined,
+) {
+  return useQuery({
+    // A span that has ended asks again once, for the readings at its end.
+    queryKey: ['packTemps', vehicleId, span?.id, span?.to ?? 'live'],
+    // A span under way is read up to now, and grows as it goes.
+    queryFn: () =>
+      api.history(vehicleId, 'temp', new Date(span!.from), new Date(span!.to ?? Date.now()), 'raw'),
+    enabled: span != null && !isTeslaMateVehicle(vehicleId),
+    refetchInterval: span && span.to == null ? LIVE_REFRESH_MS : false,
+    // Keep the previous span's line on screen while the next one loads.
+    placeholderData: keepPreviousData,
   });
 }
 

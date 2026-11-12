@@ -351,6 +351,90 @@ export async function numericSeries(
   };
 }
 
+/** One reading of a metric drawn as a band: the line, and the band around it. */
+export interface BandPoint {
+  at: number;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+/** A banded metric's three fields: what its line averages, and what its band spans. */
+export interface BandFields {
+  avg: string;
+  min: string;
+  max: string;
+}
+
+export type BandColumns = Readonly<Record<keyof BandFields, readonly NumericPoint[]>>;
+
+/**
+ * Three fields as one series: each reading holds until its own field's next
+ * one, so a frame that moved only the pack's maximum still carries the average
+ * and the minimum to draw it against. A row at every stamp any of the three
+ * moved, each with the values in effect then.
+ */
+export function heldValues(columns: BandColumns): BandPoint[] {
+  const steps = (Object.keys(columns) as (keyof BandColumns)[]).flatMap((key) =>
+    columns[key].map((p) => ({ key, at: p.at, value: p.value })),
+  );
+  // Ties keep the column order, so a frame's three readings land as one row.
+  steps.sort((a, b) => a.at - b.at);
+  const held: Record<keyof BandFields, number | null> = { avg: null, min: null, max: null };
+  const rows: BandPoint[] = [];
+  let i = 0;
+  while (i < steps.length) {
+    const at = steps[i]!.at;
+    while (i < steps.length && steps[i]!.at === at) {
+      held[steps[i]!.key] = steps[i]!.value;
+      i++;
+    }
+    rows.push({ at, ...held });
+  }
+  return rows;
+}
+
+/**
+ * A banded metric over [from, to]: each field's readings held into one series,
+ * as recorded changes or as fixed buckets. Buckets are taken per field, so the
+ * band keeps each field's own extremes over the bucket it covers.
+ */
+export async function bandSeries(
+  db: Db,
+  vehicleId: string,
+  fields: BandFields,
+  from: Date,
+  to: Date,
+  intervalMs: number | null,
+): Promise<BandPoint[]> {
+  const keys = ['avg', 'min', 'max'] as const;
+  const series = await Promise.all(
+    keys.map((key) => numericSeries(db, vehicleId, fields[key], from, to)),
+  );
+  if (intervalMs == null) {
+    // Each reading keeps the stamp it was made at, even when it predates the
+    // window: moved to the window's start it would pass for the values in
+    // effect then, and only the age it carries can tell a fresh reading from a
+    // stale one.
+    const points = (i: number): NumericPoint[] => {
+      const s = series[i]!;
+      return [...(s.opening ? [s.opening] : []), ...s.changes];
+    };
+    return heldValues({ avg: points(0), min: points(1), max: points(2) });
+  }
+  const rows = new Map<number, BandPoint>();
+  series.forEach((s, i) => {
+    const key = keys[i]!;
+    const buckets = bucketSeries(s.opening, s.changes, from.getTime(), to.getTime(), intervalMs);
+    for (const b of buckets) {
+      const row = rows.get(b.bucket) ?? { at: b.bucket, avg: null, min: null, max: null };
+      row[key] = b[key];
+      rows.set(b.bucket, row);
+    }
+  });
+  return [...rows.values()].sort((a, b) => a.at - b.at);
+}
+
 /** The fields as they were at `at`, each stamped with when it last changed. */
 export async function stateAt(
   db: Db,
