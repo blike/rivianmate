@@ -2,7 +2,7 @@
 import { render } from '@testing-library/react';
 import { cloneElement, type ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { TrendChart } from './TrendChart';
+import { TrendChart, tooltipRows } from './TrendChart';
 
 /**
  * jsdom lays nothing out, so the chart is handed the size its container would
@@ -83,5 +83,26 @@ describe('a band series', () => {
 
     expect(drawn(container, '.recharts-area-area')).toEqual([]);
     expect(drawn(container, '.recharts-line-curve')).toEqual([]);
+  });
+});
+
+describe('a series the tooltip names without drawing', () => {
+  const named = [
+    ...series,
+    { key: 'packMax', label: 'Max cell temperature', color: PACK, tooltipOnly: true, digits: 0 },
+  ];
+
+  it('draws nothing of its own and is listed with its value', () => {
+    const data = rows.map((row) => ({ ...row, packMax: 26 + row.minutes }));
+    const { container } = render(<TrendChart data={data} xKey="minutes" series={named} />);
+
+    // The band and the line, and no third mark for the value the tooltip names.
+    expect(container.querySelectorAll('.recharts-area-area')).toHaveLength(1);
+    expect(container.querySelectorAll('.recharts-line-curve')).toHaveLength(1);
+    expect(tooltipRows(named, data[3]!).map((row) => row.series.label)).toEqual([
+      'Pack range',
+      'Pack average',
+      'Max cell temperature',
+    ]);
   });
 });

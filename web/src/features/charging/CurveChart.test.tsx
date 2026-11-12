@@ -18,6 +18,9 @@ interface CapturedChart {
     connectNulls?: boolean;
     unit?: string;
   }[];
+  leftDomain?: [number | 'auto', number | 'auto'];
+  rightDomain?: [number | 'auto', number | 'auto'];
+  ownDomains?: Record<string, [number, number]>;
 }
 
 const { charts } = vi.hoisted(() => ({ charts: [] as CapturedChart[] }));
@@ -132,6 +135,24 @@ describe('CurveChart with the pack temperature recorded', () => {
 
     expect(seriesOf('packRange')!.unit).toBe('°C');
     expect(lastChart().data[0]!.packRange).toEqual([22, 27]);
+  });
+
+  it('frames the pack’s scale, and leaves power and battery to fit themselves', () => {
+    render({ temperatures });
+
+    // The readings run 71.6 to 98.6 °F, framed on the whole tens around them,
+    // so the band keeps to a third of the plot instead of filling it.
+    expect(lastChart().ownDomains?.pack).toEqual([40, 140]);
+    expect(lastChart().leftDomain).toEqual([0, 'auto']);
+    expect(lastChart().rightDomain).toEqual([0, 100]);
+  });
+
+  it('frames the pack’s own unit, not the one the power is read in', () => {
+    render({ temperatures }, 'C');
+
+    // 22 to 37 °C: a fifteen-degree session in a frame of fifty, centred on it
+    // and snapped out to whole fives.
+    expect(lastChart().ownDomains?.pack).toEqual([0, 55]);
   });
 });
 

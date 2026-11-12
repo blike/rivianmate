@@ -8,6 +8,7 @@ import { clock } from '../../lib/format';
 import { packReadings, packTemperatures } from '../../lib/packTemperature';
 import { fmt, fmtSeconds } from '../../lib/state';
 import { chargingCurveWindow } from './chargingCurve';
+import { packTempAxis } from './packTempAxis';
 import { smoothByTime, smoothingWindowMinutes } from './smoothing';
 
 /**
@@ -83,7 +84,20 @@ export function CurveChart(props: {
   const hasTemperature = data.some((row) => row.packAverage != null);
   // The pack rides its own hidden scale: with power in kW on the left and level
   // in % on the right, a third axis would be drawn over one of them. Its values
-  // are in the tooltip, in the owner's unit.
+  // are in the tooltip, in the owner's unit. A charge that barely moves the pack
+  // leaves that scale framed rather than fitted, so its band stays the context
+  // it is behind the power curve.
+  const packDomain = useMemo(
+    () =>
+      packTempAxis(
+        data.flatMap((row) => {
+          const ends = row.packRange ?? [];
+          return row.packAverage == null ? ends : [...ends, row.packAverage];
+        }),
+        u.units.temperature,
+      ),
+    [data, u],
+  );
   const temperatureSeries: TrendSeries[] = hasTemperature
     ? [
         {
@@ -183,6 +197,7 @@ export function CurveChart(props: {
             leftUnit="kW"
             rightUnit="%"
             rightDomain={[0, 100]}
+            ownDomains={{ pack: packDomain }}
             references={limitLine(true)}
             series={[
               {
@@ -217,6 +232,7 @@ export function CurveChart(props: {
             tooltipLabel={tooltipTime}
             leftDomain={[0, 100]}
             leftUnit="%"
+            ownDomains={{ pack: packDomain }}
             references={limitLine(false)}
             series={[
               {

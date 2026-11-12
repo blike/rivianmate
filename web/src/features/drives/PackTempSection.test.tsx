@@ -1,8 +1,14 @@
-import type { DriveDetailDto } from '@server/api-types';
+// @vitest-environment jsdom
+import type { DriveDetailDto, HistoryPoint } from '@server/api-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render as renderDom } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { TrendTooltip, tooltipRows } from '../../components/TrendChart';
+import { packReadings } from '../../lib/packTemperature';
+import { unitFormatter } from '../../lib/units';
 import { ID } from '../../testing/fixtures';
+import { packTempChartSeries, packTempSeries } from './packTemp';
 import { PackTempSection } from './PackTempSection';
 
 const START = Date.parse('2026-10-12T14:00:00Z');
@@ -19,7 +25,9 @@ const drive = (over: Partial<DriveDetailDto> = {}): DriveDetailDto =>
   }) as DriveDetailDto;
 
 /** History as the route returns it: the average, the coldest and hottest cell. */
-const rows = (readings: [minutes: number, avgC: number, minC: number, maxC: number][]) =>
+const rows = (
+  readings: [minutes: number, avgC: number, minC: number, maxC: number][],
+): HistoryPoint[] =>
   readings.map(([minutes, avg, min, max]) => ({
     bucket: at(minutes),
     avg,
@@ -108,5 +116,39 @@ describe('PackTempSection', () => {
     const html = render(undefined, []);
     expect(html).toContain('Pack temperature');
     expect(html).toContain('At end');
+  });
+
+  it('names the band’s edges and the pack’s average in the tooltip, with their values', () => {
+    const u = unitFormatter({ distance: 'mi', temperature: 'F' });
+    const readings = packReadings(
+      rows([
+        [0, 20, 19, 21],
+        [60, 23, 22, 24],
+      ]),
+    );
+    const series = packTempChartSeries(u);
+    const [first] = packTempSeries(readings, {
+      startMs: START,
+      endMs: START + 60 * MIN,
+      toDisplay: u.temperature,
+    });
+    const listed = tooltipRows(series, first!);
+
+    // The hottest cell first, then the pack's average, then the coldest.
+    expect(listed.map((row) => row.series.label)).toEqual([
+      'Max cell temperature',
+      'Average pack temperature',
+      'Min cell temperature',
+    ]);
+
+    const tooltip = renderDom(<TrendTooltip title="2:00 PM" rows={listed} />);
+    const said = (label: string) => tooltip.getByText(label).parentElement?.textContent;
+    // 21, 20 and 19 °C, in the owner's unit and the series' precision.
+    expect(said('Max cell temperature')).toBe('Max cell temperature70°F');
+    expect(said('Average pack temperature')).toBe('Average pack temperature68°F');
+    expect(said('Min cell temperature')).toBe('Min cell temperature66°F');
+    // The band is the picture, not a figure: no range is listed beside it.
+    expect(tooltip.queryByText('Coldest to hottest cell')).toBeNull();
+    expect(tooltip.container.textContent).not.toContain('–');
   });
 });

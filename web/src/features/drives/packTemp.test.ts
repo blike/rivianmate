@@ -3,6 +3,7 @@ import { PACK_READING_FRESH_MS, type PackReading } from '../../lib/packTemperatu
 import { unitFormatter } from '../../lib/units';
 import {
   packTempChangeText,
+  packTempChartSeries,
   packTempDigits,
   packTempFigures,
   packTempSeries,
@@ -116,14 +117,14 @@ describe('packTempSeries', () => {
   it('draws the average as the line and the cells as the band', () => {
     const rows = series([reading(0, 20), reading(10, 21)], 10);
     expect(rows.map((r) => r.minutes)).toEqual(Array.from({ length: 11 }, (_, i) => i));
-    expect(rows[0]).toEqual({ minutes: 0, avg: 20, band: [19, 21] });
-    expect(rows[5]).toEqual({ minutes: 5, avg: 20, band: [19, 21] });
-    expect(rows[10]).toEqual({ minutes: 10, avg: 21, band: [20, 22] });
+    expect(rows[0]).toEqual({ minutes: 0, avg: 20, min: 19, max: 21, band: [19, 21] });
+    expect(rows[5]).toEqual({ minutes: 5, avg: 20, min: 19, max: 21, band: [19, 21] });
+    expect(rows[10]).toEqual({ minutes: 10, avg: 21, min: 20, max: 22, band: [20, 22] });
   });
 
   it('converts the line and both ends of the band to the unit shown', () => {
     const rows = series([reading(0, 20), reading(10, 21)], 10, FAHRENHEIT);
-    expect(rows[0]).toEqual({ minutes: 0, avg: 68, band: [66.2, 69.8] });
+    expect(rows[0]).toEqual({ minutes: 0, avg: 68, min: 66.2, max: 69.8, band: [66.2, 69.8] });
     expect(rows[10]!.band).toEqual([68, 71.6]);
   });
 
@@ -139,10 +140,10 @@ describe('packTempSeries', () => {
 
     // The reading before the mark stands up to it, and no further.
     expect(at(19).avg).toBe(20);
-    expect(at(20)).toEqual({ minutes: 20, avg: null, band: null });
-    expect(at(39)).toEqual({ minutes: 39, avg: null, band: null });
+    expect(at(20)).toEqual({ minutes: 20, avg: null, min: null, max: null, band: null });
+    expect(at(39)).toEqual({ minutes: 39, avg: null, min: null, max: null, band: null });
     // The next reading picks both up again.
-    expect(at(40)).toEqual({ minutes: 40, avg: 23, band: [22, 24] });
+    expect(at(40)).toEqual({ minutes: 40, avg: 23, min: 22, max: 24, band: [22, 24] });
   });
 
   it('draws a reading through to the next one, however long the stretch between them', () => {
@@ -157,13 +158,46 @@ describe('packTempSeries', () => {
     // the rows still run from the start of the drive to its end.
     const rows = series([reading(5, 20), reading(15, 22), silence(30)], 60);
     expect(rows.map((r) => r.minutes)).toEqual(Array.from({ length: 61 }, (_, i) => i));
-    expect(rows[0]).toEqual({ minutes: 0, avg: null, band: null });
-    expect(rows.at(-1)).toEqual({ minutes: 60, avg: null, band: null });
+    expect(rows[0]).toEqual({ minutes: 0, avg: null, min: null, max: null, band: null });
+    expect(rows.at(-1)).toEqual({ minutes: 60, avg: null, min: null, max: null, band: null });
   });
 
   it('has no rows for a drive with fewer than two readings', () => {
     expect(series([], 60)).toEqual([]);
     expect(series([reading(30, 22)], 60)).toEqual([]);
+  });
+});
+
+describe('packTempChartSeries', () => {
+  const series = packTempChartSeries(FAHRENHEIT);
+
+  it('keeps the band, drawn rather than listed as a range', () => {
+    const band = series.find((s) => s.band)!;
+
+    expect(band.key).toBe('band');
+    expect(band.quiet).toBe(true);
+    expect(band.interpolation).toBe('linear');
+  });
+
+  it('names the hottest cell, the pack’s average and the coldest, in that order', () => {
+    expect(series.map((s) => s.label)).toEqual([
+      'Coldest to hottest cell',
+      'Max cell temperature',
+      'Average pack temperature',
+      'Min cell temperature',
+    ]);
+    // The average is the line; the two ends are figures the tooltip names only.
+    expect(series.filter((s) => s.mark === 'line').map((s) => s.key)).toEqual(['avg']);
+    expect(series.filter((s) => s.tooltipOnly).map((s) => s.key)).toEqual(['max', 'min']);
+    expect(series.filter((s) => s.tooltipOnly).every((s) => s.unit === '°F')).toBe(true);
+    expect(series.filter((s) => s.tooltipOnly).every((s) => s.digits === 0)).toBe(true);
+  });
+
+  it('says the same in celsius, with a decimal to the degree', () => {
+    const celsius = packTempChartSeries(CELSIUS);
+
+    expect(celsius.find((s) => s.key === 'max')!.unit).toBe('°C');
+    expect(celsius.find((s) => s.key === 'max')!.digits).toBe(1);
   });
 });
 

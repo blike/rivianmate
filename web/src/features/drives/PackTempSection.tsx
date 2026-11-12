@@ -11,7 +11,7 @@ import { fmtSeconds } from '../../lib/state';
 import { formatMinutes, tooltipTime } from './format';
 import {
   packTempChangeText,
-  packTempDigits,
+  packTempChartSeries,
   packTempFigures,
   packTempSeries,
   packTempText,
@@ -53,7 +53,7 @@ export function PackTempSection(props: {
     [readings, startMs, endMs, u],
   );
   const loading = props.loading || isPending;
-  const digits = packTempDigits(u);
+  const series = packTempChartSeries(u);
   const total = (endMs - startMs) / 60_000;
   // A change needs two readings, at two ends of the drive.
   const { startAt, endAt } = figures;
@@ -103,31 +103,7 @@ export function PackTempSection(props: {
             xFormatter={formatMinutes(total)}
             tooltipLabel={drive ? tooltipTime(drive.startedAt) : undefined}
             leftUnit={u.temperatureUnit}
-            series={[
-              {
-                key: 'band',
-                label: 'Coldest to hottest cell',
-                color: 'var(--series-4)',
-                band: true,
-                // Straight between readings, and broken wherever the series has
-                // nothing to draw: the vehicle went quiet there.
-                interpolation: 'linear',
-                unit: u.temperatureUnit,
-                digits,
-              },
-              {
-                key: 'avg',
-                label: 'Pack temperature',
-                color: 'var(--series-4)',
-                mark: 'line',
-                // Straight between readings, and never across the breaks the
-                // series carries: the line stops and picks up where data resumes.
-                interpolation: 'linear',
-                connectNulls: false,
-                unit: u.temperatureUnit,
-                digits,
-              },
-            ]}
+            series={series}
           />
         </ContentFrame>
       </div>

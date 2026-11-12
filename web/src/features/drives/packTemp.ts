@@ -1,3 +1,4 @@
+import type { TrendSeries } from '../../components/TrendChart';
 import {
   PACK_READING_FRESH_MS,
   type PackReading,
@@ -58,8 +59,13 @@ export function packTempFigures(
 /** A row of the pack temperature chart: the average line, and the band around it. */
 export type PackTempRow = {
   minutes: number;
+  /** The mean of the cells: the line. */
   avg: number | null;
-  /** The coldest and hottest cell, as the axis shows them. */
+  /** The coldest cell: one edge of the band, and a figure the tooltip names. */
+  min: number | null;
+  /** The hottest cell: the other edge, and a figure the tooltip names. */
+  max: number | null;
+  /** The coldest and hottest cell as the band draws them, as one pair. */
   band: [number, number] | null;
 };
 
@@ -90,8 +96,45 @@ export function packTempSeries(
   return packTemperatures(readings, times, toDisplay).map((t, i) => ({
     minutes: (times[i]! - startMs) / MINUTE_MS,
     avg: t.avg,
+    min: t.min,
+    max: t.max,
     band: t.min != null && t.max != null ? [t.min, t.max] : null,
   }));
+}
+
+/**
+ * The series the drive's chart draws: the band the cells sit in, and the three
+ * readings the tooltip names — the hottest cell, the pack's average, the coldest
+ * cell. The band is the picture rather than a reading of its own, so it is drawn
+ * unlisted and the tooltip names its edges and its middle instead of the range.
+ */
+export function packTempChartSeries(u: UnitFormatter): TrendSeries[] {
+  const digits = packTempDigits(u);
+  const reading = { color: 'var(--series-4)', unit: u.temperatureUnit, digits };
+  return [
+    {
+      key: 'band',
+      label: 'Coldest to hottest cell',
+      ...reading,
+      band: true,
+      // Straight between readings, and broken wherever the series has nothing to
+      // draw: the vehicle went quiet there.
+      interpolation: 'linear',
+      quiet: true,
+    },
+    { key: 'max', label: 'Max cell temperature', ...reading, tooltipOnly: true },
+    {
+      key: 'avg',
+      label: 'Average pack temperature',
+      ...reading,
+      mark: 'line',
+      // Straight between readings, and never across the breaks the series
+      // carries: the line stops and picks up where data resumes.
+      interpolation: 'linear',
+      connectNulls: false,
+    },
+    { key: 'min', label: 'Min cell temperature', ...reading, tooltipOnly: true },
+  ];
 }
 
 /** A whole degree Fahrenheit is half a degree Celsius, so Celsius gets a decimal. */
