@@ -80,10 +80,11 @@ export function Overview(props: {
   const lowRange = rangeLevel(state);
   // Without a distance for it, the vehicle's own word on the cold.
   const coldNote = cold ? null : coldRangeNote(state);
-  // Only some packs send the BMS's verdict, so a vehicle without one shows nothing.
-  const powerVerdict = showOptional(state, 'batteryPowerOutputStatus')
-    ? powerOutputVerdict(state)
-    : null;
+  // Only some packs send the BMS's frames: without them there is no verdict and no temperature.
+  const packFrames = showOptional(state, 'batteryPowerOutputStatus');
+  const powerVerdict = packFrames ? powerOutputVerdict(state) : null;
+  // The pack's own temperature, which is the context a cold limit reads against.
+  const packTempC = packFrames ? nv(state, 'batteryTempAvg') : null;
   const mileageM = nv(state, 'vehicleMileage');
   const loc = location(state);
   // The speed taken with the fix the map shows, so the two agree.
@@ -255,6 +256,22 @@ export function Overview(props: {
                 <div className="mt-1 text-xs text-(--text-muted)">{coldNote}</div>
               )}
             </div>
+            {/* The pack's temperature, read in the same figures as the range beside it. */}
+            {packFrames && (
+              <div className="pb-1.5">
+                <div className="eyebrow">Pack</div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="readout text-[2.25rem] font-[350]">
+                    {loading ? (
+                      <Skeleton className="w-[2.5em]" />
+                    ) : (
+                      fmt(u.temperature(packTempC), 0)
+                    )}
+                  </span>
+                  <span className="text-base text-(--text-muted)">{u.temperatureUnit}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-4">

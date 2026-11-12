@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // The pack's verdict reads on two surfaces, the gauge and Health's pack panel.
-// This pins that both take it from the one helper and paint it in the one color,
-// so a second copy can't quietly reappear on either side.
+// Both take it from the one helper; on the gauge only the cold is news, while
+// Health names both readings. This pins that a second copy can't quietly
+// reappear on either side.
 import type { VehicleInsightsDto, VehicleState } from '@server/api-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -40,10 +41,11 @@ describe("the pack's verdict on both surfaces", () => {
     for (const element of verdicts) expect(element.className).toContain('text-(--status-cold)');
   });
 
-  it('reads a pack the cold is not limiting in the healthy green, in both places', () => {
+  it('leaves the gauge silent for a pack the cold is not limiting, and names it in Health alone', () => {
     renderBoth(powerOutputVerdict(state({ batteryPowerOutputStatus: 'normal' })));
+    // The one place it is said: beside the cell temperature, in the healthy green.
     const verdicts = screen.getAllByText('normal');
-    expect(verdicts).toHaveLength(2);
+    expect(verdicts).toHaveLength(1);
     for (const element of verdicts) expect(element.className).toContain('text-(--status-good)');
   });
 

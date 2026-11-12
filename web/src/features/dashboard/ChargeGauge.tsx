@@ -6,19 +6,17 @@ import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 const CELLS = 50;
 const SCALE = [0, 25, 50, 75, 100];
 
-/** The verdict in the band's own words, and the color it takes: the cold is not a fault. */
-const VERDICT: Record<PowerOutputVerdict, { label: string; tone: string }> = {
-  normal: { label: 'normal', tone: 'text-(--status-good)' },
-  cold: { label: 'cold-limited', tone: 'text-(--status-cold)' },
-};
+/** The band's only label, and the color it takes: a pack the cold is limiting is not a fault. */
+const COLD_LIMITED = 'cold-limited';
 
 /**
  * State of charge as a row of cells, like the pack it stands for: lit to
  * the level, the charge limit marked above, and while charging the cells
  * still to fill ripple toward it. Past the limit the cells are dimmed.
- * Another level can stand in for the limit, named by `limitLabel`. The
- * pack's verdict on power output goes in a row of its own above the limit's
- * label, so the band grows and nothing else moves.
+ * Another level can stand in for the limit, named by `limitLabel`. A pack
+ * the cold is limiting says so in a row of its own above the limit's
+ * label, so the band grows and nothing else moves; a pack the cold is not
+ * limiting says nothing, since its verdict is no news.
  */
 export function ChargeGauge(props: {
   level: number | null;
@@ -31,7 +29,7 @@ export function ChargeGauge(props: {
   const loading = useLoading();
   const level = loading || props.level == null ? 0 : Math.min(100, Math.max(0, props.level));
   const limit = loading || props.limit == null ? null : Math.min(100, Math.max(0, props.limit));
-  const verdict = loading || props.verdict == null ? null : VERDICT[props.verdict];
+  const coldLimited = !loading && props.verdict === 'cold';
   const tone = props.charging
     ? 'var(--status-good)'
     : level < 15
@@ -46,13 +44,13 @@ export function ChargeGauge(props: {
       ? [
           `${fmt(props.level, 0)}%`,
           limit != null ? `${(props.limitLabel ?? 'Limit').toLowerCase()} ${fmt(limit, 0)}%` : null,
-          verdict ? `power output ${verdict.label}` : null,
+          coldLimited ? `power output ${COLD_LIMITED}` : null,
         ]
           .filter((part) => part != null)
           .join(', ')
       : undefined;
-  // The verdict takes a row of its own above the limit's label, and the band makes room for both.
-  const stacked = verdict != null && limit != null;
+  // The cold-limited label takes a row of its own above the limit's label, and the band makes room for both.
+  const stacked = coldLimited && limit != null;
   // Keeps a band label over the limit's mark, and inside the gauge at either end.
   const marker =
     limit == null
@@ -73,13 +71,13 @@ export function ChargeGauge(props: {
       className={`charge-gauge relative ${stacked ? 'pt-10' : 'pt-6'}`}
       style={{ '--gauge': tone } as CSSProperties}
     >
-      {verdict && (
+      {coldLimited && (
         <span
           aria-hidden
-          className={`absolute top-0 text-[11px] leading-4 whitespace-nowrap ${verdict.tone}`}
+          className="absolute top-0 text-[11px] leading-4 whitespace-nowrap text-(--status-cold)"
           style={marker}
         >
-          {verdict.label}
+          {COLD_LIMITED}
         </span>
       )}
       {limit != null && (
