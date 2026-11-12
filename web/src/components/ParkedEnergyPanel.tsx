@@ -1,14 +1,22 @@
 import type { VehicleInsightsDto } from '@server/api-types';
 import { useUnits } from '../api/hooks';
-import { PARKED_USES, parkedSegments, parkedWindows, windowLabel } from '../lib/insights';
+import {
+  PARKED_USES,
+  parkedNights,
+  parkedSegments,
+  parkedWindows,
+  windowLabel,
+} from '../lib/insights';
 import { fmt } from '../lib/state';
 import { Skeleton, useLoading } from './LoadingState';
+import { ParkedWeek } from './ParkedWeek';
 import { SplitBar, SplitLegend } from './SplitBar';
 
 /**
  * Energy used while parked: one bar per window, split by use; side by side
- * from md with `columns`. Where the source doesn't split it (TeslaMate),
- * each bar is the window's total against the largest.
+ * from md with `columns`, and the week's nights stacked below both. Where the
+ * source doesn't split it (TeslaMate), each bar is the window's total against
+ * the largest.
  */
 export function ParkedEnergyPanel(props: {
   insights: VehicleInsightsDto | undefined;
@@ -16,7 +24,9 @@ export function ParkedEnergyPanel(props: {
 }) {
   const u = useUnits();
   const loading = useLoading();
-  const windows = parkedWindows(props.insights?.parkedEnergy?.windows ?? []);
+  const energy = props.insights?.parkedEnergy;
+  const windows = parkedWindows(energy?.windows ?? []);
+  const nights = parkedNights(energy?.windows ?? [], energy?.at ?? '');
   const split = windows.some((w) => w.uses != null);
   const largest = Math.max(0, ...windows.map((w) => w.kwh));
   if (!loading && windows.length === 0) {
@@ -62,6 +72,9 @@ export function ParkedEnergyPanel(props: {
         ))}
       </div>
       {(loading || split) && <SplitLegend items={[...PARKED_USES]} />}
+      {/* Rivian's windows are rolling, so a night takes the shortest window that ends
+          inside it and a week is only as full as the report allows: see parkedNights. */}
+      {!loading && <ParkedWeek nights={nights} />}
     </div>
   );
 }
