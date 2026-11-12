@@ -480,8 +480,9 @@ export async function bandSeries(
     Promise.all(keys.map((key) => numericSeries(db, vehicleId, fields[key], from, to))),
     // One interval before the window as well: a reading made before it belongs to
     // a run of hearing that may have started earlier, and only the beats the
-    // series already carries can say whether that run was still going.
-    options.heartbeats
+    // series already carries can say whether that run was still going. Buckets
+    // cover each field's own readings, so they are left as they were.
+    options.heartbeats && intervalMs == null
       ? heartbeatsBetween(db, vehicleId, new Date(from.getTime() - HEARTBEAT_MS), to)
       : Promise.resolve<number[]>([]),
   ]);

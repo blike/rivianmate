@@ -149,8 +149,10 @@ export interface ConnectResponse {
 
 /**
  * A recorded series: the average, and the lowest and highest held over the
- * bucket. For `temp` the band is the pack's own spread: its coldest and
- * hottest cell.
+ * bucket. For `temp` the band is the pack's own spread: its coldest and hottest
+ * cell, and a row with nothing in it is the vehicle going quiet — nothing was
+ * heard after the run of heartbeats that ended an interval before it — so a
+ * chart breaks there rather than drawing across the silence.
  */
 export interface HistoryPoint {
   bucket: string;
