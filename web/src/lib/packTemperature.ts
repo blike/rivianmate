@@ -64,8 +64,8 @@ function held(readings: readonly PackReading[], ms: number): PackReading | null 
  * reading before it gets nulls, so a chart draws nothing before the first one.
  * A row of nulls in the series is the vehicle going quiet, and it breaks the
  * band and the line there rather than letting them span the silence. This is the
- * one place a pack temperature becomes a chart value, shared by the charge and
- * drive charts.
+ * one place a pack temperature becomes a chart value, drawn on the drive page
+ * and the charge page alike.
  */
 export function packTemperatures(
   readings: readonly PackReading[],

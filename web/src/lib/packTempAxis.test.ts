@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { packTempAxis } from './packTempAxis';
 
 /**
- * The pack temperatures a charge drew, in the unit read: the average, and the
+ * The pack temperatures a chart drew, in the unit read: the average, and the
  * band's two ends. `flat` is a short top-up in a cold garage; `wide` is a long
  * charge that moves the pack 30 degrees.
  */
@@ -14,7 +14,7 @@ const THREE_C = [21, 22, 23, 24];
 const THREE_F = [69.8, 71.6, 73.4, 75.2];
 
 describe('packTempAxis', () => {
-  it('frames a charge that barely moves the pack, so it does not fill the plot', () => {
+  it('frames a session that barely moves the pack, so it does not fill the plot', () => {
     const [low, high] = packTempAxis(THREE_C, 'C');
 
     expect([low, high]).toEqual([15, 30]);
@@ -25,7 +25,7 @@ describe('packTempAxis', () => {
     expect(high).toBeGreaterThanOrEqual(THREE_C.at(-1)!);
   });
 
-  it('keeps a charge that moves the pack far inside its frame, rather than clipping it', () => {
+  it('keeps a session that moves the pack far inside its frame, rather than clipping it', () => {
     const [low, high] = packTempAxis(WIDE_C, 'C');
 
     expect(low).toBeLessThanOrEqual(10);

@@ -1,17 +1,20 @@
 /**
- * The bounds of the charge chart's temperature axis, from the pack temperatures
- * the session drew in the unit shown — the average, and the band's two ends.
+ * The bounds of the pack temperature chart's axis, from the temperatures it
+ * draws — the average, and the band's two ends — in the unit shown.
  *
- * Fitted to the readings alone, a charge that barely moves the pack fills the
- * plot with a band that reads as noise behind the power curve. So the axis is
- * framed rather than fitted: it spans at least 10 °C, and at least the readings'
- * own span divided by 0.3, centred on them, so they fill no more than a third of
- * the height. A three-degree charge then draws in a third of the plot instead of
- * all of it.
+ * Fitted to the readings alone, a drive that moves the pack a degree or a charge
+ * that tops it up a few fills the plot with a band that reads as noise. So the
+ * axis is framed rather than fitted: it spans at least 10 °C, and at least the
+ * readings' own span divided by 0.3, centred on them, so they fill no more than
+ * a third of the height. A three-degree session then draws in a third of the
+ * plot instead of all of it.
  *
  * The bounds then snap outward to whole steps — 5 °C, 10 °F — so two similar
- * charges share an axis and can be read against each other by eye. Snapping only
+ * sessions share an axis and can be read against each other by eye. Snapping only
  * widens, so the floor below is never lost to it.
+ *
+ * The drive page and the charge page draw the pack's temperature with the one
+ * chart, so this is the axis behind both.
  */
 export function packTempAxis(values: readonly number[], unit: 'C' | 'F'): [number, number] {
   // The floor and the step in the unit read, so the rule holds in either: 10 °C

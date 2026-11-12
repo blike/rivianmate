@@ -284,7 +284,18 @@ function RoutePanel(props: {
       <div className="mt-4">{chart}</div>
       {/* TeslaMate records no pack temperature, so there is nothing to show. */}
       {!isTeslaMateVehicle(props.vehicleId) && (
-        <PackTempSection vehicleId={props.vehicleId} drive={detail} loading={loading} />
+        <PackTempSection
+          vehicleId={props.vehicleId}
+          span={
+            detail && {
+              kind: 'drive',
+              id: detail.id,
+              from: detail.startedAt,
+              to: detail.endedAt,
+            }
+          }
+          loading={loading}
+        />
       )}
     </Panel>
   );

@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
-import type { DriveDetailDto } from '@server/api-types';
-import { usePackTemps, useUnits } from '../../api/hooks';
+import { type PackTempSpan, usePackTemps, useUnits } from '../../api/hooks';
 import { ContentFrame, Skeleton } from '../../components/LoadingState';
 import { PanelSection } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { minuteTicks } from '../../lib/drives';
 import { clock } from '../../lib/format';
 import { packReadings } from '../../lib/packTemperature';
+import { packTempAxis } from '../../lib/packTempAxis';
 import { fmtSeconds } from '../../lib/state';
 import { formatMinutes, tooltipTime } from './format';
 import {
@@ -18,31 +18,37 @@ import {
 } from './packTemp';
 
 /**
- * The pack's temperature along a drive: what it read at each end and how far it
+ * The pack's temperature over a span: what it read at each end and how far it
  * moved, over the average with the coldest and hottest cell shaded around it.
- * A drive moves the pack only a degree or three, so the figures carry what a
- * curve this flat can't. The vehicle reports temperatures only while it's awake
- * and only when they move, so the series carries a row per heartbeat and breaks
- * where the heartbeats stop: the line and the band stop and pick up again rather
- * than being drawn across a silence.
+ * A drive moves the pack only a degree or three, and so does a charge, so the
+ * figures carry what a curve this flat can't. The vehicle reports temperatures
+ * only while it's awake and only when they move, so the series carries a row per
+ * heartbeat and breaks where the heartbeats stop: the line and the band stop and
+ * pick up again rather than being drawn across a silence.
+ *
+ * The drive page draws it under the drive's speed and elevation, and the charge
+ * page under the charging curve: the same readings, the same chart, the same
+ * axis framing.
  */
 export function PackTempSection(props: {
   vehicleId: string;
-  drive: DriveDetailDto | undefined;
+  /**
+   * The span to chart and what it is, as the copy names it: a drive, or a
+   * charge. A span still under way has no end, so its line runs to its latest
+   * reading.
+   */
+  span: PackTempSpan | undefined;
   loading: boolean;
 }) {
   const u = useUnits();
-  const drive = props.drive;
-  const { data: history, isPending } = usePackTemps(
-    props.vehicleId,
-    drive && { id: drive.id, from: drive.startedAt, to: drive.endedAt },
-  );
+  const span = props.span;
+  const { data: history, isPending } = usePackTemps(props.vehicleId, span);
   const readings = useMemo(() => packReadings(history ?? []), [history]);
-  const startMs = drive ? Date.parse(drive.startedAt) : 0;
-  // A drive under way has no end yet, so its line runs to its latest reading.
-  const live = drive != null && drive.endedAt == null;
-  const endedAt = drive?.endedAt ? Date.parse(drive.endedAt) : null;
-  const endMs = endedAt ?? (drive ? (readings.at(-1)?.at ?? startMs) : 0);
+  const startMs = span ? Date.parse(span.from) : 0;
+  // A span under way has no end yet, so its line runs to its latest reading.
+  const live = span != null && span.to == null;
+  const endedAt = span?.to ? Date.parse(span.to) : null;
+  const endMs = endedAt ?? (span ? (readings.at(-1)?.at ?? startMs) : 0);
 
   const figures = useMemo(
     () => packTempFigures(readings, { startMs, endMs, live }),
@@ -52,10 +58,21 @@ export function PackTempSection(props: {
     () => packTempSeries(readings, { startMs, endMs, toDisplay: u.temperature }),
     [readings, startMs, endMs, u],
   );
+  // Framed around the readings rather than fitted to them, so a span that barely
+  // moves the pack doesn't draw as a band filling the plot.
+  const domain = useMemo(
+    () =>
+      packTempAxis(
+        rows.flatMap((row) => [row.avg, row.min, row.max]).filter((v): v is number => v != null),
+        u.units.temperature,
+      ),
+    [rows, u],
+  );
+  const spanName = span?.kind === 'charge' ? 'charge' : 'drive';
   const loading = props.loading || isPending;
   const series = packTempChartSeries(u);
   const total = (endMs - startMs) / 60_000;
-  // A change needs two readings, at two ends of the drive.
+  // A change needs two readings, at two ends of the span.
   const { startAt, endAt } = figures;
   const changeSub =
     startAt != null && endAt != null && endAt > startAt
@@ -91,8 +108,8 @@ export function PackTempSection(props: {
           empty={rows.length === 0}
           emptyText={
             readings.length === 0
-              ? 'No pack temperature was recorded on this drive: the vehicle reports it only while it’s awake.'
-              : 'One pack temperature reading was recorded on this drive, and one is no trend to draw.'
+              ? `No pack temperature was recorded on this ${spanName}: the vehicle reports it only while it’s awake.`
+              : `One pack temperature reading was recorded on this ${spanName}, and one is no trend to draw.`
           }
         >
           <TrendChart
@@ -101,7 +118,8 @@ export function PackTempSection(props: {
             height={150}
             xTicks={minuteTicks(0, total)}
             xFormatter={formatMinutes(total)}
-            tooltipLabel={drive ? tooltipTime(drive.startedAt) : undefined}
+            tooltipLabel={span ? tooltipTime(span.from) : undefined}
+            leftDomain={domain}
             leftUnit={u.temperatureUnit}
             series={series}
           />

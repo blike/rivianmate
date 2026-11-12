@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render as renderDom } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { PackTempSpan } from '../../api/hooks';
 import { TrendTooltip, tooltipRows } from '../../components/TrendChart';
 import { packReadings } from '../../lib/packTemperature';
 import { unitFormatter } from '../../lib/units';
@@ -35,16 +36,30 @@ const rows = (
     max,
   }));
 
-function render(d: DriveDetailDto | undefined, history: object[] = []) {
+function renderSpan(span: PackTempSpan | undefined, history: object[] = []) {
   const client = new QueryClient();
   client.setQueryData(['units'], { distance: 'mi', temperature: 'F' });
-  if (d) client.setQueryData(['packTemps', ID, d.id, d.endedAt], history);
+  if (span) client.setQueryData(['packTemps', ID, span.kind, span.id, span.to ?? 'live'], history);
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <PackTempSection vehicleId={ID} drive={d} loading={false} />
+      <PackTempSection vehicleId={ID} span={span} loading={false} />
     </QueryClientProvider>,
   );
 }
+
+/** A drive's own window, as the drive page reads it. */
+const spanOf = (d: DriveDetailDto): PackTempSpan => ({
+  kind: 'drive',
+  id: d.id,
+  from: d.startedAt,
+  to: d.endedAt,
+});
+
+const render = (d: DriveDetailDto | undefined, history: object[] = []) =>
+  renderSpan(d && spanOf(d), history);
+
+/** A charge's window is its charging, not the whole plug-in. */
+const chargeSpan: PackTempSpan = { kind: 'charge', id: 7, from: at(0), to: at(60) };
 
 describe('PackTempSection', () => {
   it('shows the temperature at each end and the change between them', () => {
@@ -112,10 +127,37 @@ describe('PackTempSection', () => {
     expect(html).toContain('Not recorded');
   });
 
-  it('renders the section’s shape before any drive is chosen', () => {
+  it('renders the section’s shape before any span is chosen', () => {
     const html = render(undefined, []);
     expect(html).toContain('Pack temperature');
     expect(html).toContain('At end');
+  });
+
+  it('draws a charge’s window as it draws a drive’s, under the same figures', () => {
+    const html = renderSpan(
+      chargeSpan,
+      rows([
+        [0, 20, 19, 21],
+        [60, 23, 22, 24],
+      ]),
+    );
+    expect(html).toContain('Pack temperature');
+    expect(html).toContain('recharts-responsive-container');
+    // 20 °C and 23 °C, and the three degrees between them.
+    expect(html).toContain('68 °F');
+    expect(html).toContain('73 °F');
+    expect(html).toContain('+5 °F');
+  });
+
+  it('names a charge, not a drive, when it has no readings to draw', () => {
+    const html = renderSpan(chargeSpan, []);
+    expect(html).toContain('No pack temperature was recorded on this charge');
+    expect(html).not.toContain('on this drive');
+  });
+
+  it('says a single charge reading is no trend to draw', () => {
+    const html = renderSpan(chargeSpan, rows([[30, 21, 20, 22]]));
+    expect(html).toContain('One pack temperature reading was recorded on this charge');
   });
 
   it('names the band’s edges and the pack’s average in the tooltip, with their values', () => {
