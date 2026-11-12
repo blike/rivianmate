@@ -4,12 +4,15 @@ import { Row } from '../../components/Panel';
 import { showParallaxOnly } from '../../lib/fieldSources';
 import { dateTime } from '../../lib/format';
 import { fmt } from '../../lib/state';
+import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 
 /** The pack's cells, their temperatures, and the range the cold holds back. */
 export function PackDetails(props: {
   insights: VehicleInsightsDto | undefined;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
+  /** Left out when undefined: a vehicle that never sends one shows no verdict. */
+  powerOutput?: PowerOutputVerdict | null;
 }) {
   const u = useUnits();
   const { cellTemps, cellTempsCurrent, coldWeather } = props.insights ?? {};
@@ -26,9 +29,16 @@ export function PackDetails(props: {
           <Row
             label="Cell temperature"
             value={
-              cellTemps
-                ? `${u.formatTemperature(cellTemps.avgC)} (${fmt(u.temperature(cellTemps.minC), 0)}–${fmt(u.temperature(cellTemps.maxC), 0)})`
-                : '—'
+              // The verdict belongs on the value's line, and wraps below it when
+              // the phone is narrow or the type is large.
+              <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                <span>
+                  {cellTemps
+                    ? `${u.formatTemperature(cellTemps.avgC)} (${fmt(u.temperature(cellTemps.minC), 0)}–${fmt(u.temperature(cellTemps.maxC), 0)})`
+                    : '—'}
+                </span>
+                {props.powerOutput && <PowerOutputChip powerOutput={props.powerOutput} />}
+              </span>
             }
           />
         )}
@@ -51,5 +61,25 @@ export function PackDetails(props: {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The pack's own verdict beside its temperature. A cold-limited pack is a
+ * temperature, not a fault, so it reads in ice blue rather than a warning.
+ */
+function PowerOutputChip(props: { powerOutput: PowerOutputVerdict }) {
+  const normal = props.powerOutput === 'normal';
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full border px-2 text-[10.5px] leading-[14px] font-medium ${
+        normal
+          ? 'border-[color-mix(in_srgb,var(--status-good)_45%,transparent)] bg-[color-mix(in_srgb,var(--status-good)_14%,transparent)] text-(--status-good)'
+          : 'border-[color-mix(in_srgb,var(--status-cold)_45%,transparent)] bg-[color-mix(in_srgb,var(--status-cold)_14%,transparent)] text-(--status-cold)'
+      }`}
+    >
+      <span className="sr-only">Power output </span>
+      {normal ? 'normal' : 'cold-limited'}
+    </span>
   );
 }

@@ -89,6 +89,18 @@ export function coldRangeNote(state: VehicleState | undefined): string | null {
   return null;
 }
 
+/** The BMS's verdict on power output. */
+export type PowerOutputVerdict = 'normal' | 'cold';
+
+/**
+ * The pack's own verdict on power output, for the vehicles whose
+ * battery-state frames carry it; null when this one doesn't send it.
+ */
+export function powerOutputVerdict(state: VehicleState | undefined): PowerOutputVerdict | null {
+  const value = sv(state, 'batteryPowerOutputStatus');
+  return value === 'normal' || value === 'cold' ? value : null;
+}
+
 /**
  * Whether the climate is running: TeslaMate reports it on or off; for a
  * Rivian it's running while preconditioning, not while it's unavailable

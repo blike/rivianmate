@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import { ID, drives, parkedState, sessions, vehicle } from '../../testing/fixtures';
+import { ID, ago, drives, parkedState, sessions, vehicle } from '../../testing/fixtures';
 import { DashboardPage } from './DashboardPage';
 
 function render(state: object) {
@@ -50,5 +50,14 @@ describe('DashboardPage', () => {
   it('flags a tire the vehicle reports low', () => {
     const html = render(parkedState);
     expect(html).toContain('LOW');
+  });
+
+  it("shows the pack's verdict on the gauge, and nothing for a vehicle that sends none", () => {
+    expect(render(parkedState)).not.toContain('cold-limited');
+    const html = render({
+      ...parkedState,
+      batteryPowerOutputStatus: { value: 'cold', timeStamp: ago(0.1) },
+    });
+    expect(html).toContain('cold-limited');
   });
 });

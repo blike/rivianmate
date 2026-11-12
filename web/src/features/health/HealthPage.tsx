@@ -4,6 +4,7 @@ import { useInsights, useVehicleState } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
 import { showOptional } from '../../lib/fieldSources';
 import { sv } from '../../lib/state';
+import { powerOutputVerdict } from '../../lib/vehicleStatus';
 import { BatteryPanel } from './BatteryPanel';
 import { Overview } from './Overview';
 import { SoftwarePanel } from './SoftwarePanel';
@@ -45,6 +46,9 @@ export function HealthPage(props: { vehicleId: string; model?: string | null }) 
         batteryPending={batteryPending || statePending}
         insightsPending={insightsPending}
         cellType={showOptional(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined}
+        powerOutput={
+          showOptional(state, 'batteryPowerOutputStatus') ? powerOutputVerdict(state) : null
+        }
       />
 
       <TiresPanel

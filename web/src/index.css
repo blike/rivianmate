@@ -25,6 +25,8 @@
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-critical: #d03b3b;
+  /* A pack held back by the cold: a temperature, not a fault, so no amber. */
+  --status-cold: #7cc9f0;
   --accent: #f5c518;
   /* Text on the accent: white on yellow is unreadable. */
   --on-accent: #1a1a19;

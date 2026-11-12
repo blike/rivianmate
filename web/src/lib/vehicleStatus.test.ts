@@ -5,6 +5,7 @@ import {
   chargePortLabel,
   climateRunning,
   coldRangeNote,
+  powerOutputVerdict,
   preconditioningCause,
   preconditioningLabel,
   rangeLevel,
@@ -165,5 +166,13 @@ describe('range notes', () => {
       'The cold may reduce it',
     );
     expect(coldRangeNote(state({ rangeTemperatureImpact: 'normal' }))).toBeNull();
+  });
+
+  it("reads the pack's verdict, and none from a vehicle that sends no field 4", () => {
+    expect(powerOutputVerdict(state({ batteryPowerOutputStatus: 'cold' }))).toBe('cold');
+    expect(powerOutputVerdict(state({ batteryPowerOutputStatus: 'normal' }))).toBe('normal');
+    expect(powerOutputVerdict(state({ batteryLevel: 61 }))).toBeNull();
+    expect(powerOutputVerdict(state({ batteryPowerOutputStatus: 'unknown' }))).toBeNull();
+    expect(powerOutputVerdict(undefined)).toBeNull();
   });
 });
