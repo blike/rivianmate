@@ -25,6 +25,11 @@ const UNRECORDED_FIELDS = new Set([
  */
 const DEADBANDS: Readonly<Record<string, number>> = {
   batteryCapacity: 0.1,
+  // Cell temperatures arrive on a 0.1 °C grid, so a 0.1 band filters nothing at all; 0.5 °C is a
+  // real change in a pack and stays below what the Health row prints (whole degrees).
+  batteryTempAvg: 0.5,
+  batteryTempMax: 0.5,
+  batteryTempMin: 0.5,
   tirePressureFrontLeft: 0.01,
   tirePressureFrontRight: 0.01,
   tirePressureRearLeft: 0.01,

@@ -38,6 +38,16 @@ describe('StateDiff', () => {
     expect(recorded).toEqual([3.03, 3.04, 3.05, 3.025]);
   });
 
+  it('records a cell temperature once it has moved 0.5 °C from the last recorded one', () => {
+    for (const field of ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin']) {
+      const diff = new StateDiff();
+      const temp = (value: number) => ({ [field]: { value, timeStamp: '2026-10-01T10:00:00Z' } });
+      // 0.2 °C is under the band, on a grid where a 0.1 band would filter nothing; 0.6 is a change.
+      const recorded = [21.0, 21.2, 21.6].filter((v) => diff.changes(temp(v), 0).length > 0);
+      expect(recorded, field).toEqual([21.0, 21.6]);
+    }
+  });
+
   it('leaves out GPS and the cloud connection, and uses the fallback time without a stamp', () => {
     const diff = new StateDiff();
     const changes = diff.changes(
