@@ -1,19 +1,13 @@
 import type { HistoryPoint } from '@server/api-types';
 
 /**
- * How long a reading stands for the time after it: past this the line and the
- * band break rather than drawn across a silence the vehicle never reported.
- *
- * A pack temperature is recorded only while the vehicle is awake, and only once
- * it moves past its deadband, so readings arrive every ~12 s of driving and
- * ~25 s of charging, and can pause for minutes over a pack holding still. A
- * quarter of an hour bridges that pause — 36 times the slower cadence — and is
- * far short of a car that has gone to sleep, where half an hour would draw the
- * band through the first minutes of the silence. The same quarter of an hour
- * decides whether a reading is near enough to a drive's end to stand for it, so
- * the figures and the chart agree about what counts as current.
+ * How close a reading has to be to a drive's end to stand for it: one heartbeat
+ * interval, the longest the app expects the vehicle to go without hearing from
+ * it. Only a figure's end is judged by time — the chart is not, because the
+ * history route puts the break where the vehicle went quiet, so a row on it is
+ * a reading that held.
  */
-export const PACK_TEMPERATURE_HOLD_MS = 15 * 60_000;
+export const PACK_READING_FRESH_MS = 15 * 60_000;
 
 /** A pack temperature reading: the average, and the coldest and hottest cell around it. */
 export interface PackReading {
@@ -34,17 +28,19 @@ export interface PackTemperature {
 }
 
 /**
- * The `temp` history series as readings, in time order. A row with nothing in
- * it at all is left out.
+ * The `temp` history series as readings, in time order. A row with nothing in it
+ * is a silence the route put there because the vehicle stopped being heard: it
+ * stays, so the reading before it stops there and the line breaks, instead of
+ * being dropped and the silence drawn over.
  */
 export function packReadings(points: readonly HistoryPoint[]): PackReading[] {
   return points
     .map((p) => ({ at: Date.parse(p.bucket), avgC: p.avg, minC: p.min, maxC: p.max }))
-    .filter((r) => Number.isFinite(r.at) && (r.avgC != null || r.minC != null || r.maxC != null))
+    .filter((r) => Number.isFinite(r.at))
     .sort((a, b) => a.at - b.at);
 }
 
-/** The reading at or before `ms`, when it's recent enough to stand for it. */
+/** The reading in effect at `ms`: the last one at or before it, empty where nothing had been read. */
 function held(readings: readonly PackReading[], ms: number): PackReading | null {
   let low = 0;
   let high = readings.length - 1;
@@ -58,18 +54,18 @@ function held(readings: readonly PackReading[], ms: number): PackReading | null 
       high = middle - 1;
     }
   }
-  if (found < 0) return null;
-  const reading = readings[found]!;
-  return ms - reading.at <= PACK_TEMPERATURE_HOLD_MS ? reading : null;
+  return found < 0 ? null : readings[found]!;
 }
 
 /**
  * The pack's temperature at each of `times` (ms), from the readings recorded
  * around them: the mean for the line, the coldest and hottest cells for the
- * band. A time with no reading recent enough gets nulls, so a chart breaks the
- * band and the line where the vehicle stopped reporting rather than spanning
- * the silence. This is the one place a pack temperature becomes a chart value,
- * shared by the charge and drive charts.
+ * band. Each time takes the reading in effect then and no other; a time with no
+ * reading before it gets nulls, so a chart draws nothing before the first one.
+ * A row of nulls in the series is the vehicle going quiet, and it breaks the
+ * band and the line there rather than letting them span the silence. This is the
+ * one place a pack temperature becomes a chart value, shared by the charge and
+ * drive charts.
  */
 export function packTemperatures(
   readings: readonly PackReading[],

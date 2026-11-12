@@ -52,6 +52,9 @@ const METRIC_FIELDS = {
  * The pack's temperature, drawn as a band: its line from the field the vehicle
  * averages, its band from the two it reports its own extremes in. The cells run
  * a few degrees apart while the pack works, which the average on its own hides.
+ * A steady pack writes nothing, so the series carries a row per heartbeat and
+ * breaks only where the heartbeats stop: what a flat line means is that the pack
+ * held, not that the vehicle went quiet.
  */
 const PACK_TEMPERATURE_FIELDS: BandFields = {
   avg: 'batteryTempAvg',
@@ -103,6 +106,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
           q.from,
           to,
           BUCKET_MS[q.bucket] ?? null,
+          { heartbeats: true },
         );
         return rows.map((r) => ({
           bucket: new Date(r.at).toISOString(),

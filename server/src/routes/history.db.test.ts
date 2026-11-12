@@ -13,7 +13,7 @@ import { ZodError } from 'zod';
 import type { HistoryPoint } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { createDb, runMigrations } from '../db/client.js';
-import { stateChanges, vehicles } from '../db/schema.js';
+import { stateChanges, stateHeartbeats, vehicles } from '../db/schema.js';
 import { HistoryKeys } from '../services/history-keys.js';
 import { historyRoutes } from './history.js';
 
@@ -86,12 +86,27 @@ describe.skipIf(!url)('pack temperature history with Postgres', () => {
   };
 
   const minutesOf = (p: HistoryPoint) => (Date.parse(p.bucket) - FROM) / MIN;
+  /** A row with nothing in it: where nothing was heard after the last reading. */
+  const silence = (minutes: number) => [minutes, null, null, null];
+
+  /** State arrived `minutes` into the window with nothing moved: a heartbeat. */
+  const beats = async (minutes: number[]) => {
+    const [row] = await handle.db
+      .select({ seq: vehicles.seq })
+      .from(vehicles)
+      .where(eq(vehicles.id, VEHICLE));
+    await handle.db
+      .insert(stateHeartbeats)
+      .values(minutes.map((m) => ({ vehicleSeq: row!.seq, at: new Date(FROM + m * MIN) })));
+  };
 
   it('reads the average, the coldest cell and the hottest as one series', async () => {
     await frame(0, { avg: 20, min: 19, max: 21.5 });
     await frame(30, { avg: 21, min: 20, max: 23 });
     const points = await get(`metric=temp&bucket=raw&${WINDOW}`);
-    expect(points.map(minutesOf)).toEqual([0, 30]);
+    // A row at each frame, then the mark a quarter of an hour after the last of
+    // them: nothing was heard from the vehicle after that, so the values stop.
+    expect(points.map(minutesOf)).toEqual([0, 30, 45]);
     expect(points[0]).toEqual({
       bucket: new Date(FROM).toISOString(),
       avg: 20,
@@ -112,6 +127,7 @@ describe.skipIf(!url)('pack temperature history with Postgres', () => {
       [0, 20, 19, 21],
       [10, 20, 19, 24],
       [20, 22, 19, 24],
+      silence(35),
     ]);
   });
 
@@ -123,7 +139,9 @@ describe.skipIf(!url)('pack temperature history with Postgres', () => {
     const points = await get(`metric=temp&bucket=raw&${WINDOW}`);
     expect(points.map((p) => [minutesOf(p), p.avg, p.min, p.max])).toEqual([
       [-60, 18, 17, 19],
+      silence(-45),
       [30, 21, 20, 22],
+      silence(45),
     ]);
   });
 
@@ -148,11 +166,59 @@ describe.skipIf(!url)('pack temperature history with Postgres', () => {
     expect(points[0]!.avg).toBeCloseTo(20 + (2 * 40) / 60, 5);
   });
 
+  it('carries the readings through a steady stretch, as long as the vehicle was heard', async () => {
+    // A pack holding its temperature writes nothing at all: without the
+    // heartbeats the chart reads a charge at rest as a silence.
+    await frame(0, { avg: 20, min: 19, max: 21 });
+    await beats([10, 20, 30, 40, 50]);
+    const points = await get(`metric=temp&bucket=raw&${WINDOW}`);
+    expect(points.map((p) => [minutesOf(p), p.avg, p.min, p.max])).toEqual([
+      [0, 20, 19, 21],
+      [10, 20, 19, 21],
+      [20, 20, 19, 21],
+      [30, 20, 19, 21],
+      [40, 20, 19, 21],
+      [50, 20, 19, 21],
+    ]);
+  });
+
+  it('breaks where the heartbeats stop, and picks up when they resume', async () => {
+    await frame(0, { avg: 20, min: 19, max: 21 });
+    await beats([10, 20]);
+    // Heard again long after the run of heartbeats ended.
+    await frame(55, { avg: 23, min: 22, max: 24 });
+    const points = await get(`metric=temp&bucket=raw&${WINDOW}`);
+    expect(points.map((p) => [minutesOf(p), p.avg])).toEqual([
+      [0, 20],
+      [10, 20],
+      [20, 20],
+      // One heartbeat interval after the last of the run, the values stop.
+      [35, null],
+      [55, 23],
+    ]);
+  });
+
+  it('never draws a band that leaves out its own average', async () => {
+    await frame(0, { avg: 20, min: 19, max: 24 });
+    // Rows written one field at a time, as an older recorder did: the hottest
+    // cell was recorded cooling before the average had moved.
+    await record(10, [['batteryTempMax', 21]]);
+    await record(20, [['batteryTempAvg', 22]]);
+    const points = await get(`metric=temp&bucket=raw&${WINDOW}`);
+    expect(points.map((p) => [minutesOf(p), p.avg, p.min, p.max])).toEqual([
+      [0, 20, 19, 24],
+      [10, 20, 19, 21],
+      [20, 22, 19, 22],
+      silence(35),
+    ]);
+  });
+
   it('leaves out what the vehicle never reported', async () => {
     await frame(0, { avg: 20 });
     const points = await get(`metric=temp&bucket=raw&${WINDOW}`);
     expect(points).toEqual([
       { bucket: new Date(FROM).toISOString(), avg: 20, min: null, max: null },
+      { bucket: new Date(FROM + 15 * MIN).toISOString(), avg: null, min: null, max: null },
     ]);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PACK_TEMPERATURE_HOLD_MS, type PackReading } from '../../lib/packTemperature';
+import { PACK_READING_FRESH_MS, type PackReading } from '../../lib/packTemperature';
 import { unitFormatter } from '../../lib/units';
 import {
   packTempChangeText,
@@ -20,6 +20,13 @@ const reading = (minutes: number, avgC: number, minC = avgC - 1, maxC = avgC + 1
   avgC,
   minC,
   maxC,
+});
+/** The route's mark that the vehicle stopped being heard `minutes` into the drive. */
+const silence = (minutes: number): PackReading => ({
+  at: START + minutes * MIN,
+  avgC: null,
+  minC: null,
+  maxC: null,
 });
 
 /** A drive of `minutes`, with the readings given. */
@@ -73,7 +80,7 @@ describe('packTempFigures', () => {
   });
 
   it('keeps a reading within a quarter of an hour of an end', () => {
-    const inside = figures([reading(PACK_TEMPERATURE_HOLD_MS / MIN, 20), reading(45, 22)], 60);
+    const inside = figures([reading(PACK_READING_FRESH_MS / MIN, 20), reading(45, 22)], 60);
     expect(inside.startC).toBe(20);
     expect(inside.endC).toBe(22);
 
@@ -126,28 +133,29 @@ describe('packTempSeries', () => {
     expect(rows[0]!.avg).toBe(20);
   });
 
-  it('breaks the line and the band across a silence longer than a reading stands', () => {
-    const holdMinutes = PACK_TEMPERATURE_HOLD_MS / MIN;
-    const rows = series([reading(0, 20), reading(holdMinutes + 10, 23)], holdMinutes + 10);
+  it('breaks the line and the band where the series says the vehicle went quiet', () => {
+    const rows = series([reading(0, 20), silence(20), reading(40, 23)], 40);
     const at = (minute: number) => rows.find((r) => r.minutes === minute)!;
 
-    // The last reading stands for a quarter of an hour, and no further.
-    expect(at(0).avg).toBe(20);
-    expect(at(holdMinutes).avg).toBe(20);
-    expect(at(holdMinutes + 1)).toEqual({ minutes: holdMinutes + 1, avg: null, band: null });
+    // The reading before the mark stands up to it, and no further.
+    expect(at(19).avg).toBe(20);
+    expect(at(20)).toEqual({ minutes: 20, avg: null, band: null });
+    expect(at(39)).toEqual({ minutes: 39, avg: null, band: null });
     // The next reading picks both up again.
-    expect(at(holdMinutes + 10)).toEqual({ minutes: holdMinutes + 10, avg: 23, band: [22, 24] });
+    expect(at(40)).toEqual({ minutes: 40, avg: 23, band: [22, 24] });
   });
 
-  it('draws a silence shorter than that through, as a reading that still stands', () => {
-    const rows = series([reading(0, 20), reading(10, 20.5)], 10);
+  it('draws a reading through to the next one, however long the stretch between them', () => {
+    const rows = series([reading(0, 20), reading(40, 20.5)], 40);
 
     expect(rows.every((r) => r.avg != null)).toBe(true);
     expect(rows.at(-1)!.avg).toBe(20.5);
   });
 
   it('spans the drive at both ends, so its axis matches the chart above', () => {
-    const rows = series([reading(5, 20), reading(15, 22)], 60);
+    // Read in the middle of the drive only: the ends have nothing to draw, and
+    // the rows still run from the start of the drive to its end.
+    const rows = series([reading(5, 20), reading(15, 22), silence(30)], 60);
     expect(rows.map((r) => r.minutes)).toEqual(Array.from({ length: 61 }, (_, i) => i));
     expect(rows[0]).toEqual({ minutes: 0, avg: null, band: null });
     expect(rows.at(-1)).toEqual({ minutes: 60, avg: null, band: null });

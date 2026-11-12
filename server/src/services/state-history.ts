@@ -39,6 +39,14 @@ const DEADBANDS: Readonly<Record<string, number>> = {
 const DEADBAND_EPSILON = 1e-9;
 /** Heartbeats are at least this far apart. */
 export const HEARTBEAT_MS = 15 * 60_000;
+/**
+ * How long a reading stands for the time after it before a silence is a silence:
+ * two heartbeat intervals. Heartbeats are written on the first state that arrives
+ * a quarter of an hour after the last one, so while the vehicle is awake they
+ * land a quarter of an hour and a few seconds apart; one interval alone would
+ * call the sync that lands a minute late a silence, and two leave room for it.
+ */
+const SILENCE_MS = 2 * HEARTBEAT_MS;
 
 /** The pack's cell temperatures, which every battery-state frame carries together. */
 const CELL_TEMPERATURES = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
@@ -389,15 +397,74 @@ export function heldValues(columns: BandColumns): BandPoint[] {
       held[steps[i]!.key] = steps[i]!.value;
       i++;
     }
-    rows.push({ at, ...held });
+    rows.push({ at, ...bandAroundAverage(held) });
   }
   return rows;
 }
 
 /**
+ * A row's three values with the band stretched to reach around the average: an
+ * average above the hottest cell, or below the coldest, is a reading no pack
+ * gives, and drawing it puts the line outside its own shading. A coherent
+ * reading passes through untouched, so this can only ever widen a band.
+ */
+function bandAroundAverage(
+  held: Readonly<Record<keyof BandFields, number | null>>,
+): Record<keyof BandFields, number | null> {
+  const known = [held.avg, held.min, held.max].filter((v): v is number => v != null);
+  if (known.length < 2) return { ...held };
+  return {
+    avg: held.avg,
+    min: held.min == null ? null : Math.min(...known),
+    max: held.max == null ? null : Math.max(...known),
+  };
+}
+
+/**
+ * The series with a row at every heartbeat — the vehicle heard and nothing
+ * moved — and a break wherever a run of them ends.
+ *
+ * A steady vehicle writes no changes at all, so on its own a change-only series
+ * says nothing about a pack holding a temperature: the line reads as silence
+ * when the truth is that it held. A heartbeat is what tells the two apart. Each
+ * one gets the row in effect at that moment, and where two things the vehicle
+ * was heard at are more than two heartbeat intervals apart nothing arrived in
+ * between: the values stop being known one interval after the last of them, and
+ * the row there is empty so a chart breaks rather than drawing across a silence
+ * the vehicle never reported.
+ */
+export function withHeartbeats(
+  rows: readonly BandPoint[],
+  beats: readonly number[],
+  to: number,
+): BandPoint[] {
+  const heard = [...new Set([...rows.map((r) => r.at), ...beats])].sort((a, b) => a - b);
+  const breaks = new Set<number>();
+  for (let i = 0; i < heard.length; i++) {
+    const stop = heard[i]! + HEARTBEAT_MS;
+    if ((heard[i + 1] ?? Infinity) - heard[i]! > SILENCE_MS && stop <= to) breaks.add(stop);
+  }
+  const stamps = [...new Set([...heard, ...breaks])].sort((a, b) => a - b);
+  const out: BandPoint[] = [];
+  let held: BandPoint | null = null;
+  let r = 0;
+  for (const at of stamps) {
+    while (r < rows.length && rows[r]!.at <= at) held = rows[r++]!;
+    // A break wins a stamp it shares with a reading: it is where the values
+    // stopped being known, and a row drawn over it would hide the silence.
+    if (breaks.has(at)) out.push({ at, avg: null, min: null, max: null });
+    else if (held) out.push({ at, avg: held.avg, min: held.min, max: held.max });
+  }
+  return out;
+}
+
+/**
  * A banded metric over [from, to]: each field's readings held into one series,
  * as recorded changes or as fixed buckets. Buckets are taken per field, so the
- * band keeps each field's own extremes over the bucket it covers.
+ * band keeps each field's own extremes over the bucket it covers. With
+ * `heartbeats`, the changes are joined by a row per heartbeat interval and
+ * broken where they stop, so a steady vehicle draws as a line rather than a
+ * gap — see `withHeartbeats`.
  */
 export async function bandSeries(
   db: Db,
@@ -406,11 +473,18 @@ export async function bandSeries(
   from: Date,
   to: Date,
   intervalMs: number | null,
+  options: { heartbeats?: boolean } = {},
 ): Promise<BandPoint[]> {
   const keys = ['avg', 'min', 'max'] as const;
-  const series = await Promise.all(
-    keys.map((key) => numericSeries(db, vehicleId, fields[key], from, to)),
-  );
+  const [series, beats] = await Promise.all([
+    Promise.all(keys.map((key) => numericSeries(db, vehicleId, fields[key], from, to))),
+    // One interval before the window as well: a reading made before it belongs to
+    // a run of hearing that may have started earlier, and only the beats the
+    // series already carries can say whether that run was still going.
+    options.heartbeats
+      ? heartbeatsBetween(db, vehicleId, new Date(from.getTime() - HEARTBEAT_MS), to)
+      : Promise.resolve<number[]>([]),
+  ]);
   if (intervalMs == null) {
     // Each reading keeps the stamp it was made at, even when it predates the
     // window: moved to the window's start it would pass for the values in
@@ -420,7 +494,11 @@ export async function bandSeries(
       const s = series[i]!;
       return [...(s.opening ? [s.opening] : []), ...s.changes];
     };
-    return heldValues({ avg: points(0), min: points(1), max: points(2) });
+    return withHeartbeats(
+      heldValues({ avg: points(0), min: points(1), max: points(2) }),
+      beats,
+      to.getTime(),
+    );
   }
   const rows = new Map<number, BandPoint>();
   series.forEach((s, i) => {
@@ -432,7 +510,12 @@ export async function bandSeries(
       rows.set(b.bucket, row);
     }
   });
-  return [...rows.values()].sort((a, b) => a.at - b.at);
+  // Each field's extremes are taken over the same window, so a bucket's band
+  // already holds its average; the same widening keeps that true if a mean is
+  // ever rounded outside them.
+  return [...rows.values()]
+    .sort((a, b) => a.at - b.at)
+    .map((row) => ({ at: row.at, ...bandAroundAverage(row) }));
 }
 
 /** The fields as they were at `at`, each stamped with when it last changed. */

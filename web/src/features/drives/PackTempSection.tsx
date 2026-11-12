@@ -21,9 +21,10 @@ import {
  * The pack's temperature along a drive: what it read at each end and how far it
  * moved, over the average with the coldest and hottest cell shaded around it.
  * A drive moves the pack only a degree or three, so the figures carry what a
- * curve this flat can't. The vehicle reports temperatures only while it's
- * awake, and only once they move past a deadband, so the line breaks where
- * nothing was recorded rather than drawing across it.
+ * curve this flat can't. The vehicle reports temperatures only while it's awake
+ * and only when they move, so the series carries a row per heartbeat and breaks
+ * where the heartbeats stop: the line and the band stop and pick up again rather
+ * than being drawn across a silence.
  */
 export function PackTempSection(props: {
   vehicleId: string;
@@ -108,8 +109,8 @@ export function PackTempSection(props: {
                 label: 'Coldest to hottest cell',
                 color: 'var(--series-4)',
                 band: true,
-                // Straight between readings, and broken wherever none was
-                // recent enough to draw.
+                // Straight between readings, and broken wherever the series has
+                // nothing to draw: the vehicle went quiet there.
                 interpolation: 'linear',
                 unit: u.temperatureUnit,
                 digits,
@@ -119,8 +120,8 @@ export function PackTempSection(props: {
                 label: 'Pack temperature',
                 color: 'var(--series-4)',
                 mark: 'line',
-                // Straight between readings, and never across a stretch nothing
-                // was recorded in: the line stops and picks up where data resumes.
+                // Straight between readings, and never across the breaks the
+                // series carries: the line stops and picks up where data resumes.
                 interpolation: 'linear',
                 connectNulls: false,
                 unit: u.temperatureUnit,

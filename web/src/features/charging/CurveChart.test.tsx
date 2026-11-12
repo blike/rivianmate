@@ -54,8 +54,12 @@ const longCurve: ChargingCurvePointDto[] = [0, 10, 20, 30, 40].map((minute) => (
   powerKw: 7,
   soc: 40 + minute / 2,
 }));
-/** The pack read at the start and again at the end, with nothing in between. */
-const gapped = [reading(0, 24.5, 22, 27), reading(40, 34.5, 32, 37)];
+/** The pack read at the start, the route's mark that it stopped being heard, and again at the end. */
+const gapped = [
+  reading(0, 24.5, 22, 27),
+  { bucket: at(15), avg: null, min: null, max: null },
+  reading(40, 34.5, 32, 37),
+];
 
 function render(props: Partial<Parameters<typeof CurveChart>[0]>, temperature: 'F' | 'C' = 'F') {
   const client = new QueryClient();
@@ -109,8 +113,8 @@ describe('CurveChart with the pack temperature recorded', () => {
   });
 
   it('leaves the pack out of the curve where the recorder went quiet', () => {
-    // The reading at the start holds for a quarter of an hour and no longer, so
-    // the band and the line stop rather than reach across to the next reading.
+    // The route marks a silence where the vehicle stopped being heard, so the
+    // band and the line stop there rather than reach across to the next reading.
     render({ curve: longCurve, temperatures: gapped }, 'C');
 
     expect(lastChart().data.map((row) => row.packAverage)).toEqual([24.5, 24.5, null, null, 34.5]);

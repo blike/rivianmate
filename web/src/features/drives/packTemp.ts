@@ -1,5 +1,5 @@
 import {
-  PACK_TEMPERATURE_HOLD_MS,
+  PACK_READING_FRESH_MS,
   type PackReading,
   packTemperatures,
 } from '../../lib/packTemperature';
@@ -21,7 +21,7 @@ export interface PackTempFigures {
 function readingNear(readings: readonly PackReading[], endMs: number): PackReading | null {
   let best: PackReading | null = null;
   for (const r of readings) {
-    if (Math.abs(r.at - endMs) > PACK_TEMPERATURE_HOLD_MS) continue;
+    if (Math.abs(r.at - endMs) > PACK_READING_FRESH_MS) continue;
     if (best == null || Math.abs(r.at - endMs) < Math.abs(best.at - endMs)) best = r;
   }
   return best;
@@ -29,8 +29,8 @@ function readingNear(readings: readonly PackReading[], endMs: number): PackReadi
 
 /**
  * The pack's temperature at each end of a drive and how far it moved between
- * them. Each end takes the nearest reading within PACK_TEMPERATURE_HOLD_MS; an
- * end nothing was recorded near — the app down, or the vehicle asleep — is left
+ * them. Each end takes the nearest reading within PACK_READING_FRESH_MS; an end
+ * nothing was recorded near — the app down, or the vehicle asleep — is left
  * unknown rather than passed off as the other end's reading, and the change
  * needs both ends to be known.
  *
@@ -67,10 +67,11 @@ export type PackTempRow = {
  * The chart's rows over the drive: the average line and the band its cells sit
  * in, in the unit shown. They run a minute at a time from the drive's start to
  * its end, so this chart's axis lines up with the speed and elevation above it,
- * and each row takes the reading in effect then — a stretch with no reading
- * recent enough is left empty, breaking the line and the band there rather than
- * spanning a silence the vehicle never reported. One reading is a figure, not a
- * trend, so a drive with fewer than two has no rows at all.
+ * and each row takes the reading in effect then. The series already carries the
+ * break the history route put in where the vehicle went quiet, so a row here is
+ * empty only where nothing was known: the line and the band stop there rather
+ * than spanning it. One reading is a figure, not a trend, so a drive with fewer
+ * than two has no rows at all.
  */
 export function packTempSeries(
   readings: readonly PackReading[],

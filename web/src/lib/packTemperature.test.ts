@@ -1,11 +1,6 @@
 import type { HistoryPoint } from '@server/api-types';
 import { describe, expect, it } from 'vitest';
-import {
-  PACK_TEMPERATURE_HOLD_MS,
-  packReadings,
-  packTemperatures,
-  type PackReading,
-} from './packTemperature';
+import { packReadings, packTemperatures, type PackReading } from './packTemperature';
 
 const START = Date.parse('2026-11-11T20:00:00Z');
 const minute = (n: number) => START + n * 60_000;
@@ -20,13 +15,13 @@ const fahrenheit = (c: number | null | undefined) => (c == null ? null : (c * 9)
 const celsius = (c: number | null | undefined) => c ?? null;
 
 describe('packReadings', () => {
-  it('reads history rows in time order, skipping rows with nothing in them', () => {
+  it('reads history rows in time order, keeping the empty ones as the marks of a silence', () => {
     const rows = packReadings([
       row(minute(20), 21, 20, 22),
       row(minute(0), 20, 19, 21),
       { bucket: new Date(minute(10)).toISOString(), avg: null, min: null, max: null },
     ]);
-    expect(rows.map((r) => r.avgC)).toEqual([20, 21]);
+    expect(rows.map((r) => r.avgC)).toEqual([20, null, 21]);
     expect(rows[0]).toEqual({ at: START, avgC: 20, minC: 19, maxC: 21 });
   });
 });
@@ -50,22 +45,45 @@ describe('packTemperatures', () => {
     ]);
   });
 
-  it('breaks the line and the band where the vehicle stopped reporting', () => {
-    const hold = PACK_TEMPERATURE_HOLD_MS / 60_000;
+  it('breaks the line and the band at an empty row, and picks up after it', () => {
+    const silence = packReadings([
+      row(minute(0), 20, 19, 21),
+      // The route's mark: the vehicle stopped being heard a quarter of an hour
+      // after the last heartbeat, and this is where the values stop.
+      { bucket: new Date(minute(15)).toISOString(), avg: null, min: null, max: null },
+      row(minute(40), 26, 25, 27),
+    ]);
 
     expect(
-      packTemperatures(readings, [minute(0), minute(hold), minute(hold + 1), minute(39)], celsius),
+      packTemperatures(
+        silence,
+        [minute(0), minute(14), minute(15), minute(30), minute(40)],
+        celsius,
+      ),
     ).toEqual([
-      { avg: 24.5, min: 22, max: 27 },
-      // The last reading still stands at the edge of the hold, and no further.
-      { avg: 24.5, min: 22, max: 27 },
+      { avg: 20, min: 19, max: 21 },
+      { avg: 20, min: 19, max: 21 },
       { avg: null, min: null, max: null },
       { avg: null, min: null, max: null },
+      { avg: 26, min: 25, max: 27 },
     ]);
-    // The next reading picks the line up again.
-    expect(packTemperatures(readings, [minute(40)], celsius)).toEqual([
-      { avg: 38, min: 35, max: 41 },
-    ]);
+  });
+
+  it('draws a steady charge unbroken when the series carries a row per heartbeat', () => {
+    // A charge at rest: the pack holds, so the rows are the heartbeats — a
+    // quarter of an hour apart, and here and there a sync the app missed. None
+    // of that is a silence: the vehicle was heard throughout, so nothing breaks.
+    const steady: PackReading[] = [0, 15, 35, 50, 65].map((m) => ({
+      at: minute(m),
+      avgC: 21.2,
+      minC: 20,
+      maxC: 22.4,
+    }));
+    const times = Array.from({ length: 66 }, (_, m) => minute(m));
+
+    expect(packTemperatures(steady, times, celsius)).toEqual(
+      times.map(() => ({ avg: 21.2, min: 20, max: 22.4 })),
+    );
   });
 
   it('leaves a field the vehicle never reported empty, drawing the line without its band', () => {
