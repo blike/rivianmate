@@ -48,6 +48,32 @@ describe('StateDiff', () => {
     }
   });
 
+  it('records all three cell temperatures when one of them moves', () => {
+    const diff = new StateDiff();
+    const frame = (avg: number, max: number, min: number, ts: string) => ({
+      batteryTempAvg: { value: avg, timeStamp: ts },
+      batteryTempMax: { value: max, timeStamp: ts },
+      batteryTempMin: { value: min, timeStamp: ts },
+    });
+    expect(diff.changes(frame(22, 24, 20, '2026-10-01T10:00:00Z'), 0)).toHaveLength(3);
+
+    // Only the hottest cell moved far enough on its own. The frame is still one
+    // reading of the pack, so all three are recorded from it and the average
+    // cannot be left behind saying 22 while the hottest cell says 24.6.
+    expect(
+      diff
+        .changes(frame(22.2, 24.6, 20.1, '2026-10-01T10:00:12Z'), 0)
+        .map((c) => [c.field, c.value]),
+    ).toEqual([
+      ['batteryTempAvg', 22.2],
+      ['batteryTempMax', 24.6],
+      ['batteryTempMin', 20.1],
+    ]);
+
+    // None of them far enough from the frame just recorded: nothing to write.
+    expect(diff.changes(frame(22.3, 24.7, 20.2, '2026-10-01T10:00:24Z'), 0)).toEqual([]);
+  });
+
   it('leaves out GPS and the cloud connection, and uses the fallback time without a stamp', () => {
     const diff = new StateDiff();
     const changes = diff.changes(
