@@ -468,6 +468,36 @@ export const parallaxLatest = pgTable(
 );
 
 /**
+ * A night of parked energy, taken from Rivian's rolling 24-hour window the
+ * first time a payload arrives on a new day: one row per vehicle per night,
+ * so the week's chart fills in as nights pass (see parked-energy-nights.ts).
+ * The live windows are still read from `parallaxLatest`; this is the record.
+ */
+export const parkedEnergyNights = pgTable(
+  'parked_energy_nights',
+  {
+    vehicleId: text('vehicle_id')
+      .notNull()
+      .references(() => vehicles.id),
+    /** The night, as YYYY-MM-DD in the calendar the chart draws days in. */
+    day: text('day').notNull(),
+    /** Rivian's time for the report the night's numbers come from. */
+    at: timestamp('at', { withTimezone: true }).notNull(),
+    /** The window's length (a day) and its totals. */
+    minutes: integer('minutes').notNull(),
+    kwh: real('kwh').notNull(),
+    rangeKm: real('range_km').notNull(),
+    /** Where the energy went, kWh. */
+    climateKwh: real('climate_kwh').notNull(),
+    systemKwh: real('system_kwh').notNull(),
+    gearGuardKwh: real('gear_guard_kwh').notNull(),
+    outletsKwh: real('outlets_kwh').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.vehicleId, t.day] })],
+);
+
+/**
  * Reverse-geocoding results by rounded coordinates (~11 m), so a place is
  * looked up once. A null place means nothing was found there.
  */

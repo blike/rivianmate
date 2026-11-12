@@ -104,7 +104,11 @@ export function DashboardPage(props: {
                   title="Energy while parked"
                   className={teslamate ? 'xl:col-span-7' : 'xl:col-span-4'}
                 >
-                  <ParkedEnergyPanel insights={insights} columns={teslamate} />
+                  <ParkedEnergyPanel
+                    insights={insights}
+                    vehicleId={props.vehicleId}
+                    columns={teslamate}
+                  />
                 </Panel>
 
                 {/* Two columns of readings from md up, so the list stays short. */}

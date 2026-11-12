@@ -339,6 +339,20 @@ export function useInsights(vehicleId: string) {
   });
 }
 
+/**
+ * The nights of parked energy recorded. One is written just after midnight, so
+ * a page left open all evening picks it up without asking every minute for a
+ * table that moves once a night.
+ */
+export function useParkedNights(vehicleId: string | undefined, nights = 7) {
+  return useQuery({
+    queryKey: ['parkedNights', vehicleId, nights],
+    queryFn: () => api.parkedNights(vehicleId!, nights),
+    enabled: !!vehicleId,
+    refetchInterval: 5 * 60_000,
+  });
+}
+
 export function useUnitPreferences() {
   return useQuery({ queryKey: ['units'], queryFn: api.units, staleTime: Infinity });
 }

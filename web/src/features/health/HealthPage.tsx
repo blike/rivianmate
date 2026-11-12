@@ -42,6 +42,7 @@ export function HealthPage(props: { vehicleId: string; model?: string | null }) 
       <BatteryPanel
         battery={battery}
         insights={insights}
+        vehicleId={props.vehicleId}
         batteryPending={batteryPending || statePending}
         insightsPending={insightsPending}
         cellType={showOptional(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined}
