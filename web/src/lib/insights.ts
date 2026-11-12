@@ -52,6 +52,15 @@ type ParkedEnergy = NonNullable<VehicleInsightsDto['parkedEnergy']>;
 /** One of Rivian's parked-energy windows, as the API hands it over. */
 export type ParkedEnergyWindow = ParkedEnergy['windows'][number];
 
+/**
+ * What a bar's reading says where there's no split to print: a source that
+ * doesn't break the energy down (TeslaMate), or a window whose uses each drew
+ * too little to draw.
+ */
+export function parkedUnsplit(uses: ParkedEnergyWindow['uses']): string {
+  return uses == null ? 'Not split by use' : 'No use drew energy';
+}
+
 /** A night of the week view: a date of the device's calendar and its window. */
 export interface ParkedNight<T extends { minutes: number } = ParkedEnergyWindow> {
   /** The date in the device's own calendar, as YYYY-MM-DD. */
