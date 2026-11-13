@@ -145,14 +145,20 @@ export const packTempText = (u: UnitFormatter, c: number | null) =>
   c == null ? '—' : u.formatTemperature(c, packTempDigits(u));
 
 /**
- * A movement in the unit shown, signed: "+5 °F", "−2 °C". A difference scales
- * rather than shifts — three degrees Celsius is 5.4 Fahrenheit, not 37.4 — and
- * one smaller than the digits show reads as no change, not as a signed zero.
+ * A movement in the unit shown, signed: "+5.4 °F", "−1.5 °C". A difference
+ * scales rather than shifts — three degrees Celsius is 5.4 Fahrenheit, not 37.4.
+ *
+ * It carries a tenth in either unit where the two ends it sits between are
+ * rounded for display, so the three figures a section prints subtract: rounded
+ * the way the ends are, a change can land a whole degree clear of them — 72.3 and
+ * 77.7 Fahrenheit print as 72 and 78, and the five and four tenths between them
+ * read "+5 °F" beside a difference of six, which looks like a mistake rather than
+ * rounding.
  */
 export function packTempChangeText(u: UnitFormatter, c: number | null): string {
   if (c == null) return '—';
   const shown = c * (u.units.temperature === 'F' ? 9 / 5 : 1);
-  const digits = packTempDigits(u);
-  if (Math.abs(shown) < 0.5 * 10 ** -digits) return `${fmt(0, digits)} ${u.temperatureUnit}`;
-  return `${shown < 0 ? '−' : '+'}${fmt(Math.abs(shown), digits)} ${u.temperatureUnit}`;
+  // Under half a tenth is no change, rather than a signed zero.
+  if (Math.abs(shown) < 0.05) return `0.0 ${u.temperatureUnit}`;
+  return `${shown < 0 ? '−' : '+'}${fmt(Math.abs(shown), 1)} ${u.temperatureUnit}`;
 }

@@ -36,13 +36,20 @@ const rows = (
     max,
   }));
 
-function renderSpan(span: PackTempSpan | undefined, history: object[] = []) {
+function renderSpan(
+  span: PackTempSpan | undefined,
+  history: object[] = [],
+  vehicle: { vehicleId?: string; insights?: object } = {},
+) {
+  const vehicleId = vehicle.vehicleId ?? ID;
   const client = new QueryClient();
   client.setQueryData(['units'], { distance: 'mi', temperature: 'F' });
-  if (span) client.setQueryData(['packTemps', ID, span.kind, span.id, span.to ?? 'live'], history);
+  if (vehicle.insights) client.setQueryData(['insights', vehicleId], vehicle.insights);
+  if (span)
+    client.setQueryData(['packTemps', vehicleId, span.kind, span.id, span.to ?? 'live'], history);
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <PackTempSection vehicleId={ID} span={span} loading={false} />
+      <PackTempSection vehicleId={vehicleId} span={span} loading={false} />
     </QueryClientProvider>,
   );
 }
@@ -77,7 +84,7 @@ describe('PackTempSection', () => {
     // 20 °C and 23 °C, and three degrees of change.
     expect(html).toContain('68 °F');
     expect(html).toContain('73 °F');
-    expect(html).toContain('+5 °F');
+    expect(html).toContain('+5.4 °F');
     expect(html).toContain('over 1h 0m');
   });
 
@@ -115,6 +122,26 @@ describe('PackTempSection', () => {
     expect(html).toContain('—');
   });
 
+  it('gives the awake case for a vehicle that reports these readings', () => {
+    const html = renderSpan(spanOf(drive()), [], {
+      insights: { cellTemps: { avgC: 20, minC: 19, maxC: 21, at: at(0) } },
+    });
+    expect(html).toContain('the vehicle reports it only while it’s awake');
+  });
+
+  it('says a vehicle that has never sent these readings has none, not that it was asleep', () => {
+    const html = renderSpan(spanOf(drive()), [], { insights: { cellTemps: null } });
+    expect(html).toContain('it isn’t reported for this vehicle');
+    expect(html).not.toContain('only while it’s awake');
+  });
+
+  it('says a TeslaMate vehicle never reports them, whatever it is doing', () => {
+    // The history route answers an empty series for these fields on one.
+    const html = renderSpan(spanOf(drive()), [], { vehicleId: 'tm-1' });
+    expect(html).toContain('it isn’t reported for this vehicle');
+    expect(html).not.toContain('only while it’s awake');
+  });
+
   it('says a single reading is no trend to draw', () => {
     const html = render(drive(), rows([[30, 21, 20, 22]]));
     expect(html).toContain('One pack temperature reading');
@@ -146,7 +173,7 @@ describe('PackTempSection', () => {
     // 20 °C and 23 °C, and the three degrees between them.
     expect(html).toContain('68 °F');
     expect(html).toContain('73 °F');
-    expect(html).toContain('+5 °F');
+    expect(html).toContain('+5.4 °F');
   });
 
   it('names a charge, not a drive, when it has no readings to draw', () => {

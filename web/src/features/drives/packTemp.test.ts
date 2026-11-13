@@ -41,6 +41,16 @@ const series = (readings: PackReading[], minutes: number, units = CELSIUS) =>
     toDisplay: units.temperature,
   });
 
+/** A temperature in Fahrenheit, as the celsius the app records it in. */
+const celsius = (f: number) => ((f - 32) * 5) / 9;
+
+/** The number a printed figure carries, sign and all. */
+const figure = (text: string) => Number(text.replace('−', '-').replace(/[^\d.-]/g, ''));
+
+/** How far a printed change is from the difference between the printed ends. */
+const shortfall = (start: string, end: string, change: string) =>
+  Math.abs(figure(change) - (figure(end) - figure(start)));
+
 describe('packTempFigures', () => {
   it('takes the reading at each end and the change between them', () => {
     const found = figures([reading(0, 20), reading(20, 21), reading(40, 23)], 40);
@@ -212,15 +222,32 @@ describe('the figures as they read', () => {
 
   it('signs a movement, scaling it rather than shifting it', () => {
     // Three degrees Celsius is 5.4 Fahrenheit: the scale, not 37.4.
-    expect(packTempChangeText(FAHRENHEIT, 3)).toBe('+5 °F');
+    expect(packTempChangeText(FAHRENHEIT, 3)).toBe('+5.4 °F');
     expect(packTempChangeText(CELSIUS, 3)).toBe('+3.0 °C');
-    expect(packTempChangeText(FAHRENHEIT, -2)).toBe('−4 °F');
+    expect(packTempChangeText(FAHRENHEIT, -2)).toBe('−3.6 °F');
     expect(packTempChangeText(CELSIUS, -1.5)).toBe('−1.5 °C');
   });
 
   it('calls a movement below what the digits show no change', () => {
-    expect(packTempChangeText(FAHRENHEIT, 0.1)).toBe('0 °F');
+    expect(packTempChangeText(FAHRENHEIT, 0.02)).toBe('0.0 °F');
     expect(packTempChangeText(CELSIUS, 0.04)).toBe('0.0 °C');
     expect(packTempChangeText(CELSIUS, null)).toBe('—');
+  });
+
+  it('prints the change to a tenth, so the three figures subtract', () => {
+    // The ends the capture showed: 72.3 °F and 77.7 °F, five and four tenths
+    // apart, which print as 72 and 78 because a whole degree is what they show.
+    const found = figures([reading(0, celsius(72.3)), reading(30, celsius(77.7))], 30);
+    const start = packTempText(FAHRENHEIT, found.startC);
+    const end = packTempText(FAHRENHEIT, found.endC);
+    const change = packTempChangeText(FAHRENHEIT, found.changeC);
+
+    expect([start, end, change]).toEqual(['72 °F', '78 °F', '+5.4 °F']);
+    // Each end is rounded by up to half a degree, so the change agrees with them
+    // to within the degree the ends can hide.
+    expect(shortfall(start, end, change)).toBeLessThan(1);
+    // Rounded the way the ends are, as it printed before, it read "+5 °F": a
+    // whole degree clear of them, and what a reader checking the sum found wrong.
+    expect(shortfall('72 °F', '78 °F', '+5 °F')).toBe(1);
   });
 });

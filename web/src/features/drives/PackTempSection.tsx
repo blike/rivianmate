@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
-import { type PackTempSpan, usePackTemps, useUnits } from '../../api/hooks';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
+import { type PackTempSpan, useInsights, usePackTemps, useUnits } from '../../api/hooks';
 import { ContentFrame, Skeleton } from '../../components/LoadingState';
 import { PanelSection } from '../../components/Panel';
 import { TrendChart } from '../../components/TrendChart';
 import { minuteTicks } from '../../lib/drives';
+import { showParallaxOnly } from '../../lib/fieldSources';
 import { clock } from '../../lib/format';
 import { packReadings } from '../../lib/packTemperature';
 import { packTempAxis, packTempTicks } from '../../lib/packTempAxis';
@@ -21,10 +23,11 @@ import {
  * The pack's temperature over a span: what it read at each end and how far it
  * moved, over the average with the coldest and hottest cell shaded around it.
  * A drive moves the pack only a degree or three, and so does a charge, so the
- * figures carry what a curve this flat can't. The vehicle reports temperatures
- * only while it's awake and only when they move, so the series carries a row per
- * heartbeat and breaks where the heartbeats stop: the line and the band stop and
- * pick up again rather than being drawn across a silence.
+ * figures carry what a curve this flat can't. Where a vehicle reports the
+ * readings at all, they arrive only while it's awake and only when they move, so
+ * the series carries a row per heartbeat and breaks where the heartbeats stop:
+ * the line and the band stop and pick up again rather than being drawn across a
+ * silence.
  *
  * The drive page draws it under the drive's speed and elevation, and the charge
  * page under the charging curve: the same readings, the same chart, the same
@@ -43,6 +46,10 @@ export function PackTempSection(props: {
   const u = useUnits();
   const span = props.span;
   const { data: history, isPending } = usePackTemps(props.vehicleId, span);
+  // Why an empty frame is empty is not always the awake case: TeslaMate never
+  // sends these fields, and neither does a vehicle that has never sent one.
+  const { data: insights } = useInsights(props.vehicleId);
+  const reports = !isTeslaMateVehicle(props.vehicleId) && showParallaxOnly(insights, 'cellTemps');
   const readings = useMemo(() => packReadings(history ?? []), [history]);
   const startMs = span ? Date.parse(span.from) : 0;
   // A span under way has no end yet, so its line runs to its latest reading.
@@ -110,7 +117,11 @@ export function PackTempSection(props: {
           empty={rows.length === 0}
           emptyText={
             readings.length === 0
-              ? `No pack temperature was recorded on this ${spanName}: the vehicle reports it only while it’s awake.`
+              ? `No pack temperature was recorded on this ${spanName}: ${
+                  reports
+                    ? 'the vehicle reports it only while it’s awake.'
+                    : 'it isn’t reported for this vehicle.'
+                }`
               : `One pack temperature reading was recorded on this ${spanName}, and one is no trend to draw.`
           }
         >
