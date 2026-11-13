@@ -695,28 +695,32 @@ function bestRenders<I extends RenderImage>(
 
 export { APOLLO_CLIENT_NAME };
 
-/** A deposit at least this long before the order date was a reservation's. */
-const RESERVATION_LEAD_MS = 24 * 60 * 60_000;
+/** Payments that never went through, so placed nothing. */
+const VOID_PAYMENTS = new Set(['CANCELED', 'CANCELLED', 'FAILED']);
 
 /**
- * When the vehicle was reserved and when it was ordered. Rivian keeps no
- * reservation date: a reservation's is its own `orderDate`, and a placed
- * order's is the deposit paid well before it was placed. A deposit paid on
- * the order's day was paid when ordering: no reservation came first.
+ * When the vehicle was reserved and when it was ordered. Rivian keeps no date
+ * for either: `orderDate` is when the order record was created, which is the
+ * reservation, created by its deposit (the two are milliseconds apart) and
+ * kept through configuration. The order was placed by the next deposit, the
+ * one completing the vehicle deposit (seen: $100 to reserve, then $400 seven
+ * months later). With no reservation the first deposit places the order, and
+ * `orderDate` is that day. The balance payment places nothing.
  */
 export function orderDates(
   type: string | null,
   orderDate: string | null,
   payments: OrderPayment[],
 ): Pick<OrderDetail, 'reservedDate' | 'orderedDate'> {
-  if (type === 'PRE_ORDER') return { reservedDate: orderDate, orderedDate: null };
-  const ordered = orderDate ? Date.parse(orderDate) : NaN;
-  const deposit = payments.find(
+  const deposits = payments.filter(
     (p) =>
       p.date &&
-      p.status !== 'CANCELED' &&
-      (p.intent === 'DEPOSIT' || p.type === 'DEPOSIT') &&
-      Date.parse(p.date) <= ordered - RESERVATION_LEAD_MS,
+      !VOID_PAYMENTS.has(p.status ?? '') &&
+      p.type !== 'BALANCE' &&
+      p.intent !== 'PURCHASE',
   );
-  return { reservedDate: deposit?.date ?? null, orderedDate: orderDate };
+  const placing = deposits[1];
+  if (placing) return { reservedDate: orderDate, orderedDate: placing.date };
+  if (type === 'PRE_ORDER') return { reservedDate: orderDate, orderedDate: null };
+  return { reservedDate: null, orderedDate: orderDate };
 }

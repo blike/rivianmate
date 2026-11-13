@@ -224,6 +224,7 @@ describe('headline', () => {
     const d = {
       ...detail(null),
       type: 'PRE_ORDER',
+      reservedDate: '2025-09-02T15:20:11.000Z',
       items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }],
     };
     const h = headline(journey({ detailValue: d }), NOW);

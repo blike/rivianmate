@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RivianClient, orderDates } from './client.js';
 import { RivianGovernor } from './governor.js';
-import { RivianCooldownError, RivianRateLimitError, RivianUnauthenticatedError } from './types.js';
+import {
+  type OrderPayment,
+  RivianCooldownError,
+  RivianRateLimitError,
+  RivianUnauthenticatedError,
+} from './types.js';
 
 type Handler = (op: string, headers: Record<string, string>) => Response;
 
@@ -378,34 +383,54 @@ describe('RivianClient', () => {
 });
 
 describe('orderDates', () => {
-  const deposit = (date: string, status = 'SUCCEEDED') => ({
-    id: 'p',
-    amount: 100,
-    status,
+  const pay = (date: string, amount: number, over: Partial<OrderPayment> = {}): OrderPayment => ({
+    id: date,
+    amount,
+    status: 'SUCCEEDED',
     method: 'CARD',
     type: 'DEPOSIT',
     intent: 'DEPOSIT',
     date,
+    ...over,
+  });
+  // The reservation deposit creates the order record: 220 ms apart.
+  const ORDER_DATE = '2025-09-02T15:20:11.000Z';
+  const reservation = pay('2025-09-02T15:20:11.220', 100);
+
+  it('dates a reservation by its order date, not yet ordered', () => {
+    expect(orderDates('PRE_ORDER', ORDER_DATE, [reservation])).toEqual({
+      reservedDate: ORDER_DATE,
+      orderedDate: null,
+    });
   });
 
-  it('dates a reservation by its own order date, not yet ordered', () => {
-    expect(
-      orderDates('PRE_ORDER', '2025-03-07T12:00:00Z', [deposit('2025-03-07T12:01:00')]),
-    ).toEqual({ reservedDate: '2025-03-07T12:00:00Z', orderedDate: null });
+  it('dates the order by the deposit that completed the vehicle deposit', () => {
+    const placed = pay('2026-04-02T10:21:00', 400);
+    const balance = pay('2026-10-28T09:14:00', 58302.9, {
+      method: 'ACH',
+      type: 'BALANCE',
+      intent: 'PURCHASE',
+      status: 'PROCESSING',
+    });
+    expect(orderDates('VEHICLE', ORDER_DATE, [reservation, placed, balance])).toEqual({
+      reservedDate: ORDER_DATE,
+      orderedDate: '2026-04-02T10:21:00',
+    });
   });
 
-  it('dates a reservation by a deposit paid well before the order', () => {
-    expect(orderDates('VEHICLE', '2026-04-02T15:20:11Z', [deposit('2025-03-07T12:01:00')])).toEqual(
-      { reservedDate: '2025-03-07T12:01:00', orderedDate: '2026-04-02T15:20:11Z' },
-    );
+  it('finds no reservation behind an order placed outright, the balance placing nothing', () => {
+    const balance = pay('2026-10-28T09:14:00', 58302.9, { type: 'BALANCE', intent: 'PURCHASE' });
+    expect(orderDates('VEHICLE', ORDER_DATE, [pay(ORDER_DATE, 500), balance])).toEqual({
+      reservedDate: null,
+      orderedDate: ORDER_DATE,
+    });
   });
 
-  it('finds no reservation behind an order paid for when placed, or a cancelled deposit', () => {
-    expect(orderDates('VEHICLE', '2026-04-02T15:20:11Z', [deposit('2026-04-02T10:21:00')])).toEqual(
-      { reservedDate: null, orderedDate: '2026-04-02T15:20:11Z' },
-    );
-    expect(
-      orderDates('VEHICLE', '2026-04-02T15:20:11Z', [deposit('2025-03-07T12:01:00', 'CANCELED')]),
-    ).toEqual({ reservedDate: null, orderedDate: '2026-04-02T15:20:11Z' });
+  it('ignores a deposit that never went through', () => {
+    const failed = pay('2026-04-02T10:21:00', 400, { status: 'CANCELED' });
+    expect(orderDates('PRE_ORDER', ORDER_DATE, [reservation, failed])).toEqual({
+      reservedDate: ORDER_DATE,
+      orderedDate: null,
+    });
   });
 });

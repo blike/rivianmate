@@ -69,7 +69,7 @@ export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
           ],
         },
       ],
-      reservedDate: '2021-06-14T18:02:11',
+      reservedDate: null,
       orderedDate: '2022-11-08T16:12:40.000Z',
       payments: [
         payment(
@@ -79,7 +79,7 @@ export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
           'CARD',
           'DEPOSIT',
           'DEPOSIT',
-          '2021-06-14T18:02:11',
+          '2022-11-08T16:12:40.180',
         ),
         payment(
           'mock-pay-2',
@@ -133,7 +133,7 @@ export function awaitingOrder(now = new Date()): MockOrder {
       id: 'mock-order-r2',
       type: 'VEHICLE',
       state: 'ORDERED',
-      orderDate: '2026-04-02T15:20:11.000Z',
+      orderDate: '2025-09-02T15:20:11.000Z',
       configurationStatus: 'SOFT_LOCKED',
       fulfillmentSummaryStatus: 'READY_FOR_FULFILLMENT',
       vehicle: {
@@ -167,17 +167,28 @@ export function awaitingOrder(now = new Date()): MockOrder {
         },
         { type: 'ACCESSORIES', title: 'Rivian Wall Charger', options: [] },
       ],
-      reservedDate: null,
-      orderedDate: '2026-04-02T15:20:11.000Z',
+      reservedDate: '2025-09-02T15:20:11.000Z',
+      orderedDate: '2026-04-02T10:21:00',
       payments: [
+        // Reserved for $100, the order record created with it; ordered
+        // seven months later by the $400 completing the vehicle deposit.
         payment(
           'mock-pay-3',
-          500,
+          100,
           'SUCCEEDED',
           'CARD',
           'DEPOSIT',
           'DEPOSIT',
-          '2026-04-02T15:20:40',
+          '2025-09-02T15:20:11.220',
+        ),
+        payment(
+          'mock-pay-5',
+          400,
+          'SUCCEEDED',
+          'CARD',
+          'DEPOSIT',
+          'DEPOSIT',
+          '2026-04-02T10:21:00',
         ),
         payment(
           'mock-pay-4',

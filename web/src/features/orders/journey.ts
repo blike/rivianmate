@@ -82,12 +82,12 @@ export function isDelivered(j: OrderJourneyDto): boolean {
 }
 
 /**
- * A reservation not yet turned into an order: Rivian's own order type says
- * so. Payments can't tell: a placed order also has only its deposit until
- * the final payment.
+ * A reservation not yet turned into an order: reserved, and no deposit since
+ * has placed the order (see OrderDetail.reservedDate and orderedDate).
  */
 export function isReservation(j: OrderJourneyDto): boolean {
-  return parts(j).detail?.type === 'PRE_ORDER';
+  const detail = parts(j).detail;
+  return detail != null && detail.reservedDate != null && detail.orderedDate == null;
 }
 
 /** "R2", "R1S": the model as people say it. */
