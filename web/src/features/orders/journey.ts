@@ -81,6 +81,15 @@ export function isDelivered(j: OrderJourneyDto): boolean {
   );
 }
 
+/**
+ * A reservation not yet turned into an order: Rivian's own order type says
+ * so. Payments can't tell: a placed order also has only its deposit until
+ * the final payment.
+ */
+export function isReservation(j: OrderJourneyDto): boolean {
+  return parts(j).detail?.type === 'PRE_ORDER';
+}
+
 /** "R2", "R1S": the model as people say it. */
 export function modelName(j: OrderJourneyDto): string {
   const { detail, vehicle } = parts(j);
@@ -268,13 +277,14 @@ export function milestones(j: OrderJourneyDto, now = new Date()): Milestone[] {
   const built = vehicle?.actualGeneralAssemblyDate ?? null;
   const planned = vehicle?.plannedBuildDate ?? vehicle?.expectedBuildDate ?? null;
   const prepared = delivered || (vehicle?.status != null && PREPARED.has(vehicle.status));
+  const reserved = isReservation(j);
 
   // Each step's label as it stands: the event once it's happened ("Built"),
   // the stage while it's under way or ahead ("Build").
   const steps: (Omit<Milestone, 'state' | 'label'> & { label: [string, string] })[] = [
     {
       key: 'ordered',
-      label: ['Ordered', 'Order'],
+      label: reserved ? ['Reserved', 'Reservation'] : ['Ordered', 'Order'],
       date: instantDate(detail?.orderDate),
       note: null,
     },
@@ -397,6 +407,14 @@ export function headline(
     };
   }
   const planned = calendarDate(vehicle?.plannedBuildDate ?? vehicle?.expectedBuildDate);
+  if (isReservation(j)) {
+    return {
+      kicker: 'Reserved',
+      title: `Your ${model} is reserved`,
+      summary:
+        'Rivian will invite you to configure it and place your order. Each step will show here as it happens.',
+    };
+  }
   return {
     kicker: 'On order',
     title: `Your ${model} is on order`,

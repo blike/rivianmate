@@ -216,6 +216,33 @@ describe('headline', () => {
     const d = { ...detail(null), items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }] };
     expect(headline(journey({ detailValue: d }), NOW).title).toBe('Your R2 is on order');
   });
+
+  it('says reserved for a reservation, not on order', () => {
+    const d = {
+      ...detail(null),
+      type: 'PRE_ORDER',
+      items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }],
+    };
+    const h = headline(journey({ detailValue: d }), NOW);
+    expect(h.kicker).toBe('Reserved');
+    expect(h.title).toBe('Your R2 is reserved');
+    expect(milestones(journey({ detailValue: d }), NOW)[0]!.label).toBe('Reserved');
+  });
+
+  it('says on order once the order is placed, even with only a deposit paid', () => {
+    const deposit = {
+      id: 'p1',
+      amount: 100,
+      status: 'SUCCEEDED',
+      method: 'CARD',
+      type: 'DEPOSIT',
+      intent: 'DEPOSIT',
+      date: '2026-04-02T15:20:40',
+    };
+    const d = { ...detail(null), payments: [deposit] };
+    expect(headline(journey({ detailValue: d }), NOW).kicker).toBe('On order');
+    expect(milestones(journey({ detailValue: d }), NOW)[0]!.label).toBe('Ordered');
+  });
 });
 
 describe('specification', () => {
