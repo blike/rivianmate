@@ -51,7 +51,7 @@ export const GET_ORDER_SNAPSHOTS = `query getOrderSnapshots { user { orderSnapsh
  * rivian-order-view's verified selection; money, payments and addresses are
  * deliberately not requested.
  */
-export const GET_ORDER = `query order($id: String!) { order(id: $id) { id orderDate state type vin vehicleId configurationStatus fulfillmentSummaryStatus vehicle { vehicleId vin modelYear model make plannedBuildDate expectedBuildDate actualGeneralAssemblyDate expectedGeneralAssemblyStartDate status } items { title type configuration { options { optionId optionName groupId } } } fulfillmentInfo { fulfillments { fulfillmentStatus estimatedDeliveryWindow { startDate endDate } } } } }`;
+export const GET_ORDER = `query order($id: String!) { order(id: $id) { id orderDate state type vin vehicleId configurationStatus fulfillmentSummaryStatus vehicle { vehicleId vin modelYear model make plannedBuildDate expectedBuildDate actualGeneralAssemblyDate expectedGeneralAssemblyStartDate status } payments { id amount status method type intent date } items { title type configuration { options { optionId optionName groupId } } } fulfillmentInfo { fulfillments { fulfillmentStatus estimatedDeliveryWindow { startDate endDate } } } } }`;
 
 /**
  * An order's delivery appointment (gateway). Answers on the session headers

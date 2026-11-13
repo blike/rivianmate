@@ -80,6 +80,7 @@ describe('App without vehicles', () => {
                 fulfillmentSummaryStatus: null,
                 vehicle: null,
                 items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }],
+                payments: [],
                 estimatedDelivery: null,
               },
             },

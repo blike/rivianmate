@@ -20,6 +20,7 @@ const vehicleOrder = (id: string, type = 'VEHICLE') => ({
   fulfillmentSummaryStatus: null,
   vehicle: null,
   items: [],
+  payments: [],
   estimatedDelivery: null,
 });
 

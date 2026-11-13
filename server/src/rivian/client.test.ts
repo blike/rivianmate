@@ -221,6 +221,26 @@ describe('RivianClient', () => {
                     expectedGeneralAssemblyStartDate: '2027-01-15',
                     status: 'VEHICLE_PREPPED',
                   },
+                  payments: [
+                    {
+                      id: 'pay-2',
+                      amount: '58302.90',
+                      status: 'PROCESSING',
+                      method: 'ACH',
+                      type: 'BALANCE',
+                      intent: 'PURCHASE',
+                      date: '2027-01-28T09:14:00',
+                    },
+                    {
+                      id: 'pay-1',
+                      amount: 500,
+                      status: 'SUCCEEDED',
+                      method: 'CARD',
+                      type: 'DEPOSIT',
+                      intent: 'DEPOSIT',
+                      date: '2026-11-20T09:35:00',
+                    },
+                  ],
                   items: [
                     {
                       title: 'Rivian R2',
@@ -255,6 +275,10 @@ describe('RivianClient', () => {
             title: 'Rivian R2',
             options: [{ group: 'PAINT', id: 'P1', name: 'Launch Green' }],
           },
+        ],
+        payments: [
+          { id: 'pay-1', amount: 500, status: 'SUCCEEDED', method: 'CARD', intent: 'DEPOSIT' },
+          { id: 'pay-2', amount: 58302.9, status: 'PROCESSING', method: 'ACH', intent: 'PURCHASE' },
         ],
         estimatedDelivery: { start: '2027-02-01', end: '2027-02-05' },
       });

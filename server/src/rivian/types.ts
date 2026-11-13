@@ -98,6 +98,8 @@ export interface OrderDetail {
   /** Rivian's build record, once the order is assigned to one. */
   vehicle: OrderVehicle | null;
   items: OrderItem[];
+  /** Every payment recorded against the order, oldest first. */
+  payments: OrderPayment[];
   /** The earliest estimated delivery window among the order's fulfillments. */
   estimatedDelivery: { start: string | null; end: string | null } | null;
 }
@@ -124,6 +126,24 @@ export interface OrderVehicle {
    * VEHICLE_PREPPED, DELIVERED. Steps can be skipped, and it lags the car by days.
    */
   status: string | null;
+}
+
+/**
+ * A payment recorded against an order. A scheduled ACH stays PROCESSING until
+ * it clears, so not every record is money already paid.
+ */
+export interface OrderPayment {
+  id: string | null;
+  amount: number | null;
+  /** Observed: SUCCEEDED, PROCESSING, CANCELED. */
+  status: string | null;
+  /** e.g. CARD, ACH. */
+  method: string | null;
+  /** e.g. DEPOSIT, BALANCE. */
+  type: string | null;
+  /** e.g. DEPOSIT, PURCHASE. */
+  intent: string | null;
+  date: string | null;
 }
 
 export interface OrderItem {

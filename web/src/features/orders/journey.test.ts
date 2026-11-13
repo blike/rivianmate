@@ -32,6 +32,7 @@ const detail = (vehicle: Partial<NonNullable<OrderDetail['vehicle']>> | null): O
     ...vehicle,
   },
   items: [],
+  payments: [],
   estimatedDelivery: null,
 });
 

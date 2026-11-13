@@ -3,7 +3,7 @@
  * the delivered order behind the mock vehicle, and for the awaiting-delivery
  * scene an R2 on its way. Every identifier and address is invented.
  */
-import type { Delivery, OrderDetail, OrderSnapshot } from './types.js';
+import type { Delivery, OrderDetail, OrderPayment, OrderSnapshot } from './types.js';
 
 export interface MockOrder {
   snapshot: OrderSnapshot;
@@ -12,6 +12,15 @@ export interface MockOrder {
 }
 
 const option = (group: string, id: string, name: string) => ({ group, id, name });
+const payment = (
+  id: string,
+  amount: number,
+  status: string,
+  method: string,
+  type: string,
+  intent: string,
+  date: string,
+): OrderPayment => ({ id, amount, status, method, type, intent, date });
 
 /** The order behind the mock vehicle, delivered in spring 2023. */
 export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
@@ -59,6 +68,26 @@ export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
             option('ROOF', 'ROOF-FGP', 'Panoramic Glass Roof'),
           ],
         },
+      ],
+      payments: [
+        payment(
+          'mock-pay-1',
+          1000,
+          'SUCCEEDED',
+          'CARD',
+          'DEPOSIT',
+          'DEPOSIT',
+          '2022-11-08T16:13:02',
+        ),
+        payment(
+          'mock-pay-2',
+          89150.5,
+          'SUCCEEDED',
+          'ACH',
+          'BALANCE',
+          'PURCHASE',
+          '2023-03-28T09:14:00',
+        ),
       ],
       estimatedDelivery: null,
     },
@@ -135,6 +164,26 @@ export function awaitingOrder(now = new Date()): MockOrder {
           ],
         },
         { type: 'ACCESSORIES', title: 'Rivian Wall Charger', options: [] },
+      ],
+      payments: [
+        payment(
+          'mock-pay-3',
+          500,
+          'SUCCEEDED',
+          'CARD',
+          'DEPOSIT',
+          'DEPOSIT',
+          '2026-04-02T15:20:40',
+        ),
+        payment(
+          'mock-pay-4',
+          58302.9,
+          'PROCESSING',
+          'ACH',
+          'BALANCE',
+          'PURCHASE',
+          '2026-10-28T09:14:00',
+        ),
       ],
       estimatedDelivery: null,
     },

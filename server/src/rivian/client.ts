@@ -294,7 +294,9 @@ export class RivianClient implements RivianApi {
 
   async getOrder(orderId: string): Promise<OrderDetail | null> {
     type Window = { startDate: string | null; endDate: string | null };
-    type Raw = Partial<Omit<OrderDetail, 'vehicle' | 'items' | 'estimatedDelivery'>> & {
+    type Raw = Partial<
+      Omit<OrderDetail, 'vehicle' | 'items' | 'payments' | 'estimatedDelivery'>
+    > & {
       vehicle: (Partial<Omit<OrderVehicle, 'modelYear'>> & { modelYear?: string | number }) | null;
       items:
         | {
@@ -305,6 +307,17 @@ export class RivianClient implements RivianApi {
                 | { optionId: string | null; optionName: string | null; groupId: string | null }[]
                 | null;
             } | null;
+          }[]
+        | null;
+      payments:
+        | {
+            id: string | null;
+            amount: number | string | null;
+            status: string | null;
+            method: string | null;
+            type: string | null;
+            intent: string | null;
+            date: string | null;
           }[]
         | null;
       fulfillmentInfo: {
@@ -354,6 +367,20 @@ export class RivianClient implements RivianApi {
           name: opt.optionName ?? null,
         })),
       })),
+      payments: (o.payments ?? [])
+        .map((p) => {
+          const amount = p.amount != null ? Number(p.amount) : null;
+          return {
+            id: p.id ?? null,
+            amount: amount != null && Number.isFinite(amount) ? amount : null,
+            status: p.status ?? null,
+            method: p.method ?? null,
+            type: p.type ?? null,
+            intent: p.intent ?? null,
+            date: p.date ?? null,
+          };
+        })
+        .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')),
       estimatedDelivery: window
         ? { start: window.startDate ?? null, end: window.endDate ?? null }
         : null,
