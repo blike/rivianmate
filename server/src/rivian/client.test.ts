@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RivianClient } from './client.js';
+import { RivianClient, orderDates } from './client.js';
 import { RivianGovernor } from './governor.js';
 import { RivianCooldownError, RivianRateLimitError, RivianUnauthenticatedError } from './types.js';
 
@@ -280,6 +280,9 @@ describe('RivianClient', () => {
           { id: 'pay-1', amount: 500, status: 'SUCCEEDED', method: 'CARD', intent: 'DEPOSIT' },
           { id: 'pay-2', amount: 58302.9, status: 'PROCESSING', method: 'ACH', intent: 'PURCHASE' },
         ],
+        // The deposit was paid minutes after ordering: no reservation came first.
+        reservedDate: null,
+        orderedDate: '2026-11-20T09:30:00',
         estimatedDelivery: { start: '2027-02-01', end: '2027-02-05' },
       });
       const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
@@ -371,5 +374,38 @@ describe('RivianClient', () => {
         o1: { 'three-quarter': 'https://render/o1/three-quarter/dark.png' },
       });
     });
+  });
+});
+
+describe('orderDates', () => {
+  const deposit = (date: string, status = 'SUCCEEDED') => ({
+    id: 'p',
+    amount: 100,
+    status,
+    method: 'CARD',
+    type: 'DEPOSIT',
+    intent: 'DEPOSIT',
+    date,
+  });
+
+  it('dates a reservation by its own order date, not yet ordered', () => {
+    expect(
+      orderDates('PRE_ORDER', '2025-03-07T12:00:00Z', [deposit('2025-03-07T12:01:00')]),
+    ).toEqual({ reservedDate: '2025-03-07T12:00:00Z', orderedDate: null });
+  });
+
+  it('dates a reservation by a deposit paid well before the order', () => {
+    expect(orderDates('VEHICLE', '2026-04-02T15:20:11Z', [deposit('2025-03-07T12:01:00')])).toEqual(
+      { reservedDate: '2025-03-07T12:01:00', orderedDate: '2026-04-02T15:20:11Z' },
+    );
+  });
+
+  it('finds no reservation behind an order paid for when placed, or a cancelled deposit', () => {
+    expect(orderDates('VEHICLE', '2026-04-02T15:20:11Z', [deposit('2026-04-02T10:21:00')])).toEqual(
+      { reservedDate: null, orderedDate: '2026-04-02T15:20:11Z' },
+    );
+    expect(
+      orderDates('VEHICLE', '2026-04-02T15:20:11Z', [deposit('2025-03-07T12:01:00', 'CANCELED')]),
+    ).toEqual({ reservedDate: null, orderedDate: '2026-04-02T15:20:11Z' });
   });
 });

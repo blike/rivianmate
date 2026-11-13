@@ -69,6 +69,8 @@ export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
           ],
         },
       ],
+      reservedDate: '2021-06-14T18:02:11',
+      orderedDate: '2022-11-08T16:12:40.000Z',
       payments: [
         payment(
           'mock-pay-1',
@@ -77,7 +79,7 @@ export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
           'CARD',
           'DEPOSIT',
           'DEPOSIT',
-          '2022-11-08T16:13:02',
+          '2021-06-14T18:02:11',
         ),
         payment(
           'mock-pay-2',
@@ -165,6 +167,8 @@ export function awaitingOrder(now = new Date()): MockOrder {
         },
         { type: 'ACCESSORIES', title: 'Rivian Wall Charger', options: [] },
       ],
+      reservedDate: null,
+      orderedDate: '2026-04-02T15:20:11.000Z',
       payments: [
         payment(
           'mock-pay-3',

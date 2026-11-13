@@ -285,8 +285,14 @@ export function milestones(j: OrderJourneyDto, now = new Date()): Milestone[] {
     {
       key: 'ordered',
       label: reserved ? ['Reserved', 'Reservation'] : ['Ordered', 'Order'],
-      date: instantDate(detail?.orderDate),
-      note: null,
+      date: instantDate(
+        reserved
+          ? (detail?.reservedDate ?? detail?.orderDate)
+          : (detail?.orderedDate ?? detail?.orderDate),
+      ),
+      // Reserved first, then ordered: the step is the order, the reservation said under it.
+      note:
+        !reserved && detail?.reservedDate ? `Reserved ${instantDate(detail.reservedDate)}` : null,
     },
     {
       key: 'built',

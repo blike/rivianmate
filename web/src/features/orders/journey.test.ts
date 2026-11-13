@@ -5,6 +5,7 @@ import {
   calendarDate,
   headline,
   humanize,
+  instantDate,
   milestones,
   relativeDay,
   specification,
@@ -32,6 +33,8 @@ const detail = (vehicle: Partial<NonNullable<OrderDetail['vehicle']>> | null): O
     ...vehicle,
   },
   items: [],
+  reservedDate: null,
+  orderedDate: null,
   payments: [],
   estimatedDelivery: null,
 });
@@ -227,6 +230,18 @@ describe('headline', () => {
     expect(h.kicker).toBe('Reserved');
     expect(h.title).toBe('Your R2 is reserved');
     expect(milestones(journey({ detailValue: d }), NOW)[0]!.label).toBe('Reserved');
+  });
+
+  it('dates the order, with the reservation before it under the step', () => {
+    const d = {
+      ...detail(null),
+      reservedDate: '2025-03-07T18:00:00Z',
+      orderedDate: '2026-04-02T15:20:11.000Z',
+    };
+    const step = milestones(journey({ detailValue: d }), NOW)[0]!;
+    expect(step.label).toBe('Ordered');
+    expect(step.date).toBe(instantDate('2026-04-02T15:20:11.000Z'));
+    expect(step.note).toBe(`Reserved ${instantDate('2025-03-07T18:00:00Z')}`);
   });
 
   it('says on order once the order is placed, even with only a deposit paid', () => {

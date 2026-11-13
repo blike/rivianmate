@@ -98,6 +98,14 @@ export interface OrderDetail {
   /** Rivian's build record, once the order is assigned to one. */
   vehicle: OrderVehicle | null;
   items: OrderItem[];
+  /**
+   * When the vehicle was reserved: a reservation's own orderDate, or the
+   * deposit paid well before the order was placed. Null when it was ordered
+   * outright. Rivian keeps no reservation date of its own.
+   */
+  reservedDate: string | null;
+  /** When the order was placed: its orderDate. Null while still a reservation. */
+  orderedDate: string | null;
   /** Every payment recorded against the order, oldest first. */
   payments: OrderPayment[];
   /** The earliest estimated delivery window among the order's fulfillments. */
