@@ -20,6 +20,8 @@ import {
   chargerStateFromStatus,
   chargerStatusFromStatus,
   chargingWindowSchedule,
+  batteryState,
+  cellTempReadings,
   decodeBatteryCharacteristics,
   decodeBatteryState,
   decodeChargeBreakdown,
@@ -268,6 +270,7 @@ describe('decodeBatteryState', () => {
       capacityKwh: 111.285,
       thermalEvent: false,
       cellTemps: null,
+      powerOutput: null,
     });
     const awake = decodeBatteryState(
       b64([
@@ -279,6 +282,76 @@ describe('decodeBatteryState', () => {
     // Without field 3, nothing's known of a thermal event.
     expect(awake?.thermalEvent).toBeNull();
     expect(decodeBatteryState(b64(message(3, int(1, 1))))?.thermalEvent).toBe(true);
+  });
+
+  it("reads the car's power output verdict", () => {
+    // Field 4: 1 normal, 2 limited by the cold, and 0 (unset) is unknown.
+    expect(decodeBatteryState(b64(int(4, 1)))?.powerOutput).toBe('normal');
+    expect(decodeBatteryState(b64(int(4, 2)))?.powerOutput).toBe('cold');
+    expect(decodeBatteryState(b64(int(1, 1)))?.powerOutput).toBeNull();
+  });
+});
+
+describe('batteryState.toState', () => {
+  const AT = '2026-10-01T07:00:00.000Z';
+  const toState = (payload: string) => batteryState.toState!(decodeBatteryState(payload)!, AT);
+  const temps = (avg: number, max: number, min: number) =>
+    message(2, [...float(1, avg), ...float(2, max), ...float(3, min)]);
+  const tempKeys = (state: object) => Object.keys(state).filter((k) => k.startsWith('batteryTemp'));
+
+  it('records the cell temperatures beside the verdict', () => {
+    expect(
+      toState(
+        b64([
+          ...message(1, [...double(1, 58.2), ...double(2, 111.285)]),
+          ...temps(42.8, 46.6, 37.2),
+          ...int(4, 1),
+        ]),
+      ),
+    ).toEqual({
+      batteryLevel: { value: 58.2, timeStamp: AT },
+      batteryCapacity: { value: 111.285, timeStamp: AT },
+      batteryTempAvg: { value: 42.8, timeStamp: AT },
+      batteryTempMax: { value: 46.6, timeStamp: AT },
+      batteryTempMin: { value: 37.2, timeStamp: AT },
+      batteryPowerOutputStatus: { value: 'normal', timeStamp: AT },
+    });
+    expect(toState(b64(int(4, 2))).batteryPowerOutputStatus).toEqual({
+      value: 'cold',
+      timeStamp: AT,
+    });
+  });
+
+  it("drops a float's unset value instead of recording 0 °C", () => {
+    // Two of 3,897 captured frames carried 5.96e-07 °C on all three, which a range check accepts.
+    const junk = temps(5.9604645e-7, 5.9604645e-7, 5.9604645e-7);
+    expect(decodeBatteryState(b64(junk))?.cellTemps).toEqual({ avgC: 0, maxC: 0, minC: 0 });
+    expect(tempKeys(toState(b64(junk)))).toEqual([]);
+  });
+
+  it('drops a temperature outside a pack range, keeping a real one', () => {
+    expect(tempKeys(toState(b64(temps(42.8, 46.6, -273.2))))).toEqual([]);
+    expect(tempKeys(toState(b64(temps(42.8, 46.6, 37.2))))).toEqual([
+      'batteryTempAvg',
+      'batteryTempMax',
+      'batteryTempMin',
+    ]);
+  });
+
+  it('records no temperature from a frame that carries none', () => {
+    expect(tempKeys(toState(b64(message(1, double(1, 69.9)))))).toEqual([]);
+  });
+
+  it('guards the temperatures the same way for a replay', () => {
+    const real = decodeBatteryState(b64(temps(42.8, 46.6, 37.2)))!;
+    expect(cellTempReadings(real.cellTemps)).toEqual({
+      batteryTempAvg: 42.8,
+      batteryTempMax: 46.6,
+      batteryTempMin: 37.2,
+    });
+    const junk = decodeBatteryState(b64(temps(5.9604645e-7, 5.9604645e-7, 5.9604645e-7)))!;
+    expect(cellTempReadings(junk.cellTemps)).toBeNull();
+    expect(cellTempReadings(null)).toBeNull();
   });
 });
 
