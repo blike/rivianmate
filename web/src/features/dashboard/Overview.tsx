@@ -12,6 +12,7 @@ import { Dot } from '../../components/Dot';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
 import { chargeOutlook, chargerLabel, lastChargedTo } from '../../lib/charging';
+import { showOptional } from '../../lib/fieldSources';
 import { locationIsBehind } from '../../lib/freshness';
 import { nextStop, routePlan } from '../../lib/navigation';
 import { isActivePhase, softwareUpdate } from '../../lib/ota';
@@ -20,6 +21,7 @@ import {
   type ActivityKind,
   climateRunning,
   coldRangeNote,
+  powerOutputVerdict,
   rangeLevel,
   securitySummary,
   vehicleActivity,
@@ -76,8 +78,23 @@ export function Overview(props: {
   const rangeKm = nv(state, 'distanceToEmpty');
   const cold = (insights?.coldWeather?.rangeImpactKm ?? 0) > 0 ? insights!.coldWeather : null;
   const lowRange = rangeLevel(state);
-  // Without a distance for it, the vehicle's own word on the cold.
-  const coldNote = cold ? null : coldRangeNote(state);
+  /** The range's cold line, or the vehicle's own word when it gives no distance. */
+  const coldLine = loading
+    ? null
+    : cold
+      ? `−${u.formatDistance(cold.rangeImpactKm)} from the cold`
+      : coldRangeNote(state);
+  /** The low-range label, once the reading it colours has arrived. */
+  const lowNote = loading ? null : lowRange;
+  /** Lines hanging under the range's readout, each of which the row reserves. */
+  const noteLines = (lowNote ? 1 : 0) + (coldLine ? 1 : 0);
+  /** The row's clearance and reserve: a wrapped line must not meet a hanging one. */
+  const reserve = noteLines === 0 ? 'gap-y-4' : noteLines > 1 ? 'gap-y-10 pb-10' : 'gap-y-5 pb-5';
+  // Only some packs send the BMS's verdict, and its absence says nothing about the temperature.
+  const verdictFrames = showOptional(state, 'batteryPowerOutputStatus');
+  const powerVerdict = verdictFrames ? powerOutputVerdict(state) : null;
+  // The pack's own temperature, which the frame records whether or not it carries the verdict.
+  const packTempC = nv(state, 'batteryTempAvg');
   const mileageM = nv(state, 'vehicleMileage');
   const loc = location(state);
   // The speed taken with the fix the map shows, so the two agree.
@@ -202,7 +219,9 @@ export function Overview(props: {
           </div>
 
           {/* Charge, as the instrument cluster would show it. */}
-          <div className="mt-6 flex flex-wrap items-end gap-x-10 gap-y-4">
+          {/* The cold line hangs below the range's column rather than widening it: three
+              readouts share this row, and the note would cost the pack its place. */}
+          <div className={`mt-6 flex flex-wrap items-end gap-x-6 sm:gap-x-10 ${reserve}`}>
             <div>
               <div className="eyebrow">{charging ? 'Charging' : 'Battery'}</div>
               <div className="mt-2 flex items-start">
@@ -223,7 +242,7 @@ export function Overview(props: {
                 </span>
               </div>
             </div>
-            <div className="pb-1.5">
+            <div className="relative pb-1.5">
               <div className="eyebrow">Est. range</div>
               <div className="mt-2 flex items-baseline gap-1.5">
                 <span className="readout text-[2.25rem] font-[350]">
@@ -231,24 +250,39 @@ export function Overview(props: {
                 </span>
                 <span className="text-base text-(--text-muted)">{u.distanceUnit}</span>
               </div>
-              {/* Only while the range is low, or the cold is holding it back; Health has the rest. */}
-              {!loading && lowRange && (
-                <div
-                  className="mt-1 text-xs font-medium"
-                  style={{ color: `var(--status-${lowRange.level})` }}
-                >
-                  {lowRange.label}
+              {/* Only while the range is low, or the cold is holding it back; Health has the rest.
+                  Both hang below the column: either is a sentence, and a sentence that set this
+                  column's width would take the pack's place in the row. */}
+              {(lowNote || coldLine) && (
+                <div className="absolute top-full left-0 mt-1 flex flex-col gap-0.5 text-xs leading-4 whitespace-nowrap">
+                  {lowNote && (
+                    <div
+                      className="font-medium"
+                      style={{ color: `var(--status-${lowNote.level})` }}
+                    >
+                      {lowNote.label}
+                    </div>
+                  )}
+                  {coldLine && <div className="text-(--text-muted)">{coldLine}</div>}
                 </div>
-              )}
-              {!loading && cold && (
-                <div className="mt-1 text-xs text-(--text-muted)">
-                  −{u.formatDistance(cold.rangeImpactKm)} from the cold
-                </div>
-              )}
-              {!loading && coldNote && (
-                <div className="mt-1 text-xs text-(--text-muted)">{coldNote}</div>
               )}
             </div>
+            {/* The pack's temperature, read in the same figures as the range beside it. */}
+            {packTempC != null && (
+              <div className="pb-1.5">
+                <div className="eyebrow">Pack</div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="readout text-[2.25rem] font-[350]">
+                    {loading ? (
+                      <Skeleton className="w-[2.5em]" />
+                    ) : (
+                      fmt(u.temperature(packTempC), 0)
+                    )}
+                  </span>
+                  <span className="text-base text-(--text-muted)">{u.temperatureUnit}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-4">
@@ -257,6 +291,7 @@ export function Overview(props: {
               limit={target}
               limitLabel={limit == null ? 'Last charge' : undefined}
               charging={charging}
+              verdict={powerVerdict}
             />
           </div>
 

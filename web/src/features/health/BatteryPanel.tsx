@@ -4,6 +4,7 @@ import { ContentFrame, LoadingScope, Skeleton, useLoading } from '../../componen
 import { Panel, PanelSection } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { TrendChart } from '../../components/TrendChart';
+import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 import { longDateTime, shortDate } from '../../lib/format';
 import { fmt } from '../../lib/state';
 import { capacityTrend, capacityOfRated } from './health';
@@ -16,6 +17,8 @@ export function BatteryPanel(props: {
   insightsPending: boolean;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
+  /** Left out when undefined: a vehicle that never sends one shows no verdict. */
+  powerOutput?: PowerOutputVerdict | null;
 }) {
   const reported = props.battery?.reported;
   const latest = props.battery?.latest;
@@ -103,7 +106,11 @@ export function BatteryPanel(props: {
           </LoadingScope>
           <PanelSection title="Pack" stacked>
             <LoadingScope loading={props.insightsPending}>
-              <PackDetails insights={props.insights} cellType={props.cellType} />
+              <PackDetails
+                insights={props.insights}
+                cellType={props.cellType}
+                powerOutput={props.powerOutput}
+              />
             </LoadingScope>
           </PanelSection>
         </div>

@@ -215,6 +215,15 @@ const PHASE_TICKS: Record<Exclude<Phase, 'driving'>, number> = {
 /** Rolling hills, so elevation features have something to show. */
 const altitudeAt = (tick: number) => Math.round(240 + 35 * Math.sin(tick / 8));
 
+/**
+ * The pack's cells (°C): cold-soaked while the vehicle rests, warm once it
+ * has driven or charged, as a pack that sat out a winter night does.
+ */
+const PACK_REST_C = 2;
+const PACK_WARM_C = 24;
+/** Under this the BMS limits power output, as battery-state field 4 says. */
+const PACK_LIMIT_C = 10;
+
 /** Demo scenes the mock can start in instead of parked at home (MOCK_SCENE). */
 export type MockScene = 'drive-home' | 'awaiting-delivery';
 
@@ -720,9 +729,13 @@ export class MockRivian implements RivianApi, VehicleStateStream {
 
   private emitBatteryState(): void {
     const warm = this.phase === 'charging' ? 6 * Math.min(1, this.tickInPhase / 30) : 0;
+    const atRest = this.phase === 'parked' || this.phase === 'arriving';
+    const avg = (atRest ? PACK_REST_C : PACK_WARM_C) + warm;
     this.emitParallax(RVM_BATTERY_STATE, [
       ...message(1, [...double(1, Number(this.battery.toFixed(1))), ...double(2, 135)]),
-      ...message(2, [...float(1, 24 + warm), ...float(2, 27 + warm), ...float(3, 22 + warm)]),
+      ...message(2, [...float(1, avg), ...float(2, avg + 3), ...float(3, avg - 2)]),
+      // 4: 1 normal, 2 limited by the cold, as the BMS says and both surfaces read.
+      ...int(4, avg < PACK_LIMIT_C ? 2 : 1),
     ]);
   }
 

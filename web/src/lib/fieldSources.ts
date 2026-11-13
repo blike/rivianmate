@@ -3,11 +3,14 @@ import type { VehicleInsightsDto, VehicleState } from '@server/api-types';
 /**
  * Fields not every vehicle sends, left out rather than shown as unknown.
  * Cell type comes only from the legacy feed, so a vehicle without it (an
- * R2, or with legacy switched off) never has one; the rest come from
- * either feed, but Parallax doesn't send them on every vehicle.
+ * R2, or with legacy switched off) never has one, and the pack's verdict on
+ * power output comes only from Parallax's battery-state frames, which not
+ * every pack fills in. The rest come from either feed, but Parallax doesn't
+ * send them on every vehicle.
  */
 export const OPTIONAL_FIELDS = [
   'batteryCellType',
+  'batteryPowerOutputStatus',
   'brakeFluidLow',
   'driveMode',
   'gearGuardLocked',
