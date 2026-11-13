@@ -516,6 +516,19 @@ export interface VehicleInsightsDto {
   } | null;
 }
 
+/**
+ * One night of parked energy as recorded: Rivian's rolling 24-hour window,
+ * kept from the first payload that arrived on that day. `at` is when Rivian
+ * sent it, which is also the instant the night's bar is placed by.
+ */
+export interface ParkedNightDto {
+  at: string;
+  minutes: number;
+  kwh: number;
+  rangeKm: number;
+  uses: { climate: number; system: number; gearGuard: number; outlets: number };
+}
+
 /** A timed alert: fires once the condition has lasted `minutes`. */
 export interface TimedAlertSettings {
   enabled: boolean;

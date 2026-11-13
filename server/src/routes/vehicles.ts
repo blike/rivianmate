@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import type { SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
+import { z } from 'zod';
+import type { ParkedNightDto, SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
 import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
@@ -13,6 +14,12 @@ import { sendRender } from './render-proxy.js';
 /** The views a vehicle has a render for. */
 const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
   VEHICLE_VIEWS.filter((v) => images?.[v]);
+
+const nightsQuery = z.object({
+  nights: z.coerce.number().int().min(1).max(31).default(7),
+  /** The calendar the reader's days are in; the recorder writes its nights in it. */
+  tz: z.string().max(64).optional(),
+});
 
 export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/vehicles', async (): Promise<VehicleDto[]> => {
@@ -67,6 +74,17 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
       isTeslaMateVehicle(request.params.id)
         ? ctx.teslamate.insights(request.params.id)
         : withSavedNames(ctx, await ctx.monitor.getInsights(request.params.id)),
+  );
+
+  // The nights of parked energy recorded so far, oldest first, for the week's
+  // chart: one bar a night, filling in as nights pass.
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/parked-nights',
+    async (request): Promise<ParkedNightDto[]> => {
+      const { nights, tz } = nightsQuery.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) return [];
+      return ctx.monitor.getParkedNights(request.params.id, nights, tz);
+    },
   );
 
   /** SSE stream of merged full-state updates + live charging session. */

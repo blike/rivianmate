@@ -27,6 +27,7 @@ import type {
   RivianDiagnosticsResponse,
   OrdersDto,
   OtaTimelineDto,
+  ParkedNightDto,
   PhantomDrainDto,
   SchedulesDto,
   StateSpanDto,
@@ -325,6 +326,16 @@ export const api = {
     ),
   insights: (vehicleId: string) =>
     request<VehicleInsightsDto>(`/api/vehicles/${vehicleId}/insights`),
+  /**
+   * The nights of parked energy recorded so far, oldest first. The zone is the
+   * calendar this device's days are in, which the server records nights by.
+   */
+  parkedNights: (vehicleId: string, nights: number) =>
+    request<ParkedNightDto[]>(
+      `/api/vehicles/${vehicleId}/parked-nights?nights=${nights}&tz=${encodeURIComponent(
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )}`,
+    ),
   schedules: (vehicleId: string) => request<SchedulesDto>(`/api/vehicles/${vehicleId}/schedules`),
   otaTimeline: (vehicleId: string) => request<OtaTimelineDto>(`/api/vehicles/${vehicleId}/ota`),
   tirePressures: (vehicleId: string, days: number) =>
