@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StateDiff, bucketSeries, timeline } from './state-history.js';
+import { StateDiff, bucketSeries, heldValues, timeline } from './state-history.js';
 
 const t = (iso: string) => Date.parse(iso);
 const HOUR = 3600_000;
@@ -38,6 +38,42 @@ describe('StateDiff', () => {
     expect(recorded).toEqual([3.03, 3.04, 3.05, 3.025]);
   });
 
+  it('records a cell temperature once it has moved 0.5 °C from the last recorded one', () => {
+    for (const field of ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin']) {
+      const diff = new StateDiff();
+      const temp = (value: number) => ({ [field]: { value, timeStamp: '2026-10-01T10:00:00Z' } });
+      // 0.2 °C is under the band, on a grid where a 0.1 band would filter nothing; 0.6 is a change.
+      const recorded = [21.0, 21.2, 21.6].filter((v) => diff.changes(temp(v), 0).length > 0);
+      expect(recorded, field).toEqual([21.0, 21.6]);
+    }
+  });
+
+  it('records all three cell temperatures when one of them moves', () => {
+    const diff = new StateDiff();
+    const frame = (avg: number, max: number, min: number, ts: string) => ({
+      batteryTempAvg: { value: avg, timeStamp: ts },
+      batteryTempMax: { value: max, timeStamp: ts },
+      batteryTempMin: { value: min, timeStamp: ts },
+    });
+    expect(diff.changes(frame(22, 24, 20, '2026-10-01T10:00:00Z'), 0)).toHaveLength(3);
+
+    // Only the hottest cell moved far enough on its own. The frame is still one
+    // reading of the pack, so all three are recorded from it and the average
+    // cannot be left behind saying 22 while the hottest cell says 24.6.
+    expect(
+      diff
+        .changes(frame(22.2, 24.6, 20.1, '2026-10-01T10:00:12Z'), 0)
+        .map((c) => [c.field, c.value]),
+    ).toEqual([
+      ['batteryTempAvg', 22.2],
+      ['batteryTempMax', 24.6],
+      ['batteryTempMin', 20.1],
+    ]);
+
+    // None of them far enough from the frame just recorded: nothing to write.
+    expect(diff.changes(frame(22.3, 24.7, 20.2, '2026-10-01T10:00:24Z'), 0)).toEqual([]);
+  });
+
   it('leaves out GPS and the cloud connection, and uses the fallback time without a stamp', () => {
     const diff = new StateDiff();
     const changes = diff.changes(
@@ -51,6 +87,52 @@ describe('StateDiff', () => {
       t('2026-10-01T11:00:00Z'),
     );
     expect(changes).toEqual([{ field: 'batteryLevel', at: t('2026-10-01T11:00:00Z'), value: 80 }]);
+  });
+});
+
+describe('heldValues', () => {
+  const from = t('2026-10-01T10:00:00Z');
+
+  it('widens the band to reach around its average', () => {
+    // Rows written one field at a time: the hottest cell was recorded cooling
+    // before the average moved, so the two disagree. No pack reads with an
+    // average hotter than its hottest cell, so the band is stretched to it.
+    const rows = heldValues({
+      avg: [
+        { at: from, value: 20 },
+        { at: from + 2 * HOUR, value: 22 },
+      ],
+      max: [
+        { at: from, value: 24 },
+        { at: from + HOUR, value: 21 },
+      ],
+      min: [{ at: from, value: 19 }],
+    });
+    expect(rows.map((r) => [r.avg, r.min, r.max])).toEqual([
+      [20, 19, 24],
+      [20, 19, 21],
+      [22, 19, 22],
+    ]);
+  });
+
+  it('widens the coldest cell to the average when the average falls below it', () => {
+    const rows = heldValues({
+      avg: [{ at: from, value: 20 }],
+      max: [{ at: from, value: 24 }],
+      min: [
+        { at: from, value: 18 },
+        { at: from + HOUR, value: 21 },
+      ],
+    });
+    expect(rows.map((r) => [r.avg, r.min, r.max])).toEqual([
+      [20, 18, 24],
+      [20, 20, 24],
+    ]);
+  });
+
+  it('leaves a field the vehicle never reported empty', () => {
+    const rows = heldValues({ avg: [{ at: from, value: 20 }], min: [], max: [] });
+    expect(rows).toEqual([{ at: from, avg: 20, min: null, max: null }]);
   });
 });
 

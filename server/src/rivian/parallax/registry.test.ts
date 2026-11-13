@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BATTERY_THERMAL_FIELDS,
   PARALLAX_CORE_TOPICS,
   PARALLAX_RVMS,
   PARALLAX_STATE_FIELDS,
@@ -102,6 +103,10 @@ describe('Parallax registry', () => {
         'cabinClimateDriverTemperature',
         'cabinClimateExteriorTemperature',
         'batteryHvThermalEvent',
+        'batteryPowerOutputStatus',
+        'batteryTempAvg',
+        'batteryTempMax',
+        'batteryTempMin',
         'cabinPreconditioningStatus',
         'cabinPreconditioningType',
         'defrostDefogStatus',
@@ -156,6 +161,10 @@ describe('Parallax registry', () => {
         'closureTonneauLocked',
       ]),
     );
+  });
+
+  it('keeps the cell temperature fields in the state fields it writes', () => {
+    expect(PARALLAX_STATE_FIELDS).toEqual(expect.arrayContaining([...BATTERY_THERMAL_FIELDS]));
   });
 
   it('keeps the latest payload of the insight and charging topics', () => {

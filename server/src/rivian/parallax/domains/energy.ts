@@ -3,7 +3,7 @@
  * Rivian app draws (charging curve, session breakdown, cold weather, parked
  * energy).
  */
-import { defineRvm, fieldsOrEmpty, readings, stampReadings } from '../define.js';
+import { defineRvm, fieldsOrEmpty, readings, stampReadings, type Readings } from '../define.js';
 import { decodePayload, f32, readProtoFields, type ProtoField } from '../wire.js';
 
 export const RVM_CHARGING_GRAPH = 'energy_edge_compute.graphs.charging_graph_global';
@@ -139,7 +139,12 @@ export interface BatteryState {
   thermalEvent: boolean | null;
   /** Cell temperatures, °C; only while the vehicle is awake. */
   cellTemps: { avgC: number; maxC: number; minC: number } | null;
+  /** The BMS's verdict on power output: `cold` when the pack limits it; null when not sent. */
+  powerOutput: 'normal' | 'cold' | null;
 }
+
+/** Field 4's verdict: 1 normal, 2 limited by the cold; 0 (unset) and others are unknown. */
+const POWER_OUTPUT: Record<number, 'normal' | 'cold'> = { 1: 'normal', 2: 'cold' };
 
 /**
  * `energy.high_voltage.battery_state`: 1 charge {1 SOC %, 2 capacity kWh},
@@ -162,7 +167,38 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
     thermalEvent: thermal ? thermal.int(1) === 1 || thermal.int(2) === 1 : null,
     cellTemps:
       avg != null && max != null && min != null ? { avgC: avg, maxC: max, minC: min } : null,
+    powerOutput: POWER_OUTPUT[m.int(4) ?? 0] ?? null,
   };
+}
+
+/** The state fields a battery-state frame records: its temperatures and the power-output verdict. */
+export const BATTERY_THERMAL_FIELDS = [
+  'batteryTempAvg',
+  'batteryTempMax',
+  'batteryTempMin',
+  'batteryPowerOutputStatus',
+] as const;
+
+/** A pack's cells sit within this range; a value outside it is a misread, not a temperature. */
+const CELL_TEMP_MIN_C = -40;
+const CELL_TEMP_MAX_C = 100;
+/** An unset `float32` reads as this on every one of the three values. */
+const UNSET_FLOAT = 1e-3;
+
+/**
+ * The pack's cell temperatures as state fields, or null when the frame carries
+ * none. A frame can carry a float's unset default instead of a reading, which a
+ * range check accepts and a chart would draw as a plunge — so all three sitting on
+ * zero is treated as no reading. Tested per frame, not per value: a pack cold
+ * soaked to freezing is ordinary at 0 °C.
+ */
+export function cellTempReadings(cellTemps: BatteryState['cellTemps']): Readings | null {
+  if (!cellTemps) return null;
+  const { avgC, maxC, minC } = cellTemps;
+  if ([avgC, maxC, minC].every((c) => Math.abs(c) <= UNSET_FLOAT)) return null;
+  const inRange = (c: number) => Number.isFinite(c) && c >= CELL_TEMP_MIN_C && c <= CELL_TEMP_MAX_C;
+  if (![avgC, maxC, minC].every(inRange)) return null;
+  return { batteryTempAvg: avgC, batteryTempMax: maxC, batteryTempMin: minC };
 }
 
 /**
@@ -324,10 +360,19 @@ export const batteryState = defineRvm({
         if (battery.thermalEvent != null) {
           put('batteryHvThermalEvent', battery.thermalEvent ? 'on' : 'off');
         }
+        // The Health row shows only the current verdict; recording it gives the cold limit a history.
+        if (battery.powerOutput != null) put('batteryPowerOutputStatus', battery.powerOutput);
+        const temps = cellTempReadings(battery.cellTemps);
+        if (temps) for (const [key, value] of Object.entries(temps)) put(key, value);
       }) ?? {},
       timeStamp,
     ),
-  stateKeys: ['batteryLevel', 'batteryCapacity', 'batteryHvThermalEvent'],
+  stateKeys: [
+    'batteryLevel',
+    'batteryCapacity',
+    'batteryHvThermalEvent',
+    ...BATTERY_THERMAL_FIELDS,
+  ],
   store: true,
   fieldNames: {
     '1.1': 'SOC (%)',

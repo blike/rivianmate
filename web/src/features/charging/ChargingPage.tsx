@@ -18,13 +18,14 @@ import { lastChargedTo } from '../../lib/charging';
 import { useGoToDate } from '../../lib/goToDate';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
+import { PackTempSection } from '../drives/PackTempSection';
 import { CurveChart } from './CurveChart';
 import { EnergySplit } from './EnergySplit';
 import { LiveCard } from './LiveCard';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
-import { chargeStart, notStarted } from './sessions';
+import { chargeEnd, chargeStart, notStarted } from './sessions';
 import { WallboxPanel } from './WallboxPanel';
 
 export function ChargingPage(props: { vehicleId: string }) {
@@ -171,6 +172,23 @@ export function ChargingPage(props: { vehicleId: string }) {
               loading={sessionsPending || (session != null && curvePending)}
               notStarted={session != null && notStarted(session)}
             />
+            {/* The pack's own temperature through the charge, which is what a slow
+                one is usually down to: the section the drive page draws, under
+                the curve instead of under the drive. */}
+            {!teslamate && (
+              <PackTempSection
+                vehicleId={props.vehicleId}
+                span={
+                  session && {
+                    kind: 'charge',
+                    id: session.id,
+                    from: chargeStart(session),
+                    to: chargeEnd(session),
+                  }
+                }
+                loading={sessionsPending}
+              />
+            )}
             {session && <EnergySplit session={session} />}
           </Panel>
 

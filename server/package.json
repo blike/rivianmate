@@ -11,7 +11,8 @@
     "lint": "eslint src",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "demo:scene": "node --env-file-if-exists=../.env --import tsx scripts/demo-scene.ts"
+    "demo:scene": "node --env-file-if-exists=../.env --import tsx scripts/demo-scene.ts",
+    "backfill:cell-temps": "node dist/cli/backfill-cell-temps.js"
   },
   "dependencies": {
     "@fastify/compress": "^9.3.0",

@@ -25,6 +25,11 @@ const UNRECORDED_FIELDS = new Set([
  */
 const DEADBANDS: Readonly<Record<string, number>> = {
   batteryCapacity: 0.1,
+  // Cell temperatures arrive on a 0.1 °C grid, so a 0.1 band filters nothing at all; 0.5 °C is a
+  // real change in a pack and stays below what the Health row prints (whole degrees).
+  batteryTempAvg: 0.5,
+  batteryTempMax: 0.5,
+  batteryTempMin: 0.5,
   tirePressureFrontLeft: 0.01,
   tirePressureFrontRight: 0.01,
   tirePressureRearLeft: 0.01,
@@ -34,6 +39,31 @@ const DEADBANDS: Readonly<Record<string, number>> = {
 const DEADBAND_EPSILON = 1e-9;
 /** Heartbeats are at least this far apart. */
 export const HEARTBEAT_MS = 15 * 60_000;
+/**
+ * How long a reading stands for the time after it before a silence is a silence:
+ * two heartbeat intervals. Heartbeats are written on the first state that arrives
+ * a quarter of an hour after the last one, so while the vehicle is awake they
+ * land a quarter of an hour and a few seconds apart; one interval alone would
+ * call the sync that lands a minute late a silence, and two leave room for it.
+ */
+const SILENCE_MS = 2 * HEARTBEAT_MS;
+
+/** The pack's cell temperatures, which every battery-state frame carries together. */
+const CELL_TEMPERATURES = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
+
+/**
+ * Fields recorded together, keyed by each field in the group. A group is one
+ * reading: the three cell temperatures come off one frame's payload, so a frame
+ * records all of them or none of them. Recorded one at a time, the field that
+ * moved writes while its neighbours stay on the values they were last written
+ * at, and a triple stitched from three frames can show the average cell hotter
+ * than the hottest one — a reading no pack can give.
+ */
+const CHANGE_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  batteryTempAvg: CELL_TEMPERATURES,
+  batteryTempMax: CELL_TEMPERATURES,
+  batteryTempMin: CELL_TEMPERATURES,
+};
 
 type Value = string | number | null;
 
@@ -66,10 +96,19 @@ export class StateDiff {
     fallbackAt: number,
     fields: readonly string[] = Object.keys(state),
   ): StateChange[] {
-    return readingsOf(state, fields, fallbackAt).filter((r) => {
-      if (this.last.has(r.field) && !changed(r.field, this.last.get(r.field)!, r.value)) {
-        return false;
-      }
+    const readings = readingsOf(state, fields, fallbackAt);
+    // What moved, and the rest of any group it belongs to: the frame is one
+    // reading, so it is recorded whole and every field in it is re-seeded from
+    // what the frame actually said.
+    const recording = new Set(
+      readings
+        .filter(
+          (r) => !this.last.has(r.field) || changed(r.field, this.last.get(r.field)!, r.value),
+        )
+        .flatMap((r) => CHANGE_GROUPS[r.field] ?? [r.field]),
+    );
+    return readings.filter((r) => {
+      if (!recording.has(r.field)) return false;
       this.last.set(r.field, r.value);
       return true;
     });
@@ -115,11 +154,14 @@ export class StateHistoryRecorder {
   ) {}
 
   /**
-   * The given fields of a state, as they are now. Values are read before
-   * returning, so later changes to `state` don't affect what's recorded.
+   * The given fields of a state, as they are now — with the rest of any group one
+   * of them belongs to, read from the same state, so a row written for a frame
+   * carries that frame's whole reading. Values are read before returning, so
+   * later changes to `state` don't affect what's recorded.
    */
   record(vehicleId: string, state: VehicleState, fields: readonly string[]): Promise<void> {
-    const snapshot = Object.fromEntries(fields.map((f) => [f, state[f]])) as VehicleState;
+    const whole = [...new Set(fields.flatMap((f) => CHANGE_GROUPS[f] ?? [f]))];
+    const snapshot = Object.fromEntries(whole.map((f) => [f, state[f]])) as VehicleState;
     const seenAt = this.now();
     const run = (this.queues.get(vehicleId) ?? Promise.resolve()).then(() =>
       this.write(vehicleId, snapshot, seenAt),
@@ -315,6 +357,166 @@ export async function numericSeries(
     opening: numeric(opening),
     changes: changes.flatMap((c) => numeric(c) ?? []),
   };
+}
+
+/** One reading of a metric drawn as a band: the line, and the band around it. */
+export interface BandPoint {
+  at: number;
+  avg: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+/** A banded metric's three fields: what its line averages, and what its band spans. */
+export interface BandFields {
+  avg: string;
+  min: string;
+  max: string;
+}
+
+export type BandColumns = Readonly<Record<keyof BandFields, readonly NumericPoint[]>>;
+
+/**
+ * Three fields as one series: each reading holds until its own field's next
+ * one, so a frame that moved only the pack's maximum still carries the average
+ * and the minimum to draw it against. A row at every stamp any of the three
+ * moved, each with the values in effect then.
+ */
+export function heldValues(columns: BandColumns): BandPoint[] {
+  const steps = (Object.keys(columns) as (keyof BandColumns)[]).flatMap((key) =>
+    columns[key].map((p) => ({ key, at: p.at, value: p.value })),
+  );
+  // Ties keep the column order, so a frame's three readings land as one row.
+  steps.sort((a, b) => a.at - b.at);
+  const held: Record<keyof BandFields, number | null> = { avg: null, min: null, max: null };
+  const rows: BandPoint[] = [];
+  let i = 0;
+  while (i < steps.length) {
+    const at = steps[i]!.at;
+    while (i < steps.length && steps[i]!.at === at) {
+      held[steps[i]!.key] = steps[i]!.value;
+      i++;
+    }
+    rows.push({ at, ...bandAroundAverage(held) });
+  }
+  return rows;
+}
+
+/**
+ * A row's three values with the band stretched to reach around the average: an
+ * average above the hottest cell, or below the coldest, is a reading no pack
+ * gives, and drawing it puts the line outside its own shading. A coherent
+ * reading passes through untouched, so this can only ever widen a band.
+ */
+function bandAroundAverage(
+  held: Readonly<Record<keyof BandFields, number | null>>,
+): Record<keyof BandFields, number | null> {
+  const known = [held.avg, held.min, held.max].filter((v): v is number => v != null);
+  if (known.length < 2) return { ...held };
+  return {
+    avg: held.avg,
+    min: held.min == null ? null : Math.min(...known),
+    max: held.max == null ? null : Math.max(...known),
+  };
+}
+
+/**
+ * The series with a row at every heartbeat — the vehicle heard and nothing
+ * moved — and a break wherever a run of them ends.
+ *
+ * A steady vehicle writes no changes at all, so on its own a change-only series
+ * says nothing about a pack holding a temperature: the line reads as silence
+ * when the truth is that it held. A heartbeat is what tells the two apart. Each
+ * one gets the row in effect at that moment, and where two things the vehicle
+ * was heard at are more than two heartbeat intervals apart nothing arrived in
+ * between: the values stop being known one interval after the last of them, and
+ * the row there is empty so a chart breaks rather than drawing across a silence
+ * the vehicle never reported.
+ */
+export function withHeartbeats(
+  rows: readonly BandPoint[],
+  beats: readonly number[],
+  to: number,
+): BandPoint[] {
+  const heard = [...new Set([...rows.map((r) => r.at), ...beats])].sort((a, b) => a - b);
+  const breaks = new Set<number>();
+  for (let i = 0; i < heard.length; i++) {
+    const stop = heard[i]! + HEARTBEAT_MS;
+    if ((heard[i + 1] ?? Infinity) - heard[i]! > SILENCE_MS && stop <= to) breaks.add(stop);
+  }
+  const stamps = [...new Set([...heard, ...breaks])].sort((a, b) => a - b);
+  const out: BandPoint[] = [];
+  let held: BandPoint | null = null;
+  let r = 0;
+  for (const at of stamps) {
+    while (r < rows.length && rows[r]!.at <= at) held = rows[r++]!;
+    // A break wins a stamp it shares with a reading: it is where the values
+    // stopped being known, and a row drawn over it would hide the silence.
+    if (breaks.has(at)) out.push({ at, avg: null, min: null, max: null });
+    else if (held) out.push({ at, avg: held.avg, min: held.min, max: held.max });
+  }
+  return out;
+}
+
+/**
+ * A banded metric over [from, to]: each field's readings held into one series,
+ * as recorded changes or as fixed buckets. Buckets are taken per field, so the
+ * band keeps each field's own extremes over the bucket it covers. With
+ * `heartbeats`, the changes are joined by a row per heartbeat interval and
+ * broken where they stop, so a steady vehicle draws as a line rather than a
+ * gap — see `withHeartbeats`.
+ */
+export async function bandSeries(
+  db: Db,
+  vehicleId: string,
+  fields: BandFields,
+  from: Date,
+  to: Date,
+  intervalMs: number | null,
+  options: { heartbeats?: boolean } = {},
+): Promise<BandPoint[]> {
+  const keys = ['avg', 'min', 'max'] as const;
+  const [series, beats] = await Promise.all([
+    Promise.all(keys.map((key) => numericSeries(db, vehicleId, fields[key], from, to))),
+    // One interval before the window as well: a reading made before it belongs to
+    // a run of hearing that may have started earlier, and only the beats the
+    // series already carries can say whether that run was still going. Buckets
+    // cover each field's own readings, so they are left as they were.
+    options.heartbeats && intervalMs == null
+      ? heartbeatsBetween(db, vehicleId, new Date(from.getTime() - HEARTBEAT_MS), to)
+      : Promise.resolve<number[]>([]),
+  ]);
+  if (intervalMs == null) {
+    // Each reading keeps the stamp it was made at, even when it predates the
+    // window: moved to the window's start it would pass for the values in
+    // effect then, and only the age it carries can tell a fresh reading from a
+    // stale one.
+    const points = (i: number): NumericPoint[] => {
+      const s = series[i]!;
+      return [...(s.opening ? [s.opening] : []), ...s.changes];
+    };
+    return withHeartbeats(
+      heldValues({ avg: points(0), min: points(1), max: points(2) }),
+      beats,
+      to.getTime(),
+    );
+  }
+  const rows = new Map<number, BandPoint>();
+  series.forEach((s, i) => {
+    const key = keys[i]!;
+    const buckets = bucketSeries(s.opening, s.changes, from.getTime(), to.getTime(), intervalMs);
+    for (const b of buckets) {
+      const row = rows.get(b.bucket) ?? { at: b.bucket, avg: null, min: null, max: null };
+      row[key] = b[key];
+      rows.set(b.bucket, row);
+    }
+  });
+  // Each field's extremes are taken over the same window, so a bucket's band
+  // already holds its average; the same widening keeps that true if a mean is
+  // ever rounded outside them.
+  return [...rows.values()]
+    .sort((a, b) => a.at - b.at)
+    .map((row) => ({ at: row.at, ...bandAroundAverage(row) }));
 }
 
 /** The fields as they were at `at`, each stamped with when it last changed. */
