@@ -149,6 +149,58 @@ describe('timed alerts', () => {
     ).toEqual(['Vehicle unlocked', 'Vehicle unlocked']);
   });
 
+  describe('unlocked with someone in the parked vehicle', () => {
+    const unlocked = { ...closed, doorFrontLeftLocked: 'unlocked' };
+    const driving = state({ ...unlocked, powerState: 'go', gearStatus: 'drive' });
+    const sitting = state({ ...unlocked, gearStatus: 'park' });
+    const asleep = state({ ...unlocked, gearStatus: 'park', powerState: 'sleep' });
+    const doorOpen = state({ ...unlocked, gearStatus: 'park', doorFrontLeftClosed: 'open' });
+
+    it('holds while sitting in it after a drive, timing from when it sleeps', () => {
+      expect(
+        run([
+          [driving, 0],
+          [sitting, 5 * MIN],
+          [sitting, 40 * MIN],
+          [asleep, 41 * MIN],
+          [asleep, 50 * MIN],
+          [asleep, 51 * MIN],
+        ]).titles,
+      ).toEqual(['Vehicle unlocked']);
+    });
+
+    it('holds while sitting in it before driving off, once a door has opened and closed', () => {
+      expect(
+        run([
+          [asleep, 0],
+          [doorOpen, 1 * MIN],
+          [sitting, 2 * MIN],
+          [sitting, 30 * MIN],
+        ]).titles,
+      ).toEqual([]);
+    });
+
+    it('still alerts when the vehicle wakes by itself, unlocked', () => {
+      expect(
+        run([
+          [asleep, 0],
+          [sitting, 1 * MIN],
+          [sitting, 11 * MIN],
+        ]).titles,
+      ).toEqual(['Vehicle unlocked']);
+    });
+
+    it('still alerts for a door left open after a drive', () => {
+      expect(
+        run([
+          [driving, 0],
+          [doorOpen, 1 * MIN],
+          [doorOpen, 11 * MIN],
+        ]).titles,
+      ).toEqual(['Driver door left open']);
+    });
+  });
+
   it('sends nothing for alerts that are off', () => {
     const off = { ...allOn, doorOpen: { enabled: false, minutes: 5, awayOnly: false } };
     const open = state({ ...closed, doorFrontLeftClosed: 'open' });
