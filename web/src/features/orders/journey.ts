@@ -7,7 +7,8 @@ import type { Delivery, OrderItem, OrderJourneyDto, OrderVehicle } from '@server
  * status says.
  */
 
-export type MilestoneKey = 'ordered' | 'built' | 'prepared' | 'scheduled' | 'delivered';
+export type MilestoneKey =
+  'reserved' | 'ordered' | 'vin' | 'built' | 'shipped' | 'inspected' | 'prepped' | 'delivered';
 export type MilestoneState = 'done' | 'current' | 'upcoming';
 
 export interface Milestone {
@@ -38,7 +39,27 @@ const VEHICLE_STATUS: Record<string, { label: string; sentence: string }> = {
   DELIVERED: { label: 'Delivered', sentence: 'It’s been delivered' },
 };
 
-const PREPARED = new Set(['PDI_COMPLETED', 'VEHICLE_PREPPED', 'DELIVERED']);
+/**
+ * The vehicle statuses in the order they come (rivian-order-view's observed
+ * ladder, then DELIVERED). A status can skip steps, so reaching one means
+ * those before it are done.
+ */
+const LADDER = [
+  'FACTORY_OK',
+  'FACTORY_GATED',
+  'STAGED_FOR_PDI',
+  'PDI_COMPLETED',
+  'VEHICLE_PREPPED',
+  'DELIVERED',
+] as const;
+
+/** How far up the ladder a status is; -1 for none or one not seen yet. */
+function ladderStep(status: string | null | undefined): number {
+  if (!status) return -1;
+  // Never seen, but between leaving the factory and arriving if it appears.
+  if (status.startsWith('IN_TRANSIT')) return LADDER.indexOf('FACTORY_GATED');
+  return LADDER.indexOf(status as (typeof LADDER)[number]);
+}
 
 export function vehicleStatusLabel(status: string | null | undefined): string | null {
   if (!status) return null;
@@ -81,6 +102,15 @@ export function isDelivered(j: OrderJourneyDto): boolean {
   );
 }
 
+/**
+ * A reservation not yet turned into an order: reserved, and no deposit since
+ * has placed the order (see OrderDetail.reservedDate and orderedDate).
+ */
+export function isReservation(j: OrderJourneyDto): boolean {
+  const detail = parts(j).detail;
+  return detail != null && detail.reservedDate != null && detail.orderedDate == null;
+}
+
 /** "R2", "R1S": the model as people say it. */
 export function modelName(j: OrderJourneyDto): string {
   const { detail, vehicle } = parts(j);
@@ -110,12 +140,27 @@ export function calendarDate(ymd: string | null | undefined, withYear = true): s
   });
 }
 
-/** An ISO instant ("2026-06-16T14:46:39Z") as the local day it fell on. */
-export function instantDate(iso: string | null | undefined): string | null {
+/**
+ * An ISO instant ("2026-06-16T14:46:39Z") as the day it fell on where the
+ * buyer is: in the delivery's time zone when Rivian has one, else the
+ * browser's.
+ */
+export function instantDate(
+  iso: string | null | undefined,
+  timeZone?: string | null,
+): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return calendarDate(iso);
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+  if (timeZone) {
+    try {
+      return d.toLocaleDateString([], { ...opts, timeZone });
+    } catch {
+      // An unknown zone: the browser's will do.
+    }
+  }
+  return d.toLocaleDateString([], opts);
 }
 
 interface WallClock {
@@ -260,64 +305,125 @@ export function placeLine(address: Delivery['address']): string | null {
   return [address.city, address.state].filter(Boolean).join(', ') || null;
 }
 
-/** The five steps from order to delivery, and where this order stands. */
+/**
+ * The steps from reservation to delivery, and where this order stands. Only
+ * the reservation, the order, the build and the delivery have dates: Rivian
+ * dates nothing else, so the steps between say only whether they're done.
+ */
 export function milestones(j: OrderJourneyDto, now = new Date()): Milestone[] {
   const { detail, vehicle, delivery } = parts(j);
   const delivered = isDelivered(j);
   const appt = appointmentView(delivery?.appointment ?? null, now);
+  const zone = delivery?.appointment?.timeZone ?? null;
   const built = vehicle?.actualGeneralAssemblyDate ?? null;
   const planned = vehicle?.plannedBuildDate ?? vehicle?.expectedBuildDate ?? null;
-  const prepared = delivered || (vehicle?.status != null && PREPARED.has(vehicle.status));
+  const step = delivered ? LADDER.indexOf('DELIVERED') : ladderStep(vehicle?.status);
+  const reached = (status: (typeof LADDER)[number]) => step >= LADDER.indexOf(status);
+  const city = delivery?.address?.city ?? null;
+  const deliveryUnknown = j.delivery != null && !j.delivery.ok;
 
-  // Each step's label as it stands: the event once it's happened ("Built"),
-  // the stage while it's under way or ahead ("Build").
-  const steps: (Omit<Milestone, 'state' | 'label'> & { label: [string, string] })[] = [
+  type Step = Omit<Milestone, 'state' | 'label'> & {
+    done: boolean;
+    /** The event once it's happened, the stage while under way, and ahead. */
+    label: { done: string; current: string; upcoming?: string };
+    /** A note only while it's the current step. */
+    currentNote?: string | null;
+  };
+  const steps: (Step | null)[] = [
+    detail?.reservedDate
+      ? {
+          key: 'reserved',
+          done: true,
+          label: { done: 'Reserved', current: 'Reservation' },
+          date: instantDate(detail.reservedDate, zone),
+          note: null,
+        }
+      : null,
     {
       key: 'ordered',
-      label: ['Ordered', 'Order'],
-      date: instantDate(detail?.orderDate),
+      done: !isReservation(j),
+      label: { done: 'Ordered', current: 'Order' },
+      date: isReservation(j) ? null : instantDate(detail?.orderedDate ?? detail?.orderDate, zone),
+      note: null,
+      currentNote: 'Waiting for your invitation to configure',
+    },
+    {
+      key: 'vin',
+      done: Boolean(vehicle?.vin || delivery?.vin) || built != null || step >= 0,
+      label: { done: 'VIN assigned', current: 'VIN' },
+      date: null,
       note: null,
     },
     {
       key: 'built',
-      label: ['Built', 'Build'],
+      done: built != null || step >= 0,
+      label: { done: 'Built', current: 'Build' },
       date: calendarDate(built),
       note: !built && planned ? `Planned for ${calendarDate(planned)}` : null,
     },
     {
-      key: 'prepared',
-      label: ['Inspected', 'Inspection'],
+      key: 'shipped',
+      // At the delivery center for inspection: arrived.
+      done: reached('STAGED_FOR_PDI'),
+      // On the way only once it's left the factory; built and still there, it's ahead.
+      label: {
+        done: city ? `Arrived in ${city}` : 'Arrived',
+        current: reached('FACTORY_GATED')
+          ? city
+            ? `On the way to ${city}`
+            : 'On the way'
+          : city
+            ? `Shipping to ${city}`
+            : 'Shipping',
+        upcoming: city ? `Shipping to ${city}` : 'Shipping',
+      },
       date: null,
-      note: !prepared && built ? vehicleStatusLabel(vehicle?.status) : null,
+      note: null,
     },
     {
-      key: 'scheduled',
-      label: ['Scheduled', 'Scheduling'],
-      // Once delivered, the day is the delivery's: said there, not twice.
-      date: appt && !delivered ? appt.shortDate : null,
-      note: appt && !delivered ? appt.time : null,
+      key: 'inspected',
+      done: reached('PDI_COMPLETED'),
+      label: { done: 'Inspected', current: 'Inspection' },
+      date: null,
+      note: null,
+      currentNote: reached('STAGED_FOR_PDI') ? 'Waiting for inspection' : null,
+    },
+    {
+      key: 'prepped',
+      done: reached('VEHICLE_PREPPED'),
+      label: { done: 'Prepped for delivery', current: 'Delivery prep' },
+      date: null,
+      note: null,
     },
     {
       key: 'delivered',
-      label: ['Delivered', 'Delivery'],
-      date: delivered && appt ? appt.shortDate : null,
-      note: null,
+      done: delivered,
+      label: { done: 'Delivered', current: 'Delivery day' },
+      date: appt?.shortDate ?? null,
+      // A failed lookup is unknown, never "not booked".
+      note: delivered
+        ? null
+        : appt
+          ? [appt.weekday, relativeDay(appt.daysAway), appt.time].filter(Boolean).join(' · ')
+          : deliveryUnknown
+            ? null
+            : 'Not booked yet',
     },
   ];
-  const done: Record<MilestoneKey, boolean> = {
-    ordered: true,
-    built: built != null || prepared,
-    prepared,
-    scheduled: appt != null || delivered,
-    delivered,
-  };
   let currentGiven = false;
-  return steps.map(({ label: [happened, ahead], ...s }) => {
-    if (done[s.key]) return { ...s, label: happened, state: 'done' };
-    const state: MilestoneState = currentGiven ? 'upcoming' : 'current';
-    currentGiven = true;
-    return { ...s, label: ahead, state };
-  });
+  return steps
+    .filter((s): s is Step => s != null)
+    .map(({ done, label, currentNote, ...s }) => {
+      if (done) return { ...s, label: label.done, state: 'done' };
+      const state: MilestoneState = currentGiven ? 'upcoming' : 'current';
+      currentGiven = true;
+      return {
+        ...s,
+        label: state === 'upcoming' ? (label.upcoming ?? label.current) : label.current,
+        note: s.note ?? (state === 'current' ? (currentNote ?? null) : null),
+        state,
+      };
+    });
 }
 
 export interface Headline {
@@ -397,6 +503,14 @@ export function headline(
     };
   }
   const planned = calendarDate(vehicle?.plannedBuildDate ?? vehicle?.expectedBuildDate);
+  if (isReservation(j)) {
+    return {
+      kicker: 'Reserved',
+      title: `Your ${model} is reserved`,
+      summary:
+        'Rivian will invite you to configure it and place your order. Each step will show here as it happens.',
+    };
+  }
   return {
     kicker: 'On order',
     title: `Your ${model} is on order`,

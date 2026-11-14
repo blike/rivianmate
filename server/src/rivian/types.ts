@@ -98,6 +98,18 @@ export interface OrderDetail {
   /** Rivian's build record, once the order is assigned to one. */
   vehicle: OrderVehicle | null;
   items: OrderItem[];
+  /**
+   * When the vehicle was reserved: the first deposit, when a later one placed
+   * the order. Null when it was ordered outright.
+   */
+  reservedDate: string | null;
+  /**
+   * When the order was placed: the deposit completing the vehicle deposit,
+   * or the orderDate when the payments don't say. Null while still a
+   * reservation. Payments themselves are read only for these two dates and
+   * never leave the server.
+   */
+  orderedDate: string | null;
   /** The earliest estimated delivery window among the order's fulfillments. */
   estimatedDelivery: { start: string | null; end: string | null } | null;
 }
@@ -124,6 +136,19 @@ export interface OrderVehicle {
    * VEHICLE_PREPPED, DELIVERED. Steps can be skipped, and it lags the car by days.
    */
   status: string | null;
+}
+
+/**
+ * A payment recorded against an order, as far as it's read: enough to date
+ * the reservation and the order. Seen: intent DEPOSIT (the reservation's
+ * $100 and the $400 completing the vehicle deposit, or $500 at once) and
+ * DOWN_PAYMENT (the balance); status SUCCEEDED, PENDING, CANCELED.
+ */
+export interface OrderPayment {
+  amount: number | null;
+  status: string | null;
+  intent: string | null;
+  date: string | null;
 }
 
 export interface OrderItem {
