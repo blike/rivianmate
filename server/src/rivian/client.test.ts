@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RivianClient } from './client.js';
+import { RivianClient, orderDates } from './client.js';
 import { RivianGovernor } from './governor.js';
-import { RivianCooldownError, RivianRateLimitError, RivianUnauthenticatedError } from './types.js';
+import {
+  type OrderPayment,
+  RivianCooldownError,
+  RivianRateLimitError,
+  RivianUnauthenticatedError,
+} from './types.js';
 
 type Handler = (op: string, headers: Record<string, string>) => Response;
 
@@ -221,6 +226,26 @@ describe('RivianClient', () => {
                     expectedGeneralAssemblyStartDate: '2027-01-15',
                     status: 'VEHICLE_PREPPED',
                   },
+                  payments: [
+                    {
+                      amount: '58302.90',
+                      status: 'PENDING',
+                      intent: 'DOWN_PAYMENT',
+                      date: '2027-01-28T09:14:00.000Z',
+                    },
+                    {
+                      amount: 100,
+                      status: 'SUCCEEDED',
+                      intent: 'DEPOSIT',
+                      date: '2026-11-20T09:30:00.220Z',
+                    },
+                    {
+                      amount: '400.00',
+                      status: 'SUCCEEDED',
+                      intent: 'DEPOSIT',
+                      date: '2027-01-02T18:00:00.000Z',
+                    },
+                  ],
                   items: [
                     {
                       title: 'Rivian R2',
@@ -256,6 +281,9 @@ describe('RivianClient', () => {
             options: [{ group: 'PAINT', id: 'P1', name: 'Launch Green' }],
           },
         ],
+        // Reserved for $100; the $400 completing the deposit placed the order.
+        reservedDate: '2026-11-20T09:30:00.220Z',
+        orderedDate: '2027-01-02T18:00:00.000Z',
         estimatedDelivery: { start: '2027-02-01', end: '2027-02-05' },
       });
       const urls = vi.mocked(fetch).mock.calls.map(([url]) => url);
@@ -347,5 +375,60 @@ describe('RivianClient', () => {
         o1: { 'three-quarter': 'https://render/o1/three-quarter/dark.png' },
       });
     });
+  });
+});
+
+describe('orderDates', () => {
+  const pay = (date: string, amount: number | null, over: Partial<OrderPayment> = {}) => ({
+    amount,
+    status: 'SUCCEEDED',
+    intent: 'DEPOSIT',
+    date,
+    ...over,
+  });
+  // The reservation deposit creates the order record: 220 ms apart.
+  const ORDER_DATE = '2025-09-02T15:20:11.000Z';
+  const reservation = pay('2025-09-02T15:20:11.220Z', 100);
+  const balance = pay('2026-10-28T09:14:00.000Z', 58302.9, { intent: 'DOWN_PAYMENT' });
+
+  it('keeps a reservation’s $100 deposit a reservation, not yet ordered', () => {
+    expect(orderDates(ORDER_DATE, [reservation])).toEqual({
+      reservedDate: '2025-09-02T15:20:11.220Z',
+      orderedDate: null,
+    });
+  });
+
+  it('dates the order by the deposit completing the vehicle deposit', () => {
+    const placed = pay('2026-04-02T10:21:00.000Z', 400);
+    expect(orderDates(ORDER_DATE, [balance, placed, reservation])).toEqual({
+      reservedDate: '2025-09-02T15:20:11.220Z',
+      orderedDate: '2026-04-02T10:21:00.000Z',
+    });
+  });
+
+  it('counts deposits until they reach the vehicle deposit, however they’re split', () => {
+    const second = pay('2026-01-10T12:00:00.000Z', 100);
+    const third = pay('2026-04-02T10:21:00.000Z', 300);
+    expect(orderDates(ORDER_DATE, [reservation, second, third]).orderedDate).toBe(
+      '2026-04-02T10:21:00.000Z',
+    );
+  });
+
+  it('finds no reservation behind a $500 deposit, the balance placing nothing', () => {
+    expect(orderDates(ORDER_DATE, [pay('2025-09-02T15:20:11.220Z', 500), balance])).toEqual({
+      reservedDate: null,
+      orderedDate: '2025-09-02T15:20:11.220Z',
+    });
+  });
+
+  it('ignores a deposit that never went through', () => {
+    const failed = pay('2026-04-02T10:21:00.000Z', 400, { status: 'CANCELED' });
+    expect(orderDates(ORDER_DATE, [reservation, failed]).orderedDate).toBeNull();
+  });
+
+  it('falls back to the order date when the payments don’t say', () => {
+    const outright = { reservedDate: null, orderedDate: ORDER_DATE };
+    expect(orderDates(ORDER_DATE, [])).toEqual(outright);
+    expect(orderDates(ORDER_DATE, [pay('2025-09-02T15:20:11.220Z', null)])).toEqual(outright);
   });
 });

@@ -208,31 +208,38 @@ function Stage(props: { journey: OrderJourneyDto; model: string }) {
   );
 }
 
+/**
+ * The steps down the card, or across it from xl where a column each has room
+ * for its label. The date sits under the label either way.
+ */
 function Milestones(props: { steps: Milestone[] }) {
   const { steps } = props;
   return (
     <section className="card px-5 py-6 sm:px-7" aria-label="Progress">
-      <ol className="grid gap-0 sm:grid-cols-5">
+      <ol
+        className="grid gap-0 xl:grid-cols-(--steps)"
+        style={{ '--steps': `repeat(${steps.length}, minmax(0, 1fr))` } as CSSProperties}
+      >
         {steps.map((s, i) => {
           const next = steps[i + 1];
           const reached = s.state === 'done' && next != null && next.state !== 'upcoming';
           return (
             <li
               key={s.key}
-              className="relative grid grid-cols-[1.25rem_1fr] gap-x-4 pb-6 last:pb-0 sm:block sm:pr-3 sm:pb-0"
+              className="relative grid grid-cols-[1.25rem_1fr] gap-x-4 pb-5 last:pb-0 xl:block xl:pr-3 xl:pb-0"
               aria-current={s.state === 'current' ? 'step' : undefined}
             >
               {next && (
                 <>
-                  {/* Vertical on a phone, horizontal from sm. */}
+                  {/* Down the card, then across it from xl. */}
                   <span
                     aria-hidden
-                    className="absolute top-6 bottom-1 left-2.25 w-px sm:hidden"
+                    className="absolute top-6 bottom-1 left-2.25 w-px xl:hidden"
                     style={{ background: reached ? 'var(--accent)' : 'var(--border)' }}
                   />
                   <span
                     aria-hidden
-                    className="absolute top-2.5 right-0 left-8 hidden h-px sm:block"
+                    className="absolute top-2.5 right-0 left-8 hidden h-px xl:block"
                     style={{
                       background: reached
                         ? 'var(--accent)'
@@ -244,7 +251,7 @@ function Milestones(props: { steps: Milestone[] }) {
                 </>
               )}
               <StepDot state={s.state} />
-              <div className="sm:mt-4">
+              <div className="min-w-0 xl:mt-4">
                 <div
                   className={`text-sm font-medium ${s.state === 'upcoming' ? 'text-(--text-muted)' : 'text-(--text-primary)'}`}
                 >

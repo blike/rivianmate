@@ -29,6 +29,7 @@ import {
   Delivery,
   LoginResult,
   OrderDetail,
+  OrderPayment,
   OrderSnapshot,
   OrderVehicle,
   OtaReleaseNotes,
@@ -294,7 +295,9 @@ export class RivianClient implements RivianApi {
 
   async getOrder(orderId: string): Promise<OrderDetail | null> {
     type Window = { startDate: string | null; endDate: string | null };
-    type Raw = Partial<Omit<OrderDetail, 'vehicle' | 'items' | 'estimatedDelivery'>> & {
+    type Raw = Partial<
+      Omit<OrderDetail, 'vehicle' | 'items' | 'reservedDate' | 'orderedDate' | 'estimatedDelivery'>
+    > & {
       vehicle: (Partial<Omit<OrderVehicle, 'modelYear'>> & { modelYear?: string | number }) | null;
       items:
         | {
@@ -305,6 +308,14 @@ export class RivianClient implements RivianApi {
                 | { optionId: string | null; optionName: string | null; groupId: string | null }[]
                 | null;
             } | null;
+          }[]
+        | null;
+      payments:
+        | {
+            amount: number | string | null;
+            status: string | null;
+            intent: string | null;
+            date: string | null;
           }[]
         | null;
       fulfillmentInfo: {
@@ -324,6 +335,15 @@ export class RivianClient implements RivianApi {
       .filter((w): w is Window => Boolean(w?.startDate || w?.endDate))
       .sort((a, b) => (a.startDate ?? '').localeCompare(b.startDate ?? ''));
     const window = windows[0];
+    const payments: OrderPayment[] = (o.payments ?? []).map((p) => {
+      const amount = p.amount != null ? Number(p.amount) : null;
+      return {
+        amount: amount != null && Number.isFinite(amount) ? amount : null,
+        status: p.status ?? null,
+        intent: p.intent ?? null,
+        date: p.date ?? null,
+      };
+    });
     return {
       id: String(o.id ?? orderId),
       type: o.type ?? null,
@@ -354,6 +374,7 @@ export class RivianClient implements RivianApi {
           name: opt.optionName ?? null,
         })),
       })),
+      ...orderDates(o.orderDate ?? null, payments),
       estimatedDelivery: window
         ? { start: window.startDate ?? null, end: window.endDate ?? null }
         : null,
@@ -661,3 +682,37 @@ function bestRenders<I extends RenderImage>(
 }
 
 export { APOLLO_CLIENT_NAME };
+
+/**
+ * The vehicle deposit an order is placed with: $100 reserves, and the order
+ * is placed by the deposit bringing the total to this (seen on R2 orders,
+ * Nov 2026; $500 at once without a reservation).
+ */
+export const VEHICLE_DEPOSIT = 500;
+
+/**
+ * When the vehicle was reserved and when it was ordered. Rivian keeps no date
+ * for either: `orderDate` is when the order record was created, by the first
+ * deposit (the two are milliseconds apart), and isn't touched when the order
+ * is placed. The order is placed by the deposit that brings the succeeded
+ * deposits to VEHICLE_DEPOSIT; a reservation's deposit alone falls short.
+ * The balance (DOWN_PAYMENT) places nothing. Without deposits to go by, or
+ * with one whose amount can't be read, the order counts as placed on
+ * `orderDate`, as before payments were read.
+ */
+export function orderDates(
+  orderDate: string | null,
+  payments: OrderPayment[],
+): Pick<OrderDetail, 'reservedDate' | 'orderedDate'> {
+  const deposits = payments
+    .filter((p) => p.intent === 'DEPOSIT' && p.status === 'SUCCEEDED' && p.date)
+    .sort((a, b) => Date.parse(a.date!) - Date.parse(b.date!) || a.date!.localeCompare(b.date!));
+  const outright = { reservedDate: null, orderedDate: orderDate };
+  if (deposits.length === 0 || deposits.some((p) => p.amount == null)) return outright;
+  let total = 0;
+  const placing = deposits.findIndex((p) => (total += p.amount!) >= VEHICLE_DEPOSIT);
+  const reservedDate = deposits[0]!.date;
+  if (placing === -1) return { reservedDate, orderedDate: null };
+  if (placing === 0) return { reservedDate: null, orderedDate: deposits[0]!.date };
+  return { reservedDate, orderedDate: deposits[placing]!.date };
+}
