@@ -65,6 +65,12 @@ const BREAKDOWN_MATCH_FRACTION = 0.1;
 const LIVE_SOC_MAX_GAP_MS = 5 * 60_000;
 /** Finished sessions older than this don't take a breakdown. */
 const BREAKDOWN_MAX_AGE_MS = 7 * 86_400_000;
+/**
+ * A stretch's counter going back by more than this starts a new one: Rivian
+ * resets its totals when charging restarts, and the last kWh before a pause can
+ * be a rounding step from the one after it.
+ */
+const STRETCH_RESTART_SLACK_KWH = 0.5;
 
 interface OpenSession {
   id: number;
@@ -75,7 +81,64 @@ interface OpenSession {
   /** Seconds charged in finished stretches; the running one is `chargingSince`. */
   chargingSeconds: number;
   chargingSince: number | null;
+  /**
+   * Rivian's totals for the stretches already finished: each counter restarts
+   * at 0 when charging restarts, so a session's total is this plus the stretch
+   * in progress (`stretch`). Set from the stored row when a session resumes.
+   */
+  finished: StretchTotals;
+  /** Rivian's totals for the stretch in progress, as last reported. */
+  stretch: StretchTotals;
+  /** Minutes Rivian had counted into `stretch` when it last reported. */
+  stretchMinutes: number;
+  /**
+   * The last stretch banked into `finished`, kept so that a message arriving
+   * after charging stopped replaces it rather than being counted again.
+   */
+  banked: { minutes: number; totals: StretchTotals } | null;
+  /** Whether the totals above have been lined up with the stored row after a restart. */
+  totalsSettled: boolean;
+  /** The stretch that was running when the stored row was written, if any. */
+  resumedStretch: number | null;
 }
+
+/** The totals a `charge_session_breakdown` carries, for one stretch or a session. */
+interface StretchTotals {
+  energyKwh: number;
+  packKwh: number;
+  thermalKwh: number;
+  rangeAddedKm: number;
+}
+
+const NO_TOTALS: StretchTotals = Object.freeze({
+  energyKwh: 0,
+  packKwh: 0,
+  thermalKwh: 0,
+  rangeAddedKm: 0,
+});
+
+const addTotals = (a: StretchTotals, b: StretchTotals): StretchTotals => ({
+  energyKwh: a.energyKwh + b.energyKwh,
+  packKwh: a.packKwh + b.packKwh,
+  thermalKwh: a.thermalKwh + b.thermalKwh,
+  rangeAddedKm: a.rangeAddedKm + b.rangeAddedKm,
+});
+
+/** The totals a `charge_session_breakdown` reports. */
+const totalsOf = (b: ChargeBreakdown): StretchTotals => ({
+  energyKwh: b.totalKwh,
+  packKwh: b.packKwh,
+  thermalKwh: b.thermalKwh,
+  rangeAddedKm: b.rangeAddedKm ?? 0,
+});
+
+/** What `a` has over `b`, never below zero: rounding can put a stretch over its own session. */
+const subtractTotals = (a: StretchTotals, b: StretchTotals): StretchTotals => ({
+  energyKwh: Math.max(0, a.energyKwh - b.energyKwh),
+  packKwh: Math.max(0, a.packKwh - b.packKwh),
+  thermalKwh: Math.max(0, a.thermalKwh - b.thermalKwh),
+  rangeAddedKm: Math.max(0, a.rangeAddedKm - b.rangeAddedKm),
+});
 
 /** What vehicle state says about charging, timed by Rivian's stamps. */
 interface PlugReading {
@@ -322,6 +385,23 @@ export class ChargingMonitor {
       await this.db.insert(chargingCurvePoints).values(rows).onConflictDoNothing();
   }
 
+  /** Stores a session's totals as they now stand. */
+  private async writeTotals(
+    open: OpenSession,
+    totals: StretchTotals,
+    b: ChargeBreakdown,
+  ): Promise<void> {
+    await this.db
+      .update(chargingSessions)
+      .set({
+        packKwh: totals.packKwh,
+        thermalKwh: totals.thermalKwh,
+        energyKwh: totals.energyKwh,
+        ...(b.rangeAddedKm != null ? { rangeAddedKm: totals.rangeAddedKm } : {}),
+      })
+      .where(eq(chargingSessions.id, open.id));
+  }
+
   private async applyBreakdown(vehicleId: string, b: ChargeBreakdown, at: number): Promise<void> {
     const matches = (chargingSeconds: number) =>
       Math.abs(b.chargingMinutes * 60 - chargingSeconds) <=
@@ -330,15 +410,63 @@ export class ChargingMonitor {
 
     const open = this.openSessions.get(vehicleId);
     if (open) {
-      const running = open.chargingSince !== null ? (this.now() - open.chargingSince) / 1000 : 0;
-      if (!matches(open.chargingSeconds + running)) return;
+      const counted = b.chargingMinutes * 60;
+      const totals = totalsOf(b);
+
+      if (open.chargingSince === null) {
+        // Nothing is charging, so the only message that belongs here is the last
+        // word on the stretch just finished: it replaces what that stretch had
+        // (a re-send repeats it) instead of adding a second copy of it.
+        const banked = open.banked;
+        if (!banked || !matches(banked.minutes * 60)) return;
+        if (b.totalKwh + STRETCH_RESTART_SLACK_KWH < banked.totals.energyKwh) return;
+        // A message that carries no range says nothing about it, so the stretch
+        // keeps what it had rather than losing it.
+        const closing: StretchTotals = {
+          ...totals,
+          rangeAddedKm: b.rangeAddedKm ?? banked.totals.rangeAddedKm,
+        };
+        open.finished = addTotals(subtractTotals(open.finished, banked.totals), closing);
+        open.banked = { minutes: b.chargingMinutes, totals: closing };
+        await this.writeTotals(open, open.finished, b);
+        this.observe(vehicleId, 'parallax', at, [['energyKwh', open.finished.energyKwh]]);
+        return;
+      }
+
+      // The counter restarts with each stretch, so it is the stretch in progress
+      // it has to match, not the session's charging time: a session that paused
+      // and restarted would otherwise never take another breakdown.
+      if (!matches((this.now() - open.chargingSince) / 1000)) return;
+      // Within one stretch the counter only grows, so a message behind what this
+      // stretch has already reported is an older one, not a new reading.
+      if (open.stretchMinutes > 0 && counted < open.stretchMinutes * 60 - 60) return;
+
+      if (!open.totalsSettled) {
+        open.totalsSettled = true;
+        // A stretch that was running when the row was written is already in it,
+        // so what the row has over its report is the stretches before it. One
+        // that started since the row was written is in none of it.
+        if (open.resumedStretch !== null && open.resumedStretch === open.chargingSince) {
+          open.finished = subtractTotals(open.finished, totals);
+        }
+      }
+      open.stretch = {
+        ...totals,
+        // A message without a range says nothing about it, so the stretch keeps
+        // the one it had rather than banking a zero for it later.
+        rangeAddedKm: b.rangeAddedKm ?? open.stretch.rangeAddedKm,
+      };
+      open.stretchMinutes = b.chargingMinutes;
+      const sum = addTotals(open.finished, open.stretch);
+
       // Rivian's running totals for the session in progress.
       await this.db
         .update(chargingSessions)
         .set({
-          ...split,
-          energyKwh: b.totalKwh,
-          ...(b.rangeAddedKm != null ? { rangeAddedKm: b.rangeAddedKm } : {}),
+          packKwh: sum.packKwh,
+          thermalKwh: sum.thermalKwh,
+          energyKwh: sum.energyKwh,
+          ...(b.rangeAddedKm != null ? { rangeAddedKm: sum.rangeAddedKm } : {}),
           // Rivian's running total so far, so each message replaces the last;
           // a cost the owner entered stays.
           ...(b.cost
@@ -353,8 +481,8 @@ export class ChargingMonitor {
       // the last ones. Readings the message doesn't carry stay unknown.
       const charging = this.liveState(vehicleId).isCharging(this.now());
       this.observe(vehicleId, 'parallax', at, [
-        ['energyKwh', b.totalKwh],
-        ...(b.rangeAddedKm != null ? [['rangeAddedKm', b.rangeAddedKm] as const] : []),
+        ['energyKwh', sum.energyKwh],
+        ...(b.rangeAddedKm != null ? [['rangeAddedKm', sum.rangeAddedKm] as const] : []),
         ...(charging && b.powerKw != null ? [['powerKw', b.powerKw] as const] : []),
         ...(charging && b.rangeKmPerHour != null
           ? [['rangeKmPerHour', b.rangeKmPerHour] as const]
@@ -621,11 +749,24 @@ export class ChargingMonitor {
 
     const changes: Partial<typeof chargingSessions.$inferInsert> = {};
     if (reading.charging && open.chargingSince === null) {
+      // The stretch that was banked can no longer take a closing message: the
+      // car is charging again, so anything now belongs to this stretch.
+      open.banked = null;
       open.chargingSince = Math.max(reading.chargingAt, open.startedAt);
       changes.chargingSince = new Date(open.chargingSince);
     } else if (!reading.charging && open.chargingSince !== null) {
       open.chargingSeconds += stretchSeconds(open.chargingSince, reading.chargingAt);
       open.chargingSince = null;
+      // What this stretch reached is the whole of it: bank that, and keep it so
+      // its closing message can replace it rather than be counted again.
+      open.finished = addTotals(open.finished, open.stretch);
+      // Only a stretch that reported anything can have a closing message to
+      // take; one that never did stays out of the way of the row's total.
+      if (open.stretchMinutes > 0) {
+        open.banked = { minutes: open.stretchMinutes, totals: open.stretch };
+      }
+      open.stretch = NO_TOTALS;
+      open.stretchMinutes = 0;
       changes.chargingSeconds = open.chargingSeconds;
       changes.chargingSince = null;
     }
@@ -674,6 +815,12 @@ export class ChargingMonitor {
       maxPowerKw: 0,
       chargingSeconds: 0,
       chargingSince: init.chargingSince,
+      finished: NO_TOTALS,
+      stretch: NO_TOTALS,
+      stretchMinutes: 0,
+      banked: null,
+      totalsSettled: true,
+      resumedStretch: null,
     };
     this.openSessions.set(vehicleId, open);
     this.liveState(vehicleId).forgetSessionReadings(init.startedAt);
@@ -751,8 +898,13 @@ export class ChargingMonitor {
       .update(chargingSessions)
       .set({
         ...(soc != null ? { endSoc: soc } : {}),
-        energyKwh: num(session.totalChargedEnergy?.value),
-        rangeAddedKm: num(session.rangeAddedThisSession?.value),
+        // Keep the total we already have when the feed carries none.
+        ...(num(session.totalChargedEnergy?.value) != null
+          ? { energyKwh: num(session.totalChargedEnergy?.value) }
+          : {}),
+        ...(num(session.rangeAddedThisSession?.value) != null
+          ? { rangeAddedKm: num(session.rangeAddedThisSession?.value) }
+          : {}),
         // Only when the push feed reported power, so Parallax figures stand.
         ...(open.powerCount
           ? { avgPowerKw: open.powerSum / open.powerCount, maxPowerKw: open.maxPowerKw }
@@ -886,6 +1038,10 @@ export class ChargingMonitor {
         startedAt: chargingSessions.startedAt,
         chargingSeconds: chargingSessions.chargingSeconds,
         chargingSince: chargingSessions.chargingSince,
+        energyKwh: chargingSessions.energyKwh,
+        packKwh: chargingSessions.packKwh,
+        thermalKwh: chargingSessions.thermalKwh,
+        rangeAddedKm: chargingSessions.rangeAddedKm,
         lastSampleAt: sql<
           string | null
         >`(SELECT MAX(ts) FROM charging_curve_points p WHERE p.session_id = ${chargingSessions.id} AND p.source <> 'forecast')`,
@@ -900,6 +1056,12 @@ export class ChargingMonitor {
         lastSampleAt: row.lastSampleAt ? new Date(row.lastSampleAt) : null,
         chargingSeconds: row.chargingSeconds,
         chargingSince: row.chargingSince,
+        reported: {
+          energyKwh: row.energyKwh,
+          packKwh: row.packKwh,
+          thermalKwh: row.thermalKwh,
+          rangeAddedKm: row.rangeAddedKm,
+        },
       };
       const previous = this.resumable.get(row.vehicleId);
       if (previous) await this.closeSession(previous); // only the newest can still be running
@@ -946,6 +1108,19 @@ export class ChargingMonitor {
       maxPowerKw: stats?.max ?? 0,
       chargingSeconds: leftover.chargingSeconds ?? 0,
       chargingSince: leftover.chargingSince?.getTime() ?? null,
+      // What Rivian had reported is banked until the first breakdown says how
+      // much of it belongs to the stretch that was in progress.
+      finished: {
+        energyKwh: leftover.reported.energyKwh ?? 0,
+        packKwh: leftover.reported.packKwh ?? 0,
+        thermalKwh: leftover.reported.thermalKwh ?? 0,
+        rangeAddedKm: leftover.reported.rangeAddedKm ?? 0,
+      },
+      stretch: NO_TOTALS,
+      stretchMinutes: 0,
+      banked: null,
+      totalsSettled: false,
+      resumedStretch: leftover.chargingSince?.getTime() ?? null,
     });
     this.log.info({ vehicleId }, 'charging session resumed');
   }
