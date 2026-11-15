@@ -636,18 +636,77 @@ export async function movingSeconds(db: Db, driveIds: number[]): Promise<Map<num
   ) as Map<number, number>;
 }
 
-/** Fastest recorded speed per drive (km/h). */
+/**
+ * A speed reading is only checked against the track when its fixes are close
+ * together; further apart, the ground covered says too little.
+ */
+const SPEED_SPAN_MAX_S = 30;
+/**
+ * How much faster than the ground around it a real reading may be, and the
+ * floor that keeps a crawl from tripping the check.
+ */
+const SPEED_SPAN_FACTOR = 1.15;
+const SPEED_SPAN_SLACK_KMH = 5;
+
+/**
+ * Fastest recorded speed per drive (km/h).
+ *
+ * A reading is dropped when it is both an isolated spike and impossible for the
+ * ground it covers: higher than the fix either side of it, and higher than the
+ * two segments between them allow. Rivian's navigation fixes can carry
+ * a speed the vehicle never held — one fix at a time, well over its neighbours,
+ * while the ground covered across it agrees with them — and a plain MAX reports
+ * it as the drive's top speed. A steady cruise is bounded by its own segment
+ * means, so only impossible samples go; a reading on the way up or down a ramp
+ * is left alone, since it is not higher than both neighbours.
+ */
 export async function maxSpeeds(db: Db, driveIds: number[]): Promise<Map<number, number>> {
   if (driveIds.length === 0) return new Map();
-  const rows = await db
-    .select({
-      driveId: locationPoints.driveId,
-      max: sql<number | null>`MAX(${locationPoints.speedKmh})`,
-    })
-    .from(locationPoints)
-    .where(inArray(locationPoints.driveId, driveIds))
-    .groupBy(locationPoints.driveId);
+  const rows = await db.execute<{ drive_id: number; max: number | null }>(sql`
+    WITH fixes AS (
+      SELECT drive_id, speed_kmh, ts, lat::float8 AS lat, lon::float8 AS lon,
+             lag(speed_kmh) OVER w AS prev_speed, lag(ts) OVER w AS prev_ts,
+             lag(lat::float8) OVER w AS prev_lat, lag(lon::float8) OVER w AS prev_lon,
+             lead(speed_kmh) OVER w AS next_speed, lead(ts) OVER w AS next_ts,
+             lead(lat::float8) OVER w AS next_lat, lead(lon::float8) OVER w AS next_lon
+      FROM location_points
+      WHERE ${inArray(locationPoints.driveId, driveIds)}
+        AND (abs(lat) > 1e-4 OR abs(lon) > 1e-4)
+      WINDOW w AS (PARTITION BY drive_id ORDER BY ts)
+    ),
+    spans AS (
+      SELECT drive_id, speed_kmh, prev_speed, next_speed,
+             CASE WHEN EXTRACT(EPOCH FROM ts - prev_ts) BETWEEN 1 AND ${SPEED_SPAN_MAX_S}
+             THEN 2 * 6371 * asin(least(1, sqrt(
+               sin(radians(lat - prev_lat) / 2) ^ 2 +
+               cos(radians(lat)) * cos(radians(prev_lat)) * sin(radians(lon - prev_lon) / 2) ^ 2
+             ))) * 3600 / EXTRACT(EPOCH FROM ts - prev_ts) END AS prev_kmh,
+             CASE WHEN EXTRACT(EPOCH FROM next_ts - ts) BETWEEN 1 AND ${SPEED_SPAN_MAX_S}
+             THEN 2 * 6371 * asin(least(1, sqrt(
+               sin(radians(next_lat - lat) / 2) ^ 2 +
+               cos(radians(lat)) * cos(radians(next_lat)) * sin(radians(next_lon - lon) / 2) ^ 2
+             ))) * 3600 / EXTRACT(EPOCH FROM next_ts - ts) END AS next_kmh
+      FROM fixes
+    ),
+    checked AS (
+      SELECT drive_id, speed_kmh,
+             GREATEST(prev_kmh, next_kmh) AS around_kmh,
+             GREATEST(prev_speed, next_speed) AS neighbour_kmh,
+             prev_speed IS NOT NULL AND next_speed IS NOT NULL AS is_isolated
+      FROM spans
+      WHERE speed_kmh IS NOT NULL
+    )
+    SELECT drive_id, MAX(speed_kmh) AS max
+    FROM checked
+    WHERE NOT (
+      is_isolated
+      AND around_kmh IS NOT NULL
+      AND speed_kmh > neighbour_kmh
+      AND speed_kmh > around_kmh * ${SPEED_SPAN_FACTOR} + ${SPEED_SPAN_SLACK_KMH}
+    )
+    GROUP BY drive_id
+  `);
   return new Map(
-    rows.filter((r) => r.driveId != null && r.max != null).map((r) => [r.driveId!, Number(r.max)]),
+    rows.flatMap((r) => (r.max == null ? [] : [[Number(r.drive_id), Number(r.max)]])),
   );
 }

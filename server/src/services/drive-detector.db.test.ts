@@ -12,7 +12,7 @@ import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax/index.js'
 import type { VehicleState } from '../rivian/types.js';
 import { ensureLegacyHistoryTables } from '../testing/legacy-tables.js';
 import { b64, int } from '../testing/protobuf.js';
-import { DriveDetector } from './drive-detector.js';
+import { DriveDetector, maxSpeeds } from './drive-detector.js';
 import { HistoryKeys } from './history-keys.js';
 import { StateHistoryRecorder } from './state-history.js';
 
@@ -469,5 +469,82 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
       .from(locationPoints)
       .orderBy(locationPoints.ts);
     expect(points.map((p) => p.driveId)).toEqual([late.id, null, exact.id, null]);
+  });
+
+  describe('top speed', () => {
+    /**
+     * A drive whose fixes are `readings` km/h, one every 5 s, with the car
+     * actually travelling `ground` km/h between them — the two differ when a
+     * reading is wrong, which is the case this guards.
+     */
+    async function drive(
+      readings: number[],
+      options: { ground?: number | number[]; from?: string } = {},
+    ) {
+      const from = options.from ?? '2026-11-14T12:51:00Z';
+      const ground = readings.map((_, i) =>
+        typeof options.ground === 'number' ? options.ground : (options.ground?.[i] ?? readings[i]!),
+      );
+      const [row] = await handle.db
+        .insert(drives)
+        .values({
+          vehicleId: 'v1',
+          startedAt: new Date(from),
+          endedAt: new Date(Date.parse(from) + 3_600_000),
+        })
+        .returning();
+      let km = 0;
+      const points = readings.map((kmh, i) => {
+        const point = {
+          vehicleId: 'v1',
+          driveId: row!.id,
+          ts: new Date(Date.parse(from) + i * 5_000),
+          lat: 38.4352 + km / 111.32,
+          lon: -86.1971,
+          speedKmh: kmh,
+        };
+        // Five seconds at the ground speed, in km.
+        km += (ground[i]! * 5) / 3600;
+        return point;
+      });
+      await handle.db.insert(locationPoints).values(points);
+      return row!.id;
+    }
+
+    it('ignores a lone reading the ground either side of it rules out', async () => {
+      // Measured on the car: one navigation fix claimed 152 km/h where the
+      // track and every neighbouring fix said 94, and a plain MAX reported it
+      // as the drive's top speed.
+      const id = await drive([94, 94, 152, 94, 94], { ground: 94 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+    });
+
+    it('keeps a reading the ground it covers allows', async () => {
+      // Above both neighbours, but the car really did cover that ground, so it
+      // is a genuine speed: the track is the check, not the neighbours alone.
+      const id = await drive([80, 100, 95], { ground: [80, 100, 95] });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 100]]));
+    });
+
+    it('keeps a speed reached while accelerating', async () => {
+      // Each fix is faster than the last, so none of them is a spike: the top
+      // speed is the last one, and a ramp must not be trimmed to its mean.
+      const id = await drive([40, 60, 80, 100, 120]);
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 120]]));
+    });
+
+    it('keeps a drive too short to check, and reads several drives at once', async () => {
+      const short = await drive([72, 88], { from: '2026-11-14T14:00:00Z' });
+      const spiked = await drive([90, 90, 140, 90, 90], {
+        ground: 90,
+        from: '2026-11-14T16:00:00Z',
+      });
+      expect(await maxSpeeds(handle.db, [short, spiked])).toEqual(
+        new Map([
+          [short, 88],
+          [spiked, 90],
+        ]),
+      );
+    });
   });
 });
