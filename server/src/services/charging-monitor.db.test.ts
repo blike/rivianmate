@@ -382,7 +382,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(row!.rangeAddedKm).toBe(59);
   });
 
-  it("counts a stretch once when its closing message is re-sent after the pause", async () => {
+  it('counts a stretch once when its closing message is re-sent after the pause', async () => {
     // Rivian re-sends the last totals on subscribe. While charging is off that
     // message replaces the stretch it belongs to instead of adding a copy.
     const m = monitor();
@@ -457,7 +457,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(row!.rangeAddedKm).toBe(65);
   });
 
-  it("keeps the earlier stretches when the latest one has a closing message", async () => {
+  it('keeps the earlier stretches when the latest one has a closing message', async () => {
     const m = monitor();
     await m.start();
     await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
@@ -477,7 +477,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(row!.rangeAddedKm).toBe(59 + 147);
   });
 
-  it("does not let a finished stretch take a message meant for a later one", async () => {
+  it('does not let a finished stretch take a message meant for a later one', async () => {
     // Rivian's counter restarts each stretch, so a later stretch that happens to
     // run as long as the last one looks the same to this guard. Only the stretch
     // that has just ended may take a closing message.
