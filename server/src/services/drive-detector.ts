@@ -706,7 +706,5 @@ export async function maxSpeeds(db: Db, driveIds: number[]): Promise<Map<number,
     )
     GROUP BY drive_id
   `);
-  return new Map(
-    rows.flatMap((r) => (r.max == null ? [] : [[Number(r.drive_id), Number(r.max)]])),
-  );
+  return new Map(rows.flatMap((r) => (r.max == null ? [] : [[Number(r.drive_id), Number(r.max)]])));
 }
