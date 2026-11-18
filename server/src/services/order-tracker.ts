@@ -305,5 +305,6 @@ function standing(j: OrderJourney): string {
       ? `delivery ${when}`
       : 'no delivery appointment'
     : 'delivery unknown';
-  return `${model} ${state || (vehicle ? 'assigned to a build' : 'on order')}; ${delivery}`;
+  const placed = detail?.reservedDate && !detail.orderedDate ? 'reserved' : 'on order';
+  return `${model} ${state || (vehicle ? 'assigned to a build' : placed)}; ${delivery}`;
 }

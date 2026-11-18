@@ -28,6 +28,13 @@ export interface RuleState {
   lastCurrent: string | null;
   lastCurrentStatus: string | null;
   lastChargerState: string | null;
+  /**
+   * Someone's with the parked vehicle: it's been driven, or a closure opened
+   * and closed again, since it last slept. Cleared when it sleeps.
+   */
+  occupied: boolean;
+  /** A closure has opened since the vehicle last woke. */
+  openedSinceWake: boolean;
   /** False until the first state is seen; transitions need a baseline. */
   initialized: boolean;
 }
@@ -42,6 +49,8 @@ export function emptyRuleState(): RuleState {
     lastCurrent: null,
     lastCurrentStatus: null,
     lastChargerState: null,
+    occupied: false,
+    openedSinceWake: false,
     initialized: false,
   };
 }
@@ -124,31 +133,42 @@ export function evaluateRules(
   const inUse = power === 'go';
   const unlocked = closures.some((c) => c.locked === false);
 
+  // Sitting in the parked vehicle reads `ready`, which is also the vehicle
+  // waking by itself (to charge, say) with no one about. Someone's there if
+  // it's been driven since it last slept, or if a door or other closure
+  // opened and closed again since it woke: they got in.
+  if (power === 'sleep' || power === 'standby') {
+    next.occupied = false;
+    next.openedSinceWake = false;
+  } else if (power === 'go' || driving) {
+    next.occupied = true;
+  } else if (power === 'ready') {
+    if (closures.some((c) => c.closed === false)) next.openedSinceWake = true;
+    else if (next.openedSinceWake) next.occupied = true;
+  }
+  const occupied = inUse || next.occupied;
+
   const timed = (
     kind: TimedKind,
     open: string[],
     cfg: TimedAlertSettings,
     describe: TimedCopy,
-    /** Hold the alert while someone's in the parked vehicle. */
-    waitWhileInUse: boolean,
+    /** Someone's with the parked vehicle, so hold the alert. */
+    held: boolean,
   ) => {
     const cur = next.timed[kind];
     if (open.length === 0) {
       next.timed[kind] = { since: {}, alerted: [] };
       return;
     }
-    // Time only counts while parked: the clock starts when the vehicle parks.
-    cur.since = driving
-      ? {}
-      : Object.fromEntries(open.map((label) => [label, cur.since[label] ?? now]));
+    // Time only counts while parked and left: the clock starts when the
+    // vehicle parks, or when whoever was in it leaves.
+    cur.since =
+      driving || held
+        ? {}
+        : Object.fromEntries(open.map((label) => [label, cur.since[label] ?? now]));
     cur.alerted = cur.alerted.filter((label) => open.includes(label));
-    if (
-      !cfg.enabled ||
-      driving ||
-      (waitWhileInUse && inUse) ||
-      (cfg.awayOnly && input.atHome === true)
-    )
-      return;
+    if (!cfg.enabled || driving || held || (cfg.awayOnly && input.atHome === true)) return;
     const due = open.filter(
       (label) => !cur.alerted.includes(label) && now - cur.since[label]! >= cfg.minutes * MINUTE_MS,
     );
@@ -162,7 +182,9 @@ export function evaluateRules(
     closures.filter((c) => !c.closed).map((c) => c.label),
     events.doorOpen,
     DOOR_COPY,
-    true,
+    // Not `occupied`: an open door keeps the vehicle awake, so only `go` says
+    // someone's there.
+    inUse,
   );
   // Open windows matter whenever the vehicle is parked, even with someone in it.
   timed(
@@ -172,7 +194,7 @@ export function evaluateRules(
     WINDOW_COPY,
     false,
   );
-  timed('unlocked', unlocked ? ['Vehicle'] : [], events.unlocked, LOCK_COPY, true);
+  timed('unlocked', unlocked ? ['Vehicle'] : [], events.unlocked, LOCK_COPY, occupied);
 
   // --- Tire pressure, as judged by the vehicle ---
   const lowTires = TIRES.filter((t) => {

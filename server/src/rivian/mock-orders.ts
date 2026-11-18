@@ -60,6 +60,8 @@ export function deliveredOrder(vehicleId: string, vin: string): MockOrder {
           ],
         },
       ],
+      reservedDate: null,
+      orderedDate: '2022-11-08T16:12:40.000Z',
       estimatedDelivery: null,
     },
     delivery: {
@@ -102,7 +104,7 @@ export function awaitingOrder(now = new Date()): MockOrder {
       id: 'mock-order-r2',
       type: 'VEHICLE',
       state: 'ORDERED',
-      orderDate: '2026-04-02T15:20:11.000Z',
+      orderDate: '2025-09-02T15:20:11.000Z',
       configurationStatus: 'SOFT_LOCKED',
       fulfillmentSummaryStatus: 'READY_FOR_FULFILLMENT',
       vehicle: {
@@ -136,6 +138,10 @@ export function awaitingOrder(now = new Date()): MockOrder {
         },
         { type: 'ACCESSORIES', title: 'Rivian Wall Charger', options: [] },
       ],
+      // Reserved for $100, then ordered seven months later by the $400
+      // completing the vehicle deposit.
+      reservedDate: '2025-09-02T15:20:11.220Z',
+      orderedDate: '2026-04-02T15:21:00.000Z',
       estimatedDelivery: null,
     },
     delivery: {

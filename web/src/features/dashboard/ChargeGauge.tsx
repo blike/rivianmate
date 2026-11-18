@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useLoading } from '../../components/LoadingState';
 import { fmt } from '../../lib/state';
+import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 
 const CELLS = 50;
 const SCALE = [0, 25, 50, 75, 100];
@@ -9,17 +10,20 @@ const SCALE = [0, 25, 50, 75, 100];
  * State of charge as a row of cells, like the pack it stands for: lit to
  * the level, the charge limit marked above, and while charging the cells
  * still to fill ripple toward it. Past the limit the cells are dimmed.
- * Another level can stand in for the limit, named by `limitLabel`.
+ * Another level can stand in for the limit, named by `limitLabel`. A pack
+ * the cold is limiting says so above the limit's label.
  */
 export function ChargeGauge(props: {
   level: number | null;
   limit: number | null;
   limitLabel?: string;
   charging: boolean;
+  verdict?: PowerOutputVerdict | null;
 }) {
   const loading = useLoading();
   const level = loading || props.level == null ? 0 : Math.min(100, Math.max(0, props.level));
   const limit = loading || props.limit == null ? null : Math.min(100, Math.max(0, props.limit));
+  const coldLimited = !loading && props.verdict === 'cold';
   const tone = props.charging
     ? 'var(--status-good)'
     : level < 15
@@ -28,6 +32,26 @@ export function ChargeGauge(props: {
         ? 'var(--status-warning)'
         : 'var(--accent)';
   const lit = (level / 100) * CELLS;
+  // role="meter" hides the labels, so they're read out here.
+  const valueText =
+    props.level != null
+      ? [
+          `${fmt(props.level, 0)}%`,
+          limit != null ? `${(props.limitLabel ?? 'Limit').toLowerCase()} ${fmt(limit, 0)}%` : null,
+          coldLimited ? 'power output limited by cold' : null,
+        ]
+          .filter((part) => part != null)
+          .join(', ')
+      : undefined;
+  const stacked = coldLimited && limit != null;
+  // Over the limit's mark, kept inside the gauge at either end.
+  const marker =
+    limit == null
+      ? { left: 0 }
+      : {
+          left: `${limit}%`,
+          transform: `translateX(${limit < 8 ? '0' : limit > 92 ? '-100%' : '-50%'})`,
+        };
 
   return (
     <div
@@ -36,22 +60,24 @@ export function ChargeGauge(props: {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={props.level ?? undefined}
-      aria-valuetext={
-        props.level != null
-          ? `${fmt(props.level, 0)}%${limit != null ? `, ${(props.limitLabel ?? 'Limit').toLowerCase()} ${fmt(limit, 0)}%` : ''}`
-          : undefined
-      }
-      className="charge-gauge relative pt-6"
+      aria-valuetext={valueText}
+      className={`charge-gauge relative ${stacked ? 'pt-10' : 'pt-6'}`}
       style={{ '--gauge': tone } as CSSProperties}
     >
+      {coldLimited && (
+        <span
+          aria-hidden
+          className="absolute top-0 text-[11px] leading-4 whitespace-nowrap text-(--status-cold)"
+          style={marker}
+        >
+          Cold-limited
+        </span>
+      )}
       {limit != null && (
         <div
           aria-hidden
-          className="absolute top-0 bottom-5 flex flex-col items-center"
-          style={{
-            left: `${limit}%`,
-            transform: `translateX(${limit < 8 ? '0' : limit > 92 ? '-100%' : '-50%'})`,
-          }}
+          className={`absolute ${stacked ? 'top-4' : 'top-0'} bottom-5 flex flex-col items-center`}
+          style={marker}
         >
           <span className="text-[11px] leading-4 whitespace-nowrap text-(--text-secondary) tabular-nums">
             {props.limitLabel ?? 'Limit'} {fmt(limit, 0)}%

@@ -48,10 +48,11 @@ export const GET_ORDER_SNAPSHOTS = `query getOrderSnapshots { user { orderSnapsh
 /**
  * One order (orders service): the vehicle's build record and status, the
  * configured options and the estimated delivery window. A subset of
- * rivian-order-view's verified selection; money, payments and addresses are
- * deliberately not requested.
+ * rivian-order-view's verified selection. Payments only for their intent,
+ * status, amount and date, which date the reservation and the order; the
+ * rest of the money and the addresses are deliberately not requested.
  */
-export const GET_ORDER = `query order($id: String!) { order(id: $id) { id orderDate state type vin vehicleId configurationStatus fulfillmentSummaryStatus vehicle { vehicleId vin modelYear model make plannedBuildDate expectedBuildDate actualGeneralAssemblyDate expectedGeneralAssemblyStartDate status } items { title type configuration { options { optionId optionName groupId } } } fulfillmentInfo { fulfillments { fulfillmentStatus estimatedDeliveryWindow { startDate endDate } } } } }`;
+export const GET_ORDER = `query order($id: String!) { order(id: $id) { id orderDate state type vin vehicleId configurationStatus fulfillmentSummaryStatus vehicle { vehicleId vin modelYear model make plannedBuildDate expectedBuildDate actualGeneralAssemblyDate expectedGeneralAssemblyStartDate status } payments { amount status intent date } items { title type configuration { options { optionId optionName groupId } } } fulfillmentInfo { fulfillments { fulfillmentStatus estimatedDeliveryWindow { startDate endDate } } } } }`;
 
 /**
  * An order's delivery appointment (gateway). Answers on the session headers

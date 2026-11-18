@@ -21,12 +21,11 @@ const UNRECORDED_FIELDS = new Set([
  * once it's this far from the last recorded value, in the field's unit.
  * Rivian's capacity estimate moves by hundredths of a kWh every few seconds
  * while driving. Tire pressures (bar) bounce 0.005 between the feeds, legacy
- * rounding to 0.01 (3.03) and Parallax to 0.025 (3.025).
+ * rounding to 0.01 (3.03) and Parallax to 0.025 (3.025). Cell temperatures
+ * arrive on a 0.1 °C grid, under a degree apart while the pack is steady.
  */
 const DEADBANDS: Readonly<Record<string, number>> = {
   batteryCapacity: 0.1,
-  // Cell temperatures arrive on a 0.1 °C grid, so a 0.1 band filters nothing at all; 0.5 °C is a
-  // real change in a pack and stays below what the Health row prints (whole degrees).
   batteryTempAvg: 0.5,
   batteryTempMax: 0.5,
   batteryTempMin: 0.5,
@@ -48,16 +47,11 @@ export const HEARTBEAT_MS = 15 * 60_000;
  */
 const SILENCE_MS = 2 * HEARTBEAT_MS;
 
-/** The pack's cell temperatures, which every battery-state frame carries together. */
 const CELL_TEMPERATURES = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
 
 /**
- * Fields recorded together, keyed by each field in the group. A group is one
- * reading: the three cell temperatures come off one frame's payload, so a frame
- * records all of them or none of them. Recorded one at a time, the field that
- * moved writes while its neighbours stay on the values they were last written
- * at, and a triple stitched from three frames can show the average cell hotter
- * than the hottest one — a reading no pack can give.
+ * Fields recorded together whenever one of them changes, so a row never mixes
+ * frames: stitched from three, the cell average can read above the hottest cell.
  */
 const CHANGE_GROUPS: Readonly<Record<string, readonly string[]>> = {
   batteryTempAvg: CELL_TEMPERATURES,
@@ -97,9 +91,7 @@ export class StateDiff {
     fields: readonly string[] = Object.keys(state),
   ): StateChange[] {
     const readings = readingsOf(state, fields, fallbackAt);
-    // What moved, and the rest of any group it belongs to: the frame is one
-    // reading, so it is recorded whole and every field in it is re-seeded from
-    // what the frame actually said.
+    // What moved, plus the rest of its group.
     const recording = new Set(
       readings
         .filter(
@@ -154,10 +146,9 @@ export class StateHistoryRecorder {
   ) {}
 
   /**
-   * The given fields of a state, as they are now — with the rest of any group one
-   * of them belongs to, read from the same state, so a row written for a frame
-   * carries that frame's whole reading. Values are read before returning, so
-   * later changes to `state` don't affect what's recorded.
+   * The given fields of a state (and the rest of their groups), as they are now.
+   * Values are read before returning, so later changes to `state` don't affect
+   * what's recorded.
    */
   record(vehicleId: string, state: VehicleState, fields: readonly string[]): Promise<void> {
     const whole = [...new Set(fields.flatMap((f) => CHANGE_GROUPS[f] ?? [f]))];
