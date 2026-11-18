@@ -231,7 +231,8 @@ export type MockScene = 'drive-home' | 'awaiting-delivery';
  * 231 mi at the 70% limit.
  */
 const DRIVE_HOME = { fraction: 0.6, startBattery: 64, battery: 61, limit: 70, kmPerPct: 5.31 };
-const START_MILEAGE_M = 12_345_678;
+/** 35,000 mi: room for the demo scene's years of history behind it. */
+const START_MILEAGE_M = 56_327_040;
 
 const usedPct = (m: number) => ((m / 1000) * KWH_PER_KM) / KWH_PER_PCT;
 
