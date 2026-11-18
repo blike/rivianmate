@@ -8,6 +8,7 @@ import type { VehicleInsightsDto, VehicleState } from '@server/api-types';
  */
 export const OPTIONAL_FIELDS = [
   'batteryCellType',
+  'batteryPowerOutputStatus',
   'brakeFluidLow',
   'driveMode',
   'gearGuardLocked',

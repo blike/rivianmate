@@ -4,12 +4,15 @@ import { Row } from '../../components/Panel';
 import { showParallaxOnly } from '../../lib/fieldSources';
 import { dateTime } from '../../lib/format';
 import { fmt } from '../../lib/state';
+import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 
 /** The pack's cells, their temperatures, and the range the cold holds back. */
 export function PackDetails(props: {
   insights: VehicleInsightsDto | undefined;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
+  /** Left out when undefined: the vehicle doesn't send it. Null while the pack isn't reporting. */
+  powerOutput?: PowerOutputVerdict | null;
 }) {
   const u = useUnits();
   const { cellTemps, cellTempsCurrent, coldWeather } = props.insights ?? {};
@@ -29,6 +32,20 @@ export function PackDetails(props: {
               cellTemps
                 ? `${u.formatTemperature(cellTemps.avgC)} (${fmt(u.temperature(cellTemps.minC), 0)}–${fmt(u.temperature(cellTemps.maxC), 0)})`
                 : '—'
+            }
+          />
+        )}
+        {props.powerOutput !== undefined && (
+          <Row
+            label="Power output"
+            value={
+              props.powerOutput == null ? (
+                '—'
+              ) : props.powerOutput === 'cold' ? (
+                <span className="text-(--status-cold)">Limited by cold</span>
+              ) : (
+                'Normal'
+              )
             }
           />
         )}
