@@ -22,24 +22,12 @@ export interface TrendSeries {
   mark?: 'area' | 'line' | 'bar';
   /** Put the series on a second Y axis on the right. */
   right?: boolean;
-  /**
-   * Scale the series on its own hidden axis; its values show in the tooltip.
-   * A name instead of `true` lets several series share one scale.
-   */
-  ownScale?: boolean | string;
-  /**
-   * Draw as a min–max band: the row's value for the key is a `[min, max]` pair,
-   * or null where nothing was read. The band never spans a null, so it breaks
-   * with the line rather than filling a silence nothing was recorded in.
-   */
+  /** Scale the series on its own hidden axis; its values show in the tooltip. */
+  ownScale?: boolean;
+  /** Draw as a band from a `[min, max]` value; breaks at nulls. */
   band?: boolean;
-  /**
-   * A value the tooltip names with nothing of its own drawn, such as the ends of
-   * a band: it is read off the same row the band is drawn from.
-   */
+  /** In the tooltip only, not drawn (e.g. a band's ends). */
   tooltipOnly?: boolean;
-  /** Layering among the marks; a lower one draws beneath the rest. */
-  zIndex?: number;
   unit?: string;
   digits?: number;
   /** Draw a dot per data point (for sparse series). */
@@ -48,10 +36,7 @@ export interface TrendSeries {
   dashed?: boolean;
   interpolation?: 'linear' | 'monotone';
   connectNulls?: boolean;
-  /**
-   * Drawn, but left out of the tooltip and legend — context for what is read,
-   * like the band around a reading, rather than a reading of its own.
-   */
+  /** Drawn, but left out of the tooltip and legend: a guide, not a reading. */
   quiet?: boolean;
 }
 
@@ -64,7 +49,6 @@ export interface TrendReference {
   right?: boolean;
 }
 
-/** A series' value under the pointer: a reading, or a band's two ends. */
 type TooltipValue = number | [number, number];
 
 /** A value in the series' precision; a band as "min–max". */
@@ -73,34 +57,24 @@ const valueText = (series: TrendSeries, value: TooltipValue): string =>
     ? `${fmt(value[0], series.digits ?? 0)}–${fmt(value[1], series.digits ?? 0)}`
     : fmt(value, series.digits ?? 1);
 
-/** A chart row: readings, a band's `[min, max]`, and null where there's none. */
 type Row = Record<string, number | [number, number] | null>;
 
-/** A series and what it read under the pointer. */
 export interface TooltipRow {
   series: TrendSeries;
   value: TooltipValue;
 }
 
-/** The axis a series is drawn against; one on a scale of its own gets its own. */
-const ownAxisId = (scale: string) => `own-${scale}`;
-const ownScaleOf = (s: TrendSeries) => (typeof s.ownScale === 'string' ? s.ownScale : s.key);
-const axisOf = (s: TrendSeries) =>
-  s.ownScale ? ownAxisId(ownScaleOf(s)) : s.right ? 'right' : 'left';
+const axisOf = (s: TrendSeries) => (s.ownScale ? `own-${s.key}` : s.right ? 'right' : 'left');
 
 /**
- * What one point of the chart explains: a row per series, in the order they were
- * declared, skipping the ones with nothing to read there. Each value is read off
- * the row itself, so a series the tooltip names without drawing is listed the
- * same as one with a mark. A quiet series is context and stays unexplained, and
- * an estimate is left out where a reading on its axis says the same thing, e.g.
- * where a forecast joins the recorded curve.
+ * The tooltip's rows for a data row: one per series in declared order, skipping
+ * gaps and quiet series. An estimate adds nothing where a reading on its axis
+ * exists, e.g. where a forecast joins the recorded curve.
  */
 export function tooltipRows(series: readonly TrendSeries[], row: Row): TooltipRow[] {
   const valueOf = (s: TrendSeries): TooltipValue | null => {
     const value = row[s.key];
     if (typeof value === 'number') return value;
-    // A band's two ends.
     if (Array.isArray(value) && value.every((v) => typeof v === 'number')) {
       return [value[0]!, value[1]!];
     }
@@ -117,7 +91,7 @@ export function tooltipRows(series: readonly TrendSeries[], row: Row): TooltipRo
   });
 }
 
-/** The tooltip: the moment under the pointer, then a row per series with its value. */
+/** The tooltip: the moment under the pointer, then each series' value. */
 export function TrendTooltip(props: { title: ReactNode; rows: TooltipRow[] }) {
   return (
     <div className="min-w-40 rounded-lg border border-(--border) bg-(--surface-2) px-3 py-2 text-xs shadow-lg">
@@ -140,6 +114,9 @@ export function TrendTooltip(props: { title: ReactNode; rows: TooltipRow[] }) {
   );
 }
 
+/** Axis width for charts stacked one above another, so their plots line up. */
+export const STACKED_AXIS_WIDTH = 48;
+
 /** Small chart shared by drive, charging and health views. */
 export function TrendChart(props: {
   data: Row[];
@@ -153,21 +130,9 @@ export function TrendChart(props: {
   /** Label every (n + 1)th category, even where labels would sit close; thinned to fit when left out. */
   xInterval?: number;
   leftDomain?: [number | 'auto', number | 'auto'];
-  /**
-   * The values the left axis is ticked at, where the chart should not pick them.
-   * A number axis is given a spacing only as the list of values it falls on:
-   * recharts' own `interval` counts ticks rather than adding to their values.
-   * Every one of them is labelled — the chart thinning them is what leaves a
-   * regular spacing reading as an irregular set of numbers.
-   */
+  /** Fixed left-axis ticks, all labelled, instead of the ones recharts picks. */
   leftTicks?: readonly number[];
   rightDomain?: [number | 'auto', number | 'auto'];
-  /**
-   * Bounds for a scale drawn on its own hidden axis, by the name it is shared
-   * under: a scale wider than its readings keeps the picture the same size from
-   * chart to chart.
-   */
-  ownDomains?: Record<string, [number | 'auto', number | 'auto']>;
   leftUnit?: string;
   rightUnit?: string;
   height?: number;
@@ -178,6 +143,8 @@ export function TrendChart(props: {
   syncId?: string;
   /** A fixed width for the left axis, so stacked charts line up. */
   yAxisWidth?: number;
+  /** A fixed width for the right axis, kept as space when there is none, so stacked charts line up. */
+  rightAxisWidth?: number;
   /** Leave the x axis to a chart stacked beneath. */
   hideXAxis?: boolean;
 }) {
@@ -185,11 +152,8 @@ export function TrendChart(props: {
   // Synced charts all follow the pointer, but only the one under it explains.
   const [pointerIn, setPointerIn] = useState(false);
   const shown = props.series.filter((s) => !s.quiet);
-  // A series the tooltip names without drawing needs no axis under it.
   const plotted = props.series.filter((s) => !s.tooltipOnly);
   const hasRight = plotted.some((s) => s.right && !s.ownScale);
-  // One hidden axis per scale, however many series are drawn against it.
-  const ownScales = [...new Set(plotted.flatMap((s) => (s.ownScale ? [ownScaleOf(s)] : [])))];
   const tick = { fill: 'var(--text-muted)', fontSize: 11 };
   const xFormatter = props.xFormatter ?? ((x: number) => fmt(x, 0));
   // Axis ticks use the series' precision so narrow ranges don't repeat labels.
@@ -206,7 +170,12 @@ export function TrendChart(props: {
         <ComposedChart
           data={props.data}
           syncId={props.syncId}
-          margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+          margin={{
+            top: 8,
+            right: 8 + (!hasRight && props.rightAxisWidth ? props.rightAxisWidth : 0),
+            bottom: 0,
+            left: 0,
+          }}
           onMouseMove={
             props.onHover &&
             ((state) => {
@@ -259,26 +228,22 @@ export function TrendChart(props: {
               tick={tick}
               tickLine={false}
               axisLine={false}
-              width="auto"
+              width={props.rightAxisWidth ?? 'auto'}
               tickFormatter={(v: number) =>
                 `${fmt(v, rightDigits)}${props.rightUnit ? ` ${props.rightUnit}` : ''}`
               }
             />
           )}
-          {ownScales.map((scale) => (
-            <YAxis
-              key={scale}
-              yAxisId={ownAxisId(scale)}
-              domain={props.ownDomains?.[scale] ?? ['auto', 'auto']}
-              hide
-            />
-          ))}
+          {plotted
+            .filter((s) => s.ownScale)
+            .map((s) => (
+              <YAxis key={s.key} yAxisId={axisOf(s)} domain={['auto', 'auto']} hide />
+            ))}
           <Tooltip
             isAnimationActive={false}
             cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
             content={({ active, payload, label }) => {
               if (!active || !payload?.length || (props.syncId && !pointerIn)) return null;
-              // The row under the pointer, which every explained series is read off.
               const row = payload[0]?.payload as Row | undefined;
               if (!row) return null;
               const rows = tooltipRows(props.series, row);
@@ -312,7 +277,6 @@ export function TrendChart(props: {
             <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />
           )}
           {props.series.map((s) => {
-            // A series the tooltip names has no mark of its own to draw.
             if (s.tooltipOnly) return null;
             const common = {
               key: s.key,
@@ -320,7 +284,6 @@ export function TrendChart(props: {
               name: s.label,
               yAxisId: axisOf(s),
               isAnimationActive: false,
-              ...(s.zIndex != null && { zIndex: s.zIndex }),
               ...(s.quiet && { legendType: 'none' as const }),
             };
             if (s.mark === 'bar') return <Bar {...common} fill={s.color} radius={[3, 3, 0, 0]} />;
@@ -333,6 +296,7 @@ export function TrendChart(props: {
                   fill={s.color}
                   fillOpacity={0.18}
                   dot={false}
+                  activeDot={false}
                   connectNulls={false}
                 />
               );

@@ -38,13 +38,7 @@ const DEADBANDS: Readonly<Record<string, number>> = {
 const DEADBAND_EPSILON = 1e-9;
 /** Heartbeats are at least this far apart. */
 export const HEARTBEAT_MS = 15 * 60_000;
-/**
- * How long a reading stands for the time after it before a silence is a silence:
- * two heartbeat intervals. Heartbeats are written on the first state that arrives
- * a quarter of an hour after the last one, so while the vehicle is awake they
- * land a quarter of an hour and a few seconds apart; one interval alone would
- * call the sync that lands a minute late a silence, and two leave room for it.
- */
+/** A gap between heartbeats longer than this means the vehicle went quiet; one late sync isn't. */
 const SILENCE_MS = 2 * HEARTBEAT_MS;
 
 const CELL_TEMPERATURES = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
@@ -367,17 +361,11 @@ export interface BandFields {
 
 export type BandColumns = Readonly<Record<keyof BandFields, readonly NumericPoint[]>>;
 
-/**
- * Three fields as one series: each reading holds until its own field's next
- * one, so a frame that moved only the pack's maximum still carries the average
- * and the minimum to draw it against. A row at every stamp any of the three
- * moved, each with the values in effect then.
- */
+/** Three fields as one series: a row wherever any of them changed, each holding its last value. */
 export function heldValues(columns: BandColumns): BandPoint[] {
   const steps = (Object.keys(columns) as (keyof BandColumns)[]).flatMap((key) =>
     columns[key].map((p) => ({ key, at: p.at, value: p.value })),
   );
-  // Ties keep the column order, so a frame's three readings land as one row.
   steps.sort((a, b) => a.at - b.at);
   const held: Record<keyof BandFields, number | null> = { avg: null, min: null, max: null };
   const rows: BandPoint[] = [];
@@ -393,12 +381,7 @@ export function heldValues(columns: BandColumns): BandPoint[] {
   return rows;
 }
 
-/**
- * A row's three values with the band stretched to reach around the average: an
- * average above the hottest cell, or below the coldest, is a reading no pack
- * gives, and drawing it puts the line outside its own shading. A coherent
- * reading passes through untouched, so this can only ever widen a band.
- */
+/** Widens the band to contain the average, so the line never draws outside its own shading. */
 function bandAroundAverage(
   held: Readonly<Record<keyof BandFields, number | null>>,
 ): Record<keyof BandFields, number | null> {
@@ -412,17 +395,10 @@ function bandAroundAverage(
 }
 
 /**
- * The series with a row at every heartbeat — the vehicle heard and nothing
- * moved — and a break wherever a run of them ends.
- *
- * A steady vehicle writes no changes at all, so on its own a change-only series
- * says nothing about a pack holding a temperature: the line reads as silence
- * when the truth is that it held. A heartbeat is what tells the two apart. Each
- * one gets the row in effect at that moment, and where two things the vehicle
- * was heard at are more than two heartbeat intervals apart nothing arrived in
- * between: the values stop being known one interval after the last of them, and
- * the row there is empty so a chart breaks rather than drawing across a silence
- * the vehicle never reported.
+ * Adds a row at every heartbeat, holding the last values, so a steady value
+ * draws as a line rather than a gap. Where the vehicle went quiet (no change or
+ * heartbeat for SILENCE_MS), an empty row one interval after the last one
+ * breaks the line.
  */
 export function withHeartbeats(
   rows: readonly BandPoint[],
@@ -441,8 +417,7 @@ export function withHeartbeats(
   let r = 0;
   for (const at of stamps) {
     while (r < rows.length && rows[r]!.at <= at) held = rows[r++]!;
-    // A break wins a stamp it shares with a reading: it is where the values
-    // stopped being known, and a row drawn over it would hide the silence.
+    // A break wins over a reading at the same stamp.
     if (breaks.has(at)) out.push({ at, avg: null, min: null, max: null });
     else if (held) out.push({ at, avg: held.avg, min: held.min, max: held.max });
   }
@@ -450,12 +425,9 @@ export function withHeartbeats(
 }
 
 /**
- * A banded metric over [from, to]: each field's readings held into one series,
- * as recorded changes or as fixed buckets. Buckets are taken per field, so the
- * band keeps each field's own extremes over the bucket it covers. With
- * `heartbeats`, the changes are joined by a row per heartbeat interval and
- * broken where they stop, so a steady vehicle draws as a line rather than a
- * gap — see `withHeartbeats`.
+ * Three fields over [from, to] as a line and a band: every recorded change, or
+ * fixed buckets each keeping its fields' own extremes. With `heartbeats`, raw
+ * series are filled and broken as in `withHeartbeats`.
  */
 export async function bandSeries(
   db: Db,
@@ -469,19 +441,13 @@ export async function bandSeries(
   const keys = ['avg', 'min', 'max'] as const;
   const [series, beats] = await Promise.all([
     Promise.all(keys.map((key) => numericSeries(db, vehicleId, fields[key], from, to))),
-    // One interval before the window as well: a reading made before it belongs to
-    // a run of hearing that may have started earlier, and only the beats the
-    // series already carries can say whether that run was still going. Buckets
-    // cover each field's own readings, so they are left as they were.
+    // From one interval earlier, to tell whether the opening value was still being heard.
     options.heartbeats && intervalMs == null
       ? heartbeatsBetween(db, vehicleId, new Date(from.getTime() - HEARTBEAT_MS), to)
       : Promise.resolve<number[]>([]),
   ]);
   if (intervalMs == null) {
-    // Each reading keeps the stamp it was made at, even when it predates the
-    // window: moved to the window's start it would pass for the values in
-    // effect then, and only the age it carries can tell a fresh reading from a
-    // stale one.
+    // The opening value keeps its own stamp, even before `from`, so its age stays visible.
     const points = (i: number): NumericPoint[] => {
       const s = series[i]!;
       return [...(s.opening ? [s.opening] : []), ...s.changes];
@@ -502,9 +468,6 @@ export async function bandSeries(
       rows.set(b.bucket, row);
     }
   });
-  // Each field's extremes are taken over the same window, so a bucket's band
-  // already holds its average; the same widening keeps that true if a mean is
-  // ever rounded outside them.
   return [...rows.values()]
     .sort((a, b) => a.at - b.at)
     .map((row) => ({ at: row.at, ...bandAroundAverage(row) }));

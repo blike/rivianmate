@@ -8,10 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ID, parkedState, sessions } from '../../testing/fixtures';
 import { ChargingPage } from './ChargingPage';
 
-/**
- * jsdom lays nothing out, so the charts are handed the size their containers
- * would give them. Everything below that is drawn for real.
- */
+/** jsdom lays nothing out, so give the charts their containers' size. */
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>();
   return {
@@ -36,7 +33,6 @@ const curve: ChargingCurvePointDto[] = [
   { ts: at(ENDED), powerKw: 9.6, soc: 82 },
 ];
 
-/** The pack warming through the charge: 20 °C at its start, 24 °C at its end. */
 const packTemps: HistoryPoint[] = [
   { bucket: at(SHOWING), avg: 20, min: 19, max: 21 },
   { bucket: at(SHOWING + 60 * MIN), avg: 22, min: 21, max: 23 },
@@ -45,7 +41,6 @@ const packTemps: HistoryPoint[] = [
 
 function renderPage() {
   const client = new QueryClient({
-    // Nothing is fetched: every answer the page asks for is put in the cache.
     defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   });
   client.setQueryData(['units'], { distance: 'mi', temperature: 'F' });
@@ -68,7 +63,6 @@ function renderPage() {
   );
 }
 
-/** The legend entries the page draws, chart by chart, in the order drawn. */
 const legends = (container: HTMLElement) =>
   [...container.querySelectorAll('.recharts-legend-item')].map((item) => item.textContent);
 
@@ -78,22 +72,17 @@ describe('ChargingPage', () => {
     const page = container.textContent ?? '';
 
     expect(page).toContain('Charging curve');
-    // The section the drive page draws, with the figures it carries.
     expect(page).toContain('Pack temperature');
     expect(page).toContain('At start');
     expect(page).toContain('At end');
     expect(page).toContain('Change');
-    // 20 °C where the charge began and 24 °C where it ended.
-    expect(page).toContain('68 °F');
-    expect(page).toContain('75 °F');
+    expect(page).toContain('68.0 °F');
+    expect(page).toContain('75.2 °F');
   });
 
   it('leaves the curve to power and battery, and legends the pack once', () => {
     const { container } = renderPage();
 
-    // Power and battery on the curve — drawn as an area and a line, so listed
-    // in that order — and one entry for the temperature chart below it:
-    // nothing of the pack is drawn on the curve.
     expect(legends(container)).toEqual(['Battery', 'Power', 'Average pack temperature']);
   });
 });

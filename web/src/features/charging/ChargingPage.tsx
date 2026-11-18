@@ -18,7 +18,7 @@ import { lastChargedTo } from '../../lib/charging';
 import { useGoToDate } from '../../lib/goToDate';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
-import { PackTempSection } from '../drives/PackTempSection';
+import { PackTempSection } from '../../components/PackTempSection';
 import { CurveChart } from './CurveChart';
 import { EnergySplit } from './EnergySplit';
 import { LiveCard } from './LiveCard';
@@ -172,9 +172,6 @@ export function ChargingPage(props: { vehicleId: string }) {
               loading={sessionsPending || (session != null && curvePending)}
               notStarted={session != null && notStarted(session)}
             />
-            {/* The pack's own temperature through the charge, which is what a slow
-                one is usually down to: the section the drive page draws, under
-                the curve instead of under the drive. */}
             {!teslamate && (
               <PackTempSection
                 vehicleId={props.vehicleId}

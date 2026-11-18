@@ -1,5 +1,5 @@
 import type { DriveDto, DrivePlaceDto } from '@server/api-types';
-import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
+import { fmt, fmtDuration } from '../../lib/state';
 import type { UnitFormatter } from '../../lib/units';
 
 /** Battery % used; null when unknown or too small to show. */
@@ -51,21 +51,4 @@ export function driveTitle(d: DriveDto): string {
   const to = destination(d);
   if (to == null) return `From ${from}`;
   return d.endedAt ? `${from} → ${to}` : to;
-}
-
-/** Axis labels for whole minutes into a drive: "25 min", or "1h 30m" style for drives of two hours or more. */
-export function formatMinutes(totalMinutes: number) {
-  return (m: number) => (totalMinutes >= 120 ? fmtSeconds(m * 60) : `${fmt(m, 0)} min`);
-}
-
-/** "47m (12:52 PM)": time into the drive, then the time of day. */
-export function tooltipTime(startedAt: string) {
-  const start = Date.parse(startedAt);
-  return (m: number) => {
-    const at = new Date(start + m * 60_000).toLocaleTimeString([], {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-    return `${fmtSeconds(m * 60)} (${at})`;
-  };
 }

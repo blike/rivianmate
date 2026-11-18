@@ -119,10 +119,7 @@ await db.insert(chargingCurvePoints).values(
   }),
 );
 
-// The pack's own temperature through that charge, as the monitor records it
-// while the car is awake: a reading every few minutes, the cells' mean and
-// their hottest and coldest. A pack left out overnight starts cold and warms
-// as it takes energy, which is what the chart's band and line show.
+// The pack's temperatures through that charge: cold overnight, warming as it charges.
 const TEMPERATURE_FIELDS = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
 const TEMPERATURE_STEP_MS = 6 * 60_000;
 const keys = new HistoryKeys(db);
@@ -197,20 +194,14 @@ await db
   .insert(locationPoints)
   .values(drive.points.map((p) => ({ ...p, vehicleId: MOCK_VEHICLE_ID, driveId: driveRow!.id })));
 
-// The pack warms over the drive so far, and its cells spread as it works, as the
-// state history the drive page reads its figures and trend from. The scene is
-// recorded ahead of the mock, so nothing else writes these: the mock's own
-// battery frames then carry on from where this leaves off, which is why the
-// last reading here is exactly what they report.
+// The pack warming over the drive so far, ending where the mock's own frames carry on.
 const TEMP_FIELDS = ['batteryTempAvg', 'batteryTempMin', 'batteryTempMax'] as const;
 /** From 70 °F to the 75 °F the mock reports. */
 const TEMP_START = { batteryTempAvg: 21, batteryTempMin: 20, batteryTempMax: 22 };
 const TEMP_END = { batteryTempAvg: 24, batteryTempMin: 22, batteryTempMax: 27 };
 const seq = await keys.vehicleSeq(MOCK_VEHICLE_ID);
 const tempFields = await keys.fieldIds(TEMP_FIELDS);
-// Every reading of them over the drive, so a re-run leaves nothing of the drive
-// it replaced — and nothing of the charge the night before, which its own
-// readings above belong to.
+// Clear the drive's readings (not the charge's above), so a re-run starts clean.
 await db
   .delete(stateChanges)
   .where(

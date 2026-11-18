@@ -37,7 +37,6 @@ const series = [
     color: PACK,
     band: true,
     interpolation: 'linear' as const,
-    ownScale: 'pack',
   },
   {
     key: 'packAverage',
@@ -46,7 +45,6 @@ const series = [
     mark: 'line' as const,
     interpolation: 'linear' as const,
     connectNulls: false,
-    ownScale: 'pack',
   },
 ];
 
@@ -58,6 +56,37 @@ const drawn = (container: HTMLElement, selector: string) =>
 
 /** The stretches a path draws: each `M` starts one. */
 const stretches = (path: string) => (path.match(/M/g) ?? []).length;
+
+describe('stacked charts', () => {
+  const plotWidth = (container: HTMLElement) =>
+    Number(container.querySelector('clipPath rect')?.getAttribute('width'));
+
+  it('keep the right axis width as space on a chart without one, so the plots line up', () => {
+    const withRight = render(
+      <TrendChart
+        data={rows}
+        xKey="minutes"
+        yAxisWidth={48}
+        rightAxisWidth={48}
+        series={[
+          { key: 'packAverage', label: 'Left', color: PACK },
+          { key: 'minutes', label: 'Right', color: PACK, right: true },
+        ]}
+      />,
+    );
+    const leftOnly = render(
+      <TrendChart
+        data={rows}
+        xKey="minutes"
+        yAxisWidth={48}
+        rightAxisWidth={48}
+        series={[{ key: 'packAverage', label: 'Left', color: PACK }]}
+      />,
+    );
+    expect(plotWidth(leftOnly.container)).toBeGreaterThan(0);
+    expect(plotWidth(leftOnly.container)).toBe(plotWidth(withRight.container));
+  });
+});
 
 describe('a band series', () => {
   it('fills the span between its ends, with the line drawn over it', () => {

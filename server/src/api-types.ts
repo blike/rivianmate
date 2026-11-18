@@ -149,10 +149,7 @@ export interface ConnectResponse {
 
 /**
  * A recorded series: the average, and the lowest and highest held over the
- * bucket. For `temp` the band is the pack's own spread: its coldest and hottest
- * cell, and a row with nothing in it is the vehicle going quiet — nothing was
- * heard after the run of heartbeats that ended an interval before it — so a
- * chart breaks there rather than drawing across the silence.
+ * bucket. For `temp`, an all-null row marks where the vehicle went quiet.
  */
 export interface HistoryPoint {
   bucket: string;
@@ -175,10 +172,7 @@ export interface ChargeSpanDto {
   to: string;
 }
 
-/**
- * What the history route charts. `temp` is the pack's temperature: one metric
- * over the cell average, coldest and hottest, which are recorded together.
- */
+/** What the history route charts; `temp` is the pack's cell temperatures. */
 export type HistoryMetric = 'battery' | 'range' | 'mileage' | 'temp';
 
 export interface LocationPointDto {

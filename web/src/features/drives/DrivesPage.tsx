@@ -21,9 +21,18 @@ import {
 import { AddToTrip } from '../../components/AddToTrip';
 import { LoadOlder } from '../../components/LoadOlder';
 import { Panel } from '../../components/Panel';
-import { TrendChart } from '../../components/TrendChart';
+import { PackTempSection } from '../../components/PackTempSection';
+import { STACKED_AXIS_WIDTH, TrendChart } from '../../components/TrendChart';
 import { VehicleMap } from '../../components/VehicleMap';
-import { CHART_POINTS, driveProfile, evenly, minuteTicks, profilePosition } from '../../lib/drives';
+import {
+  CHART_POINTS,
+  driveProfile,
+  evenly,
+  formatMinutes,
+  minuteTicks,
+  profilePosition,
+  tooltipTime,
+} from '../../lib/drives';
 import { useGoToDate } from '../../lib/goToDate';
 import { useLiveTrail } from '../../lib/liveTrail';
 import { routePlan } from '../../lib/navigation';
@@ -31,8 +40,6 @@ import { location } from '../../lib/state';
 import { DriveCard } from './DriveCard';
 import { DriveList } from './DriveList';
 import { DrivePicker } from './DrivePicker';
-import { PackTempSection } from './PackTempSection';
-import { formatMinutes, tooltipTime } from './format';
 
 export function DrivesPage(props: { vehicleId: string }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -208,6 +215,11 @@ function RoutePanel(props: {
       lon: p.lon,
     }));
   }, [detail, u]);
+  const profileMinutes = useMemo(
+    () => (profile.length >= 2 ? profile.map((p) => p.minutes) : undefined),
+    [profile],
+  );
+  const syncId = detail && profileMinutes ? `drive-${detail.id}` : undefined;
   // The chart point under the pointer, marked on the route map.
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const hoverPosition = hoverIndex != null ? profilePosition(profile, hoverIndex) : null;
@@ -227,6 +239,9 @@ function RoutePanel(props: {
           xKey="minutes"
           height={150}
           onHover={setHoverIndex}
+          syncId={syncId}
+          yAxisWidth={STACKED_AXIS_WIDTH}
+          rightAxisWidth={STACKED_AXIS_WIDTH}
           xTicks={minuteTicks(profile[0]?.minutes ?? 0, end)}
           xFormatter={formatMinutes(end)}
           tooltipLabel={startedAt ? tooltipTime(startedAt) : undefined}
@@ -251,7 +266,7 @@ function RoutePanel(props: {
         />
       </ContentFrame>
     );
-  }, [profile, loading, startedAt, u]);
+  }, [profile, loading, startedAt, syncId, u]);
 
   return (
     <Panel
@@ -282,7 +297,6 @@ function RoutePanel(props: {
         )}
       </div>
       <div className="mt-4">{chart}</div>
-      {/* TeslaMate records no pack temperature, so there is nothing to show. */}
       {!isTeslaMateVehicle(props.vehicleId) && (
         <PackTempSection
           vehicleId={props.vehicleId}
@@ -295,6 +309,8 @@ function RoutePanel(props: {
             }
           }
           loading={loading}
+          minutes={profileMinutes}
+          syncId={syncId}
         />
       )}
     </Panel>

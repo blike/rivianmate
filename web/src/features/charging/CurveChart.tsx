@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ContentFrame } from '../../components/LoadingState';
-import { TrendChart } from '../../components/TrendChart';
+import { STACKED_AXIS_WIDTH, TrendChart } from '../../components/TrendChart';
 import { minuteTicks } from '../../lib/drives';
 import { clock } from '../../lib/format';
 import { fmt, fmtSeconds } from '../../lib/state';
@@ -120,6 +120,8 @@ export function CurveChart(props: {
             data={data}
             xKey="minutes"
             height={260}
+            yAxisWidth={STACKED_AXIS_WIDTH}
+            rightAxisWidth={STACKED_AXIS_WIDTH}
             xTicks={ticks}
             xFormatter={formatTime}
             tooltipLabel={tooltipTime}
@@ -155,6 +157,8 @@ export function CurveChart(props: {
             data={data}
             xKey="minutes"
             height={260}
+            yAxisWidth={STACKED_AXIS_WIDTH}
+            rightAxisWidth={STACKED_AXIS_WIDTH}
             xTicks={ticks}
             xFormatter={formatTime}
             tooltipLabel={tooltipTime}

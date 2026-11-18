@@ -19,12 +19,12 @@ interface CapturedChart {
   }[];
   leftDomain?: [number | 'auto', number | 'auto'];
   rightDomain?: [number | 'auto', number | 'auto'];
-  ownDomains?: Record<string, [number, number]>;
 }
 
 const { charts } = vi.hoisted(() => ({ charts: [] as CapturedChart[] }));
 
 vi.mock('../../components/TrendChart', () => ({
+  STACKED_AXIS_WIDTH: 48,
   TrendChart: (props: CapturedChart) => {
     charts.push(props);
     return null;
@@ -77,7 +77,6 @@ describe('CurveChart', () => {
     expect(chart.series.map((s) => s.key)).toEqual(['power', 'soc']);
     expect(chart.series.some((s) => s.unit === '°C' || s.unit === '°F')).toBe(false);
     expect(chart.series.some((s) => s.band)).toBe(false);
-    expect(chart.ownDomains).toBeUndefined();
     expect(Object.keys(chart.data[0]!).sort()).toEqual(['forecast', 'minutes', 'power', 'soc']);
   });
 

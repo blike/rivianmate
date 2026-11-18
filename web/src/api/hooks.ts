@@ -285,12 +285,7 @@ export function useDrivers(vehicleId: string, enabled = true) {
   });
 }
 
-/**
- * A span the pack's temperature is read over — a drive, or a charging session,
- * from the moment it started to the moment it ended, or nothing while it runs.
- * The kind is part of it because ids are per table: drive 7 and charge 7 are
- * two different spans.
- */
+/** A drive or charge to read the pack's temperature over; `to` is null while under way. */
 export interface PackTempSpan {
   kind: 'drive' | 'charge';
   id: number;
@@ -298,22 +293,14 @@ export interface PackTempSpan {
   to: string | null;
 }
 
-/**
- * The pack's cell temperatures over a span — a drive, or a charging session —
- * from recorded state history: its average, and the coldest and hottest cell
- * around it. Only Rivian's own state has them, so a TeslaMate vehicle asks for
- * nothing.
- */
+/** The pack's cell temperatures over a drive or charge (none for TeslaMate vehicles). */
 export function usePackTemps(vehicleId: string, span: PackTempSpan | undefined) {
   return useQuery({
-    // A span that has ended asks again once, for the readings at its end.
     queryKey: ['packTemps', vehicleId, span?.kind, span?.id, span?.to ?? 'live'],
-    // A span under way is read up to now, and grows as it goes.
     queryFn: () =>
       api.history(vehicleId, 'temp', new Date(span!.from), new Date(span!.to ?? Date.now()), 'raw'),
     enabled: span != null && !isTeslaMateVehicle(vehicleId),
     refetchInterval: span && span.to == null ? LIVE_REFRESH_MS : false,
-    // Keep the previous span's line on screen while the next one loads.
     placeholderData: keepPreviousData,
   });
 }

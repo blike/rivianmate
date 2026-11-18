@@ -41,21 +41,14 @@ import {
 } from '../services/state-history.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
-/** Which recorded field a history metric reads, where it reads only one. */
+/** The recorded field each single-field metric reads. */
 const METRIC_FIELDS = {
   battery: 'batteryLevel',
   range: 'distanceToEmpty',
   mileage: 'vehicleMileage',
 } satisfies Record<Exclude<HistoryMetric, 'temp'>, string>;
 
-/**
- * The pack's temperature, drawn as a band: its line from the field the vehicle
- * averages, its band from the two it reports its own extremes in. The cells run
- * a few degrees apart while the pack works, which the average on its own hides.
- * A steady pack writes nothing, so the series carries a row per heartbeat and
- * breaks only where the heartbeats stop: what a flat line means is that the pack
- * held, not that the vehicle went quiet.
- */
+/** `temp` is the cell average with the coldest and hottest cell as a band. */
 const PACK_TEMPERATURE_FIELDS: BandFields = {
   avg: 'batteryTempAvg',
   min: 'batteryTempMin',
@@ -92,7 +85,7 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
       if (isTeslaMateVehicle(request.params.id)) {
-        // TeslaMate records no pack temperature, so it has none to draw.
+        // TeslaMate records no pack temperature.
         if (q.metric === 'temp') return [];
         return ctx.teslamate.history(request.params.id, { ...q, metric: q.metric });
       }
