@@ -20,6 +20,7 @@ import {
   maxSpeeds,
   mileageDistanceKm,
   movingSeconds,
+  speedSpikes,
 } from '../services/drive-detector.js';
 import { driverNames } from '../services/drivers.js';
 import { MIN_DRIVE_KM, driveEnergyKwh } from '../services/drive-metrics.js';
@@ -349,8 +350,7 @@ export async function driveDtos(
   }
   const fallback = await latestCapacityKwh(ctx, vehicleId);
   const ids = rows.map((r) => r.id);
-  const speeds = await maxSpeeds(ctx.db, ids);
-  const moving = await movingSeconds(ctx.db, ids);
+  const [speeds, moving] = await Promise.all([maxSpeeds(ctx.db, ids), movingSeconds(ctx.db, ids)]);
   const state = ctx.monitor.getState(vehicleId);
   const places = await placeContext(ctx);
   const names = await driverNames(ctx.db, vehicleId);
@@ -384,8 +384,13 @@ async function rivianDriveDetail(
     .where(eq(locationPoints.driveId, driveId))
     .orderBy(locationPoints.ts);
   const fallback = await latestCapacityKwh(ctx, drive.vehicleId);
-  const speed = (await maxSpeeds(ctx.db, [drive.id])).get(drive.id) ?? null;
-  const moving = (await movingSeconds(ctx.db, [drive.id])).get(drive.id) ?? null;
+  const [speeds, moved, spikes] = await Promise.all([
+    maxSpeeds(ctx.db, [drive.id]),
+    movingSeconds(ctx.db, [drive.id]),
+    speedSpikes(ctx.db, drive.id),
+  ]);
+  const speed = speeds.get(drive.id) ?? null;
+  const moving = moved.get(drive.id) ?? null;
   const state = ctx.monitor.getState(drive.vehicleId);
   if (!drive.endedAt) {
     // Elevation is stored when a drive ends; until then, from points so far.
@@ -403,7 +408,10 @@ async function rivianDriveDetail(
       await placeContext(ctx),
       await driverNames(ctx.db, drive.vehicleId),
     ),
-    points: points.map(toLocationDto),
+    // A spiked reading would chart a speed the top speed already left out.
+    points: points.map((p) =>
+      toLocationDto(spikes.has(p.ts.getTime()) ? { ...p, speedKmh: null } : p),
+    ),
   };
 }
 

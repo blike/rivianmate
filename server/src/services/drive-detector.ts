@@ -638,9 +638,10 @@ export async function movingSeconds(db: Db, driveIds: number[]): Promise<Map<num
 
 /**
  * A speed reading is only checked against the track when its fixes are close
- * together; further apart, the ground covered says too little.
+ * together; further apart, the ground covered says too little about a peak
+ * held between them.
  */
-const SPEED_SPAN_MAX_S = 30;
+const SPEED_SPAN_MAX_S = 10;
 /**
  * How much faster than the ground around it a real reading may be, and the
  * floor that keeps a crawl from tripping the check.
@@ -649,62 +650,81 @@ const SPEED_SPAN_FACTOR = 1.15;
 const SPEED_SPAN_SLACK_KMH = 5;
 
 /**
- * Fastest recorded speed per drive (km/h).
+ * Every speed reading of the drives, flagged `is_spike` when it is impossible
+ * for the ground it covers. Rivian's navigation fixes can carry a speed the
+ * vehicle never held — one fix at a time, well over its neighbours, while the
+ * ground covered across it agrees with them.
  *
- * A reading is dropped when it is both an isolated spike and impossible for the
- * ground it covers: higher than the fix either side of it, and higher than the
- * two segments between them allow. Rivian's navigation fixes can carry
- * a speed the vehicle never held — one fix at a time, well over its neighbours,
- * while the ground covered across it agrees with them — and a plain MAX reports
- * it as the drive's top speed. A steady cruise is bounded by its own segment
- * means, so only impossible samples go; a reading on the way up or down a ramp
- * is left alone, since it is not higher than both neighbours.
+ * A reading is a spike when it is faster than the slower fix beside it and
+ * faster than the ground covered on both sides allows. Neighbours are the
+ * nearest fixes with a speed, so a fix without one can't shield a spike, and
+ * the slower one is the bar, so two bad readings in a row can't shield each
+ * other. Both sides must be measurable: a reading next to a long gap, a fix
+ * under a second away or one with no position is kept, since one side alone
+ * can't tell a spike from hard braking. A ramp is left alone, since it is no
+ * faster than the ground ahead of it.
  */
-export async function maxSpeeds(db: Db, driveIds: number[]): Promise<Map<number, number>> {
-  if (driveIds.length === 0) return new Map();
-  const rows = await db.execute<{ drive_id: number; max: number | null }>(sql`
+function checkedSpeeds(driveIds: number[]) {
+  const placed = sql.raw('(abs(lat) > 1e-4 OR abs(lon) > 1e-4)');
+  return sql`
     WITH fixes AS (
-      SELECT drive_id, speed_kmh, ts, lat::float8 AS lat, lon::float8 AS lon,
+      SELECT drive_id, ts, speed_kmh, lat::float8 AS lat, lon::float8 AS lon, ${placed} AS placed,
              lag(speed_kmh) OVER w AS prev_speed, lag(ts) OVER w AS prev_ts,
              lag(lat::float8) OVER w AS prev_lat, lag(lon::float8) OVER w AS prev_lon,
+             lag(${placed}) OVER w AS prev_placed,
              lead(speed_kmh) OVER w AS next_speed, lead(ts) OVER w AS next_ts,
-             lead(lat::float8) OVER w AS next_lat, lead(lon::float8) OVER w AS next_lon
+             lead(lat::float8) OVER w AS next_lat, lead(lon::float8) OVER w AS next_lon,
+             lead(${placed}) OVER w AS next_placed
       FROM location_points
       WHERE ${inArray(locationPoints.driveId, driveIds)}
-        AND (abs(lat) > 1e-4 OR abs(lon) > 1e-4)
+        AND speed_kmh IS NOT NULL
       WINDOW w AS (PARTITION BY drive_id ORDER BY ts)
     ),
     spans AS (
-      SELECT drive_id, speed_kmh, prev_speed, next_speed,
-             CASE WHEN EXTRACT(EPOCH FROM ts - prev_ts) BETWEEN 1 AND ${SPEED_SPAN_MAX_S}
+      SELECT drive_id, ts, speed_kmh, prev_speed, next_speed,
+             CASE WHEN placed AND prev_placed
+               AND EXTRACT(EPOCH FROM ts - prev_ts) BETWEEN 1 AND ${SPEED_SPAN_MAX_S}
              THEN 2 * 6371 * asin(least(1, sqrt(
                sin(radians(lat - prev_lat) / 2) ^ 2 +
                cos(radians(lat)) * cos(radians(prev_lat)) * sin(radians(lon - prev_lon) / 2) ^ 2
              ))) * 3600 / EXTRACT(EPOCH FROM ts - prev_ts) END AS prev_kmh,
-             CASE WHEN EXTRACT(EPOCH FROM next_ts - ts) BETWEEN 1 AND ${SPEED_SPAN_MAX_S}
+             CASE WHEN placed AND next_placed
+               AND EXTRACT(EPOCH FROM next_ts - ts) BETWEEN 1 AND ${SPEED_SPAN_MAX_S}
              THEN 2 * 6371 * asin(least(1, sqrt(
                sin(radians(next_lat - lat) / 2) ^ 2 +
                cos(radians(lat)) * cos(radians(next_lat)) * sin(radians(next_lon - lon) / 2) ^ 2
              ))) * 3600 / EXTRACT(EPOCH FROM next_ts - ts) END AS next_kmh
       FROM fixes
-    ),
-    checked AS (
-      SELECT drive_id, speed_kmh,
-             GREATEST(prev_kmh, next_kmh) AS around_kmh,
-             GREATEST(prev_speed, next_speed) AS neighbour_kmh,
-             prev_speed IS NOT NULL AND next_speed IS NOT NULL AS is_isolated
-      FROM spans
-      WHERE speed_kmh IS NOT NULL
     )
+    SELECT drive_id, ts, speed_kmh,
+           COALESCE(
+             prev_kmh IS NOT NULL AND next_kmh IS NOT NULL
+             AND speed_kmh > LEAST(prev_speed, next_speed)
+             AND speed_kmh > GREATEST(prev_kmh, next_kmh) * ${SPEED_SPAN_FACTOR} + ${SPEED_SPAN_SLACK_KMH},
+             false
+           ) AS is_spike
+    FROM spans
+  `;
+}
+
+/** Fastest recorded speed per drive (km/h), leaving out spikes (see checkedSpeeds). */
+export async function maxSpeeds(db: Db, driveIds: number[]): Promise<Map<number, number>> {
+  if (driveIds.length === 0) return new Map();
+  const rows = await db.execute<{ drive_id: number; max: number | null }>(sql`
     SELECT drive_id, MAX(speed_kmh) AS max
-    FROM checked
-    WHERE NOT (
-      is_isolated
-      AND around_kmh IS NOT NULL
-      AND speed_kmh > neighbour_kmh
-      AND speed_kmh > around_kmh * ${SPEED_SPAN_FACTOR} + ${SPEED_SPAN_SLACK_KMH}
-    )
+    FROM (${checkedSpeeds(driveIds)}) AS checked
+    WHERE NOT is_spike
     GROUP BY drive_id
   `);
   return new Map(rows.flatMap((r) => (r.max == null ? [] : [[Number(r.drive_id), Number(r.max)]])));
+}
+
+/** When a drive's spiked speed readings were taken (ms since epoch; see checkedSpeeds). */
+export async function speedSpikes(db: Db, driveId: number): Promise<Set<number>> {
+  const rows = await db.execute<{ ms: number }>(sql`
+    SELECT round(EXTRACT(EPOCH FROM ts) * 1000)::float8 AS ms
+    FROM (${checkedSpeeds([driveId])}) AS checked
+    WHERE is_spike
+  `);
+  return new Set(rows.map((r) => Number(r.ms)));
 }

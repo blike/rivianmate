@@ -12,7 +12,7 @@ import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax/index.js'
 import type { VehicleState } from '../rivian/types.js';
 import { ensureLegacyHistoryTables } from '../testing/legacy-tables.js';
 import { b64, int } from '../testing/protobuf.js';
-import { DriveDetector, maxSpeeds } from './drive-detector.js';
+import { DriveDetector, maxSpeeds, speedSpikes } from './drive-detector.js';
 import { HistoryKeys } from './history-keys.js';
 import { StateHistoryRecorder } from './state-history.js';
 
@@ -473,17 +473,20 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
 
   describe('top speed', () => {
     /**
-     * A drive whose fixes are `readings` km/h, one every 5 s, with the car
-     * actually travelling `ground` km/h between them — the two differ when a
-     * reading is wrong, which is the case this guards.
+     * A drive whose fixes are `readings` km/h (null for none), one every 5 s
+     * unless `steps` says otherwise, with the car actually travelling `ground`
+     * km/h between them — the two differ when a reading is wrong, which is the
+     * case this guards.
      */
     async function drive(
-      readings: number[],
-      options: { ground?: number | number[]; from?: string } = {},
+      readings: (number | null)[],
+      options: { ground?: number | number[]; from?: string; steps?: number[] } = {},
     ) {
       const from = options.from ?? '2026-11-14T12:51:00Z';
       const ground = readings.map((_, i) =>
-        typeof options.ground === 'number' ? options.ground : (options.ground?.[i] ?? readings[i]!),
+        typeof options.ground === 'number'
+          ? options.ground
+          : (options.ground?.[i] ?? readings[i] ?? 0),
       );
       const [row] = await handle.db
         .insert(drives)
@@ -494,18 +497,22 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
         })
         .returning();
       let km = 0;
+      let ms = Date.parse(from);
       const points = readings.map((kmh, i) => {
-        const point = {
+        if (i > 0) {
+          // The step's seconds at the ground speed, in km.
+          const step = options.steps?.[i - 1] ?? 5;
+          ms += step * 1000;
+          km += (ground[i - 1]! * step) / 3600;
+        }
+        return {
           vehicleId: 'v1',
           driveId: row!.id,
-          ts: new Date(Date.parse(from) + i * 5_000),
+          ts: new Date(ms),
           lat: 38.4352 + km / 111.32,
           lon: -86.1971,
           speedKmh: kmh,
         };
-        // Five seconds at the ground speed, in km.
-        km += (ground[i]! * 5) / 3600;
-        return point;
       });
       await handle.db.insert(locationPoints).values(points);
       return row!.id;
@@ -517,6 +524,58 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
       // as the drive's top speed.
       const id = await drive([94, 94, 152, 94, 94], { ground: 94 });
       expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+      // The drive's speed chart leaves out the same reading.
+      expect(await speedSpikes(handle.db, id)).toEqual(
+        new Set([Date.parse('2026-11-14T12:51:10Z')]),
+      );
+    });
+
+    it('ignores a spike beside a fix with no speed', async () => {
+      const id = await drive([94, null, 152, 94, 94], { ground: 94 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+    });
+
+    it('ignores two bad readings in a row', async () => {
+      const id = await drive([94, 94, 152, 152, 94, 94], { ground: 94 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+    });
+
+    it('keeps a reading only one side of it can measure', async () => {
+      // Measured on the car: pulling away, the fix after the last reading came
+      // a minute later; the ground behind it lags, and alone it can't tell
+      // a spike from hard braking.
+      const gap = await drive([0, 7, 22, 41, 30], {
+        ground: [4, 15, 26, 35],
+        steps: [5, 5, 5, 60],
+      });
+      // And one 0.3 s from the next fix, too close to measure.
+      const close = await drive([32, 65, 67, 64, 38], {
+        ground: [51, 39, 39, 52],
+        steps: [5, 5, 0.3, 6],
+        from: '2026-11-14T14:00:00Z',
+      });
+      expect(await maxSpeeds(handle.db, [gap, close])).toEqual(
+        new Map([
+          [gap, 41],
+          [close, 67],
+        ]),
+      );
+    });
+
+    it('keeps a peak between fixes too far apart to measure', async () => {
+      // Over 30 s the ground's mean falls well below a short real peak, so a
+      // span that long can't rule a reading out.
+      const id = await drive([60, 60, 110, 60, 60], {
+        ground: [60, 85, 85, 60],
+        steps: [30, 30, 30, 30],
+      });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 110]]));
+    });
+
+    it('counts readings from fixes with no position', async () => {
+      const id = await drive([50, 60, 55]);
+      await handle.db.update(locationPoints).set({ lat: 0, lon: 0 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 60]]));
     });
 
     it('keeps a reading the ground it covers allows', async () => {
