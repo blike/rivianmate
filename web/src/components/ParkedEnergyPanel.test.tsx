@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VehicleInsightsDto } from '@server/api-types';
 import { ParkedEnergyPanel } from './ParkedEnergyPanel';
 
-// No recorded nights and no unit preferences: the panel draws the live report.
+// No days to draw and no unit preferences: the panel draws the live report alone.
 vi.mock('../api/hooks', () => ({
-  useParkedNights: () => ({ data: undefined }),
+  useParkedDays: () => ({ data: undefined }),
   useUnits: () => ({ formatDistance: (km: number) => `${Math.round(km * 0.621371)} mi` }),
 }));
 
@@ -19,7 +19,7 @@ const uses = (climate: number, system: number, gearGuard: number, outlets: numbe
   outlets,
 });
 
-/** Rivian's report, as the API hands it over: one window, no history recorded. */
+/** Rivian's report, as the API hands it over: its windows, no week of days. */
 const insights = (
   windows: {
     minutes: number;
@@ -83,6 +83,18 @@ describe('ParkedEnergyPanel', () => {
     expect(readout()).not.toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(readout()).toBeNull();
+  });
+
+  it('draws no week where there are no days to draw', () => {
+    render(
+      <ParkedEnergyPanel
+        insights={insights([
+          { minutes: 1440, kwh: 1.5, rangeKm: 16.1, uses: uses(0.3, 1.1, 0.1, 0) },
+        ])}
+      />,
+    );
+    expect(screen.queryByText(/^Last 7 days$/)).toBeNull();
+    expect(document.querySelectorAll('[data-day]')).toHaveLength(0);
   });
 
   it('says so where nothing has been reported, without a bar to read', () => {

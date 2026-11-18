@@ -1,12 +1,11 @@
 import type { VehicleInsightsDto } from '@server/api-types';
-import { useParkedNights, useUnits } from '../api/hooks';
+import { useParkedDays, useUnits } from '../api/hooks';
 import {
   PARKED_USES,
-  parkedNights,
   parkedSegments,
   parkedUnsplit,
+  parkedWeek,
   parkedWindows,
-  recordedNights,
   windowLabel,
   type ParkedEnergyWindow,
 } from '../lib/insights';
@@ -18,7 +17,7 @@ import { SplitBar, SplitLegend } from './SplitBar';
 
 /**
  * Energy used while parked: one bar per window, split by use; side by side
- * from md with `columns`, and the week's nights stacked below both. Where the
+ * from md with `columns`, and the last week's days stacked below both. Where the
  * source doesn't split it (TeslaMate), each bar is the window's total against
  * the largest.
  *
@@ -26,25 +25,20 @@ import { SplitBar, SplitLegend } from './SplitBar';
  * is read by pointing at it, tapping it or tabbing to it, which prints the
  * window, its total and what the total was spent on.
  *
- * The week is drawn from the nights RivianMate has recorded, one per day; the
- * live report stands in only until the first has been written (a fresh
- * install, or a source that keeps no history), so the chart is never bare in
- * front of data the panel is already showing.
+ * The week is the last seven full days, each the last 24 hours Rivian
+ * reported that day, read from the archive. It's left out where there's no
+ * day to draw (TeslaMate, or an archive that hasn't seen a full day yet).
  */
 export function ParkedEnergyPanel(props: {
   insights: VehicleInsightsDto | undefined;
   columns?: boolean;
-  /** Whose nights to draw; without it the week falls back to the live report. */
+  /** Whose days to draw; without it there is no week. */
   vehicleId?: string;
 }) {
   const u = useUnits();
   const loading = useLoading();
-  const energy = props.insights?.parkedEnergy;
-  const windows = parkedWindows(energy?.windows ?? []);
-  const { data: records } = useParkedNights(props.vehicleId);
-  const nights = records?.length
-    ? recordedNights(records)
-    : parkedNights(energy?.windows ?? [], energy?.at ?? '');
+  const windows = parkedWindows(props.insights?.parkedEnergy?.windows ?? []);
+  const { data: records } = useParkedDays(props.vehicleId);
   const split = windows.some((w) => w.uses != null);
   const largest = Math.max(0, ...windows.map((w) => w.kwh));
   if (!loading && windows.length === 0) {
@@ -63,9 +57,9 @@ export function ParkedEnergyPanel(props: {
         ))}
       </div>
       {(loading || split) && <SplitLegend items={[...PARKED_USES]} />}
-      {/* Nights RivianMate has recorded, one row a day: a night it was off for
-          keeps an empty slot (see recordedNights). */}
-      {!loading && <ParkedWeek nights={nights} />}
+      {/* The last full days, one bar each: a day without a reading keeps an
+          empty slot (see parkedWeek). */}
+      {!loading && records && records.length > 0 && <ParkedWeek days={parkedWeek(records)} />}
     </div>
   );
 }

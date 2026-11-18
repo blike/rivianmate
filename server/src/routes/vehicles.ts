@@ -1,9 +1,10 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { ParkedNightDto, SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
+import type { ParkedDayDto, SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
+import { isTimeZone } from '../services/imports/time-zone.js';
 import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 import { NO_SCHEDULES } from '../teslamate/source.js';
@@ -15,9 +16,9 @@ import { sendRender } from './render-proxy.js';
 const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
   VEHICLE_VIEWS.filter((v) => images?.[v]);
 
-const nightsQuery = z.object({
-  nights: z.coerce.number().int().min(1).max(31).default(7),
-  /** The calendar the reader's days are in; the recorder writes its nights in it. */
+const parkedDaysQuery = z.object({
+  days: z.coerce.number().int().min(1).max(31).default(7),
+  /** The calendar the reader's days are in; the server's own until one is named. */
   tz: z.string().max(64).optional(),
 });
 
@@ -76,14 +77,15 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
         : withSavedNames(ctx, await ctx.monitor.getInsights(request.params.id)),
   );
 
-  // The nights of parked energy recorded so far, oldest first, for the week's
-  // chart: one bar a night, filling in as nights pass.
+  // The last full days of parked energy, oldest first, for the week's chart:
+  // each day's last 24-hour window, read from the archive.
   app.get<{ Params: { id: string } }>(
-    '/api/vehicles/:id/parked-nights',
-    async (request): Promise<ParkedNightDto[]> => {
-      const { nights, tz } = nightsQuery.parse(request.query);
+    '/api/vehicles/:id/parked-days',
+    async (request): Promise<ParkedDayDto[]> => {
+      const { days, tz } = parkedDaysQuery.parse(request.query);
       if (isTeslaMateVehicle(request.params.id)) return [];
-      return ctx.monitor.getParkedNights(request.params.id, nights, tz);
+      const zone = tz && isTimeZone(tz) ? tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
+      return ctx.monitor.getParkedDays(request.params.id, days, zone);
     },
   );
 

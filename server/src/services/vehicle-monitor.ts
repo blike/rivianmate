@@ -13,13 +13,12 @@ import {
   chargingTimeWindow,
   chargingWindowSchedule,
   messageTime,
-  parkedEnergy,
   tripInfo,
   vehicleSupportsParallax,
 } from '../rivian/parallax/index.js';
 import type {
   LookupSettings,
-  ParkedNightDto,
+  ParkedDayDto,
   SchedulesDto,
   VehicleInsightsDto,
 } from '../api-types.js';
@@ -42,7 +41,7 @@ import type { DrivePlaces } from './drive-places.js';
 import type { DriveWeather } from './drive-weather.js';
 import { LocationWriter } from './location-writer.js';
 import { OtaNotesStore } from './ota-notes.js';
-import { ParkedEnergyNights } from './parked-energy-nights.js';
+import { readParkedDays } from './parked-energy-days.js';
 import { ParallaxArchive } from './parallax-archive.js';
 import { ParallaxRouter } from './parallax-router.js';
 import { ParallaxStore } from './parallax-store.js';
@@ -147,7 +146,6 @@ export class VehicleMonitor {
   private chargingMonitor?: ChargingMonitor;
   private readonly otaNotes: OtaNotesStore;
   private readonly parallaxStore: ParallaxStore;
-  private readonly parkedEnergyNights: ParkedEnergyNights;
   private readonly parallaxArchive: ParallaxArchive;
   private chargeHistory?: ChargeHistoryImporter;
   private schedules = new Map<string, VehicleSchedules>();
@@ -192,10 +190,6 @@ export class VehicleMonitor {
     this.locationWriter = new LocationWriter(db);
     this.stateHistory = new StateHistoryRecorder(db, keys);
     this.parallaxStore = new ParallaxStore(db, logger.child({ component: 'parallax' }));
-    this.parkedEnergyNights = new ParkedEnergyNights(
-      db,
-      logger.child({ component: 'parked-nights' }),
-    );
     this.parallaxArchive = new ParallaxArchive(db, keys, logger.child({ component: 'parallax' }));
     this.otaNotes = new OtaNotesStore(db, logger.child({ component: 'ota' }));
     this.drivers = new Drivers(db, this.parallaxArchive, logger.child({ component: 'drivers' }));
@@ -472,14 +466,6 @@ export class VehicleMonitor {
         chargingMonitor.ingestParallax(vehicleId, message, decoded),
       )
       .on((vehicleId, decoded, message) => this.parallaxStore.ingest(vehicleId, message, decoded))
-      // Off the payloads that arrive anyway: no request of its own, no wake.
-      .onTopic(parkedEnergy, (vehicleId, windows, message) =>
-        this.parkedEnergyNights.record(
-          vehicleId,
-          windows ?? [],
-          messageTime(message.timestamp) ?? new Date(),
-        ),
-      )
       .on((vehicleId, _decoded, message) => this.parallaxArchive.ingest(vehicleId, message))
       .onTopic(chargingTimeWindow, (vehicleId, window) =>
         this.scheduleRefresh.noteWindow(vehicleId, window),
@@ -724,13 +710,9 @@ export class VehicleMonitor {
     return this.parallaxStore.insights(vehicleId);
   }
 
-  /**
-   * The nights of parked energy recorded, oldest first. `tz` is the calendar
-   * the reader's days are in, which the recorder keeps for its own days.
-   */
-  getParkedNights(vehicleId: string, nights: number, tz?: string): Promise<ParkedNightDto[]> {
-    this.parkedEnergyNights.setZone(tz);
-    return this.parkedEnergyNights.recent(vehicleId, nights);
+  /** The last `days` full days of parked energy in `zone`, oldest first. */
+  getParkedDays(vehicleId: string, days: number, zone: string): Promise<ParkedDayDto[]> {
+    return readParkedDays(this.parallaxArchive, vehicleId, days, zone);
   }
 
   /** The stored release notes for a version, saving them first if Rivian has them. */

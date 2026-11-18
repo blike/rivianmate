@@ -517,11 +517,13 @@ export interface VehicleInsightsDto {
 }
 
 /**
- * One night of parked energy as recorded: Rivian's rolling 24-hour window,
- * kept from the first payload that arrived on that day. `at` is when Rivian
- * sent it, which is also the instant the night's bar is placed by.
+ * One day of parked energy: the last rolling 24-hour window Rivian reported
+ * that day, read from the archive. `day` is the date in the zone the request
+ * named; `at` is when Rivian sent it, which is where the 24 hours end.
  */
-export interface ParkedNightDto {
+export interface ParkedDayDto {
+  /** YYYY-MM-DD in the requested zone. */
+  day: string;
   at: string;
   minutes: number;
   kwh: number;

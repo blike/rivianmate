@@ -340,16 +340,16 @@ export function useInsights(vehicleId: string) {
 }
 
 /**
- * The nights of parked energy recorded. One is written just after midnight, so
- * a page left open all evening picks it up without asking every minute for a
- * table that moves once a night.
+ * The last full days of parked energy. They only change at midnight, so a
+ * page left open picks the new day up within the half hour.
  */
-export function useParkedNights(vehicleId: string | undefined, nights = 7) {
+export function useParkedDays(vehicleId: string | undefined, days = 7) {
   return useQuery({
-    queryKey: ['parkedNights', vehicleId, nights],
-    queryFn: () => api.parkedNights(vehicleId!, nights),
+    queryKey: ['parkedDays', vehicleId, days],
+    queryFn: () => api.parkedDays(vehicleId!, days),
     enabled: !!vehicleId,
-    refetchInterval: 5 * 60_000,
+    staleTime: 30 * 60_000,
+    refetchInterval: 30 * 60_000,
   });
 }
 
