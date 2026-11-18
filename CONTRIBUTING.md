@@ -39,6 +39,11 @@ code is `000000`, and a simulated R1S drives, parks and charges so every page fi
 mode for screenshots and bug reproductions so no real vehicle data ends up in the repository or in
 issues.
 
+For history beyond what the mock has driven live, record the demo scene into a demo database:
+`pnpm --filter @rivianmate/server demo:scene`, then start with `MOCK_SCENE=drive-home` (the script's
+header has the details). It writes about two and three-quarter years of drives and charges, so
+History's longer periods, month bars included, can be screenshotted too.
+
 ## Before opening a pull request
 
 Run the same checks CI runs:
