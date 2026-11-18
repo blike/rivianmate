@@ -360,6 +360,20 @@ export function useInsights(vehicleId: string) {
   });
 }
 
+/**
+ * The last full days of parked energy. They only change at midnight, so a
+ * page left open picks the new day up within the half hour.
+ */
+export function useParkedDays(vehicleId: string | undefined, days = 7) {
+  return useQuery({
+    queryKey: ['parkedDays', vehicleId, days],
+    queryFn: () => api.parkedDays(vehicleId!, days),
+    enabled: !!vehicleId,
+    staleTime: 30 * 60_000,
+    refetchInterval: 30 * 60_000,
+  });
+}
+
 export function useUnitPreferences() {
   return useQuery({ queryKey: ['units'], queryFn: api.units, staleTime: Infinity });
 }

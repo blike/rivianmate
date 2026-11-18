@@ -521,6 +521,21 @@ export interface VehicleInsightsDto {
   } | null;
 }
 
+/**
+ * One day of parked energy: the last rolling 24-hour window Rivian reported
+ * that day, read from the archive. `day` is the date in the zone the request
+ * named; `at` is when Rivian sent it, which is where the 24 hours end.
+ */
+export interface ParkedDayDto {
+  /** YYYY-MM-DD in the requested zone. */
+  day: string;
+  at: string;
+  minutes: number;
+  kwh: number;
+  rangeKm: number;
+  uses: { climate: number; system: number; gearGuard: number; outlets: number };
+}
+
 /** A timed alert: fires once the condition has lasted `minutes`. */
 export interface TimedAlertSettings {
   enabled: boolean;

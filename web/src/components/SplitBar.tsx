@@ -8,7 +8,12 @@ export interface SplitSegment {
 }
 
 /** One full-width bar split into energy shares. */
-export function SplitBar(props: { segments: SplitSegment[]; emptyLabel?: string }) {
+export function SplitBar(props: {
+  segments: SplitSegment[];
+  emptyLabel?: string;
+  /** Each share's own hover title; off where the bar carries a reading of its own. */
+  titles?: boolean;
+}) {
   const segments = props.segments.filter((s) => s.kwh > 0);
   // Shares of the bar, summing to 100: grow values summing below 1
   // would leave part of the bar empty.
@@ -26,7 +31,7 @@ export function SplitBar(props: { segments: SplitSegment[]; emptyLabel?: string 
           key={s.key}
           className="parked-bar__segment"
           style={{ flexGrow: (s.kwh / total) * 100, flexBasis: 0, background: s.color }}
-          title={`${s.label}: ${fmt(s.kwh, 1)} kWh`}
+          title={props.titles === false ? undefined : `${s.label}: ${fmt(s.kwh, 1)} kWh`}
         />
       ))}
     </div>

@@ -16,7 +16,12 @@ import {
   tripInfo,
   vehicleSupportsParallax,
 } from '../rivian/parallax/index.js';
-import type { LookupSettings, SchedulesDto, VehicleInsightsDto } from '../api-types.js';
+import type {
+  LookupSettings,
+  ParkedDayDto,
+  SchedulesDto,
+  VehicleInsightsDto,
+} from '../api-types.js';
 import {
   ChargingSchedule,
   DepartureSchedule,
@@ -36,6 +41,7 @@ import type { DrivePlaces } from './drive-places.js';
 import type { DriveWeather } from './drive-weather.js';
 import { LocationWriter } from './location-writer.js';
 import { OtaNotesStore } from './ota-notes.js';
+import { readParkedDays } from './parked-energy-days.js';
 import { ParallaxArchive } from './parallax-archive.js';
 import { ParallaxRouter } from './parallax-router.js';
 import { ParallaxStore } from './parallax-store.js';
@@ -702,6 +708,11 @@ export class VehicleMonitor {
   /** Latest Parallax readings (battery temperatures, parked energy, …). */
   getInsights(vehicleId: string): Promise<VehicleInsightsDto> {
     return this.parallaxStore.insights(vehicleId);
+  }
+
+  /** The last `days` full days of parked energy in `zone`, oldest first. */
+  getParkedDays(vehicleId: string, days: number, zone: string): Promise<ParkedDayDto[]> {
+    return readParkedDays(this.parallaxArchive, vehicleId, days, zone);
   }
 
   /** The stored release notes for a version, saving them first if Rivian has them. */

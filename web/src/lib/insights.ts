@@ -1,3 +1,5 @@
+import type { VehicleInsightsDto } from '@server/api-types';
+
 /** Parked-energy windows worth showing: whole hours, longest first. */
 export function parkedWindows<T extends { minutes: number }>(windows: readonly T[]): T[] {
   return windows
@@ -43,4 +45,55 @@ export function parkedSegments(uses: {
   outlets: number;
 }) {
   return PARKED_USES.map((u) => ({ ...u, kwh: uses[u.key] })).filter((s) => s.kwh >= 0.05);
+}
+
+type ParkedEnergy = NonNullable<VehicleInsightsDto['parkedEnergy']>;
+
+/** One of Rivian's parked-energy windows, as the API hands it over. */
+export type ParkedEnergyWindow = ParkedEnergy['windows'][number];
+
+/**
+ * What a bar's reading says where there's no split to print: a source that
+ * doesn't break the energy down (TeslaMate), or a window whose uses each drew
+ * too little to draw.
+ */
+export function parkedUnsplit(uses: ParkedEnergyWindow['uses']): string {
+  return uses == null ? 'Not split by use' : 'No use drew energy';
+}
+
+/** A day of the week view: a date of the device's calendar and its reading. */
+export interface ParkedDay<T> {
+  /** The date in the device's own calendar, as YYYY-MM-DD. */
+  key: string;
+  /** Local midnight of that date. */
+  date: Date;
+  /** That day's reading, or null where there was none. */
+  window: T | null;
+}
+
+/** A date as YYYY-MM-DD, so days sort and key as text. */
+function dayKey(day: Date): string {
+  const month = `${day.getMonth() + 1}`.padStart(2, '0');
+  const date = `${day.getDate()}`.padStart(2, '0');
+  return `${day.getFullYear()}-${month}-${date}`;
+}
+
+/**
+ * The `count` full days before today, oldest first, each with the reading the
+ * server gave for it. The server reads its days in this device's zone (the
+ * request names it), so its `day` keys are this calendar's dates. A day with
+ * no reading keeps its slot, so the days around it don't move. Today is left
+ * out: its last reading hasn't come.
+ */
+export function parkedWeek<R extends { day: string }>(
+  records: readonly R[],
+  count = 7,
+  today = new Date(),
+): ParkedDay<R>[] {
+  const byDay = new Map(records.map((r) => [r.day, r]));
+  return Array.from({ length: count }, (_, i) => {
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - count + i);
+    const key = dayKey(date);
+    return { key, date, window: byDay.get(key) ?? null };
+  });
 }
