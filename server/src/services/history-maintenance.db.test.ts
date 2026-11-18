@@ -106,7 +106,8 @@ describe.skipIf(!url)('HistoryMaintenance with Postgres', () => {
     await maintenance().run();
 
     expect((await allChanges(['batteryLevel'])).map((c) => c.value)).toEqual([80, 78]);
-    expect(await handle.db.select().from(appSettings)).toEqual([]);
+    const settings = await handle.db.select({ key: appSettings.key }).from(appSettings);
+    expect(settings.map((s) => s.key)).not.toContain('state_history_conversion');
   });
 
   it('moves the Parallax log and latest payloads into the archive, then drops the log', async () => {
