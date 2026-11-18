@@ -6,24 +6,18 @@ import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 const CELLS = 50;
 const SCALE = [0, 25, 50, 75, 100];
 
-/** The band's only label, and the color it takes: a pack the cold is limiting is not a fault. */
-const COLD_LIMITED = 'cold-limited';
-
 /**
  * State of charge as a row of cells, like the pack it stands for: lit to
  * the level, the charge limit marked above, and while charging the cells
  * still to fill ripple toward it. Past the limit the cells are dimmed.
  * Another level can stand in for the limit, named by `limitLabel`. A pack
- * the cold is limiting says so in a row of its own above the limit's
- * label, so the band grows and nothing else moves; a pack the cold is not
- * limiting says nothing, since its verdict is no news.
+ * the cold is limiting says so above the limit's label.
  */
 export function ChargeGauge(props: {
   level: number | null;
   limit: number | null;
   limitLabel?: string;
   charging: boolean;
-  /** Null for a vehicle whose battery-state frames don't carry the verdict. */
   verdict?: PowerOutputVerdict | null;
 }) {
   const loading = useLoading();
@@ -38,20 +32,19 @@ export function ChargeGauge(props: {
         ? 'var(--status-warning)'
         : 'var(--accent)';
   const lit = (level / 100) * CELLS;
-  // role="meter" hides the band's own labels, so they are said here instead.
+  // role="meter" hides the labels, so they're read out here.
   const valueText =
     props.level != null
       ? [
           `${fmt(props.level, 0)}%`,
           limit != null ? `${(props.limitLabel ?? 'Limit').toLowerCase()} ${fmt(limit, 0)}%` : null,
-          coldLimited ? `power output ${COLD_LIMITED}` : null,
+          coldLimited ? 'power output limited by cold' : null,
         ]
           .filter((part) => part != null)
           .join(', ')
       : undefined;
-  // The cold-limited label takes a row of its own above the limit's label, and the band makes room for both.
   const stacked = coldLimited && limit != null;
-  // Keeps a band label over the limit's mark, and inside the gauge at either end.
+  // Over the limit's mark, kept inside the gauge at either end.
   const marker =
     limit == null
       ? { left: 0 }
@@ -77,7 +70,7 @@ export function ChargeGauge(props: {
           className="absolute top-0 text-[11px] leading-4 whitespace-nowrap text-(--status-cold)"
           style={marker}
         >
-          {COLD_LIMITED}
+          Cold-limited
         </span>
       )}
       {limit != null && (

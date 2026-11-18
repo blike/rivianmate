@@ -5,13 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { ID, ago, drives, parkedState, sessions, vehicle } from '../../testing/fixtures';
 import { DashboardPage } from './DashboardPage';
 
-function render(state: object) {
+function render(state: object, cellTempsCurrent = false) {
   const client = new QueryClient();
   client.setQueryData(['vehicleState', ID], state);
   client.setQueryData(['liveCharging', ID], null);
   client.setQueryData(['insights', ID], {
     cellTemps: null,
-    cellTempsCurrent: false,
+    cellTempsCurrent,
     coldWeather: null,
     parkedEnergy: null,
     navigation: null,
@@ -52,12 +52,13 @@ describe('DashboardPage', () => {
     expect(html).toContain('LOW');
   });
 
-  it("shows the pack's verdict on the gauge, and nothing for a vehicle that sends none", () => {
-    expect(render(parkedState)).not.toContain('cold-limited');
-    const html = render({
+  it("shows the pack's cold limit on the gauge only while the pack is reporting", () => {
+    const cold = {
       ...parkedState,
       batteryPowerOutputStatus: { value: 'cold', timeStamp: ago(0.1) },
-    });
-    expect(html).toContain('cold-limited');
+    };
+    expect(render(parkedState, true)).not.toContain('Cold-limited');
+    expect(render(cold, true)).toContain('Cold-limited');
+    expect(render(cold, false)).not.toContain('Cold-limited');
   });
 });

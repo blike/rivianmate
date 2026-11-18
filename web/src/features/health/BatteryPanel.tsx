@@ -17,7 +17,7 @@ export function BatteryPanel(props: {
   insightsPending: boolean;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
-  /** Left out when undefined: a vehicle that never sends one shows no verdict. */
+  /** Left out when undefined: the vehicle doesn't send it. Null while the pack isn't reporting. */
   powerOutput?: PowerOutputVerdict | null;
 }) {
   const reported = props.battery?.reported;

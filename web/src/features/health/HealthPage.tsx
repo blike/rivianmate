@@ -47,7 +47,11 @@ export function HealthPage(props: { vehicleId: string; model?: string | null }) 
         insightsPending={insightsPending}
         cellType={showOptional(state, 'batteryCellType') ? sv(state, 'batteryCellType') : undefined}
         powerOutput={
-          showOptional(state, 'batteryPowerOutputStatus') ? powerOutputVerdict(state) : null
+          !showOptional(state, 'batteryPowerOutputStatus')
+            ? undefined
+            : insights?.cellTempsCurrent
+              ? powerOutputVerdict(state)
+              : null
         }
       />
 

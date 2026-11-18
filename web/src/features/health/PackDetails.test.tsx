@@ -17,25 +17,24 @@ const render = (props: Partial<Parameters<typeof PackDetails>[0]> = {}) =>
     </QueryClientProvider>,
   );
 
-describe('PackDetails power output verdict', () => {
-  it('names a cold limit beside the cell temperature', () => {
+describe('PackDetails power output', () => {
+  it('reads a cold limit in the cold color', () => {
     const html = render({ powerOutput: 'cold' });
-    expect(html).toContain('cold-limited');
-    expect(html).not.toContain('>normal<');
+    expect(html).toContain('Power output');
+    expect(html).toContain('<span class="text-(--status-cold)">Limited by cold</span>');
   });
 
-  it('reads normal for a pack the BMS is not limiting', () => {
-    const html = render({ powerOutput: 'normal' });
-    expect(html).toContain('>normal<');
-    expect(html).not.toContain('cold-limited');
+  it('reads Normal for a pack that is not limited', () => {
+    expect(render({ powerOutput: 'normal' })).toMatch(/Power output<\/dt><dd[^>]*>Normal<\/dd>/);
   });
 
-  it('shows no verdict at all for a vehicle that never sends one', () => {
+  it('reads — while the pack is not reporting', () => {
+    expect(render({ powerOutput: null })).toMatch(/Power output<\/dt><dd[^>]*>—<\/dd>/);
+  });
+
+  it('leaves the row out for a vehicle that never sends a verdict', () => {
     const html = render();
-    expect(html).not.toContain('normal');
-    expect(html).not.toContain('cold-limited');
-    // The row it belongs on is unchanged.
+    expect(html).not.toContain('Power output');
     expect(html).toContain('Cell temperature');
-    expect(html).toContain('Cell temperatures are reported only while the vehicle is awake.');
   });
 });
