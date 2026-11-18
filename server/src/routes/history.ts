@@ -9,6 +9,7 @@ import type {
   DriveDto,
   DrivePlaceDto,
   DriverDto,
+  HistoryMetric,
   HistoryPoint,
   LocationPointDto,
   StateSpanDto,
@@ -31,17 +32,31 @@ import { afterStart, listLimit, listWindowSchema } from './list-window.js';
 import { loadChargeSpans } from '../services/charge-spans.js';
 import { loadStateSpans } from '../services/state-spans.js';
 import { thinTrack, trackBucketSeconds, trackToleranceM } from '../services/simplify-track.js';
-import { bucketSeries, latestNumber, numericSeries } from '../services/state-history.js';
+import {
+  type BandFields,
+  bandSeries,
+  bucketSeries,
+  latestNumber,
+  numericSeries,
+} from '../services/state-history.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 
-const METRIC_FIELDS: Record<string, string> = {
+/** The recorded field each single-field metric reads. */
+const METRIC_FIELDS = {
   battery: 'batteryLevel',
   range: 'distanceToEmpty',
   mileage: 'vehicleMileage',
+} satisfies Record<Exclude<HistoryMetric, 'temp'>, string>;
+
+/** `temp` is the cell average with the coldest and hottest cell as a band. */
+const PACK_TEMPERATURE_FIELDS: BandFields = {
+  avg: 'batteryTempAvg',
+  min: 'batteryTempMin',
+  max: 'batteryTempMax',
 };
 
 const historyQuerySchema = z.object({
-  metric: z.enum(['battery', 'range', 'mileage']).default('battery'),
+  metric: z.enum(['battery', 'range', 'mileage', 'temp']).default('battery'),
   from: z.coerce.date().default(() => new Date(Date.now() - 7 * 86400_000)),
   to: z.coerce.date().default(() => new Date()),
   /** "raw": every recorded change, unaveraged. */
@@ -69,13 +84,34 @@ export async function historyRoutes(app: FastifyInstance, ctx: AppContext): Prom
     '/api/vehicles/:id/history',
     async (request): Promise<HistoryPoint[]> => {
       const q = historyQuerySchema.parse(request.query);
-      if (isTeslaMateVehicle(request.params.id)) return ctx.teslamate.history(request.params.id, q);
+      if (isTeslaMateVehicle(request.params.id)) {
+        // TeslaMate records no pack temperature.
+        if (q.metric === 'temp') return [];
+        return ctx.teslamate.history(request.params.id, { ...q, metric: q.metric });
+      }
       // Nothing is known past now; a value held then isn't carried into the future.
       const to = new Date(Math.min(q.to.getTime(), Date.now()));
+      if (q.metric === 'temp') {
+        const rows = await bandSeries(
+          ctx.db,
+          request.params.id,
+          PACK_TEMPERATURE_FIELDS,
+          q.from,
+          to,
+          BUCKET_MS[q.bucket] ?? null,
+          { heartbeats: true },
+        );
+        return rows.map((r) => ({
+          bucket: new Date(r.at).toISOString(),
+          avg: r.avg,
+          min: r.min,
+          max: r.max,
+        }));
+      }
       const { opening, changes } = await numericSeries(
         ctx.db,
         request.params.id,
-        METRIC_FIELDS[q.metric]!,
+        METRIC_FIELDS[q.metric],
         q.from,
         to,
       );

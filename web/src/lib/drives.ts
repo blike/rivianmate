@@ -1,5 +1,6 @@
 import type { LocationPointDto } from '@server/api-types';
 import { isPosition } from './geo';
+import { fmt, fmtSeconds } from './state';
 
 /**
  * Speed (km/h) and altitude (m) by minutes into the drive, for charting.
@@ -153,4 +154,21 @@ export function minuteTicks(min: number, max: number, maxTicks = 6): number[] {
   const ticks: number[] = [];
   for (let t = Math.ceil(min / step) * step; t <= max; t += step) ticks.push(t);
   return ticks;
+}
+
+/** Axis labels for whole minutes into a drive: "25 min", or "1h 30m" style for drives of two hours or more. */
+export function formatMinutes(totalMinutes: number) {
+  return (m: number) => (totalMinutes >= 120 ? fmtSeconds(m * 60) : `${fmt(m, 0)} min`);
+}
+
+/** "47m (12:52 PM)": time into the drive, then the time of day. */
+export function tooltipTime(startedAt: string) {
+  const start = Date.parse(startedAt);
+  return (m: number) => {
+    const at = new Date(start + m * 60_000).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return `${fmtSeconds(m * 60)} (${at})`;
+  };
 }

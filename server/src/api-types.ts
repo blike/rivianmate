@@ -147,6 +147,10 @@ export interface ConnectResponse {
   otpRequired?: boolean;
 }
 
+/**
+ * A recorded series: the average, and the lowest and highest held over the
+ * bucket. For `temp`, an all-null row marks where the vehicle went quiet.
+ */
 export interface HistoryPoint {
   bucket: string;
   avg: number | null;
@@ -168,7 +172,8 @@ export interface ChargeSpanDto {
   to: string;
 }
 
-export type HistoryMetric = 'battery' | 'range' | 'mileage';
+/** What the history route charts; `temp` is the pack's cell temperatures. */
+export type HistoryMetric = 'battery' | 'range' | 'mileage' | 'temp';
 
 export interface LocationPointDto {
   ts: string;

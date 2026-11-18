@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StateDiff, bucketSeries, timeline } from './state-history.js';
+import { StateDiff, bucketSeries, heldValues, timeline } from './state-history.js';
 
 const t = (iso: string) => Date.parse(iso);
 const HOUR = 3600_000;
@@ -87,6 +87,52 @@ describe('StateDiff', () => {
       t('2026-10-01T11:00:00Z'),
     );
     expect(changes).toEqual([{ field: 'batteryLevel', at: t('2026-10-01T11:00:00Z'), value: 80 }]);
+  });
+});
+
+describe('heldValues', () => {
+  const from = t('2026-10-01T10:00:00Z');
+
+  it('widens the band to reach around its average', () => {
+    // Rows written one field at a time: the hottest cell was recorded cooling
+    // before the average moved, so the two disagree. No pack reads with an
+    // average hotter than its hottest cell, so the band is stretched to it.
+    const rows = heldValues({
+      avg: [
+        { at: from, value: 20 },
+        { at: from + 2 * HOUR, value: 22 },
+      ],
+      max: [
+        { at: from, value: 24 },
+        { at: from + HOUR, value: 21 },
+      ],
+      min: [{ at: from, value: 19 }],
+    });
+    expect(rows.map((r) => [r.avg, r.min, r.max])).toEqual([
+      [20, 19, 24],
+      [20, 19, 21],
+      [22, 19, 22],
+    ]);
+  });
+
+  it('widens the coldest cell to the average when the average falls below it', () => {
+    const rows = heldValues({
+      avg: [{ at: from, value: 20 }],
+      max: [{ at: from, value: 24 }],
+      min: [
+        { at: from, value: 18 },
+        { at: from + HOUR, value: 21 },
+      ],
+    });
+    expect(rows.map((r) => [r.avg, r.min, r.max])).toEqual([
+      [20, 18, 24],
+      [20, 20, 24],
+    ]);
+  });
+
+  it('leaves a field the vehicle never reported empty', () => {
+    const rows = heldValues({ avg: [{ at: from, value: 20 }], min: [], max: [] });
+    expect(rows).toEqual([{ at: from, avg: 20, min: null, max: null }]);
   });
 });
 

@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { localKey } from '../lib/drives';
 import { location, type VehicleFix } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
@@ -281,6 +282,26 @@ export function useDrivers(vehicleId: string, enabled = true) {
     queryFn: () => api.drivers(vehicleId),
     enabled,
     staleTime: 10 * 60_000,
+  });
+}
+
+/** A drive or charge to read the pack's temperature over; `to` is null while under way. */
+export interface PackTempSpan {
+  kind: 'drive' | 'charge';
+  id: number;
+  from: string;
+  to: string | null;
+}
+
+/** The pack's cell temperatures over a drive or charge (none for TeslaMate vehicles). */
+export function usePackTemps(vehicleId: string, span: PackTempSpan | undefined) {
+  return useQuery({
+    queryKey: ['packTemps', vehicleId, span?.kind, span?.id, span?.to ?? 'live'],
+    queryFn: () =>
+      api.history(vehicleId, 'temp', new Date(span!.from), new Date(span!.to ?? Date.now()), 'raw'),
+    enabled: span != null && !isTeslaMateVehicle(vehicleId),
+    refetchInterval: span && span.to == null ? LIVE_REFRESH_MS : false,
+    placeholderData: keepPreviousData,
   });
 }
 
