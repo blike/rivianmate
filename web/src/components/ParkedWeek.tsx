@@ -27,11 +27,12 @@ function usesText(reading: ParkedDayDto): string {
 
 /**
  * Why a day has no bar. Rivian sends parked energy only around a drive, so a
- * day the car sat parked has no reading of its own; its energy shows up in
- * the next drive's report, not in this week's bars.
+ * day the car sat parked has no reading of its own, and neither has a day
+ * RivianMate wasn't connected for. The archive can't tell the two apart, so
+ * the readout names both.
  */
 const NO_READING =
-  'No reading. Rivian reports parked energy only when the car is driven, so a day it stayed parked has none.';
+  "No reading. Rivian reports parked energy only around a drive, so this is usually a day the car stayed parked, or one RivianMate wasn't connected for.";
 
 /** What an empty day's readout says. */
 function noReadingOf(day: ParkedDay<ParkedDayDto>): BarReading {
@@ -54,9 +55,10 @@ function readingOf(day: ParkedDay<ParkedDayDto>, w: ParkedDayDto): BarReading {
  * glance. Each bar is the last 24 hours Rivian reported that day: the day and
  * the night before it. A day with no reading (the car wasn't driven, or
  * RivianMate missed it) keeps a dashed slot that says so, rather than closing
- * the gap or passing for a day that used nothing. The totals sit above the bars so the shape is read against
- * a number, and a bar's own numbers are read by pointing at it, tapping it or
- * tabbing to it: a small day is a sliver three pixels wide.
+ * the gap or passing for a day that used nothing. The totals sit above the
+ * bars so the shape is read against a number, and a bar's own numbers are
+ * read by pointing at it, tapping it or tabbing to it: a small day is a
+ * sliver three pixels wide.
  */
 export function ParkedWeek(props: { days: ParkedDay<ParkedDayDto>[] }) {
   const days = props.days;

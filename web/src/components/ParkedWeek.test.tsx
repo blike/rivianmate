@@ -125,7 +125,9 @@ describe('ParkedWeek', () => {
       month: 'short',
     });
     expect(within(card!).getByText(monday)).toBeTruthy();
-    expect(within(card!).getByText(/only when the car is driven/)).toBeTruthy();
+    expect(
+      within(card!).getByText(/stayed parked, or one RivianMate wasn't connected for/),
+    ).toBeTruthy();
     // No reading means no numbers, not a total of zero.
     expect(within(card!).queryByText('Total')).toBeNull();
   });
