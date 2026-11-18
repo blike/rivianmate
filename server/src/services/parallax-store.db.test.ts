@@ -78,6 +78,16 @@ describe.skipIf(!url)('ParallaxStore with Postgres', () => {
     expect(insights.cellTempsCurrent).toBe(false);
   });
 
+  it('ignores a frame carrying the float default instead of temperatures', async () => {
+    const store = new ParallaxStore(handle.db);
+    await store.ingest('v1', battery(60, [30, 33, 28]));
+    await store.ingest('v1', battery(59.5, [5.9604645e-7, 5.9604645e-7, 5.9604645e-7]));
+
+    const insights = await store.insights('v1');
+    expect(insights.cellTemps?.avgC).toBe(30);
+    expect(insights.cellTempsCurrent).toBe(false);
+  });
+
   it("decodes stored topics and ignores ones it doesn't keep", async () => {
     const store = new ParallaxStore(handle.db);
     await store.ingest('v1', {

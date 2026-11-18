@@ -1,5 +1,5 @@
 /**
- * The cell-temperature replay against a real Postgres. Skipped unless
+ * Integration tests against a real Postgres. Skipped unless
  * TEST_DATABASE_URL points at a disposable database (tables are truncated).
  */
 import { fileURLToPath } from 'node:url';
@@ -11,17 +11,16 @@ import { appSettings, parallaxArchive, stateChanges, stateFields, vehicles } fro
 import { silentLogger } from '../logger.js';
 import { RVM_BATTERY_STATE } from '../rivian/parallax/domains/energy.js';
 import { b64, double, float, int, message } from '../testing/protobuf.js';
-import { CURSOR_KEY, backfillCellTemps } from './cell-temp-backfill.js';
+import { BACKFILL_KEY, backfillCellTemps } from './cell-temp-backfill.js';
+import { HistoryMaintenance } from './history-maintenance.js';
 import { HistoryKeys } from './history-keys.js';
 import { ParallaxArchive } from './parallax-archive.js';
 
-// These run against a shared disposable container, where a loaded machine can push a
-// case past the default; the work per case is a handful of queries.
+// A shared disposable container can push a case past the default timeout.
 vi.setConfig({ testTimeout: 20_000 });
 
 const url = process.env.TEST_DATABASE_URL;
 const here = dirname(fileURLToPath(import.meta.url));
-const DAY = 86_400_000;
 
 describe.skipIf(!url)('cell temperature backfill with Postgres', () => {
   let handle: ReturnType<typeof createDb>;
@@ -38,7 +37,6 @@ describe.skipIf(!url)('cell temperature backfill with Postgres', () => {
       ...(verdict === undefined ? [] : int(4, verdict)),
     ]);
 
-  /** Archive one payload for a vehicle at `minutes` past the base time. */
   const archivePayload = async (payloadB64: string, minutes: number, vehicleId = 'v1') => {
     const [vehicle] = await handle.db
       .select({ seq: vehicles.seq })
@@ -81,15 +79,21 @@ describe.skipIf(!url)('cell temperature backfill with Postgres', () => {
     await handle.db.insert(vehicles).values({ id: 'v1', vin: 'VIN1' });
   });
 
-  const run = (options = {}) =>
-    backfillCellTemps(
-      { db: handle.db, keys, archive, log: silentLogger },
-      { from: new Date(at - 3600_000), to: new Date(at + 3600_000), ...options },
-    );
+  const deps = () => ({ db: handle.db, keys, archive, log: silentLogger });
+  const run = (until = new Date(at + 3600_000)) => backfillCellTemps(deps(), until);
+  const progress = async () => {
+    const [row] = await handle.db
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, BACKFILL_KEY));
+    return row
+      ? (JSON.parse(row.value) as { done?: boolean; after?: Record<string, string> })
+      : null;
+  };
 
   it('replays temperatures and the verdict as state rows', async () => {
     await archivePayload(payload([42.8, 46.6, 37.2], 1), 0);
-    expect(await run()).toEqual({ payloads: 1, rows: 4, vehicles: 1 });
+    expect(await run()).toEqual({ payloads: 1, rows: 4 });
     const written = await rows();
     expect(written.map((r) => r.field).sort()).toEqual([
       'batteryPowerOutputStatus',
@@ -102,9 +106,9 @@ describe.skipIf(!url)('cell temperature backfill with Postgres', () => {
     expect(written.find((r) => r.field === 'batteryPowerOutputStatus')?.value).toBe('normal');
   });
 
-  it('records a verdict the frame carries on its own, as the live path does', async () => {
+  it('records a verdict sent without temperatures', async () => {
     await archivePayload(payload(null, 2), 0);
-    expect(await run()).toEqual({ payloads: 1, rows: 1, vehicles: 1 });
+    expect(await run()).toEqual({ payloads: 1, rows: 1 });
     expect((await rows()).map((r) => [r.field, r.value])).toEqual([
       ['batteryPowerOutputStatus', 'cold'],
     ]);
@@ -112,86 +116,62 @@ describe.skipIf(!url)('cell temperature backfill with Postgres', () => {
 
   it('drops a frame whose temperatures are the float default', async () => {
     await archivePayload(payload([5.9604645e-7, 5.9604645e-7, 5.9604645e-7]), 0);
-    expect(await run()).toEqual({ payloads: 1, rows: 0, vehicles: 0 });
-    expect(await rows()).toEqual([]);
+    expect(await run()).toEqual({ payloads: 1, rows: 0 });
   });
 
-  it('keeps a genuine 0 °C reading, which is a cold morning and not a default', async () => {
+  it('keeps a genuine 0 °C reading', async () => {
     await archivePayload(payload([0, 0.4, -0.3]), 0);
-    expect((await run()).rows).toBe(3);
+    expect((await run())?.rows).toBe(3);
   });
 
-  it('records a change once it moves past the deadband, and not for a repeat', async () => {
+  it('records a change only once it moves past the deadband', async () => {
     await archivePayload(payload([42.8, 46.6, 37.2]), 0);
-    await archivePayload(payload([42.9, 46.7, 37.3]), 1); // under 0.5 °C: no row
-    await archivePayload(payload([43.6, 47.4, 38.0]), 2); // past it: a row
-    // Three fields at the first frame, three at the third; no verdict in these frames.
-    expect((await run()).rows).toBe(6);
+    await archivePayload(payload([42.9, 46.7, 37.3]), 1);
+    await archivePayload(payload([43.6, 47.4, 38.0]), 2);
+    expect((await run())?.rows).toBe(6);
     const avg = (await rows()).filter((r) => r.field === 'batteryTempAvg');
     expect(avg.map((r) => r.num)).toEqual([42.8, 43.6]);
   });
 
-  it('is idempotent: the same range again writes nothing and leaves the rows alone', async () => {
+  it('runs once, then skips', async () => {
+    await archivePayload(payload([42.8, 46.6, 37.2]), 0);
+    await run();
+    expect(await progress()).toEqual({ done: true });
+    await archivePayload(payload([50, 52, 48]), 10);
+    expect(await run()).toBeNull();
+    expect((await rows()).length).toBe(3);
+  });
+
+  it('skips rows the live recorder already wrote', async () => {
     await archivePayload(payload([42.8, 46.6, 37.2], 2), 0);
-    expect((await run()).rows).toBe(4);
-    // The same explicit range, so the archive is really re-read and the conflict path runs.
-    expect((await run()).rows).toBe(0);
+    await run();
+    await handle.db.delete(appSettings).where(eq(appSettings.key, BACKFILL_KEY));
+    expect((await run())?.rows).toBe(0);
     expect((await rows()).length).toBe(4);
   });
 
-  it('resumes from the cursor rather than re-reading the archive', async () => {
-    await archivePayload(payload([42.8, 46.6, 37.2]), 0);
-    await run();
-    const [cursor] = await handle.db
-      .select({ value: appSettings.value })
-      .from(appSettings)
-      .where(eq(appSettings.key, CURSOR_KEY));
-    expect(JSON.parse(cursor!.value)).toEqual({
-      after: { v1: new Date(at + 3600_000).toISOString() },
-    });
-    const resumed = await backfillCellTemps(
-      { db: handle.db, keys, archive, log: silentLogger },
-      {},
-    );
-    expect(resumed.payloads).toBe(0);
-  });
-
-  it('keeps a cursor per vehicle, so a second vehicle is not skipped', async () => {
+  it('resumes each vehicle from where an interrupted run left it', async () => {
     await handle.db.insert(vehicles).values({ id: 'v2', vin: 'VIN2' });
     await archivePayload(payload([42.8, 46.6, 37.2]), 0, 'v1');
-    await archivePayload(payload([21.0, 23.4, 19.8], 2), 0, 'v2');
-    const result = await run({ from: undefined, reset: true });
-    expect(result.vehicles).toBe(2);
-    // v1 carries three temperatures and no verdict; v2 carries three and a verdict.
-    expect(result.rows).toBe(7);
-    const [cursor] = await handle.db
-      .select({ value: appSettings.value })
-      .from(appSettings)
-      .where(eq(appSettings.key, CURSOR_KEY));
-    const after = (JSON.parse(cursor!.value) as { after: Record<string, string> }).after;
-    expect(Object.keys(after).sort()).toEqual(['v1', 'v2']);
+    await archivePayload(payload([21.0, 23.4, 19.8]), 0, 'v2');
+    await handle.db.insert(appSettings).values({
+      key: BACKFILL_KEY,
+      value: JSON.stringify({ after: { v1: new Date(at + 3600_000).toISOString() } }),
+    });
+    expect(await run()).toEqual({ payloads: 1, rows: 3 });
   });
 
-  it('reads rolled-up chunks, which is where anything older than 30 days lives', async () => {
-    const old = 40 * DAY;
+  it('reads rolled-up chunks', async () => {
     const packed = new ParallaxArchive(handle.db, keys, silentLogger, () => at);
     await archivePayload(payload([42.8, 46.6, 37.2]), -40 * 24 * 60);
     await packed.rollUp();
-    const result = await backfillCellTemps(
-      { db: handle.db, keys, archive, log: silentLogger },
-      { from: new Date(at - old - DAY), to: new Date(at - old + DAY) },
-    );
-    expect(result.rows).toBe(3);
+    expect((await run())?.rows).toBe(3);
   });
 
-  it('counts a dry run without writing rows or field names', async () => {
+  it('runs as part of history maintenance at startup', async () => {
     await archivePayload(payload([42.8, 46.6, 37.2]), 0);
-    // Field names outlive the per-test truncation (state changes cascade, the registry does not),
-    // so the assertion is that a dry run adds none — registering one is itself a write.
-    const before = (await handle.db.select().from(stateFields)).map((f) => f.name).sort();
-    expect((await run({ dryRun: true })).rows).toBe(3);
-    expect(await rows()).toEqual([]);
-    const after = (await handle.db.select().from(stateFields)).map((f) => f.name).sort();
-    expect(after).toEqual(before);
+    await new HistoryMaintenance(handle.db, keys, archive, silentLogger).run();
+    expect((await rows()).length).toBe(3);
+    expect(await progress()).toEqual({ done: true });
   });
 });

@@ -171,7 +171,7 @@ export function decodeBatteryState(payloadBase64: string): BatteryState | null {
   };
 }
 
-/** The state fields a battery-state frame records: its temperatures and the power-output verdict. */
+/** The state fields recorded from a battery-state frame's temperatures and verdict. */
 export const BATTERY_THERMAL_FIELDS = [
   'batteryTempAvg',
   'batteryTempMax',
@@ -179,18 +179,16 @@ export const BATTERY_THERMAL_FIELDS = [
   'batteryPowerOutputStatus',
 ] as const;
 
-/** A pack's cells sit within this range; a value outside it is a misread, not a temperature. */
+/** Outside this range a cell temperature is a misread. */
 const CELL_TEMP_MIN_C = -40;
 const CELL_TEMP_MAX_C = 100;
 /** An unset `float32` reads as this on every one of the three values. */
 const UNSET_FLOAT = 1e-3;
 
 /**
- * The pack's cell temperatures as state fields, or null when the frame carries
- * none. A frame can carry a float's unset default instead of a reading, which a
- * range check accepts and a chart would draw as a plunge — so all three sitting on
- * zero is treated as no reading. Tested per frame, not per value: a pack cold
- * soaked to freezing is ordinary at 0 °C.
+ * The cell temperatures as state fields, or null for a frame with no usable
+ * reading. Some frames carry the float's unset default on all three, which a
+ * range check alone accepts; a single 0 °C is a real cold pack.
  */
 export function cellTempReadings(cellTemps: BatteryState['cellTemps']): Readings | null {
   if (!cellTemps) return null;
@@ -360,7 +358,6 @@ export const batteryState = defineRvm({
         if (battery.thermalEvent != null) {
           put('batteryHvThermalEvent', battery.thermalEvent ? 'on' : 'off');
         }
-        // The Health row shows only the current verdict; recording it gives the cold limit a history.
         if (battery.powerOutput != null) put('batteryPowerOutputStatus', battery.powerOutput);
         const temps = cellTempReadings(battery.cellTemps);
         if (temps) for (const [key, value] of Object.entries(temps)) put(key, value);
