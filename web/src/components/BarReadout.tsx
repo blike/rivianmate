@@ -12,8 +12,10 @@ import type { SplitSegment } from './SplitBar';
 export interface BarReading {
   /** What the bar covers: a window's length, or the night it ran. */
   heading: string;
-  /** The window's total, in kWh. */
-  total: number;
+  /** The window's total, in kWh; null where there was no reading at all. */
+  total: number | null;
+  /** Said in place of the numbers where there was no reading. */
+  note?: string;
   /** Each use that drew energy, in legend order; empty where there's no split. */
   uses: SplitSegment[];
   /** Said instead of the uses where the total isn't split. */
@@ -85,8 +87,12 @@ export function BarReadout(props: { reading: BarReading }) {
     >
       <div className="text-(--text-primary)">{reading.heading}</div>
       <div className="mt-1.5 space-y-1 border-t border-(--border) pt-1.5">
-        <ReadingRow label="Total" value={fmt(reading.total, 1)} />
-        {reading.uses.length > 0 ? (
+        {reading.total == null ? (
+          <div className="max-w-[16rem] text-(--text-muted)">{reading.note}</div>
+        ) : (
+          <ReadingRow label="Total" value={fmt(reading.total, 1)} />
+        )}
+        {reading.total == null ? null : reading.uses.length > 0 ? (
           reading.uses.map((use) => (
             <ReadingRow key={use.key} label={use.label} value={fmt(use.kwh, 1)} color={use.color} />
           ))

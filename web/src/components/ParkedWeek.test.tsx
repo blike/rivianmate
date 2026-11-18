@@ -35,6 +35,9 @@ const end = new Date(2026, 9, 9, 21, 14).toLocaleTimeString([], {
 });
 
 const readout = () => document.querySelector<HTMLElement>('.bar-readout');
+/** The one day with a reading, in tests that draw one. */
+const bar = () => screen.getByRole('button', { name: /used while parked/ });
+const empties = () => screen.queryAllByRole('button', { name: /No reading/ });
 
 describe('ParkedWeek', () => {
   it('draws one slot per day of the week, with the totals above them', () => {
@@ -43,20 +46,20 @@ describe('ParkedWeek', () => {
     expect(screen.getByText('Last 7 days')).toBeTruthy();
     // The number comes first, so the shape is read against it.
     const totals = screen.getByText('1.1 kWh over 1 day');
-    const bar = screen.getByRole('button');
-    expect(totals.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const first = bar();
+    expect(totals.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('fills a slot for every day with a reading, and leaves the rest empty', () => {
     render(<ParkedWeek days={week(record(6, 1.1), record(9, 0.4))} />);
     expect(screen.getByText('1.5 kWh over 2 days')).toBeTruthy();
-    expect(screen.getAllByRole('button')).toHaveLength(2);
-    expect(screen.getAllByRole('img', { name: /no parked energy reported/ })).toHaveLength(5);
+    expect(screen.getAllByRole('button', { name: /used while parked/ })).toHaveLength(2);
+    expect(empties()).toHaveLength(5);
   });
 
   it("reads out a day's window, total and uses", () => {
     render(<ParkedWeek days={week(record(9, 1.1))} />);
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(bar());
     const card = readout();
     expect(card).not.toBeNull();
     // The 24 hours end at the day's last reading, so the readout says when.
@@ -74,7 +77,7 @@ describe('ParkedWeek', () => {
     render(
       <ParkedWeek days={week(record(9, 0, { climate: 0, system: 0, gearGuard: 0, outlets: 0 }))} />,
     );
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(bar());
     expect(within(readout()!).getByText('No use drew energy')).toBeTruthy();
   });
 
@@ -89,7 +92,7 @@ describe('ParkedWeek', () => {
 
   it('opens a reading on keyboard focus, and puts it away on Escape', () => {
     render(<ParkedWeek days={week(record(9, 1.1))} />);
-    fireEvent.focus(screen.getByRole('button'));
+    fireEvent.focus(bar());
     expect(readout()).not.toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(readout()).toBeNull();
@@ -97,7 +100,7 @@ describe('ParkedWeek', () => {
 
   it('opens a reading on hover, and puts it away when the mouse leaves the bars', () => {
     render(<ParkedWeek days={week(record(9, 1.1))} />);
-    fireEvent.pointerEnter(screen.getByRole('button'));
+    fireEvent.pointerEnter(bar());
     expect(readout()).not.toBeNull();
     fireEvent.pointerLeave(readout()!.parentElement!, { pointerType: 'mouse' });
     expect(readout()).toBeNull();
@@ -105,19 +108,26 @@ describe('ParkedWeek', () => {
 
   it('puts the reading away when the reader taps elsewhere', () => {
     render(<ParkedWeek days={week(record(9, 1.1))} />);
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(bar());
     expect(readout()).not.toBeNull();
     fireEvent.pointerDown(document.body);
     expect(readout()).toBeNull();
   });
 
-  it('leaves a day with nothing reported unreadable', () => {
-    render(<ParkedWeek days={week()} />);
-    expect(screen.queryAllByRole('button')).toHaveLength(0);
-    const empties = screen.getAllByRole('img', { name: /no parked energy reported/ });
-    expect(empties).toHaveLength(7);
-    fireEvent.click(empties[0]!);
-    expect(readout()).toBeNull();
+  it('says why a day has no bar, rather than passing it off as a day that used nothing', () => {
+    render(<ParkedWeek days={week(record(9, 1.1))} />);
+    expect(empties()).toHaveLength(6);
+    fireEvent.click(empties()[0]!);
+    const card = readout();
+    const monday = new Date(2026, 9, 3).toLocaleDateString([], {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+    expect(within(card!).getByText(monday)).toBeTruthy();
+    expect(within(card!).getByText(/only when the car is driven/)).toBeTruthy();
+    // No reading means no numbers, not a total of zero.
+    expect(within(card!).queryByText('Total')).toBeNull();
   });
 
   it('draws nothing when there is no day to draw', () => {

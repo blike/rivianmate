@@ -25,6 +25,19 @@ function usesText(reading: ParkedDayDto): string {
   return segments.map((s) => `${s.label} ${fmt(s.kwh, 1)} kWh`).join(', ') || 'no use drew energy';
 }
 
+/**
+ * Why a day has no bar. Rivian sends parked energy only around a drive, so a
+ * day the car sat parked has no reading of its own; its energy shows up in
+ * the next drive's report, not in this week's bars.
+ */
+const NO_READING =
+  'No reading. Rivian reports parked energy only when the car is driven, so a day it stayed parked has none.';
+
+/** What an empty day's readout says. */
+function noReadingOf(day: ParkedDay<ParkedDayDto>): BarReading {
+  return { heading: dayLabel(day.date), total: null, note: NO_READING, uses: [], unsplit: '' };
+}
+
 /** A day's reading, as its readout prints it: the day, its window, total and uses. */
 function readingOf(day: ParkedDay<ParkedDayDto>, w: ParkedDayDto): BarReading {
   return {
@@ -39,8 +52,9 @@ function readingOf(day: ParkedDay<ParkedDayDto>, w: ParkedDayDto): BarReading {
  * Parked energy as one bar per day across the last full week, split into the
  * same uses as the window bars above it, so a week's pattern reads at a
  * glance. Each bar is the last 24 hours Rivian reported that day: the day and
- * the night before it. A day with no reading keeps an empty slot rather than
- * closing the gap. The totals sit above the bars so the shape is read against
+ * the night before it. A day with no reading (the car wasn't driven, or
+ * RivianMate missed it) keeps a dashed slot that says so, rather than closing
+ * the gap or passing for a day that used nothing. The totals sit above the bars so the shape is read against
  * a number, and a bar's own numbers are read by pointing at it, tapping it or
  * tabbing to it: a small day is a sliver three pixels wide.
  */
@@ -63,7 +77,9 @@ export function ParkedWeek(props: { days: ParkedDay<ParkedDayDto>[] }) {
         </span>
       </div>
       <div className="relative" {...readout.groupProps}>
-        {open?.window && <BarReadout reading={readingOf(open, open.window)} />}
+        {open && (
+          <BarReadout reading={open.window ? readingOf(open, open.window) : noReadingOf(open)} />
+        )}
         <div className="flex items-end gap-2">
           {days.map((day) => {
             const w = day.window;
@@ -105,14 +121,15 @@ export function ParkedWeek(props: { days: ParkedDay<ParkedDayDto>[] }) {
                     )}
                   </button>
                 ) : (
-                  // A day with nothing reported: the slot stays, drawn as an empty track.
-                  <div
-                    className="flex h-10 w-full items-end"
-                    role="img"
-                    aria-label={`${label}: no parked energy reported`}
+                  // No reading: a dashed track, so it isn't read as a day that used nothing.
+                  <button
+                    type="button"
+                    className="bar-readout__trigger flex h-10 w-full items-end"
+                    aria-label={`${label}: ${NO_READING}`}
+                    {...readout.barProps(day)}
                   >
-                    <div className="w-full rounded-[3px] bg-(--surface-3)" style={{ height: 3 }} />
-                  </div>
+                    <div className="w-full border-t-2 border-dashed border-(--surface-3)" />
+                  </button>
                 )}
                 <span
                   aria-hidden
