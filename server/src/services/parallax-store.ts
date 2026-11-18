@@ -10,6 +10,7 @@ import {
   type RvmDef,
   type TripInfo,
   batteryState,
+  cellTempReadings,
   coldWeather,
   decodeMessage,
   isTopic,
@@ -45,7 +46,7 @@ export class ParallaxStore {
   ): Promise<void> {
     if (!PARALLAX_STORED_RVMS.has(message.rvm)) return;
     const rows = [message.rvm];
-    if (isTopic(decoded, batteryState) && decoded.value?.cellTemps) {
+    if (isTopic(decoded, batteryState) && cellTempReadings(decoded.value?.cellTemps ?? null)) {
       rows.push(message.rvm + AWAKE);
     }
     try {
@@ -103,8 +104,12 @@ export class ParallaxStore {
     const trip = read(tripInfo);
     const progress = trip ? read(tripProgress) : null;
     return {
-      cellTemps: awake?.value.cellTemps ? { ...awake.value.cellTemps, at: awake.at } : null,
-      cellTempsCurrent: battery?.value.cellTemps != null,
+      // The same check the recorder applies, so Health never shows a reading history dropped.
+      cellTemps:
+        awake && cellTempReadings(awake.value.cellTemps)
+          ? { ...awake.value.cellTemps!, at: awake.at }
+          : null,
+      cellTempsCurrent: battery != null && cellTempReadings(battery.value.cellTemps) != null,
       coldWeather: cold ? { ...cold.value, at: cold.at } : null,
       parkedEnergy:
         parked && parked.value.length > 0 ? { windows: parked.value, at: parked.at } : null,

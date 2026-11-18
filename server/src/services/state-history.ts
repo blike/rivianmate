@@ -21,10 +21,14 @@ const UNRECORDED_FIELDS = new Set([
  * once it's this far from the last recorded value, in the field's unit.
  * Rivian's capacity estimate moves by hundredths of a kWh every few seconds
  * while driving. Tire pressures (bar) bounce 0.005 between the feeds, legacy
- * rounding to 0.01 (3.03) and Parallax to 0.025 (3.025).
+ * rounding to 0.01 (3.03) and Parallax to 0.025 (3.025). Cell temperatures
+ * arrive on a 0.1 °C grid, under a degree apart while the pack is steady.
  */
 const DEADBANDS: Readonly<Record<string, number>> = {
   batteryCapacity: 0.1,
+  batteryTempAvg: 0.5,
+  batteryTempMax: 0.5,
+  batteryTempMin: 0.5,
   tirePressureFrontLeft: 0.01,
   tirePressureFrontRight: 0.01,
   tirePressureRearLeft: 0.01,
@@ -34,6 +38,18 @@ const DEADBANDS: Readonly<Record<string, number>> = {
 const DEADBAND_EPSILON = 1e-9;
 /** Heartbeats are at least this far apart. */
 export const HEARTBEAT_MS = 15 * 60_000;
+
+const CELL_TEMPERATURES = ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'] as const;
+
+/**
+ * Fields recorded together whenever one of them changes, so a row never mixes
+ * frames: stitched from three, the cell average can read above the hottest cell.
+ */
+const CHANGE_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  batteryTempAvg: CELL_TEMPERATURES,
+  batteryTempMax: CELL_TEMPERATURES,
+  batteryTempMin: CELL_TEMPERATURES,
+};
 
 type Value = string | number | null;
 
@@ -66,10 +82,17 @@ export class StateDiff {
     fallbackAt: number,
     fields: readonly string[] = Object.keys(state),
   ): StateChange[] {
-    return readingsOf(state, fields, fallbackAt).filter((r) => {
-      if (this.last.has(r.field) && !changed(r.field, this.last.get(r.field)!, r.value)) {
-        return false;
-      }
+    const readings = readingsOf(state, fields, fallbackAt);
+    // What moved, plus the rest of its group.
+    const recording = new Set(
+      readings
+        .filter(
+          (r) => !this.last.has(r.field) || changed(r.field, this.last.get(r.field)!, r.value),
+        )
+        .flatMap((r) => CHANGE_GROUPS[r.field] ?? [r.field]),
+    );
+    return readings.filter((r) => {
+      if (!recording.has(r.field)) return false;
       this.last.set(r.field, r.value);
       return true;
     });
@@ -115,11 +138,13 @@ export class StateHistoryRecorder {
   ) {}
 
   /**
-   * The given fields of a state, as they are now. Values are read before
-   * returning, so later changes to `state` don't affect what's recorded.
+   * The given fields of a state (and the rest of their groups), as they are now.
+   * Values are read before returning, so later changes to `state` don't affect
+   * what's recorded.
    */
   record(vehicleId: string, state: VehicleState, fields: readonly string[]): Promise<void> {
-    const snapshot = Object.fromEntries(fields.map((f) => [f, state[f]])) as VehicleState;
+    const whole = [...new Set(fields.flatMap((f) => CHANGE_GROUPS[f] ?? [f]))];
+    const snapshot = Object.fromEntries(whole.map((f) => [f, state[f]])) as VehicleState;
     const seenAt = this.now();
     const run = (this.queues.get(vehicleId) ?? Promise.resolve()).then(() =>
       this.write(vehicleId, snapshot, seenAt),
