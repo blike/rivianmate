@@ -5,6 +5,7 @@ import {
   calendarDate,
   headline,
   humanize,
+  instantDate,
   milestones,
   relativeDay,
   specification,
@@ -32,6 +33,8 @@ const detail = (vehicle: Partial<NonNullable<OrderDetail['vehicle']>> | null): O
     ...vehicle,
   },
   items: [],
+  reservedDate: null,
+  orderedDate: null,
   estimatedDelivery: null,
 });
 
@@ -106,42 +109,109 @@ describe('appointmentView', () => {
 describe('milestones', () => {
   const states = (j: OrderJourneyDto) =>
     Object.fromEntries(milestones(j, NOW).map((m) => [m.key, m.state]));
+  const labels = (j: OrderJourneyDto) => milestones(j, NOW).map((m) => m.label);
+  const step = (j: OrderJourneyDto, key: string) => milestones(j, NOW).find((m) => m.key === key)!;
 
   it('stands at the build with a plan, before the car is built', () => {
-    const m = milestones(journey(), NOW);
-    expect(states(journey())).toEqual({
+    const j = journey({ detailValue: detail({ vin: null }) });
+    expect(states(j)).toEqual({
       ordered: 'done',
-      built: 'current',
-      prepared: 'upcoming',
-      scheduled: 'upcoming',
+      vin: 'current',
+      built: 'upcoming',
+      shipped: 'upcoming',
+      inspected: 'upcoming',
+      prepped: 'upcoming',
       delivered: 'upcoming',
     });
-    expect(m[1]!.note).toBe('Planned for Oct 19, 2026');
-    expect(m.map((s) => s.label)).toEqual([
+    expect(step(j, 'built').note).toBe('Planned for Oct 19, 2026');
+    expect(labels(j)).toEqual([
       'Ordered',
+      'VIN',
       'Build',
+      'Shipping',
       'Inspection',
-      'Scheduling',
-      'Delivery',
+      'Delivery prep',
+      'Delivery day',
+    ]);
+    expect(step(j, 'delivered').note).toBe('Not booked yet');
+  });
+
+  it('shows the reservation as its own step, dated, before the order', () => {
+    const d = {
+      ...detail({}),
+      reservedDate: '2025-03-07T18:00:00Z',
+      orderedDate: '2026-04-02T15:20:11.000Z',
+    };
+    const m = milestones(journey({ detailValue: d }), NOW);
+    expect(m.slice(0, 2).map((s) => [s.label, s.date])).toEqual([
+      ['Reserved', instantDate('2025-03-07T18:00:00Z')],
+      ['Ordered', instantDate('2026-04-02T15:20:11.000Z')],
     ]);
   });
 
-  it('marks a scheduled delivery done even while the inspection is under way', () => {
-    const j = journey({
-      detailValue: detail({ actualGeneralAssemblyDate: '2026-10-21', status: 'STAGED_FOR_PDI' }),
-      delivery: withAppointment('2026-11-19T10:30:00'),
-    });
-    expect(states(j)).toEqual({
-      ordered: 'done',
-      built: 'done',
-      prepared: 'current',
-      scheduled: 'done',
-      delivered: 'upcoming',
-    });
-    expect(milestones(j, NOW)[2]!.note).toBe('Awaiting inspection');
+  it('stands at the order while it’s only a reservation', () => {
+    const d = { ...detail(null), reservedDate: '2025-09-02T15:20:11.220Z' };
+    const j = journey({ detailValue: d });
+    expect(states(j)).toMatchObject({ reserved: 'done', ordered: 'current', vin: 'upcoming' });
+    expect(step(j, 'ordered').date).toBeNull();
   });
 
-  it('is all done once delivered, the day told once', () => {
+  it('dates the order in the delivery’s zone, the buyer’s day', () => {
+    // 01:30 UTC on Apr 3 is the evening of Apr 2 in Chicago.
+    const d = { ...detail({}), orderedDate: '2026-04-03T01:30:00.000Z' };
+    const j = journey({ detailValue: d, delivery: withAppointment('2026-11-19T10:30:00') });
+    expect(step(j, 'ordered').date).toBe('Apr 2, 2026');
+  });
+
+  it('is on the way to the delivery city once it has left the factory', () => {
+    const j = journey({
+      detailValue: detail({ actualGeneralAssemblyDate: '2026-10-21', status: 'FACTORY_GATED' }),
+      delivery: withAppointment('2026-11-19T10:30:00'),
+    });
+    expect(step(j, 'shipped')).toMatchObject({ label: 'On the way to Normal', state: 'current' });
+    expect(step(j, 'built').state).toBe('done');
+  });
+
+  it('isn’t on the way while built and still at the factory', () => {
+    const j = journey({
+      detailValue: detail({ actualGeneralAssemblyDate: '2026-10-21', status: 'FACTORY_OK' }),
+    });
+    expect(step(j, 'shipped')).toMatchObject({ label: 'Shipping', state: 'current' });
+  });
+
+  it('takes a later status as every step before it done, skipped or not', () => {
+    const j = journey({
+      detailValue: detail({ status: 'STAGED_FOR_PDI' }),
+      delivery: withAppointment('2026-11-19T10:30:00'),
+    });
+    expect(states(j)).toMatchObject({
+      vin: 'done',
+      built: 'done',
+      shipped: 'done',
+      inspected: 'current',
+      prepped: 'upcoming',
+    });
+    expect(step(j, 'shipped').label).toBe('Arrived in Normal');
+    expect(step(j, 'inspected').note).toBe('Waiting for inspection');
+  });
+
+  it('dates the delivery day ahead of it, with the countdown', () => {
+    const j = journey({
+      detailValue: detail({ status: 'VEHICLE_PREPPED' }),
+      delivery: withAppointment('2026-11-19T10:30:00', '2026-11-19T11:00:00'),
+    });
+    const day = step(j, 'delivered');
+    expect(day).toMatchObject({ label: 'Delivery day', state: 'current' });
+    expect(day.date).toBe('Nov 19, 2026');
+    expect(day.note).toMatch(/^Thursday · In 9 days · 10:30\s*–\s*11:00\s*AM$/);
+  });
+
+  it('never says not booked when the delivery lookup failed', () => {
+    const j = journey({ delivery: { ok: false, error: 'INTERNAL_SERVER_ERROR' } });
+    expect(step(j, 'delivered').note).toBeNull();
+  });
+
+  it('is all done once delivered, dated by the delivery', () => {
     const j = journey({
       delivered: true,
       detailValue: detail({ actualGeneralAssemblyDate: '2026-01-29', status: 'DELIVERED' }),
@@ -151,13 +221,14 @@ describe('milestones', () => {
     expect(m.every((s) => s.state === 'done')).toBe(true);
     expect(m.map((s) => s.label)).toEqual([
       'Ordered',
+      'VIN assigned',
       'Built',
+      'Arrived in Normal',
       'Inspected',
-      'Scheduled',
+      'Prepped for delivery',
       'Delivered',
     ]);
-    expect(m.find((s) => s.key === 'scheduled')!.date).toBeNull();
-    expect(m.find((s) => s.key === 'delivered')!.date).toBe('Jun 20, 2026');
+    expect(step(j, 'delivered')).toMatchObject({ date: 'Jun 20, 2026', note: null });
   });
 });
 
@@ -214,6 +285,17 @@ describe('headline', () => {
   it('falls back to the item title for the model before a vehicle is assigned', () => {
     const d = { ...detail(null), items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }] };
     expect(headline(journey({ detailValue: d }), NOW).title).toBe('Your R2 is on order');
+  });
+
+  it('says reserved for a reservation, not on order', () => {
+    const d = {
+      ...detail(null),
+      reservedDate: '2025-09-02T15:20:11.220Z',
+      items: [{ type: 'VEHICLE', title: 'Rivian R2', options: [] }],
+    };
+    const h = headline(journey({ detailValue: d }), NOW);
+    expect(h.kicker).toBe('Reserved');
+    expect(h.title).toBe('Your R2 is reserved');
   });
 });
 
