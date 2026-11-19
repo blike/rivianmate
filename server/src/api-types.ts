@@ -147,6 +147,10 @@ export interface ConnectResponse {
   otpRequired?: boolean;
 }
 
+/**
+ * A recorded series: the average, and the lowest and highest held over the
+ * bucket. For `temp`, an all-null row marks where the vehicle went quiet.
+ */
 export interface HistoryPoint {
   bucket: string;
   avg: number | null;
@@ -168,7 +172,8 @@ export interface ChargeSpanDto {
   to: string;
 }
 
-export type HistoryMetric = 'battery' | 'range' | 'mileage';
+/** What the history route charts; `temp` is the pack's cell temperatures. */
+export type HistoryMetric = 'battery' | 'range' | 'mileage' | 'temp';
 
 export interface LocationPointDto {
   ts: string;
@@ -514,6 +519,21 @@ export interface VehicleInsightsDto {
     cellular: { carrier: string | null; technology: string | null } | null;
     at: string;
   } | null;
+}
+
+/**
+ * One day of parked energy: the last rolling 24-hour window Rivian reported
+ * that day, read from the archive. `day` is the date in the zone the request
+ * named; `at` is when Rivian sent it, which is where the 24 hours end.
+ */
+export interface ParkedDayDto {
+  /** YYYY-MM-DD in the requested zone. */
+  day: string;
+  at: string;
+  minutes: number;
+  kwh: number;
+  rangeKm: number;
+  uses: { climate: number; system: number; gearGuard: number; outlets: number };
 }
 
 /** A timed alert: fires once the condition has lasted `minutes`. */

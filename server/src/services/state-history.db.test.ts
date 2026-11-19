@@ -73,6 +73,39 @@ describe.skipIf(!url)('StateHistoryRecorder with Postgres', () => {
     expect((await changes()).map((c) => c.num)).toEqual([80]);
   });
 
+  it('records a frame its group whole when the delta named one field of it', async () => {
+    const r = recorder();
+    await r.record(
+      'v1',
+      {
+        batteryTempAvg: reading(22, '2026-10-13T11:00:00Z'),
+        batteryTempMax: reading(24, '2026-10-13T11:00:00Z'),
+        batteryTempMin: reading(20, '2026-10-13T11:00:00Z'),
+      },
+      ['batteryTempAvg', 'batteryTempMax', 'batteryTempMin'],
+    );
+    // Only the hottest cell moved far enough, so the delta names it alone. The
+    // frame's other two are read from the same state rather than left out.
+    await r.record(
+      'v1',
+      {
+        batteryTempAvg: reading(22.2, '2026-10-13T11:00:12Z'),
+        batteryTempMax: reading(24.6, '2026-10-13T11:00:12Z'),
+        batteryTempMin: reading(20.1, '2026-10-13T11:00:12Z'),
+      },
+      ['batteryTempMax'],
+    );
+
+    expect((await changes()).map((c) => [c.at.toISOString(), c.num])).toEqual([
+      ['2026-10-13T11:00:00.000Z', 22],
+      ['2026-10-13T11:00:00.000Z', 24],
+      ['2026-10-13T11:00:00.000Z', 20],
+      ['2026-10-13T11:00:12.000Z', 22.2],
+      ['2026-10-13T11:00:12.000Z', 24.6],
+      ['2026-10-13T11:00:12.000Z', 20.1],
+    ]);
+  });
+
   it('writes a heartbeat at most every 15 minutes', async () => {
     const r = recorder();
     for (const minutes of [0, 5, 14, 15, 29, 31]) {

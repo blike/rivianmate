@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LiveSessionData, NotificationSettingsUpdate, VehicleState } from '@server/api-types';
 import { LIST_LIMIT } from '@server/list-page';
+import { isTeslaMateVehicle } from '@server/teslamate/ids';
 import { localKey } from '../lib/drives';
 import { location, type VehicleFix } from '../lib/state';
 import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
@@ -284,6 +285,26 @@ export function useDrivers(vehicleId: string, enabled = true) {
   });
 }
 
+/** A drive or charge to read the pack's temperature over; `to` is null while under way. */
+export interface PackTempSpan {
+  kind: 'drive' | 'charge';
+  id: number;
+  from: string;
+  to: string | null;
+}
+
+/** The pack's cell temperatures over a drive or charge (none for TeslaMate vehicles). */
+export function usePackTemps(vehicleId: string, span: PackTempSpan | undefined) {
+  return useQuery({
+    queryKey: ['packTemps', vehicleId, span?.kind, span?.id, span?.to ?? 'live'],
+    queryFn: () =>
+      api.history(vehicleId, 'temp', new Date(span!.from), new Date(span!.to ?? Date.now()), 'raw'),
+    enabled: span != null && !isTeslaMateVehicle(vehicleId),
+    refetchInterval: span && span.to == null ? LIVE_REFRESH_MS : false,
+    placeholderData: keepPreviousData,
+  });
+}
+
 /** Picks who drove a drive (null for nobody), shown at once and kept over the vehicle's profile. */
 export function useSetDriveDriver(vehicleId: string) {
   const queryClient = useQueryClient();
@@ -336,6 +357,20 @@ export function useInsights(vehicleId: string) {
     queryFn: () => api.insights(vehicleId),
     // Navigation progress changes by the second; other readings slowly.
     refetchInterval: (query) => (query.state.data?.navigation ? LIVE_REFRESH_MS : 60_000),
+  });
+}
+
+/**
+ * The last full days of parked energy. They only change at midnight, so a
+ * page left open picks the new day up within the half hour.
+ */
+export function useParkedDays(vehicleId: string | undefined, days = 7) {
+  return useQuery({
+    queryKey: ['parkedDays', vehicleId, days],
+    queryFn: () => api.parkedDays(vehicleId!, days),
+    enabled: !!vehicleId,
+    staleTime: 30 * 60_000,
+    refetchInterval: 30 * 60_000,
   });
 }
 

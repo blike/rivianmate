@@ -4,6 +4,7 @@ import { ContentFrame, LoadingScope, Skeleton, useLoading } from '../../componen
 import { Panel, PanelSection } from '../../components/Panel';
 import { ParkedEnergyPanel } from '../../components/ParkedEnergyPanel';
 import { TrendChart } from '../../components/TrendChart';
+import type { PowerOutputVerdict } from '../../lib/vehicleStatus';
 import { longDateTime, shortDate } from '../../lib/format';
 import { fmt } from '../../lib/state';
 import { capacityTrend, capacityOfRated } from './health';
@@ -14,8 +15,12 @@ export function BatteryPanel(props: {
   insights: VehicleInsightsDto | undefined;
   batteryPending: boolean;
   insightsPending: boolean;
+  /** Whose nights of parked energy the panel's week draws. */
+  vehicleId: string;
   /** Left out when undefined: legacy doesn't report it for this vehicle. */
   cellType?: string | null;
+  /** Left out when undefined: the vehicle doesn't send it. Null while the pack isn't reporting. */
+  powerOutput?: PowerOutputVerdict | null;
 }) {
   const reported = props.battery?.reported;
   const latest = props.battery?.latest;
@@ -103,7 +108,11 @@ export function BatteryPanel(props: {
           </LoadingScope>
           <PanelSection title="Pack" stacked>
             <LoadingScope loading={props.insightsPending}>
-              <PackDetails insights={props.insights} cellType={props.cellType} />
+              <PackDetails
+                insights={props.insights}
+                cellType={props.cellType}
+                powerOutput={props.powerOutput}
+              />
             </LoadingScope>
           </PanelSection>
         </div>
@@ -112,7 +121,7 @@ export function BatteryPanel(props: {
       {/* Short and wide: both windows side by side under the capacity readings. */}
       <PanelSection title="Used while parked">
         <LoadingScope loading={props.insightsPending}>
-          <ParkedEnergyPanel insights={props.insights} columns />
+          <ParkedEnergyPanel insights={props.insights} vehicleId={props.vehicleId} columns />
         </LoadingScope>
       </PanelSection>
     </Panel>

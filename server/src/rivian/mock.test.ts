@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockRivian, driveHomeSoFar } from './mock.js';
 import {
+  decodeBatteryState,
   decodeGnss,
   decodeTripInfo,
+  RVM_BATTERY_STATE,
   RVM_GNSS,
   RVM_TRIP_INFO,
+  type BatteryState,
   type GnssReading,
   type TripInfo,
 } from './parallax/index.js';
@@ -66,6 +69,30 @@ describe('mock navigation', () => {
       expect(trip.arrivalAtMs).toBeGreaterThan(Date.now());
       expect(trip.route!.length).toBeGreaterThan(10);
       expect(trip.route![0]).toEqual([trip.destination.lat, trip.destination.lon]);
+    } finally {
+      mock.stop();
+    }
+  });
+});
+
+describe('mock battery verdict', () => {
+  it('limits power while the pack is cold, and stops limiting it once it has warmed', () => {
+    vi.useFakeTimers();
+    const mock = new MockRivian();
+    const verdicts: BatteryState['powerOutput'][] = [];
+    mock.subscribeParallax('mock', [RVM_BATTERY_STATE], (_id, message) => {
+      if (message.rvm === RVM_BATTERY_STATE) {
+        verdicts.push(decodeBatteryState(message.payload)!.powerOutput);
+      }
+    });
+    try {
+      mock.start();
+      // It starts parked, its pack cold-soaked, which the BMS limits.
+      vi.advanceTimersByTime(10_000);
+      expect(verdicts.at(-1)).toBe('cold');
+      // A few ticks into the drive the pack is warm enough to give full power.
+      vi.advanceTimersByTime(20_000);
+      expect(verdicts.at(-1)).toBe('normal');
     } finally {
       mock.stop();
     }

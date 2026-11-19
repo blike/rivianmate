@@ -1,8 +1,10 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import type { SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
+import { z } from 'zod';
+import type { ParkedDayDto, SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
+import { isTimeZone } from '../services/imports/time-zone.js';
 import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
 import { NO_SCHEDULES } from '../teslamate/source.js';
@@ -13,6 +15,12 @@ import { sendRender } from './render-proxy.js';
 /** The views a vehicle has a render for. */
 const rendersOf = (images: VehicleImageUrls | null | undefined): VehicleView[] =>
   VEHICLE_VIEWS.filter((v) => images?.[v]);
+
+const parkedDaysQuery = z.object({
+  days: z.coerce.number().int().min(1).max(31).default(7),
+  /** The calendar the reader's days are in; the server's own until one is named. */
+  tz: z.string().max(64).optional(),
+});
 
 export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/vehicles', async (): Promise<VehicleDto[]> => {
@@ -67,6 +75,18 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
       isTeslaMateVehicle(request.params.id)
         ? ctx.teslamate.insights(request.params.id)
         : withSavedNames(ctx, await ctx.monitor.getInsights(request.params.id)),
+  );
+
+  // The last full days of parked energy, oldest first, for the week's chart:
+  // each day's last 24-hour window, read from the archive.
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/parked-days',
+    async (request): Promise<ParkedDayDto[]> => {
+      const { days, tz } = parkedDaysQuery.parse(request.query);
+      if (isTeslaMateVehicle(request.params.id)) return [];
+      const zone = tz && isTimeZone(tz) ? tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
+      return ctx.monitor.getParkedDays(request.params.id, days, zone);
+    },
   );
 
   /** SSE stream of merged full-state updates + live charging session. */

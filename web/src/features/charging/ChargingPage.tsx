@@ -18,13 +18,14 @@ import { lastChargedTo } from '../../lib/charging';
 import { useGoToDate } from '../../lib/goToDate';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
 import { sv } from '../../lib/state';
+import { PackTempSection } from '../../components/PackTempSection';
 import { CurveChart } from './CurveChart';
 import { EnergySplit } from './EnergySplit';
 import { LiveCard } from './LiveCard';
 import { SessionCard } from './SessionCard';
 import { SessionList } from './SessionList';
 import { SessionPicker } from './SessionPicker';
-import { chargeStart, notStarted } from './sessions';
+import { chargeEnd, chargeStart, notStarted } from './sessions';
 import { WallboxPanel } from './WallboxPanel';
 
 export function ChargingPage(props: { vehicleId: string }) {
@@ -171,6 +172,20 @@ export function ChargingPage(props: { vehicleId: string }) {
               loading={sessionsPending || (session != null && curvePending)}
               notStarted={session != null && notStarted(session)}
             />
+            {!teslamate && (
+              <PackTempSection
+                vehicleId={props.vehicleId}
+                span={
+                  session && {
+                    kind: 'charge',
+                    id: session.id,
+                    from: chargeStart(session),
+                    to: chargeEnd(session),
+                  }
+                }
+                loading={sessionsPending}
+              />
+            )}
             {session && <EnergySplit session={session} />}
           </Panel>
 

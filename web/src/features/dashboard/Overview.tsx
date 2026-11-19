@@ -12,6 +12,7 @@ import { Dot } from '../../components/Dot';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
 import { chargeOutlook, chargerLabel, lastChargedTo } from '../../lib/charging';
+import { showOptional } from '../../lib/fieldSources';
 import { locationIsBehind } from '../../lib/freshness';
 import { nextStop, routePlan } from '../../lib/navigation';
 import { isActivePhase, softwareUpdate } from '../../lib/ota';
@@ -20,6 +21,7 @@ import {
   type ActivityKind,
   climateRunning,
   coldRangeNote,
+  powerOutputVerdict,
   rangeLevel,
   securitySummary,
   vehicleActivity,
@@ -78,6 +80,11 @@ export function Overview(props: {
   const lowRange = rangeLevel(state);
   // Without a distance for it, the vehicle's own word on the cold.
   const coldNote = cold ? null : coldRangeNote(state);
+  // Only while the pack is reporting: asleep, the last verdict would pass for the current one.
+  const powerVerdict =
+    insights?.cellTempsCurrent && showOptional(state, 'batteryPowerOutputStatus')
+      ? powerOutputVerdict(state)
+      : null;
   const mileageM = nv(state, 'vehicleMileage');
   const loc = location(state);
   // The speed taken with the fix the map shows, so the two agree.
@@ -257,6 +264,7 @@ export function Overview(props: {
               limit={target}
               limitLabel={limit == null ? 'Last charge' : undefined}
               charging={charging}
+              verdict={powerVerdict}
             />
           </div>
 
