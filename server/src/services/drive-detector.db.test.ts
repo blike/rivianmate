@@ -12,7 +12,7 @@ import { RVM_GEAR, vehicleStateFromParallax } from '../rivian/parallax/index.js'
 import type { VehicleState } from '../rivian/types.js';
 import { ensureLegacyHistoryTables } from '../testing/legacy-tables.js';
 import { b64, int } from '../testing/protobuf.js';
-import { DriveDetector } from './drive-detector.js';
+import { DriveDetector, maxSpeeds, speedSpikes } from './drive-detector.js';
 import { HistoryKeys } from './history-keys.js';
 import { StateHistoryRecorder } from './state-history.js';
 
@@ -469,5 +469,141 @@ describe.skipIf(!url)('DriveDetector with Postgres', () => {
       .from(locationPoints)
       .orderBy(locationPoints.ts);
     expect(points.map((p) => p.driveId)).toEqual([late.id, null, exact.id, null]);
+  });
+
+  describe('top speed', () => {
+    /**
+     * A drive whose fixes are `readings` km/h (null for none), one every 5 s
+     * unless `steps` says otherwise, with the car actually travelling `ground`
+     * km/h between them — the two differ when a reading is wrong, which is the
+     * case this guards.
+     */
+    async function drive(
+      readings: (number | null)[],
+      options: { ground?: number | number[]; from?: string; steps?: number[] } = {},
+    ) {
+      const from = options.from ?? '2026-11-14T12:51:00Z';
+      const ground = readings.map((_, i) =>
+        typeof options.ground === 'number'
+          ? options.ground
+          : (options.ground?.[i] ?? readings[i] ?? 0),
+      );
+      const [row] = await handle.db
+        .insert(drives)
+        .values({
+          vehicleId: 'v1',
+          startedAt: new Date(from),
+          endedAt: new Date(Date.parse(from) + 3_600_000),
+        })
+        .returning();
+      let km = 0;
+      let ms = Date.parse(from);
+      const points = readings.map((kmh, i) => {
+        if (i > 0) {
+          // The step's seconds at the ground speed, in km.
+          const step = options.steps?.[i - 1] ?? 5;
+          ms += step * 1000;
+          km += (ground[i - 1]! * step) / 3600;
+        }
+        return {
+          vehicleId: 'v1',
+          driveId: row!.id,
+          ts: new Date(ms),
+          lat: 38.4352 + km / 111.32,
+          lon: -86.1971,
+          speedKmh: kmh,
+        };
+      });
+      await handle.db.insert(locationPoints).values(points);
+      return row!.id;
+    }
+
+    it('ignores a lone reading the ground either side of it rules out', async () => {
+      // Measured on the car: one navigation fix claimed 152 km/h where the
+      // track and every neighbouring fix said 94, and a plain MAX reported it
+      // as the drive's top speed.
+      const id = await drive([94, 94, 152, 94, 94], { ground: 94 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+      // The drive's speed chart leaves out the same reading.
+      expect(await speedSpikes(handle.db, id)).toEqual(
+        new Set([Date.parse('2026-11-14T12:51:10Z')]),
+      );
+    });
+
+    it('ignores a spike beside a fix with no speed', async () => {
+      const id = await drive([94, null, 152, 94, 94], { ground: 94 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+    });
+
+    it('ignores two bad readings in a row', async () => {
+      const id = await drive([94, 94, 152, 152, 94, 94], { ground: 94 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 94]]));
+    });
+
+    it('keeps a reading only one side of it can measure', async () => {
+      // Measured on the car: pulling away, the fix after the last reading came
+      // a minute later; the ground behind it lags, and alone it can't tell
+      // a spike from hard braking.
+      const gap = await drive([0, 7, 22, 41, 30], {
+        ground: [4, 15, 26, 35],
+        steps: [5, 5, 5, 60],
+      });
+      // And one 0.3 s from the next fix, too close to measure.
+      const close = await drive([32, 65, 67, 64, 38], {
+        ground: [51, 39, 39, 52],
+        steps: [5, 5, 0.3, 6],
+        from: '2026-11-14T14:00:00Z',
+      });
+      expect(await maxSpeeds(handle.db, [gap, close])).toEqual(
+        new Map([
+          [gap, 41],
+          [close, 67],
+        ]),
+      );
+    });
+
+    it('keeps a peak between fixes too far apart to measure', async () => {
+      // Over 30 s the ground's mean falls well below a short real peak, so a
+      // span that long can't rule a reading out.
+      const id = await drive([60, 60, 110, 60, 60], {
+        ground: [60, 85, 85, 60],
+        steps: [30, 30, 30, 30],
+      });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 110]]));
+    });
+
+    it('counts readings from fixes with no position', async () => {
+      const id = await drive([50, 60, 55]);
+      await handle.db.update(locationPoints).set({ lat: 0, lon: 0 });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 60]]));
+    });
+
+    it('keeps a reading the ground it covers allows', async () => {
+      // Above both neighbours, but the car really did cover that ground, so it
+      // is a genuine speed: the track is the check, not the neighbours alone.
+      const id = await drive([80, 100, 95], { ground: [80, 100, 95] });
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 100]]));
+    });
+
+    it('keeps a speed reached while accelerating', async () => {
+      // Each fix is faster than the last, so none of them is a spike: the top
+      // speed is the last one, and a ramp must not be trimmed to its mean.
+      const id = await drive([40, 60, 80, 100, 120]);
+      expect(await maxSpeeds(handle.db, [id])).toEqual(new Map([[id, 120]]));
+    });
+
+    it('keeps a drive too short to check, and reads several drives at once', async () => {
+      const short = await drive([72, 88], { from: '2026-11-14T14:00:00Z' });
+      const spiked = await drive([90, 90, 140, 90, 90], {
+        ground: 90,
+        from: '2026-11-14T16:00:00Z',
+      });
+      expect(await maxSpeeds(handle.db, [short, spiked])).toEqual(
+        new Map([
+          [short, 88],
+          [spiked, 90],
+        ]),
+      );
+    });
   });
 });
