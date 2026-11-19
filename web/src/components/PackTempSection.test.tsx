@@ -49,20 +49,13 @@ const rows = (
     max,
   }));
 
-function renderSpan(
-  span: PackTempSpan | undefined,
-  history: object[] = [],
-  vehicle: { vehicleId?: string; insights?: object } = {},
-) {
-  const vehicleId = vehicle.vehicleId ?? ID;
+function renderSpan(span: PackTempSpan | undefined, history: object[] = []) {
   const client = new QueryClient();
   client.setQueryData(['units'], { distance: 'mi', temperature: 'F' });
-  if (vehicle.insights) client.setQueryData(['insights', vehicleId], vehicle.insights);
-  if (span)
-    client.setQueryData(['packTemps', vehicleId, span.kind, span.id, span.to ?? 'live'], history);
+  if (span) client.setQueryData(['packTemps', ID, span.kind, span.id, span.to ?? 'live'], history);
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <PackTempSection vehicleId={vehicleId} span={span} loading={false} />
+      <PackTempSection vehicleId={ID} span={span} loading={false} />
     </QueryClientProvider>,
   );
 }
@@ -110,7 +103,6 @@ describe('PackTempSection', () => {
       ]),
     );
     expect(html).toContain('recharts-wrapper');
-    expect(html).not.toContain('No pack temperature was recorded');
   });
 
   it('shows the end it has and leaves the other unknown when readings stop early', () => {
@@ -127,32 +119,17 @@ describe('PackTempSection', () => {
     expect(html).not.toContain('+');
   });
 
-  it('says so when the drive has no readings at all', () => {
-    const html = render(drive(), []);
-    expect(html).toContain('No pack temperature was recorded on this drive');
-    // The figures keep their shape, with nothing in them.
-    expect(html).toContain('At start');
-    expect(html).toContain('—');
+  it('leaves the section out when the drive has no readings at all', () => {
+    expect(render(drive(), [])).toBe('');
   });
 
-  it('gives the awake case for a vehicle that reports these readings', () => {
-    const html = renderSpan(spanOf(drive()), [], {
-      insights: { cellTemps: { avgC: 20, minC: 19, maxC: 21, at: at(0) } },
-    });
-    expect(html).toContain('the vehicle reports it only while it’s awake');
-  });
-
-  it('says a vehicle that has never sent these readings has none, not that it was asleep', () => {
-    const html = renderSpan(spanOf(drive()), [], { insights: { cellTemps: null } });
-    expect(html).toContain('it isn’t reported for this vehicle');
-    expect(html).not.toContain('only while it’s awake');
-  });
-
-  it('says a TeslaMate vehicle never reports them, whatever it is doing', () => {
-    // The history route answers an empty series for these fields on one.
-    const html = renderSpan(spanOf(drive()), [], { vehicleId: 'tm-1' });
-    expect(html).toContain('it isn’t reported for this vehicle');
-    expect(html).not.toContain('only while it’s awake');
+  it('leaves the section out when the only readings are from long before the drive', () => {
+    // The route still returns the reading held from before, then a gap.
+    const stale: HistoryPoint[] = [
+      { bucket: at(-300), avg: 21, min: 20, max: 22 },
+      { bucket: at(-290), avg: null, min: null, max: null },
+    ];
+    expect(render(drive(), stale)).toBe('');
   });
 
   it('says a single reading is no trend to draw', () => {
@@ -167,10 +144,8 @@ describe('PackTempSection', () => {
     expect(html).toContain('Not recorded');
   });
 
-  it('renders the section’s shape before any span is chosen', () => {
-    const html = render(undefined, []);
-    expect(html).toContain('Pack temperature');
-    expect(html).toContain('At end');
+  it('leaves the section out before any span is chosen', () => {
+    expect(render(undefined, [])).toBe('');
   });
 
   it('draws a charge’s window as it draws a drive’s, under the same figures', () => {
@@ -189,10 +164,8 @@ describe('PackTempSection', () => {
     expect(html).toContain('+5.4 °F');
   });
 
-  it('names a charge, not a drive, when it has no readings to draw', () => {
-    const html = renderSpan(chargeSpan, []);
-    expect(html).toContain('No pack temperature was recorded on this charge');
-    expect(html).not.toContain('on this drive');
+  it('leaves the section out when the charge has no readings at all', () => {
+    expect(renderSpan(chargeSpan, [])).toBe('');
   });
 
   it('says a single charge reading is no trend to draw', () => {

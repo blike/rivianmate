@@ -1,8 +1,6 @@
 import { useMemo } from 'react';
-import { isTeslaMateVehicle } from '@server/teslamate/ids';
-import { type PackTempSpan, useInsights, usePackTemps, useUnits } from '../api/hooks';
+import { type PackTempSpan, usePackTemps, useUnits } from '../api/hooks';
 import { formatMinutes, minuteTicks, tooltipTime } from '../lib/drives';
-import { showParallaxOnly } from '../lib/fieldSources';
 import { clock } from '../lib/format';
 import {
   packReadings,
@@ -21,7 +19,8 @@ import { STACKED_AXIS_WIDTH, TrendChart } from './TrendChart';
 
 /**
  * The pack's temperature over a drive or charge: the reading at each end, the
- * change, and a chart of the average with the coldest-to-hottest band.
+ * change, and a chart of the average with the coldest-to-hottest band. Left
+ * out when the span has no reading.
  */
 export function PackTempSection(props: {
   vehicleId: string;
@@ -35,9 +34,6 @@ export function PackTempSection(props: {
   const u = useUnits();
   const span = props.span;
   const { data: history, isPending } = usePackTemps(props.vehicleId, span);
-  // Says why an empty chart is empty: not reported at all, or only while awake.
-  const { data: insights } = useInsights(props.vehicleId);
-  const reports = !isTeslaMateVehicle(props.vehicleId) && showParallaxOnly(insights, 'cellTemps');
   const readings = useMemo(() => packReadings(history ?? []), [history]);
   const startMs = span ? Date.parse(span.from) : 0;
   const live = span != null && span.to == null;
@@ -69,6 +65,13 @@ export function PackTempSection(props: {
   const ticks = useMemo(() => packTempTicks(domain, u.units.temperature), [domain, u]);
   const spanName = span?.kind === 'charge' ? 'charge' : 'drive';
   const loading = props.loading || isPending;
+  // The history also carries the last reading before the span, however old,
+  // so having points doesn't mean the span has a reading.
+  const shown =
+    figures.startC != null ||
+    figures.endC != null ||
+    readings.some((r) => r.avgC != null && r.at >= startMs && (endedAt == null || r.at <= endedAt));
+  if (!shown) return null;
   const series = packTempChartSeries(u);
   const first = rows[0]?.minutes ?? 0;
   const total = rows.at(-1)?.minutes ?? (endMs - startMs) / 60_000;
@@ -103,15 +106,7 @@ export function PackTempSection(props: {
           height={150}
           loading={loading}
           empty={rows.length === 0}
-          emptyText={
-            readings.length === 0
-              ? `No pack temperature was recorded on this ${spanName}: ${
-                  reports
-                    ? 'the vehicle reports it only while it’s awake.'
-                    : 'it isn’t reported for this vehicle.'
-                }`
-              : `One pack temperature reading was recorded on this ${spanName}, and one is no trend to draw.`
-          }
+          emptyText={`One pack temperature reading was recorded on this ${spanName}, and one is no trend to draw.`}
         >
           <TrendChart
             data={rows}
