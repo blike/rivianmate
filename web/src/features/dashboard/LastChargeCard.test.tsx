@@ -67,3 +67,33 @@ describe('LastChargeCard without a reported charge limit', () => {
     expect(html).not.toContain('last charge');
   });
 });
+
+describe('LastChargeCard between charges', () => {
+  it('shows the plug, not an empty history, when plugged in with no session open', () => {
+    const html = render({
+      session: undefined,
+      plug: 'plugged',
+      charge: { ...charge, soc: 60, limit: 80 },
+    });
+    expect(html).toContain('Plugged in');
+    expect(html).toContain('Not charging');
+    expect(html).not.toContain('No charging sessions yet');
+  });
+
+  it('says where and since when it was plugged in, before a session opens', () => {
+    const at = new Date(2026, 10, 19, 19, 42).getTime();
+    const html = render({
+      session: undefined,
+      plug: 'plugged',
+      charge: { ...charge, soc: 60, limit: 80 },
+      pluggedIn: { place: { label: 'Home', isHome: true, saved: false }, at },
+    });
+    expect(html).toContain('Home');
+    expect(html).toContain('Plugged in 7:42');
+  });
+
+  it('calls an open session that isn’t charging paused', () => {
+    const html = render({ charge: { ...charge, soc: 60, limit: 80 } });
+    expect(html).toContain('Paused');
+  });
+});

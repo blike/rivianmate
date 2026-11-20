@@ -1,4 +1,5 @@
 /** When the vehicle was plugged in, and which of that time it spent charging. */
+import { sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { changesBetween, latestChanges } from './state-history.js';
 
@@ -87,4 +88,30 @@ export function chargingWindow(
     to = Math.min(s.to.getTime(), end);
   }
   return from != null && to != null ? { from: new Date(from), to: new Date(to) } : null;
+}
+
+/**
+ * When the vehicle was plugged in, if it is now: its first recorded
+ * connected status since it was last recorded unplugged. Charging and
+ * pausing change the status too, so the latest change alone won't do.
+ * Null when the latest status isn't connected or none is recorded.
+ */
+export async function pluggedInAt(db: Db, vehicleId: string): Promise<Date | null> {
+  const rows = await db.execute<{ at: string | Date | null }>(sql`
+    WITH status AS (
+      SELECT c.at, c.value FROM state_changes c
+      JOIN state_fields f ON f.id = c.field_id
+      WHERE f.name = 'chargerStatus'
+        AND c.vehicle_seq = (SELECT seq FROM vehicles WHERE id = ${vehicleId})
+    )
+    SELECT min(at) AS at FROM status
+    WHERE value LIKE 'chrgr_sts_connected%'
+      AND at > COALESCE(
+        (SELECT max(at) FROM status
+         WHERE value IS NULL OR value NOT LIKE 'chrgr_sts_connected%'),
+        '-infinity'::timestamptz
+      )
+  `);
+  const at = rows[0]?.at;
+  return at != null ? new Date(at) : null;
 }

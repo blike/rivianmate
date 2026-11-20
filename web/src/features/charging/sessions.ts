@@ -10,6 +10,13 @@ import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
 
 /** When a session started charging; the plug-in time when that wasn't recorded. */
 export const chargeStart = (s: ChargingSessionDto) => s.chargingStartedAt ?? s.startedAt;
+/**
+ * Whether the session began at a plug-in well before it charged: only those
+ * recorded before sessions began at the charge, so worth naming the plug-in.
+ */
+export const pluggedInFirst = (s: ChargingSessionDto) =>
+  s.chargingStartedAt != null &&
+  Date.parse(s.chargingStartedAt) - Date.parse(s.startedAt) >= 60_000;
 /** When it stopped charging, else when it was unplugged. */
 export const chargeEnd = (s: ChargingSessionDto) => s.chargingEndedAt ?? s.endedAt;
 

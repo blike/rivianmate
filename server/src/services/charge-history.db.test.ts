@@ -48,11 +48,11 @@ describe.skipIf(!url)('ChargeHistoryImporter with Postgres', () => {
     getChargeHistory: async () => [summary],
   } as unknown as RivianApi;
 
-  it("takes Rivian's plug-in span when linking a session it recorded part of", async () => {
+  it('keeps a recorded charge to its own span when linking it', async () => {
     await handle.db.insert(chargingSessions).values({
       vehicleId: 'v1',
-      startedAt: new Date('2026-10-01T04:40:39Z'), // started watching mid plug-in
-      endedAt: new Date('2026-10-01T12:31:00Z'),
+      startedAt: new Date('2026-10-01T06:59:00Z'),
+      endedAt: new Date('2026-10-01T12:12:00Z'),
       chargingSeconds: 18779,
       startSoc: 39.7,
       endSoc: 70,
@@ -62,10 +62,38 @@ describe.skipIf(!url)('ChargeHistoryImporter with Postgres', () => {
     const rows = await handle.db.select().from(chargingSessions);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.source).toBe('live+rivian');
-    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:34:54.722Z');
-    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T12:31:09.091Z');
+    // Rivian's span is the plug-in's, from 00:34 to 12:31.
+    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T06:59:00.000Z');
+    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T12:12:00.000Z');
     expect(rows[0]!.chargingSeconds).toBe(18779);
     expect(rows[0]!.energyKwh).toBe(35.7);
+  });
+
+  it("leaves a plug-in's totals off each of the charges it held", async () => {
+    const billed = { ...summary, paidTotal: 19.28, currencyCode: 'USD' };
+    const api = { getChargeHistory: async () => [billed] } as unknown as RivianApi;
+    await handle.db.insert(chargingSessions).values([
+      {
+        vehicleId: 'v1',
+        startedAt: new Date('2026-10-01T01:00:00Z'),
+        endedAt: new Date('2026-10-01T03:00:00Z'),
+      },
+      {
+        vehicleId: 'v1',
+        startedAt: new Date('2026-10-01T07:00:00Z'),
+        endedAt: new Date('2026-10-01T12:00:00Z'),
+        energyKwh: 30,
+      },
+    ]);
+    await new ChargeHistoryImporter(handle.db, api, () => ['v1']).run();
+
+    const rows = await handle.db.select().from(chargingSessions).orderBy(chargingSessions.id);
+    expect(rows).toHaveLength(2);
+    // Linked to the one nearest the plug-in, without the plug-in's energy or cost.
+    expect(rows[0]!.rivianTransactionId).toBe('tx-night');
+    expect([rows[0]!.energyKwh, rows[0]!.rangeAddedKm, rows[0]!.cost]).toEqual([null, null, null]);
+    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T03:00:00.000Z');
+    expect(rows[1]!.energyKwh).toBe(30);
   });
 
   it('fills charging time and SOC for an imported session from recorded vehicle states', async () => {

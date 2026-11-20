@@ -320,8 +320,9 @@ export const chargingSessions = pgTable(
     startSoc: real('start_soc'),
     endSoc: real('end_soc'),
     /**
-     * A session spans one plug-in (started_at → ended_at). Within it, total
-     * time actually charging, and the start of the stretch running now.
+     * A session spans one charge (started_at → ended_at), pauses included;
+     * sessions recorded or imported before that span one plug-in. Within it,
+     * total time actually charging, and the start of the stretch running now.
      */
     chargingSeconds: integer('charging_seconds'),
     chargingSince: timestamp('charging_since', { withTimezone: true }),

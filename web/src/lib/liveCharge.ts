@@ -39,9 +39,10 @@ export function liveCharge(
   };
 }
 
-/** Whether the live session says the vehicle is charging. */
+/** Whether the live session says the vehicle is charging (Smart Charging included). */
 export function isChargingLive(live: LiveSessionData | null | undefined): boolean {
-  return live?.vehicleChargerState?.value === 'charging_active';
+  const state = live?.vehicleChargerState?.value;
+  return state === 'charging_active' || state === 'charging_smart_charging_active';
 }
 
 function num(value: string | number | null | undefined): number | null {

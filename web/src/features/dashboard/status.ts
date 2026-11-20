@@ -1,3 +1,5 @@
+import type { ChargingSessionDto, DriveDto } from '../../api/client';
+import { chargerLabel } from '../../lib/charging';
 import type { ActivityKind } from '../../lib/vehicleStatus';
 import { clock, shortDate } from '../../lib/format';
 import { haversineKm } from '../../lib/geo';
@@ -38,6 +40,34 @@ export function stillAtDriveEnd(
 ): boolean {
   if (drive.endLat == null || drive.endLon == null || !at) return true;
   return haversineKm(drive.endLat, drive.endLon, at.lat, at.lon) <= MOVED_KM;
+}
+
+export interface Place {
+  label: string;
+  isHome: boolean;
+  saved: boolean;
+}
+
+/**
+ * Where it's plugged in: the charger of a charge from this plug-in (open, or
+ * done since it was plugged in), else where the last drive ended, since a
+ * session starts only when it charges. Null rather than bare coordinates.
+ */
+export function pluggedInPlace(
+  latest: ChargingSessionDto | undefined,
+  lastDrive: DriveDto | null | undefined,
+  pluggedInAt: number | null | undefined,
+): Place | null {
+  const chargedHere =
+    latest &&
+    (!latest.endedAt || (pluggedInAt != null && Date.parse(latest.endedAt) >= pluggedInAt));
+  if (chargedHere) {
+    return { label: chargerLabel(latest), isHome: latest.isHome, saved: latest.location != null };
+  }
+  const end = lastDrive?.endedAt ? lastDrive.end : null;
+  return end && !end.unnamed
+    ? { label: end.label, isHome: end.isHome, saved: end.locationId != null }
+    : null;
 }
 
 export function statusSentence(i: {

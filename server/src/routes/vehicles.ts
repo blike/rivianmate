@@ -1,9 +1,16 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { ParkedDayDto, SchedulesDto, VehicleDto, VehicleInsightsDto } from '../api-types.js';
+import type {
+  ParkedDayDto,
+  PluggedInDto,
+  SchedulesDto,
+  VehicleDto,
+  VehicleInsightsDto,
+} from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { vehicles } from '../db/schema.js';
+import { pluggedInAt } from '../services/charge-spans.js';
 import { isTimeZone } from '../services/imports/time-zone.js';
 import { VEHICLE_VIEWS, type VehicleImageUrls, type VehicleView } from '../rivian/types.js';
 import { isTeslaMateVehicle } from '../teslamate/ids.js';
@@ -60,6 +67,17 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
     if (!state) return reply.code(404).send({ error: 'No state yet' });
     return state;
   });
+
+  // A session starts when it charges, so when it was plugged in comes from
+  // the recorded charger status instead.
+  app.get<{ Params: { id: string } }>(
+    '/api/vehicles/:id/plugged-in',
+    async (request): Promise<PluggedInDto> => {
+      if (isTeslaMateVehicle(request.params.id)) return { pluggedInAt: null };
+      const at = await pluggedInAt(ctx.db, request.params.id);
+      return { pluggedInAt: at?.toISOString() ?? null };
+    },
+  );
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/schedules',

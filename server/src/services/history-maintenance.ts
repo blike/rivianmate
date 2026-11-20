@@ -4,6 +4,7 @@ import { appSettings, stateChanges, stateHeartbeats } from '../db/schema.js';
 import { type Logger, silentLogger } from '../logger.js';
 import type { VehicleState } from '../rivian/types.js';
 import { backfillCellTemps } from './cell-temp-backfill.js';
+import { splitPluginCharges } from './charge-split-backfill.js';
 import type { HistoryKeys } from './history-keys.js';
 import type { ParallaxArchive } from './parallax-archive.js';
 import { HEARTBEAT_MS, StateDiff, changeRows, latestChanges } from './state-history.js';
@@ -24,8 +25,9 @@ interface Converting {
 /**
  * Keeps the history tables in shape in the background: once, converts the
  * tables they replace (whole-state snapshots into state changes, the
- * 30-day Parallax log into the archive) and drops them, and replays the
- * archive for fields added since it was recorded; then hourly packs
+ * 30-day Parallax log into the archive) and drops them, replays the
+ * archive for fields added since it was recorded, and splits sessions
+ * recorded per plug-in into their charges; then hourly packs
  * old archived Parallax payloads into chunks. Conversion resumes where it
  * left off after a restart, and the app works throughout.
  */
@@ -63,6 +65,7 @@ export class HistoryMaintenance {
         { db: this.db, keys: this.keys, archive: this.archive, log: this.log },
         new Date(),
       );
+      await splitPluginCharges({ db: this.db, archive: this.archive, log: this.log }, new Date());
     } catch (err) {
       this.log.error({ err }, 'history conversion failed; retrying on next start');
     }

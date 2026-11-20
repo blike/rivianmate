@@ -342,6 +342,22 @@ export function useChargingSessions(vehicleId: string, since?: Date) {
   return useQuery(chargingSessionsQuery(vehicleId, since));
 }
 
+/**
+ * When the vehicle was plugged in, read only while it is. Keyed by that, so
+ * plugging in reads it afresh; it can't change until it's unplugged.
+ */
+export function usePluggedInAt(vehicleId: string, plugged: boolean) {
+  return useQuery({
+    queryKey: ['pluggedIn', vehicleId, plugged],
+    queryFn: async () => {
+      const { pluggedInAt } = await api.pluggedIn(vehicleId);
+      return pluggedInAt != null ? Date.parse(pluggedInAt) : null;
+    },
+    enabled: plugged,
+    staleTime: Infinity,
+  });
+}
+
 /** The charging and departure schedules set in the Rivian app. */
 export function useSchedules(vehicleId: string) {
   return useQuery({

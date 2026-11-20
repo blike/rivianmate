@@ -4,15 +4,17 @@ import {
   useDrives,
   useInsights,
   useLiveCharging,
+  usePluggedInAt,
   useSchedules,
   useVehicleState,
 } from '../../api/hooks';
 import { LoadingScope } from '../../components/LoadingState';
 import { lastChargedTo } from '../../lib/charging';
 import { isChargingLive, liveCharge } from '../../lib/liveCharge';
-import { nv, sv } from '../../lib/state';
+import { location, nv, sv } from '../../lib/state';
 import { vehicleActivity } from '../../lib/vehicleStatus';
 import { scheduleStatus } from './schedules';
+import { pluggedInPlace, stillAtDriveEnd } from './status';
 import { LastChargeCard } from './LastChargeCard';
 import { LastDriveCard } from './LastDriveCard';
 import { SectionRule } from '../../components/PageHeader';
@@ -30,6 +32,23 @@ export function RecentActivity(props: { vehicleId: string }) {
   // Keeps "2 h ago" and a live drive's duration current.
   const driving = drives?.[0] != null && !drives[0].endedAt;
   const [now, setNow] = useState(() => Date.now());
+  const plug = state ? plugState(sv(state, 'chargerStatus')) : undefined;
+  const latest = sessions?.[0];
+  // Plugged in short of its limit and not charging: no session is open until
+  // it charges, so the card shows the plug and schedule, not the last charge.
+  const { soc, limit } = liveCharge(null, state);
+  const waiting =
+    plug === 'plugged' &&
+    latest?.endedAt != null &&
+    !(soc != null && limit != null && soc >= limit - 0.5);
+  // With no session yet, where and since when come from the plug-in itself.
+  const { data: pluggedInAt } = usePluggedInAt(props.vehicleId, plug != null);
+  const lastDrive =
+    drives?.[0]?.endedAt && stillAtDriveEnd(drives[0], location(state)) ? drives[0] : null;
+  const pluggedIn =
+    waiting || (plug != null && !latest)
+      ? { place: pluggedInPlace(latest, lastDrive, pluggedInAt), at: pluggedInAt ?? null }
+      : undefined;
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), driving ? 15_000 : 60_000);
     return () => clearInterval(t);
@@ -51,9 +70,10 @@ export function RecentActivity(props: { vehicleId: string }) {
         </LoadingScope>
         <LoadingScope loading={sessionsPending}>
           <LastChargeCard
-            plug={state ? plugState(sv(state, 'chargerStatus')) : undefined}
+            plug={plug}
             stateLoaded={state !== undefined}
-            session={sessions?.[0]}
+            session={waiting ? undefined : latest}
+            pluggedIn={pluggedIn}
             now={now}
             charge={liveCharge(isChargingLive(live) ? live : null, state)}
             lastChargedTo={lastChargedTo(sessions)}

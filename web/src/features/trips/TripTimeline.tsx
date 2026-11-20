@@ -377,7 +377,6 @@ function ChargeRow(props: {
         />
       )}
       <Row label="Time charging" value={seconds != null ? fmtSeconds(seconds) : '—'} />
-      <Row label="Plugged in" value={fmtDuration(s.startedAt, s.endedAt)} />
       <Row
         label="Cost"
         value={

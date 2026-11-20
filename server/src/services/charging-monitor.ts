@@ -31,7 +31,15 @@ import {
   type VehicleState,
 } from '../rivian/types.js';
 import { OBSERVED_SAMPLE_MS, POWER_MAX_AGE_MS } from './charging-curve.js';
-import { isChargingState, stampedAt } from './charging-time.js';
+import {
+  BREAKDOWN_MATCH_MIN_S,
+  RESTART_JOIN_MS,
+  breakdownMatches,
+  endsCharge,
+  holdsCharge,
+  isChargingState,
+  stampedAt,
+} from './charging-time.js';
 import { LiveChargeState, type LiveSource } from './live-charging.js';
 import { nearbySpot } from './locations.js';
 import type { LiveBus } from './live-bus.js';
@@ -55,16 +63,6 @@ const GRAPH_SLACK_MS = 10 * 60_000;
  * than this after the message was sent is forecast, not a reading.
  */
 const GRAPH_CLOCK_SLACK_MS = 60_000;
-/**
- * A breakdown carries no session id or time, only minutes spent charging,
- * so it goes to the session whose charging time matches. Rivian resends the
- * previous session's breakdown on subscribe, which this keeps off a new one.
- */
-const BREAKDOWN_MATCH_MIN_S = 5 * 60;
-const BREAKDOWN_MATCH_FRACTION = 0.1;
-const breakdownMatches = (minutes: number, chargingSeconds: number) =>
-  Math.abs(minutes * 60 - chargingSeconds) <=
-  Math.max(BREAKDOWN_MATCH_MIN_S, chargingSeconds * BREAKDOWN_MATCH_FRACTION);
 /** How far apart a power reading and the SoC paired with it may be. */
 const LIVE_SOC_MAX_GAP_MS = 5 * 60_000;
 /** Finished sessions older than this don't take a breakdown. */
@@ -85,6 +83,8 @@ interface OpenSession {
   /** Seconds charged in finished stretches; the running one is `chargingSince`. */
   chargingSeconds: number;
   chargingSince: number | null;
+  /** When charging last stopped, while the charge is paused. */
+  pausedAt: number | null;
   /**
    * Rivian's totals for the stretches already finished: each counter restarts
    * at 0 when charging restarts, so a session's total is this plus the stretch
@@ -149,14 +149,20 @@ interface PlugReading {
   pluggedAt: number;
   charging: boolean;
   chargingAt: number;
+  /** Vehicle `chargerState`; null when the reading doesn't carry it. */
+  chargerState: string | null;
+  /** Minutes the vehicle counts to the end of the charge. */
+  minutesLeft: number | null;
   soc: number | null;
 }
 
 /**
- * Records one charging session per plug-in, as Rivian's history does:
- * plugging in opens it and unplugging closes it, so pauses (a scheduled
- * charge waiting for its window, a top-up after completing) stay in one
- * row. Vehicle state supplies the plug state, time spent charging and SOC.
+ * Records one session per charge: it opens when charging starts and closes
+ * when it stops for good, so raising the limit after a charge completes,
+ * without unplugging, is a second charge. A pause the car means to resume
+ * from stays in the session (see `holdsCharge`), as does a restart moments
+ * after a stop that wasn't final. Plugged in and waiting is no session.
+ * Vehicle state supplies the charger state, time spent charging and SOC.
  * The power curve comes from Parallax's charging graph; the legacy
  * `chargingSession` push feed, when Rivian sends it, adds energy and cost.
  *
@@ -171,6 +177,11 @@ export class ChargingMonitor {
   private plugKnown = new Set<string>();
   private lastWallboxPollAt = 0;
   private openSessions = new Map<string, OpenSession>();
+  /**
+   * Each vehicle's last ended charge, until the next one opens: its closing
+   * breakdown can arrive after it ends, and a restart moments later rejoins it.
+   */
+  private ended = new Map<string, { open: OpenSession; endedAt: number; final: boolean }>();
   /** Sessions a previous run left open, awaiting proof they're still going. */
   private resumable = new Map<string, ResumableSession>();
   private lastWallboxReading = new Map<string, string>();
@@ -232,8 +243,10 @@ export class ChargingMonitor {
     this.applyPlugReading(vehicleId, {
       plugged: status !== 'chrgr_sts_not_connected',
       pluggedAt: stampedAt(state, 'chargerStatus', now),
-      charging: isChargingState(stateString(state, 'chargerState')),
+      charging: isChargingState(chargerState),
       chargingAt: stampedAt(state, 'chargerState', now),
+      chargerState,
+      minutesLeft,
       soc: stateNumber(state, 'batteryLevel'),
     });
   }
@@ -246,6 +259,8 @@ export class ChargingMonitor {
       pluggedAt: now,
       charging: false,
       chargingAt: now,
+      chargerState: null,
+      minutesLeft: null,
       soc: null,
     });
   }
@@ -408,7 +423,8 @@ export class ChargingMonitor {
     const matches = (chargingSeconds: number) =>
       breakdownMatches(b.chargingMinutes, chargingSeconds);
 
-    const open = this.openSessions.get(vehicleId);
+    // A charge that just ended still takes its closing message.
+    const open = this.openSessions.get(vehicleId) ?? this.ended.get(vehicleId)?.open;
     if (open) {
       const counted = b.chargingMinutes * 60;
       const totals = totalsOf(b);
@@ -716,27 +732,38 @@ export class ChargingMonitor {
     return next;
   }
 
-  /** Plug-in opens a session, unplug closes it; charging time and SOC in between. */
+  /** Charging opens a session and stopping for good closes it; unplugging always does. */
   private async processPlugReading(vehicleId: string, reading: PlugReading): Promise<void> {
-    await this.settleResumable(vehicleId, reading.plugged);
+    // A reading without a charger state says nothing about charging.
+    const known = reading.chargerState !== null;
+    const holds = holdsCharge(reading.chargerState, reading.minutesLeft);
+    await this.settleResumable(vehicleId, reading.plugged && (reading.charging || !known || holds));
     const open = this.openSessions.get(vehicleId);
 
     if (!reading.plugged) {
       if (open) {
-        const endedAt = Math.min(Math.max(reading.pluggedAt, open.startedAt), this.now());
-        await this.closeOpen(vehicleId, open, endedAt, reading.soc);
+        const unplugged = Math.min(Math.max(reading.pluggedAt, open.startedAt), this.now());
+        // A paused charge ended when it last stopped, not at the unplug.
+        await this.endCharge(vehicleId, open, open.pausedAt ?? unplugged, reading.soc, true);
         this.emitLive(vehicleId);
       }
       return;
     }
 
     if (!open) {
-      const startedAt = this.now();
-      const chargingSince = reading.charging ? Math.max(reading.chargingAt, startedAt) : null;
+      // Plugged in and not charging (yet): there's no charge to record.
+      if (!reading.charging) return;
+      const at = Math.min(reading.chargingAt, this.now());
+      const last = this.ended.get(vehicleId);
+      if (last && !last.final && at - last.endedAt <= RESTART_JOIN_MS) {
+        await this.rejoin(vehicleId, last.open, Math.max(at, last.endedAt), reading.soc);
+        return;
+      }
+      this.ended.delete(vehicleId);
       await this.openSession(vehicleId, {
-        startedAt,
+        startedAt: at,
         startSoc: reading.soc,
-        chargingSince,
+        chargingSince: at,
       });
       return;
     }
@@ -746,27 +773,89 @@ export class ChargingMonitor {
       // The stretch that was banked can no longer take a closing message: the
       // car is charging again, so anything now belongs to this stretch.
       open.banked = null;
+      open.pausedAt = null;
       open.chargingSince = Math.max(reading.chargingAt, open.startedAt);
       changes.chargingSince = new Date(open.chargingSince);
-    } else if (!reading.charging && open.chargingSince !== null) {
-      open.chargingSeconds += stretchSeconds(open.chargingSince, reading.chargingAt);
-      open.chargingSince = null;
-      // What this stretch reached is the whole of it: bank that, and keep it so
-      // its closing message can replace it rather than be counted again.
-      open.finished = addTotals(open.finished, open.stretch);
-      // Only a stretch that reported anything can have a closing message to
-      // take; one that never did stays out of the way of the row's total.
-      if (open.stretchMinutes > 0) {
-        open.banked = { minutes: open.stretchMinutes, totals: open.stretch };
+    } else if (!reading.charging && known) {
+      const stoppedAt =
+        open.chargingSince !== null
+          ? Math.max(reading.chargingAt, open.chargingSince)
+          : (open.pausedAt ?? Math.max(reading.chargingAt, open.startedAt));
+      if (!holds) {
+        await this.endCharge(
+          vehicleId,
+          open,
+          stoppedAt,
+          reading.soc,
+          endsCharge(reading.chargerState),
+        );
+        this.emitLive(vehicleId);
+        return;
       }
-      open.stretch = NO_TOTALS;
-      open.stretchMinutes = 0;
-      changes.chargingSeconds = open.chargingSeconds;
-      changes.chargingSince = null;
+      if (open.chargingSince !== null) {
+        this.pauseStretch(open, stoppedAt);
+        changes.chargingSeconds = open.chargingSeconds;
+        changes.chargingSince = null;
+      }
     }
     if (reading.soc !== null) changes.endSoc = reading.soc;
     if (Object.keys(changes).length === 0) return;
     await this.db.update(chargingSessions).set(changes).where(eq(chargingSessions.id, open.id));
+  }
+
+  /**
+   * Ends the stretch in progress at `at`. What it reached is the whole of it:
+   * bank that, and keep it so its closing message can replace it rather than
+   * be counted again.
+   */
+  private pauseStretch(open: OpenSession, at: number): void {
+    if (open.chargingSince === null) return;
+    open.chargingSeconds += stretchSeconds(open.chargingSince, at);
+    open.chargingSince = null;
+    open.pausedAt = at;
+    open.finished = addTotals(open.finished, open.stretch);
+    // Only a stretch that reported anything can have a closing message to
+    // take; one that never did stays out of the way of the row's total.
+    if (open.stretchMinutes > 0) {
+      open.banked = { minutes: open.stretchMinutes, totals: open.stretch };
+    }
+    open.stretch = NO_TOTALS;
+    open.stretchMinutes = 0;
+  }
+
+  /** Closes a charge, keeping it at hand for its closing message and a quick restart. */
+  private async endCharge(
+    vehicleId: string,
+    open: OpenSession,
+    endedAt: number,
+    soc: number | null,
+    final: boolean,
+  ): Promise<void> {
+    this.pauseStretch(open, endedAt);
+    if (await this.closeOpen(vehicleId, open, endedAt, soc)) {
+      this.ended.set(vehicleId, { open, endedAt, final });
+    } else {
+      this.ended.delete(vehicleId);
+    }
+  }
+
+  /** Opens an ended charge again: it stopped moments ago, and not for good. */
+  private async rejoin(
+    vehicleId: string,
+    open: OpenSession,
+    at: number,
+    soc: number | null,
+  ): Promise<void> {
+    open.chargingSince = at;
+    open.pausedAt = null;
+    open.banked = null;
+    await this.db
+      .update(chargingSessions)
+      .set({ endedAt: null, chargingSince: new Date(at), ...(soc !== null ? { endSoc: soc } : {}) })
+      .where(eq(chargingSessions.id, open.id));
+    this.ended.delete(vehicleId);
+    this.openSessions.set(vehicleId, open);
+    this.log.info({ vehicleId }, 'charging session continued after a brief stop');
   }
 
   private async openSession(
@@ -809,6 +898,7 @@ export class ChargingMonitor {
       maxPowerKw: 0,
       chargingSeconds: 0,
       chargingSince: init.chargingSince,
+      pausedAt: null,
       finished: NO_TOTALS,
       stretch: NO_TOTALS,
       stretchMinutes: 0,
@@ -821,12 +911,13 @@ export class ChargingMonitor {
     return open;
   }
 
+  /** Closes a session; false when it was discarded, having charged nothing. */
   private async closeOpen(
     vehicleId: string,
     open: OpenSession,
     endedAt: number,
     soc: number | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (open.chargingSince !== null) {
       open.chargingSeconds += stretchSeconds(open.chargingSince, endedAt);
       open.chargingSince = null;
@@ -844,15 +935,17 @@ export class ChargingMonitor {
     this.liveState(vehicleId).forgetSessionReadings(endedAt);
     // A finished charge has no forecast.
     await this.replaceForecast(open.id, []);
-    if (await this.discardIfEmpty(open.id)) {
+    const discarded = await this.discardIfEmpty(open.id);
+    if (discarded) {
       this.log.info({ vehicleId }, 'charging session discarded: nothing was charged');
     } else {
       this.log.info({ vehicleId }, 'charging session ended');
     }
     this.onSessionEnded?.(vehicleId);
+    return !discarded;
   }
 
-  /** Push feed: adds power, energy, cost and curve to the plug-in's session. */
+  /** Push feed: adds power, energy, cost and curve to the charge's session. */
   private async processSession(vehicleId: string, session: LiveSessionData | null): Promise<void> {
     const active = isActiveSession(session);
     // Without plug state, the push feed is all we have to bound a session.
@@ -868,14 +961,17 @@ export class ChargingMonitor {
 
     if (!open) {
       const now = this.now();
+      const plugKnown = this.plugKnown.has(vehicleId);
+      // Vehicle state opens a charge when it's known; the push feed then only
+      // when it says energy is flowing. Its start time is the plug-in's, which
+      // can be an earlier charge's.
+      if (plugKnown && !isChargingState(String(session.vehicleChargerState?.value ?? ''))) return;
       const start = session.startTime ? Date.parse(session.startTime) : Number.NaN;
+      const startedAt = !plugKnown && Number.isFinite(start) && start <= now ? start : now;
+      this.ended.delete(vehicleId);
       open = await this.openSession(
         vehicleId,
-        {
-          startedAt: Number.isFinite(start) && start <= now ? start : now,
-          startSoc: num(session.soc?.value),
-          chargingSince: this.plugKnown.has(vehicleId) ? null : now,
-        },
+        { startedAt, startSoc: num(session.soc?.value), chargingSince: now },
         session,
       );
     }
@@ -1132,6 +1228,8 @@ export class ChargingMonitor {
       maxPowerKw: stats?.max ?? 0,
       chargingSeconds: leftover.chargingSeconds ?? 0,
       chargingSince: since,
+      // Paused when the process stopped: it last charged at its last sample.
+      pausedAt: since === null ? (leftover.lastSampleAt?.getTime() ?? startedAt) : null,
       finished: running ? subtractTotals(reported, totalsOf(running)) : reported,
       stretch: running ? totalsOf(running) : NO_TOTALS,
       stretchMinutes: running?.chargingMinutes ?? 0,

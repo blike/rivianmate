@@ -60,6 +60,25 @@ export function matchSession(
   return best;
 }
 
+/**
+ * How many charges RivianMate recorded within a summary's span. Rivian's
+ * history has one summary per plug-in, which can hold several charges.
+ */
+export function recordedChargesWithin(
+  summary: ChargeSessionSummary,
+  sessions: readonly (SessionCandidate & { source: string | null })[],
+): number {
+  const start = parseDate(summary.startInstant);
+  if (!start) return 0;
+  const end = parseDate(summary.endInstant) ?? start;
+  return sessions.filter(
+    (c) =>
+      c.source !== 'rivian' &&
+      c.startedAt.getTime() <= end.getTime() &&
+      (c.endedAt ?? c.startedAt).getTime() >= start.getTime(),
+  ).length;
+}
+
 export function chargerTypeFor(
   summary: ChargeSessionSummary,
 ): 'rivian_charger' | 'wallbox' | 'other' {
@@ -249,6 +268,11 @@ export class ChargeHistoryImporter {
       if (match) {
         const row = rowsById.get(match.id)!;
         const alreadyLinked = row.rivianTransactionId === (s.transactionId ?? null);
+        // A recorded charge keeps its own span: Rivian's runs from plug-in to
+        // unplug, which can hold several charges. Its totals are the plug-in's,
+        // so they only fill a charge that is the plug-in's only one.
+        const recorded = row.source !== 'rivian';
+        const whole = !recorded || recordedChargesWithin(s, existing) <= 1;
         await this.db
           .update(chargingSessions)
           .set({
@@ -258,15 +282,17 @@ export class ChargeHistoryImporter {
             city: row.city ?? s.city ?? null,
             isPublic: row.isPublic ?? s.isPublic ?? null,
             isHomeCharger: row.isHomeCharger ?? s.isHomeCharger ?? null,
-            energyKwh: row.energyKwh ?? s.totalEnergyKwh ?? null,
-            rangeAddedKm: row.rangeAddedKm ?? s.rangeAddedKm ?? null,
-            // Rivian's span runs from plug-in to unplug, which we may have
-            // only partly seen (e.g. started while already plugged in).
-            startedAt: startedAt < row.startedAt ? startedAt : row.startedAt,
-            endedAt: endedAt ?? row.endedAt,
+            energyKwh: whole ? (row.energyKwh ?? s.totalEnergyKwh ?? null) : row.energyKwh,
+            rangeAddedKm: whole ? (row.rangeAddedKm ?? s.rangeAddedKm ?? null) : row.rangeAddedKm,
+            ...(recorded
+              ? {}
+              : {
+                  startedAt: startedAt < row.startedAt ? startedAt : row.startedAt,
+                  endedAt: endedAt ?? row.endedAt,
+                }),
             // Rivian's billed total is final, so it replaces running totals
             // recorded while charging; a cost the owner entered stays.
-            ...(!row.costEdited && cost != null
+            ...(whole && !row.costEdited && cost != null
               ? { cost, currency: s.currencyCode ?? row.currency ?? null }
               : { currency: row.currency ?? s.currencyCode ?? null }),
           })
