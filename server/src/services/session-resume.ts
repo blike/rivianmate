@@ -7,6 +7,13 @@ export interface ResumableSession {
   chargingSeconds: number | null;
   /** Start of the charging stretch that was running, if any. */
   chargingSince: Date | null;
+  /** Totals Rivian had reported for the session when the process stopped. */
+  reported: {
+    energyKwh: number | null;
+    packKwh: number | null;
+    thermalKwh: number | null;
+    rangeAddedKm: number | null;
+  };
 }
 
 /**

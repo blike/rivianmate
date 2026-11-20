@@ -11,6 +11,7 @@ import { createDb, runMigrations } from '../db/client.js';
 import {
   chargingCurvePoints,
   chargingSessions,
+  parallaxLatest,
   tripActivities,
   trips,
   vehicles,
@@ -336,6 +337,159 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect([row!.packKwh, row!.thermalKwh]).toEqual([expect.closeTo(34.4), expect.closeTo(1.4)]);
     expect(row!.energyKwh).toBeCloseTo(35.7);
     expect(row!.rangeAddedKm).toBe(162);
+  });
+
+  it("adds up a plug-in's stretches, whose counter starts over when charging does", async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
+    clock = Date.parse('2026-11-13T21:43:00Z');
+    await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
+
+    // The car stays plugged in and stops charging until the night's second run.
+    await note(m, '2026-11-13T21:44:00Z', PLUGGED, 'charging_ready', 62);
+    clock = Date.parse('2026-11-14T02:26:00Z');
+    await note(m, '2026-11-14T02:26:00Z', CHARGING, 'charging_active', 63);
+    clock = Date.parse('2026-11-14T03:44:00Z');
+    await m.ingestParallax('v1', breakdown(26.8, 25.9, 0.9, 78, 146));
+    await note(m, '2026-11-14T03:45:00Z', PLUGGED, 'charging_ready', 90);
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(37.2);
+    expect(row!.packKwh).toBeCloseTo(35.9);
+    expect(row!.thermalKwh).toBeCloseTo(1.3);
+    expect(row!.rangeAddedKm).toBe(205);
+    // Charging time is still the session's own, across both stretches.
+    expect(row!.chargingSeconds).toBe(71 * 60 + 79 * 60);
+  });
+
+  it("takes a stretch's last word when it arrives after charging stopped", async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T20:33:00Z', CHARGING, 'charging_active', 51);
+    clock = Date.parse('2026-10-01T21:42:00Z');
+    await m.ingestParallax('v1', breakdown(10, 9.6, 0.4, 69, 55));
+    await note(m, '2026-10-01T21:43:00Z', PLUGGED, 'charging_ready', 62);
+    await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(10.4);
+    expect(row!.rangeAddedKm).toBe(59);
+  });
+
+  it('counts a stretch once when its closing message is re-sent after the pause', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T19:00:00Z', CHARGING, 'charging_active', 40);
+    clock = Date.parse('2026-10-01T20:00:00Z');
+    await m.ingestParallax('v1', breakdown(12, 11.6, 0.4, 60, 62));
+    await note(m, '2026-10-01T20:01:00Z', PLUGGED, 'charging_ready', 62);
+    await m.ingestParallax('v1', breakdown(12, 11.6, 0.4, 60, 62)); // re-sent
+    clock = Date.parse('2026-10-01T23:00:00Z');
+    await note(m, '2026-10-01T23:00:00Z', CHARGING, 'charging_active', 63);
+    clock = Date.parse('2026-10-01T23:05:00Z');
+    await m.ingestParallax('v1', breakdown(0.5, 0.5, 0, 5, 3));
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.energyKwh).toBeCloseTo(12.5);
+    expect(rows[0]!.rangeAddedKm).toBe(65);
+  });
+
+  it('leaves an older message out when a newer one has already been counted', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T19:00:00Z', CHARGING, 'charging_active', 40);
+    clock = Date.parse('2026-10-01T19:40:00Z');
+    await m.ingestParallax('v1', breakdown(5, 4.8, 0.2, 40, 26));
+    clock = Date.parse('2026-10-01T19:41:00Z');
+    // Close enough to the elapsed time to pass the session match on its own,
+    // so only the "a stretch's counter only grows" rule can turn it away.
+    await m.ingestParallax('v1', breakdown(4.6, 4.4, 0.2, 38, 24));
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(5);
+    expect(row!.rangeAddedKm).toBe(26);
+  });
+
+  it("adds each stretch's range once, including one whose closing message has none", async () => {
+    /** A breakdown with no range, as some of them are. */
+    const noRange = (totalKwh: number, packKwh: number, thermalKwh: number, minutes: number) => ({
+      rvm: RVM_CHARGE_BREAKDOWN,
+      timestamp: null,
+      payload: b64([
+        ...float(1, totalKwh),
+        ...float(2, packKwh),
+        ...float(5, thermalKwh),
+        ...int(6, minutes),
+      ]),
+    });
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T19:00:00Z', CHARGING, 'charging_active', 40);
+    // First stretch: 12 kWh, 62 km.
+    clock = Date.parse('2026-10-01T20:00:00Z');
+    await m.ingestParallax('v1', breakdown(12, 11.6, 0.4, 60, 62));
+    await note(m, '2026-10-01T20:01:00Z', PLUGGED, 'charging_ready', 62);
+    // Second stretch: reports no range until its closing message.
+    clock = Date.parse('2026-10-01T23:00:00Z');
+    await note(m, '2026-10-01T23:00:00Z', CHARGING, 'charging_active', 63);
+    clock = Date.parse('2026-10-01T23:05:00Z');
+    await m.ingestParallax('v1', noRange(0.5, 0.5, 0, 5));
+    await note(m, '2026-10-01T23:06:00Z', PLUGGED, 'charging_ready', 64);
+    await m.ingestParallax('v1', breakdown(0.6, 0.6, 0, 5, 3));
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(12.6);
+    // 62 from the first stretch plus 3 from the second: neither lost nor doubled.
+    expect(row!.rangeAddedKm).toBe(65);
+  });
+
+  it('keeps the earlier stretches when the latest one has a closing message', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
+    clock = Date.parse('2026-11-13T21:43:00Z');
+    await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
+    await note(m, '2026-11-13T21:44:00Z', PLUGGED, 'charging_ready', 62);
+    clock = Date.parse('2026-11-14T02:26:00Z');
+    await note(m, '2026-11-14T02:26:00Z', CHARGING, 'charging_active', 63);
+    clock = Date.parse('2026-11-14T05:24:00Z');
+    await m.ingestParallax('v1', breakdown(26.8, 25.9, 0.9, 178, 146));
+    await note(m, '2026-11-14T05:25:00Z', PLUGGED, 'charging_ready', 90);
+    await m.ingestParallax('v1', breakdown(26.9, 26, 0.9, 178, 147)); // last word
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(37.3);
+    expect(row!.rangeAddedKm).toBe(59 + 147);
+  });
+
+  it('does not let a finished stretch take a message meant for a later one', async () => {
+    // Rivian's counter restarts each stretch, so a later stretch that happens to
+    // run as long as the last one looks the same to this guard. Only the stretch
+    // that has just ended may take a closing message.
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T19:00:00Z', CHARGING, 'charging_active', 40);
+    clock = Date.parse('2026-10-01T20:00:00Z');
+    await m.ingestParallax('v1', breakdown(10, 9.8, 0.2, 60, 50));
+    await note(m, '2026-10-01T20:01:00Z', PLUGGED, 'charging_ready', 52);
+    // A second stretch reports nothing at all before it pauses.
+    clock = Date.parse('2026-10-01T22:00:00Z');
+    await note(m, '2026-10-01T22:00:00Z', CHARGING, 'charging_active', 53);
+    await note(m, '2026-10-01T22:01:00Z', PLUGGED, 'charging_ready', 54);
+    await m.ingestParallax('v1', breakdown(10.2, 10, 0.2, 60, 51));
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(10);
+    expect(row!.rangeAddedKm).toBe(50);
   });
 
   it("keeps the previous session's breakdown off a new plug-in, then tracks its own", async () => {
@@ -664,6 +818,148 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(rows[0]!.endedAt).toBeNull();
     expect(rows[0]!.maxPowerKw).toBe(11);
     expect(rows[0]!.avgPowerKw).toBeCloseTo(9); // (11 + 7 + 9) / 3
+  });
+
+  /** Stores a breakdown as the last one received before the process stopped. */
+  const lastReceived = (msg: ReturnType<typeof breakdown>, at: string) =>
+    handle.db
+      .insert(parallaxLatest)
+      .values({ vehicleId: 'v1', rvm: msg.rvm, payload: msg.payload, messageAt: new Date(at) });
+
+  it('keeps the reported total when a restart lands mid-charge, without counting it twice', async () => {
+    // The row already holds the stretch that was running when the process
+    // stopped, so its own report must not be added to it again.
+    const [row] = await handle.db
+      .insert(chargingSessions)
+      .values({
+        vehicleId: 'v1',
+        startedAt: new Date('2026-10-01T07:00:00Z'),
+        chargingSeconds: 3600,
+        chargingSince: new Date('2026-10-01T08:00:00Z'),
+        energyKwh: 12.4, // 10.4 banked + 2 for the stretch that was running
+        packKwh: 12,
+        thermalKwh: 0.4,
+        rangeAddedKm: 70,
+      })
+      .returning();
+    await lastReceived(breakdown(2, 2, 0, 15, 11), '2026-10-01T08:15:00Z');
+    // No plug reading: that would say whether the stretch still runs, and this
+    // is the case where the process stopped with it going.
+    const m = monitor();
+    await m.start();
+    clock = Date.parse('2026-10-01T09:00:00Z');
+    await m.ingest('v1', live('2026-10-01T08:00:00Z', 9));
+    await m.ingestParallax('v1', breakdown(2.4, 2.3, 0.1, 60, 14));
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    const after = rows[0]!;
+    expect(after.id).toBe(row!.id);
+    expect(after.energyKwh).toBeCloseTo(12.8);
+    expect(after.rangeAddedKm).toBe(73);
+  });
+
+  it('keeps the finished stretches when the running one grew while the process was down', async () => {
+    await handle.db.insert(chargingSessions).values({
+      vehicleId: 'v1',
+      startedAt: new Date('2026-10-01T07:00:00Z'),
+      chargingSeconds: 3600,
+      chargingSince: new Date('2026-10-01T09:00:00Z'),
+      energyKwh: 10, // 6 from the first stretch + 4 from the running one
+      packKwh: 9.6,
+      thermalKwh: 0.4,
+      rangeAddedKm: 55,
+    });
+    await lastReceived(breakdown(4, 3.9, 0.1, 20, 22), '2026-10-01T09:20:00Z');
+    const m = monitor();
+    await m.start();
+    clock = Date.parse('2026-10-01T10:00:00Z');
+    await m.ingest('v1', live('2026-10-01T07:00:00Z', 9));
+    await m.ingestParallax('v1', breakdown(12, 11.7, 0.3, 60, 66));
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(18);
+    expect(row!.packKwh).toBeCloseTo(17.4);
+    expect(row!.thermalKwh).toBeCloseTo(0.6);
+    expect(row!.rangeAddedKm).toBe(99);
+  });
+
+  it("doesn't take the previous session's breakdown as a resumed one's", async () => {
+    await handle.db.insert(chargingSessions).values({
+      vehicleId: 'v1',
+      startedAt: new Date('2026-10-01T07:00:00Z'),
+      chargingSeconds: 1800,
+      chargingSince: null,
+      energyKwh: 3,
+    });
+    // Re-sent on subscribe after this session started, but longer than it has charged.
+    await lastReceived(breakdown(35.8, 34.4, 1.4, 313, 162), '2026-10-01T07:40:00Z');
+    const m = monitor();
+    await m.start();
+    clock = Date.parse('2026-10-01T08:00:00Z');
+    await m.ingest('v1', {
+      ...live('2026-10-01T07:00:00Z', 9),
+      totalChargedEnergy: { value: 4 },
+    } as LiveSessionData);
+    m.stop();
+
+    const [row] = await sessions();
+    // No breakdown has reported on this session, so the feed's total stands.
+    expect(row!.energyKwh).toBeCloseTo(4);
+  });
+
+  it('keeps breakdown totals when the push feed reports its own', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
+    clock = Date.parse('2026-11-13T21:43:00Z');
+    await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
+    await note(m, '2026-11-13T21:44:00Z', PLUGGED, 'charging_ready', 62);
+    clock = Date.parse('2026-11-14T02:26:00Z');
+    await note(m, '2026-11-14T02:26:00Z', CHARGING, 'charging_active', 63);
+    clock = Date.parse('2026-11-14T03:44:00Z');
+    await m.ingestParallax('v1', breakdown(26.8, 25.9, 0.9, 78, 146));
+    // The feed's counter covers only the stretch in progress.
+    await m.ingest('v1', {
+      ...live('2026-11-13T20:33:00Z', 11),
+      totalChargedEnergy: { value: 26.9 },
+      rangeAddedThisSession: { value: 147 },
+    } as LiveSessionData);
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.energyKwh).toBeCloseTo(37.2);
+    expect(row!.rangeAddedKm).toBe(205);
+  });
+
+  it('adds a fresh stretch to what a restart kept, when the car was not charging when it stopped', async () => {
+    await handle.db.insert(chargingSessions).values({
+      vehicleId: 'v1',
+      startedAt: new Date('2026-10-01T07:00:00Z'),
+      chargingSeconds: 4200,
+      chargingSince: null,
+      energyKwh: 10.4,
+      packKwh: 10,
+      thermalKwh: 0.4,
+      rangeAddedKm: 59,
+    });
+    const m = monitor();
+    await m.start();
+    m.setPluggedIn('v1', true);
+    clock = Date.parse('2026-10-01T12:00:00Z');
+    await m.ingest('v1', live('2026-10-01T12:00:00Z', 9));
+    await m.noteState('v1', vehicle(CHARGING, 'charging_active', 62, '2026-10-01T12:00:00Z'));
+    await m.ingest('v1', null);
+    clock = Date.parse('2026-10-01T12:15:00Z');
+    await m.ingestParallax('v1', breakdown(1, 0.9, 0.1, 15, 5));
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.energyKwh).toBeCloseTo(11.4);
+    expect(rows[0]!.rangeAddedKm).toBe(64);
   });
 
   it('closes the leftover at its last sample and starts anew after unplug and replug', async () => {

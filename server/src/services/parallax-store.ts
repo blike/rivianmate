@@ -73,13 +73,8 @@ export class ParallaxStore {
   }
 
   /** A topic's latest decoded message for a vehicle, and when Rivian sent it. */
-  async latest<T>(vehicleId: string, def: RvmDef<T>): Promise<{ value: T; at: Date } | null> {
-    const [row] = await this.db
-      .select()
-      .from(parallaxLatest)
-      .where(and(eq(parallaxLatest.vehicleId, vehicleId), eq(parallaxLatest.rvm, def.rvm)));
-    const value = row ? (def.decode?.(row.payload) ?? null) : null;
-    return row && value != null ? { value, at: row.messageAt ?? row.receivedAt } : null;
+  latest<T>(vehicleId: string, def: RvmDef<T>): Promise<{ value: T; at: Date } | null> {
+    return latestParallax(this.db, vehicleId, def);
   }
 
   async insights(vehicleId: string): Promise<VehicleInsightsDto> {
@@ -125,6 +120,20 @@ export class ParallaxStore {
         : null,
     };
   }
+}
+
+/** A topic's latest decoded message for a vehicle, and when Rivian sent it. */
+export async function latestParallax<T>(
+  db: Db,
+  vehicleId: string,
+  def: RvmDef<T>,
+): Promise<{ value: T; at: Date } | null> {
+  const [row] = await db
+    .select()
+    .from(parallaxLatest)
+    .where(and(eq(parallaxLatest.vehicleId, vehicleId), eq(parallaxLatest.rvm, def.rvm)));
+  const value = row ? (def.decode?.(row.payload) ?? null) : null;
+  return row && value != null ? { value, at: row.messageAt ?? row.receivedAt } : null;
 }
 
 const tripSummary = ({ arrivalAtMs: _a, stops: _s, legs: _l, ...trip }: TripInfo) => trip;
