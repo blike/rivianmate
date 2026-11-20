@@ -17,10 +17,10 @@ import {
 import { clock, longDay } from '../../lib/format';
 import type { LiveCharge } from '../../lib/liveCharge';
 import { averagePowerKw, sessionEnergy } from '../../lib/sessionEnergy';
-import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
+import { fmt, fmtSeconds } from '../../lib/state';
 import { CostEditor } from './CostEditor';
 import { energyTile, powerTile } from './liveTiles';
-import { chargeStart } from './sessions';
+import { chargeStart, pluggedInFirst } from './sessions';
 
 /**
  * The chosen session: where and when, its battery as a bar, then its
@@ -53,7 +53,6 @@ export function SessionCard(props: {
     {
       label: 'Time charging',
       value: chargingSeconds != null ? fmtSeconds(chargingSeconds) : '—',
-      sub: s ? `Plugged in ${fmtDuration(s.startedAt, s.endedAt)}` : undefined,
     },
     live?.powerKw != null
       ? powerTile(live, u)
@@ -109,7 +108,7 @@ export function SessionCard(props: {
               {props.action}
               {!s.endedAt && (
                 <span className="ml-auto">
-                  <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} />
+                  <InProgressTag label={s.chargingSince ? 'Charging' : 'Paused'} />
                 </span>
               )}
             </>
@@ -204,7 +203,7 @@ function TimeRange(props: { session: ChargingSessionDto }) {
   return (
     <span
       title={
-        s.chargingStartedAt
+        pluggedInFirst(s)
           ? `Plugged in ${clock(s.startedAt)}${s.endedAt ? ` – ${clock(s.endedAt)}` : ''}`
           : undefined
       }

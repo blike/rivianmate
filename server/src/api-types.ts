@@ -521,6 +521,11 @@ export interface VehicleInsightsDto {
   } | null;
 }
 
+/** When the vehicle was plugged in, while it is; null when it isn't (or isn't known). */
+export interface PluggedInDto {
+  pluggedInAt: string | null;
+}
+
 /**
  * One day of parked energy: the last rolling 24-hour window Rivian reported
  * that day, read from the archive. `day` is the date in the zone the request

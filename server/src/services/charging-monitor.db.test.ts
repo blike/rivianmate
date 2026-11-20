@@ -68,6 +68,8 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
   const PLUGGED = 'chrgr_sts_connected_no_chrg';
   const CHARGING = 'chrgr_sts_connected_charging';
   const UNPLUGGED = 'chrgr_sts_not_connected';
+  /** Smart Charging holding a charge: a pause inside it, not its end. */
+  const PAUSED = 'charging_smart_charging_paused';
   const live = (startTime: string, power = 10, soc = 50): LiveSessionData =>
     ({
       startTime,
@@ -103,29 +105,106 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     clock = NOW;
   });
 
-  it('keeps one session per plug-in, with charging time and SOC across pauses', async () => {
+  it('records each charge of a plug-in as its own session', async () => {
     const m = monitor();
     await m.start();
     await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
     await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
     await note(m, '2026-10-01T11:00:00Z', PLUGGED, 'charging_complete', 70);
-    await note(m, '2026-10-01T12:00:00Z', CHARGING, 'charging_active', 70); // top-up
+    await note(m, '2026-10-01T12:00:00Z', CHARGING, 'charging_active', 70); // limit raised
     await note(m, '2026-10-01T12:15:00Z', UNPLUGGED, 'charging_ready', 71);
     m.stop();
 
     const rows = await sessions();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:30:00.000Z');
-    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T12:15:00.000Z');
-    expect(rows[0]!.chargingSeconds).toBe(4 * 3600 + 15 * 60);
-    expect(rows[0]!.chargingSince).toBeNull();
-    expect([rows[0]!.startSoc, rows[0]!.endSoc]).toEqual([40, 71]);
+    expect(rows).toHaveLength(2);
+    const [first, second] = rows;
+    expect(first!.startedAt.toISOString()).toBe('2026-10-01T07:00:00.000Z');
+    expect(first!.endedAt?.toISOString()).toBe('2026-10-01T11:00:00.000Z');
+    expect(first!.chargingSeconds).toBe(4 * 3600);
+    expect([first!.startSoc, first!.endSoc]).toEqual([40, 70]);
+    expect(second!.startedAt.toISOString()).toBe('2026-10-01T12:00:00.000Z');
+    expect(second!.endedAt?.toISOString()).toBe('2026-10-01T12:15:00.000Z');
+    expect(second!.chargingSeconds).toBe(15 * 60);
+    expect(second!.chargingSince).toBeNull();
+    expect([second!.startSoc, second!.endSoc]).toEqual([70, 71]);
   });
 
-  it('discards a plug-in that never charged', async () => {
+  it('keeps a paused charge in one session', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T08:00:00Z', PLUGGED, PAUSED, 50);
+    await note(m, '2026-10-01T09:00:00Z', CHARGING, 'charging_active', 50);
+    await note(m, '2026-10-01T10:00:00Z', PLUGGED, 'charging_complete', 60);
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T10:00:00.000Z');
+    expect(rows[0]!.chargingSeconds).toBe(2 * 3600);
+  });
+
+  it('keeps a stop that still counts time to the end in the charge', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    clock = Date.parse('2026-10-01T08:00:00Z');
+    m.noteState('v1', {
+      ...vehicle(PLUGGED, 'charging_station_stopped', 50, '2026-10-01T08:00:00Z'),
+      timeToEndOfCharge: { value: 90, timeStamp: '2026-10-01T08:00:00Z' },
+    });
+    await note(m, '2026-10-01T08:20:00Z', CHARGING, 'charging_active', 50);
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.endedAt).toBeNull();
+  });
+
+  it('rejoins a charge that starts again moments after a stop that was not final', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T08:00:00Z', PLUGGED, 'charging_station_stopped', 50);
+    await note(m, '2026-10-01T08:01:00Z', CHARGING, 'charging_active', 50);
+    await note(m, '2026-10-01T09:00:00Z', PLUGGED, 'charging_complete', 60);
+    m.stop();
+
+    const rows = await sessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.endedAt?.toISOString()).toBe('2026-10-01T09:00:00.000Z');
+    expect(rows[0]!.chargingSeconds).toBe(2 * 3600 - 60);
+  });
+
+  it('starts a new charge after a final stop, however soon', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T08:00:00Z', PLUGGED, 'charging_complete', 60);
+    await note(m, '2026-10-01T08:01:00Z', CHARGING, 'charging_active', 60);
+    m.stop();
+
+    expect(await sessions()).toHaveLength(2);
+  });
+
+  it('ends a paused charge when charging last stopped, not at the unplug', async () => {
+    const m = monitor();
+    await m.start();
+    await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
+    await note(m, '2026-10-01T08:00:00Z', PLUGGED, PAUSED, 50);
+    await note(m, '2026-10-01T15:00:00Z', UNPLUGGED, 'charging_ready', 50);
+    m.stop();
+
+    const [row] = await sessions();
+    expect(row!.endedAt?.toISOString()).toBe('2026-10-01T08:00:00.000Z');
+    expect(row!.chargingSeconds).toBe(3600);
+  });
+
+  it('records nothing for a plug-in until it charges', async () => {
     const m = monitor();
     await m.start();
     await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
+    expect(await sessions()).toHaveLength(0);
     await note(m, '2026-10-01T00:31:00Z', UNPLUGGED, 'charging_ready', 40);
     await note(m, '2026-10-01T00:32:00Z', PLUGGED, 'charging_scheduled', 40);
     await note(m, '2026-10-01T07:00:00Z', CHARGING, 'charging_active', 40);
@@ -134,14 +213,14 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
 
     const rows = await sessions();
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T00:32:00.000Z');
+    expect(rows[0]!.startedAt.toISOString()).toBe('2026-10-01T07:00:00.000Z');
     expect(rows[0]!.chargingSeconds).toBe(3600);
   });
 
-  it('takes a discarded plug-in out of its trip, and only that', async () => {
+  it('takes a discarded session out of its trip, and only that', async () => {
     const m = monitor();
     await m.start();
-    await note(m, '2026-10-01T00:30:00Z', PLUGGED, 'charging_scheduled', 40);
+    await note(m, '2026-10-01T00:30:00Z', CHARGING, 'charging_active', 40);
     const [session] = await sessions();
     const [trip] = await handle.db.insert(trips).values({ vehicleId: 'v1', name: 'A' }).returning();
     const link = { tripId: trip!.id, kind: 'charge' as const, activityId: session!.id };
@@ -150,7 +229,8 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
       { ...link, vehicleId: 'v1' },
       { ...link, vehicleId: 'tm-1' },
     ]);
-    await note(m, '2026-10-01T00:31:00Z', UNPLUGGED, 'charging_ready', 40);
+    // Unplugged the moment it started: nothing was charged.
+    await note(m, '2026-10-01T00:30:00Z', UNPLUGGED, 'charging_ready', 40);
     m.stop();
 
     expect(await sessions()).toHaveLength(0);
@@ -339,7 +419,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(row!.rangeAddedKm).toBe(162);
   });
 
-  it("adds up a plug-in's stretches, whose counter starts over when charging does", async () => {
+  it("adds up a paused charge's stretches, whose counter starts over when charging does", async () => {
     const m = monitor();
     await m.start();
     await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
@@ -347,12 +427,12 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
 
     // The car stays plugged in and stops charging until the night's second run.
-    await note(m, '2026-11-13T21:44:00Z', PLUGGED, 'charging_ready', 62);
+    await note(m, '2026-11-13T21:44:00Z', PLUGGED, PAUSED, 62);
     clock = Date.parse('2026-11-14T02:26:00Z');
     await note(m, '2026-11-14T02:26:00Z', CHARGING, 'charging_active', 63);
     clock = Date.parse('2026-11-14T03:44:00Z');
     await m.ingestParallax('v1', breakdown(26.8, 25.9, 0.9, 78, 146));
-    await note(m, '2026-11-14T03:45:00Z', PLUGGED, 'charging_ready', 90);
+    await note(m, '2026-11-14T03:45:00Z', PLUGGED, PAUSED, 90);
     m.stop();
 
     const [row] = await sessions();
@@ -385,7 +465,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     await note(m, '2026-10-01T19:00:00Z', CHARGING, 'charging_active', 40);
     clock = Date.parse('2026-10-01T20:00:00Z');
     await m.ingestParallax('v1', breakdown(12, 11.6, 0.4, 60, 62));
-    await note(m, '2026-10-01T20:01:00Z', PLUGGED, 'charging_ready', 62);
+    await note(m, '2026-10-01T20:01:00Z', PLUGGED, PAUSED, 62);
     await m.ingestParallax('v1', breakdown(12, 11.6, 0.4, 60, 62)); // re-sent
     clock = Date.parse('2026-10-01T23:00:00Z');
     await note(m, '2026-10-01T23:00:00Z', CHARGING, 'charging_active', 63);
@@ -434,13 +514,13 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     // First stretch: 12 kWh, 62 km.
     clock = Date.parse('2026-10-01T20:00:00Z');
     await m.ingestParallax('v1', breakdown(12, 11.6, 0.4, 60, 62));
-    await note(m, '2026-10-01T20:01:00Z', PLUGGED, 'charging_ready', 62);
+    await note(m, '2026-10-01T20:01:00Z', PLUGGED, PAUSED, 62);
     // Second stretch: reports no range until its closing message.
     clock = Date.parse('2026-10-01T23:00:00Z');
     await note(m, '2026-10-01T23:00:00Z', CHARGING, 'charging_active', 63);
     clock = Date.parse('2026-10-01T23:05:00Z');
     await m.ingestParallax('v1', noRange(0.5, 0.5, 0, 5));
-    await note(m, '2026-10-01T23:06:00Z', PLUGGED, 'charging_ready', 64);
+    await note(m, '2026-10-01T23:06:00Z', PLUGGED, PAUSED, 64);
     await m.ingestParallax('v1', breakdown(0.6, 0.6, 0, 5, 3));
     m.stop();
 
@@ -456,12 +536,12 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
     clock = Date.parse('2026-11-13T21:43:00Z');
     await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
-    await note(m, '2026-11-13T21:44:00Z', PLUGGED, 'charging_ready', 62);
+    await note(m, '2026-11-13T21:44:00Z', PLUGGED, PAUSED, 62);
     clock = Date.parse('2026-11-14T02:26:00Z');
     await note(m, '2026-11-14T02:26:00Z', CHARGING, 'charging_active', 63);
     clock = Date.parse('2026-11-14T05:24:00Z');
     await m.ingestParallax('v1', breakdown(26.8, 25.9, 0.9, 178, 146));
-    await note(m, '2026-11-14T05:25:00Z', PLUGGED, 'charging_ready', 90);
+    await note(m, '2026-11-14T05:25:00Z', PLUGGED, PAUSED, 90);
     await m.ingestParallax('v1', breakdown(26.9, 26, 0.9, 178, 147)); // last word
     m.stop();
 
@@ -479,11 +559,11 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     await note(m, '2026-10-01T19:00:00Z', CHARGING, 'charging_active', 40);
     clock = Date.parse('2026-10-01T20:00:00Z');
     await m.ingestParallax('v1', breakdown(10, 9.8, 0.2, 60, 50));
-    await note(m, '2026-10-01T20:01:00Z', PLUGGED, 'charging_ready', 52);
+    await note(m, '2026-10-01T20:01:00Z', PLUGGED, PAUSED, 52);
     // A second stretch reports nothing at all before it pauses.
     clock = Date.parse('2026-10-01T22:00:00Z');
     await note(m, '2026-10-01T22:00:00Z', CHARGING, 'charging_active', 53);
-    await note(m, '2026-10-01T22:01:00Z', PLUGGED, 'charging_ready', 54);
+    await note(m, '2026-10-01T22:01:00Z', PLUGGED, PAUSED, 54);
     await m.ingestParallax('v1', breakdown(10.2, 10, 0.2, 60, 51));
     m.stop();
 
@@ -916,7 +996,7 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     await note(m, '2026-11-13T20:33:00Z', CHARGING, 'charging_active', 51);
     clock = Date.parse('2026-11-13T21:43:00Z');
     await m.ingestParallax('v1', breakdown(10.4, 10, 0.4, 70, 59));
-    await note(m, '2026-11-13T21:44:00Z', PLUGGED, 'charging_ready', 62);
+    await note(m, '2026-11-13T21:44:00Z', PLUGGED, PAUSED, 62);
     clock = Date.parse('2026-11-14T02:26:00Z');
     await note(m, '2026-11-14T02:26:00Z', CHARGING, 'charging_active', 63);
     clock = Date.parse('2026-11-14T03:44:00Z');
@@ -962,13 +1042,12 @@ describe.skipIf(!url)('ChargingMonitor with Postgres', () => {
     expect(rows[0]!.rangeAddedKm).toBe(64);
   });
 
-  it('closes the leftover at its last sample and starts anew after unplug and replug', async () => {
+  it('closes the leftover at its last sample and starts anew when a replug charges', async () => {
     const id = await leftover('2026-10-01T08:00:00Z', [['2026-10-01T09:30:00Z', 11]]);
     const m = monitor();
     await m.start();
     m.setPluggedIn('v1', false);
-    m.setPluggedIn('v1', true);
-    await m.ingest('v1', null);
+    await note(m, '2026-10-01T12:00:00Z', CHARGING, 'charging_active', 50);
     m.stop();
 
     const rows = await sessions();

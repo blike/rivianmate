@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { VehicleState } from '../rivian/types.js';
 import {
+  type ChargerReading,
+  chargeRuns,
   chargingSecondsBetween,
   deriveChargingStats,
   isChargingState,
@@ -97,5 +99,89 @@ describe('deriveChargingStats', () => {
     expect(socReadingsBetween(states, start, end).map((r) => r.soc)).toEqual([
       39.7, 39.4, 39.8, 60, 70,
     ]); // the 12:31:17 reading is after unplug
+  });
+});
+
+describe('chargeRuns', () => {
+  const r = (
+    iso: string,
+    chargerState: string | null,
+    soc: number | null = null,
+    extra: Partial<ChargerReading> = {},
+  ): ChargerReading => ({
+    at: t(iso),
+    plugged: true,
+    chargerState,
+    minutesLeft: null,
+    soc,
+    ...extra,
+  });
+  const spans = (runs: ReturnType<typeof chargeRuns>) =>
+    runs.map((run) => [new Date(run.from).toISOString(), new Date(run.to).toISOString()]);
+  const END = t('2026-10-01T23:00:00Z');
+
+  it('splits a plug-in at a charge that completed, then charged again', () => {
+    const runs = chargeRuns(
+      [
+        r('2026-10-01T00:30:00Z', 'charging_scheduled', 40),
+        r('2026-10-01T07:00:00Z', 'charging_active', 40),
+        r('2026-10-01T11:00:00Z', 'charging_complete', 70),
+        r('2026-10-01T12:00:00Z', 'charging_active', 70),
+        r('2026-10-01T12:15:00Z', 'charging_ready', 71, { plugged: false }),
+      ],
+      END,
+    );
+    expect(spans(runs)).toEqual([
+      ['2026-10-01T07:00:00.000Z', '2026-10-01T11:00:00.000Z'],
+      ['2026-10-01T12:00:00.000Z', '2026-10-01T12:15:00.000Z'],
+    ]);
+    expect(runs.map((run) => [run.startSoc, run.endSoc])).toEqual([
+      [40, 70],
+      [70, 71],
+    ]);
+  });
+
+  it('keeps a Smart Charging pause, and a stop that still counts time left, in one charge', () => {
+    const runs = chargeRuns(
+      [
+        r('2026-10-01T07:00:00Z', 'charging_active'),
+        r('2026-10-01T08:00:00Z', 'charging_smart_charging_paused'),
+        r('2026-10-01T09:00:00Z', 'charging_active'),
+        r('2026-10-01T10:00:00Z', 'charging_station_stopped', null, { minutesLeft: 40 }),
+        r('2026-10-01T10:30:00Z', 'charging_active'),
+        r('2026-10-01T11:00:00Z', 'charging_complete'),
+      ],
+      END,
+    );
+    expect(spans(runs)).toEqual([['2026-10-01T07:00:00.000Z', '2026-10-01T11:00:00.000Z']]);
+    expect(runs[0]!.stretches).toHaveLength(3);
+  });
+
+  it('rejoins a restart within moments of a stop that was not final, but not one after', () => {
+    const readings = (gap: string) => [
+      r('2026-10-01T07:00:00Z', 'charging_active'),
+      r('2026-10-01T08:00:00Z', 'charging_station_stopped'),
+      r(gap, 'charging_active'),
+      r('2026-10-01T09:00:00Z', 'charging_complete'),
+    ];
+    expect(chargeRuns(readings('2026-10-01T08:01:00Z'), END)).toHaveLength(1);
+    expect(chargeRuns(readings('2026-10-01T08:10:00Z'), END)).toHaveLength(2);
+  });
+
+  it('ends a paused charge where it stopped when it is unplugged later', () => {
+    const runs = chargeRuns(
+      [
+        r('2026-10-01T07:00:00Z', 'charging_active'),
+        r('2026-10-01T08:00:00Z', 'charging_smart_charging_paused'),
+        r('2026-10-01T15:00:00Z', 'charging_ready', null, { plugged: false }),
+      ],
+      END,
+    );
+    expect(spans(runs)).toEqual([['2026-10-01T07:00:00.000Z', '2026-10-01T08:00:00.000Z']]);
+  });
+
+  it('runs a charge still going at the last reading to the end of the span', () => {
+    const runs = chargeRuns([r('2026-10-01T22:00:00Z', 'charging_active')], END);
+    expect(spans(runs)).toEqual([['2026-10-01T22:00:00.000Z', '2026-10-01T23:00:00.000Z']]);
   });
 });

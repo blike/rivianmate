@@ -8,8 +8,9 @@ import { clock } from '../../lib/format';
 import { relativeTime } from '../../lib/freshness';
 import type { LiveCharge } from '../../lib/liveCharge';
 import { sessionEnergy } from '../../lib/sessionEnergy';
-import { fmt, fmtDuration, fmtSeconds } from '../../lib/state';
+import { fmt, fmtSeconds } from '../../lib/state';
 import { type ScheduleStatus, dayLabel } from './schedules';
+import type { Place } from './status';
 import { ActivityBar, ActivityCard, ActivityLine, ActivityStats } from './ActivityCard';
 import { ChargeIcon } from './ActivityIcons';
 
@@ -17,7 +18,10 @@ import { ChargeIcon } from './ActivityIcons';
 const BEFORE = 'color-mix(in srgb, var(--status-good) 35%, var(--surface-2))';
 const ADDED = 'var(--status-good)';
 
-/** The session plugged in now, or the last one. */
+/**
+ * The charge under way or paused, the last one, or, plugged in and waiting
+ * to charge (no session yet), what the plug and schedule say.
+ */
 export function LastChargeCard(props: {
   session: ChargingSessionDto | undefined;
   now: number;
@@ -35,11 +39,14 @@ export function LastChargeCard(props: {
   stateLoaded?: boolean;
   /** The level the last finished charge reached, marked when no limit is reported. */
   lastChargedTo?: number | null;
+  /** Plugged in with no session yet: where, and when it was plugged in. */
+  pluggedIn?: { place: Place | null; at: number | null };
 }) {
   const loading = useLoading();
   const u = useUnits();
   const s = props.session;
   const pending = s == null ? (props.plug ?? null) : null;
+  const plugIn = pending ? props.pluggedIn : undefined;
   const open = (s != null && !s.endedAt) || pending != null;
   const c = open ? (props.charge ?? null) : null;
   const charging = s ? open && s.chargingSince != null : pending === 'charging';
@@ -64,7 +71,7 @@ export function LastChargeCard(props: {
           value: s?.startSoc != null && soc != null ? `+${fmt(soc - s.startSoc, 1)}%` : '—',
         };
 
-  if (!loading && !s) {
+  if (!loading && !s && pending == null) {
     return (
       <ActivityCard to="/charging" title="Last charge" when="" icon={<ChargeIcon />}>
         <p className="text-sm text-(--text-muted)">
@@ -79,7 +86,6 @@ export function LastChargeCard(props: {
     label: s?.cost == null && s?.estimatedCost != null ? 'Est. cost' : 'Cost',
     value: cost != null ? formatMoney(cost, s?.currency ?? null) : '—',
   };
-  const pluggedFor = s ? fmtDuration(s.startedAt, null, props.now) : '—';
   const next = props.schedule;
   const waiting = atLimit
     ? s?.chargingEndedAt
@@ -109,7 +115,7 @@ export function LastChargeCard(props: {
         ) : loading || !s ? (
           <Skeleton className="w-[4em]" />
         ) : open ? (
-          <InProgressTag label={charging ? 'Charging' : 'Plugged in'} />
+          <InProgressTag label={charging ? 'Charging' : 'Paused'} />
         ) : (
           // From when it started charging, as the list orders sessions.
           relativeTime(new Date(s.chargingStartedAt ?? s.startedAt), props.now)
@@ -118,19 +124,21 @@ export function LastChargeCard(props: {
       icon={<ChargeIcon />}
     >
       <LoadingScope loading={loading || !settled}>
-        <ActivityLine
-          note={
-            s &&
-            (open
-              ? s.chargingStartedAt
-                ? `Started ${clock(s.chargingStartedAt)}`
-                : `Plugged in ${clock(s.startedAt)}`
-              : `${start} – ${clock(s.chargingEndedAt ?? s.endedAt!)}`)
-          }
-        >
-          {s && <PlaceIcon isHome={s.isHome} saved={s.location != null} />}
-          {s ? chargerLabel(s) : ''}
-        </ActivityLine>
+        {s ? (
+          <ActivityLine
+            note={
+              open ? `Started ${start}` : `${start} – ${clock(s.chargingEndedAt ?? s.endedAt!)}`
+            }
+          >
+            <PlaceIcon isHome={s.isHome} saved={s.location != null} />
+            {chargerLabel(s)}
+          </ActivityLine>
+        ) : (
+          <ActivityLine note={plugIn?.at != null ? `Plugged in ${clock(plugIn.at)}` : null}>
+            {plugIn?.place && <PlaceIcon isHome={plugIn.place.isHome} saved={plugIn.place.saved} />}
+            {plugIn?.place?.label ?? ''}
+          </ActivityLine>
+        )}
 
         <ActivityBar
           label={soc != null ? `Battery at ${fmt(soc, 0)}%` : undefined}
@@ -215,7 +223,7 @@ export function LastChargeCard(props: {
                             label: 'Window ends',
                             value: next ? clock(next.endsAt.getTime()) : '—',
                           },
-                          { label: 'Plugged in', value: pluggedFor },
+                          ...(s ? [{ label: 'Started', value: start }] : []),
                         ]),
                   ]
                 : [

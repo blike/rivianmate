@@ -29,6 +29,7 @@ import type {
   OtaTimelineDto,
   ParkedDayDto,
   PhantomDrainDto,
+  PluggedInDto,
   SchedulesDto,
   StateSpanDto,
   StatusResponse,
@@ -330,6 +331,7 @@ export const api = {
    * The last full days of parked energy, oldest first. The zone is the
    * calendar this device's days are in, which the server reads days by.
    */
+  pluggedIn: (vehicleId: string) => request<PluggedInDto>(`/api/vehicles/${vehicleId}/plugged-in`),
   parkedDays: (vehicleId: string, days: number) =>
     request<ParkedDayDto[]>(
       `/api/vehicles/${vehicleId}/parked-days?days=${days}&tz=${encodeURIComponent(

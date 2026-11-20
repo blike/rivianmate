@@ -7,7 +7,7 @@ import { groupByDay } from '../../lib/drives';
 import { clock } from '../../lib/format';
 import { useHeldInPlace, useRevealed } from '../../lib/goToDate';
 import { fmt } from '../../lib/state';
-import { chargeStart, dayTotals, sessionFacts } from './sessions';
+import { chargeStart, dayTotals, pluggedInFirst, sessionFacts } from './sessions';
 
 /** Sessions by day, newest first, each day with its energy and cost. */
 export function SessionList(props: {
@@ -81,7 +81,7 @@ function SessionItem(props: {
         )}
         <span
           className="text-xs tabular-nums text-(--text-muted)"
-          title={s.chargingStartedAt ? `Plugged in ${clock(s.startedAt)}` : undefined}
+          title={pluggedInFirst(s) ? `Plugged in ${clock(s.startedAt)}` : undefined}
         >
           {clock(chargeStart(s))}
         </span>
@@ -90,7 +90,7 @@ function SessionItem(props: {
             <span className={s.isHome || s.location ? 'font-medium' : ''}>{chargerLabel(s)}</span>
             {sessionCity(s) && <span className="text-(--text-muted)"> · {s.city}</span>}
             {!s.endedAt && (
-              <InProgressTag label={s.chargingSince ? 'Charging' : 'Plugged in'} className="ml-2" />
+              <InProgressTag label={s.chargingSince ? 'Charging' : 'Paused'} className="ml-2" />
             )}
           </span>
           <span className="mt-0.5 block truncate text-xs tabular-nums text-(--text-muted)">

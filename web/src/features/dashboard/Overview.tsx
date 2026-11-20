@@ -6,12 +6,13 @@ import {
   useDrives,
   useInsights,
   useLiveCharging,
+  usePluggedInAt,
   useUnits,
 } from '../../api/hooks';
 import { Dot } from '../../components/Dot';
 import { Skeleton, SkeletonBlock, useLoading } from '../../components/LoadingState';
 import { VehicleMap } from '../../components/VehicleMap';
-import { chargeOutlook, chargerLabel, lastChargedTo } from '../../lib/charging';
+import { chargeOutlook, lastChargedTo } from '../../lib/charging';
 import { showOptional } from '../../lib/fieldSources';
 import { locationIsBehind } from '../../lib/freshness';
 import { nextStop, routePlan } from '../../lib/navigation';
@@ -27,7 +28,7 @@ import {
   vehicleActivity,
 } from '../../lib/vehicleStatus';
 import { ChargeGauge } from './ChargeGauge';
-import { statusSentence, stillAtDriveEnd } from './status';
+import { pluggedInPlace, statusSentence, stillAtDriveEnd } from './status';
 import { useActiveDriveTrail } from './useActiveDriveTrail';
 
 const ACTIVITY_COLOR: Record<ActivityKind, string> = {
@@ -69,6 +70,10 @@ export function Overview(props: {
       ? { kind: 'charging' as const, label: 'Charging' }
       : stateActivity;
   const charging = activity?.kind === 'charging';
+  const { data: pluggedInAt } = usePluggedInAt(
+    props.vehicleId,
+    charging || activity?.kind === 'plugged',
+  );
   // While charging, the live session carries Parallax's readings; vehicle
   // state fills in when it hasn't reported them.
   const live = (r: { value: string | number | null } | null | undefined) =>
@@ -127,20 +132,18 @@ export function Overview(props: {
         kind: activity.kind,
         // Coordinates make a poor "Parked at"; say nothing rather than those.
         place: plugged
-          ? session
-            ? chargerLabel(session)
-            : null
+          ? (pluggedInPlace(sessions?.[0], lastDrive, pluggedInAt)?.label ?? null)
           : lastDrive?.end && !lastDrive.end.unnamed
             ? lastDrive.end.label
             : null,
+        // Charging: since the charge started. Plugged in: since the plug-in,
+        // which the recorded charger status has (a session starts at the charge).
         since: plugged
-          ? session
-            ? Date.parse(
-                activity.kind === 'charging'
-                  ? (session.chargingStartedAt ?? session.startedAt)
-                  : session.startedAt,
-              )
-            : null
+          ? activity.kind === 'charging'
+            ? session
+              ? Date.parse(session.chargingStartedAt ?? session.startedAt)
+              : null
+            : (pluggedInAt ?? null)
           : lastDrive
             ? Date.parse(lastDrive.endedAt!)
             : null,
