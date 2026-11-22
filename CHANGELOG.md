@@ -1,5 +1,113 @@
 # Changelog
 
+## v0.12.0 — 2026-11-21
+
+This update brings **delivery tracking for a Rivian on order**, **battery pack temperatures**, **a
+week of parked energy use** and **a session for every charge**.
+
+### What's new
+
+#### Follow your Rivian to delivery
+
+- If your Rivian hasn't been delivered yet, RivianMate no longer says "No vehicles found". It shows
+  your order instead, with a Delivery page that leads with a picture of your build and a countdown
+  to your appointment.
+- Follow each step from reservation to delivery day: reserved, ordered, VIN assigned, built, arrived
+  at the delivery center, inspected, prepped and delivered.
+- See your delivery appointment, plus the build record (VIN, build dates and factory status) and the
+  specification you ordered.
+
+#### Battery pack temperature
+
+- Drive and charge pages have a new chart of the pack's temperature, showing the coldest and hottest
+  cell and their average, and how much it changed.
+- The Dashboard and Health show **cold-limited** when the battery reports that the cold is limiting
+  its power.
+
+#### Parked energy, night by night
+
+- The parked energy panel now shows the past week, one bar per day, with the week's total. It works
+  from data already saved, so you'll see a full week straight away.
+
+#### Trips
+
+- A trip's elevation and battery charts now come first under Insights. Hover over either one to see
+  that spot on the trip map.
+
+### Improvements
+
+- **A session for every charge.** A charge that stops and starts again without unplugging is now its
+  own session, with its own energy, time, cost and curve. A pause the car means to resume, like
+  waiting for a scheduled charging window, stays in one session. Sessions you already have that
+  covered more than one charge are split up automatically.
+- The Dashboard shows where the car is plugged in, and since when, even before charging starts.
+- **Jump to any date instantly.** Going to an old date on the Drives and Charging pages now takes
+  about half a second, even years back, instead of loading every page in between. A "Show newer" row
+  at the top takes you back up.
+- The Charging calendar now starts at your first session instead of ten years back.
+- Long drives' routes are now drawn all the way to the end.
+- No more "Vehicle unlocked" alert while you're sitting in the parked car. The countdown starts when
+  you leave.
+- The pack temperature section is left out of drives and charges that have no reading.
+
+### Fixes
+
+- **Energy added was too low for charges that paused and resumed.** Only the first stretch was
+  counted, so one charge showed 10.4 kWh instead of 48.7 kWh. Every stretch now counts. Sessions
+  recorded before this update keep the figures they already have.
+- **Top speed could be too high.** A single bad speed reading from the car could set a drive's top
+  speed (for example, 94.5 mph on a drive that peaked at 66.6). These readings are now ignored.
+
+### How to update
+
+1. Back up your database.
+2. Keep your existing `APP_SECRET` and database volume.
+3. Run `docker compose pull && docker compose up -d`.
+
+The first time it starts, the update splits charging sessions that covered more than one charge.
+This happens once, by itself.
+
+Technical details
+
+#### Migrations
+
+- None. The charge split runs once on startup and is tracked in `app_settings`
+  (`charge_split_backfill`). #123
+- New state fields `batteryTempAvg`, `batteryTempMax`, `batteryTempMin` and
+  `batteryPowerOutputStatus` are registered when first written. To fill in pack temperatures from
+  archived data, run `node dist/cli/backfill-cell-temps.js --dry-run` in the container, then run it
+  again without `--dry-run`. #111
+
+#### API
+
+- New: `GET /api/orders`. Payment details stay on the server; only the reserved and ordered dates
+  are returned. #110 #116
+- New: `GET /api/vehicles/:id/charging-coverage`. #109
+- New: `GET /api/vehicles/:id/parked-days?days=7&tz=…`. #114
+- New: `GET /api/vehicles/:id/plugged-in` returns `{ pluggedInAt }`. #123
+- `/drives` and `/charging-sessions` take an `after` parameter, for reading newer pages. #109
+- A charging session now covers one charge, not one plug-in. #123
+
+#### Dependencies
+
+- TypeScript 7 is now the compiler, and postgres (Postgres.js) moves to v4. Node 22 is required, as
+  before. #121
+
+#### Development
+
+- The demo scene now has about 1,000 days of history behind its week. #120
+
+#### Pull requests
+
+#109 #110 #111 #112 #113 #114 #115 #116 #117 #118 #120 #121 #122 #123 #126
+
+### Thanks
+
+@MrSerious0
+
+**Full Changelog**:
+[https://github.com/blike/rivianmate/compare/v0.11.0...v0.12.0](https://github.com/blike/rivianmate/compare/v0.11.0...v0.12.0)
+
 ## v0.11.0 — 2026-11-09
 
 This update brings **trips**, **imports from Rivian Roamer**, an **all-time view of your history**
