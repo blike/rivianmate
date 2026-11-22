@@ -304,6 +304,8 @@ export interface RoadPoint {
   /** Null where there's no route to read the ground from. */
   elevationM: number | null;
   battery: number | null;
+  /** Where on the map, as [lat, lon]; null where it isn't known, e.g. driving not in the trip. */
+  at: [number, number] | null;
 }
 
 export interface RoadProfile {
@@ -333,7 +335,7 @@ export function roadProfile(
   sessions: readonly ChargingSessionDto[],
   routes: readonly TripRouteDto[],
 ): RoadProfile {
-  const byId = new Map(routes.map((r) => [r.driveId, r.profile]));
+  const byId = new Map(routes.map((r) => [r.driveId, r]));
   const charges = sessions
     .filter((s) => s.startSoc != null && s.endSoc != null)
     .sort((a, b) => Date.parse(chargeStart(a)) - Date.parse(chargeStart(b)));
@@ -349,15 +351,17 @@ export function roadProfile(
     const last = points.at(-1);
     if (last?.battery == null || battery == null) return;
     if (Math.abs(battery - last.battery) < UNREAD_SOC) return;
-    points.push({ km, elevationM: last.elevationM, battery: null });
+    points.push({ km, elevationM: last.elevationM, battery: null, at: last.at });
   };
   const chargeUntil = (at: number) => {
     for (; next < charges.length && Date.parse(chargeStart(charges[next]!)) < at; next++) {
       const s = charges[next]!;
       resumeAt(s.startSoc);
+      // Charged where the driving before it left off.
+      const at = points.at(-1)?.at ?? null;
       points.push(
-        { km, elevationM: null, battery: s.startSoc },
-        { km, elevationM: null, battery: s.endSoc },
+        { km, elevationM: null, battery: s.startSoc, at },
+        { km, elevationM: null, battery: s.endSoc, at },
       );
     }
   };
@@ -367,7 +371,7 @@ export function roadProfile(
     if (before && missingBetween(before, d)) {
       const gapKm = haversineKm(before.endLat!, before.endLon!, d.startLat!, d.startLon!);
       // One point with nothing read, so each line stops and is bridged across.
-      points.push({ km: km + gapKm / 2, elevationM: null, battery: null });
+      points.push({ km: km + gapKm / 2, elevationM: null, battery: null, at: null });
       km += gapKm;
       missingKm += gapKm;
     }
@@ -376,7 +380,9 @@ export function roadProfile(
     resumeAt(d.startBattery);
     const day = localKey(new Date(d.startedAt));
     if (days.at(-1)?.key !== day) days.push({ key: day, km });
-    const profile = byId.get(d.id) ?? [];
+    const route = byId.get(d.id);
+    const profile = route?.profile ?? [];
+    const line = route?.points ?? [];
     const routeKm = profile.at(-1)?.km ?? 0;
     const span = d.distanceKm ?? routeKm;
     // Along the drive the battery is taken to fall evenly.
@@ -384,15 +390,23 @@ export function roadProfile(
       d.startBattery != null && d.endBattery != null
         ? d.startBattery + (d.endBattery - d.startBattery) * share
         : null;
+    const start = line[0] ?? latLon(d.startLat, d.startLon);
+    const end = line.at(-1) ?? latLon(d.endLat, d.endLon);
     if (profile.length >= 2 && routeKm > 0) {
+      const along = line.length >= 2 ? alongLine(line) : null;
       for (const p of profile) {
         const share = p.km / routeKm;
-        points.push({ km: km + span * share, elevationM: p.altitudeM, battery: batteryAt(share) });
+        points.push({
+          km: km + span * share,
+          elevationM: p.altitudeM,
+          battery: batteryAt(share),
+          at: along ? along(share) : null,
+        });
       }
     } else {
       points.push(
-        { km, elevationM: null, battery: d.startBattery },
-        { km: km + span, elevationM: null, battery: d.endBattery },
+        { km, elevationM: null, battery: d.startBattery, at: start },
+        { km: km + span, elevationM: null, battery: d.endBattery, at: end },
       );
       unmappedKm += span;
     }
@@ -405,6 +419,35 @@ export function roadProfile(
     hasElevation: points.some((p) => p.elevationM != null),
     unmappedKm,
     missingKm,
+  };
+}
+
+function latLon(lat: number | null, lon: number | null): [number, number] | null {
+  return lat != null && lon != null ? [lat, lon] : null;
+}
+
+/**
+ * Where along a line a share of its length falls, for a line of at least two
+ * points. Asked in order, as a profile is, each answer picks up from the last.
+ */
+export function alongLine(line: readonly [number, number][]): (share: number) => [number, number] {
+  const cumulative = [0];
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1]!;
+    const b = line[i]!;
+    cumulative.push(cumulative[i - 1]! + haversineKm(a[0], a[1], b[0], b[1]));
+  }
+  const total = cumulative.at(-1)!;
+  let i = 1;
+  return (share) => {
+    const target = Math.min(1, Math.max(0, share)) * total;
+    if (target < cumulative[i - 1]!) i = 1;
+    while (i < line.length - 1 && cumulative[i]! < target) i++;
+    const a = line[i - 1]!;
+    const b = line[i]!;
+    const step = cumulative[i]! - cumulative[i - 1]!;
+    const t = step > 0 ? Math.min(1, Math.max(0, (target - cumulative[i - 1]!) / step)) : 0;
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
   };
 }
 

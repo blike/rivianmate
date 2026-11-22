@@ -43,6 +43,8 @@ export function TripMap(props: {
   onSelect: (selection: Selection) => void;
   focusDay: string | null;
   onFocusDay: (day: string | null) => void;
+  /** A point to mark, from hovering the charts below. */
+  hoverAt?: [number, number] | null;
 }) {
   const { trip, routes, focusDay, onFocusDay } = props;
   const drives = trip?.drives;
@@ -104,6 +106,7 @@ export function TripMap(props: {
         selected={props.selected}
         onSelect={props.onSelect}
         replay={progress}
+        hoverAt={props.hoverAt ?? null}
         describeStop={describeStop}
       />
       {days.length > 1 && days.length <= MAX_DAY_CHIPS && (

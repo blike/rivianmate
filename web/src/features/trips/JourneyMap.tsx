@@ -292,6 +292,8 @@ export function JourneyMap(props: {
   onSelect: (selection: Selection) => void;
   /** 0–1 along the journey while replaying; null otherwise. */
   replay: number | null;
+  /** A point to mark, e.g. where the pointer is along the charts. */
+  hoverAt: [number, number] | null;
   describeStop: (stop: JourneyStop) => string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -301,6 +303,7 @@ export function JourneyMap(props: {
   const markerStops = useRef<{ marker: Marker; stops: JourneyStop[] }[]>([]);
   const popupRef = useRef<Popup | null>(null);
   const headRef = useRef<Marker | null>(null);
+  const hoverRef = useRef<Marker | null>(null);
   const [ready, setReady] = useState(false);
 
   const latest = useRef(props);
@@ -482,6 +485,7 @@ export function JourneyMap(props: {
       markerStops.current = [];
       popupRef.current = null;
       headRef.current = null;
+      hoverRef.current = null;
     };
   }, []);
 
@@ -638,6 +642,29 @@ export function JourneyMap(props: {
       }
     }
   }, [replay, legsKey, ready]);
+
+  // Where the pointer is along the charts.
+  const hoverLat = props.hoverAt?.[0];
+  const hoverLon = props.hoverAt?.[1];
+  useEffect(() => {
+    const map = mapRef.current;
+    const maplibre = maplibreRef.current;
+    if (!map || !maplibre || !ready) return;
+    if (hoverLat == null || hoverLon == null) {
+      hoverRef.current?.remove();
+      hoverRef.current = null;
+      return;
+    }
+    if (!hoverRef.current) {
+      const el = document.createElement('div');
+      el.className = 'rm-journey-head';
+      hoverRef.current = new maplibre.Marker({ element: el })
+        .setLngLat([hoverLon, hoverLat])
+        .addTo(map);
+    } else {
+      hoverRef.current.setLngLat([hoverLon, hoverLat]);
+    }
+  }, [hoverLat, hoverLon, ready]);
 
   return <div ref={containerRef} className="rm-map" style={{ height: '100%', width: '100%' }} />;
 }
