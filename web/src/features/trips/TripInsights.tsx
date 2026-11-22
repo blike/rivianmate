@@ -40,6 +40,8 @@ export function TripInsights(props: {
   routes: TripRouteDto[] | undefined;
   focusDay: string | null;
   onFocusDay: (day: string | null) => void;
+  /** Where on the map the point under the pointer on the charts is; null when it leaves. */
+  onHoverAt?: (at: [number, number] | null) => void;
 }) {
   const { trip, routes } = props;
   const u = useUnits();
@@ -97,6 +99,9 @@ export function TripInsights(props: {
   const dayOf = (v: number) => [...roadDays].reverse().find((d) => d.at <= v)?.label;
   const roadAxis = {
     data: roadData,
+    onHover:
+      props.onHoverAt &&
+      ((i: number | null) => props.onHoverAt?.(i == null ? null : (road.points[i]?.at ?? null))),
     xKey: 'km',
     syncId: `road-${trip.id}`,
     yAxisWidth: 52,
@@ -173,84 +178,6 @@ export function TripInsights(props: {
   return (
     <div className="space-y-4">
       <SectionRule>Insights</SectionRule>
-
-      {days.length > 1 && (
-        <Panel title="Day by day">
-          <ul className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1">
-            {days.map((d, i) => (
-              <li key={d.key} className="w-56 shrink-0 snap-start">
-                <button
-                  type="button"
-                  aria-pressed={props.focusDay === d.key}
-                  onClick={() => props.onFocusDay(props.focusDay === d.key ? null : d.key)}
-                  className={`flex h-full w-full flex-col rounded-xl border p-3.5 text-left transition-colors hover:bg-(--surface-2) ${
-                    props.focusDay === d.key
-                      ? 'border-(--text-muted) bg-(--surface-2)'
-                      : 'border-(--border)'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-xs text-(--text-muted)">
-                      <span
-                        aria-hidden
-                        className="size-2 rounded-full"
-                        style={{ background: dayColor(i, days.length) }}
-                      />
-                      {shortDate(d.at)}
-                    </span>
-                    {d.weather?.weatherCode != null && (
-                      <span className="flex items-center gap-1 text-xs text-(--text-secondary) tabular-nums">
-                        <WeatherIcon
-                          kind={weatherKind(d.weather.weatherCode)}
-                          label={weatherLabel(d.weather.weatherCode)}
-                          className="size-4"
-                        />
-                        {u.formatTemperature(d.tempC)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="readout mt-2 text-xl font-semibold">
-                    {d.distanceKm > 0 ? u.formatDistance(d.distanceKm) : 'Parked'}
-                  </div>
-                  {/* Where from, then where to beneath: two lines always, so the cards match. */}
-                  <p className="mt-1 text-xs text-(--text-secondary)">
-                    <span className="block truncate">{d.from ?? '\u00a0'}</span>
-                    <span className="block truncate">
-                      {d.from && d.to && d.from !== d.to ? `→ ${d.to}` : '\u00a0'}
-                    </span>
-                  </p>
-                  <p className="mt-2 text-xs text-(--text-muted) tabular-nums">
-                    {[
-                      d.drives.length > 0 && plural(d.drives.length, 'drive'),
-                      d.sessions.length > 0 && `${fmt(d.energyAddedKwh, 0)} kWh charged`,
-                      d.cost,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      )}
-
-      {facts.length > 0 && (
-        // As many columns as fit, so a wide screen takes the facts in one row.
-        <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-(--hairline) bg-(--hairline) sm:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]">
-          {facts.map((f) => (
-            <li key={f.key} className="bg-(--surface-1) px-5 py-4">
-              <div className="eyebrow">{f.label}</div>
-              <div className="readout mt-2 text-2xl font-semibold">{f.value}</div>
-              {f.sub && (
-                <div className="mt-1 truncate text-xs text-(--text-secondary) tabular-nums">
-                  {f.sub}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
 
       {road.points.length >= 2 && (road.hasElevation || hasBattery) && (
         <Panel title="Along the way">
@@ -329,6 +256,84 @@ export function TripInsights(props: {
             </>
           )}
         </Panel>
+      )}
+
+      {days.length > 1 && (
+        <Panel title="Day by day">
+          <ul className="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1">
+            {days.map((d, i) => (
+              <li key={d.key} className="w-56 shrink-0 snap-start">
+                <button
+                  type="button"
+                  aria-pressed={props.focusDay === d.key}
+                  onClick={() => props.onFocusDay(props.focusDay === d.key ? null : d.key)}
+                  className={`flex h-full w-full flex-col rounded-xl border p-3.5 text-left transition-colors hover:bg-(--surface-2) ${
+                    props.focusDay === d.key
+                      ? 'border-(--text-muted) bg-(--surface-2)'
+                      : 'border-(--border)'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-xs text-(--text-muted)">
+                      <span
+                        aria-hidden
+                        className="size-2 rounded-full"
+                        style={{ background: dayColor(i, days.length) }}
+                      />
+                      {shortDate(d.at)}
+                    </span>
+                    {d.weather?.weatherCode != null && (
+                      <span className="flex items-center gap-1 text-xs text-(--text-secondary) tabular-nums">
+                        <WeatherIcon
+                          kind={weatherKind(d.weather.weatherCode)}
+                          label={weatherLabel(d.weather.weatherCode)}
+                          className="size-4"
+                        />
+                        {u.formatTemperature(d.tempC)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="readout mt-2 text-xl font-semibold">
+                    {d.distanceKm > 0 ? u.formatDistance(d.distanceKm) : 'Parked'}
+                  </div>
+                  {/* Where from, then where to beneath: two lines always, so the cards match. */}
+                  <p className="mt-1 text-xs text-(--text-secondary)">
+                    <span className="block truncate">{d.from ?? '\u00a0'}</span>
+                    <span className="block truncate">
+                      {d.from && d.to && d.from !== d.to ? `→ ${d.to}` : '\u00a0'}
+                    </span>
+                  </p>
+                  <p className="mt-2 text-xs text-(--text-muted) tabular-nums">
+                    {[
+                      d.drives.length > 0 && plural(d.drives.length, 'drive'),
+                      d.sessions.length > 0 && `${fmt(d.energyAddedKwh, 0)} kWh charged`,
+                      d.cost,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      {facts.length > 0 && (
+        // As many columns as fit, so a wide screen takes the facts in one row.
+        <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-(--hairline) bg-(--hairline) sm:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]">
+          {facts.map((f) => (
+            <li key={f.key} className="bg-(--surface-1) px-5 py-4">
+              <div className="eyebrow">{f.label}</div>
+              <div className="readout mt-2 text-2xl font-semibold">{f.value}</div>
+              {f.sub && (
+                <div className="mt-1 truncate text-xs text-(--text-secondary) tabular-nums">
+                  {f.sub}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       {/* Where it stayed, tall, beside the rest; without it, the rest side by side. */}

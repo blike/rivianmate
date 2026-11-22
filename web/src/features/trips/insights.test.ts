@@ -8,6 +8,7 @@ import {
   farthestPoint,
   isRoundTrip,
   roadProfile,
+  alongLine,
   bridgeGaps,
   suggestedName,
   driverSplit,
@@ -423,6 +424,63 @@ describe('roadProfile', () => {
       [100, 80],
       [150, 60],
     ]);
+  });
+});
+
+describe('where each road point is on the map', () => {
+  it('finds a share of a line’s length along it', () => {
+    const along = alongLine([
+      [0, 0],
+      [0, 1],
+      [0, 3],
+    ]);
+    expect(along(0)).toEqual([0, 0]);
+    expect(along(0.5)[1]).toBeCloseTo(1.5);
+    expect(along(1)).toEqual([0, 3]);
+    // Asked out of order, it starts again from the beginning.
+    expect(along(0.25)[1]).toBeCloseTo(0.75);
+  });
+
+  it('places profile points along the route, and charges where the driving left off', () => {
+    const road = roadProfile(
+      [
+        drive(1, {
+          ...meets,
+          ...level,
+          distanceKm: 20,
+          startedAt: local(1, 8),
+          endedAt: local(1, 9),
+        }),
+      ],
+      [
+        {
+          ...sessions[0]!,
+          startSoc: 40,
+          endSoc: 80,
+          startedAt: local(1, 10),
+          endedAt: local(1, 11),
+        },
+      ],
+      [
+        {
+          driveId: 1,
+          points: [
+            [10, 20],
+            [10, 22],
+          ],
+          profile: [
+            { km: 0, altitudeM: 100 },
+            { km: 5, altitudeM: 110 },
+            { km: 10, altitudeM: 120 },
+          ],
+        },
+      ],
+    );
+    const at = road.points.map((p) => p.at);
+    expect(at[0]).toEqual([10, 20]);
+    expect(at[1]![1]).toBeCloseTo(21, 1);
+    expect(at[2]).toEqual([10, 22]);
+    expect(at.at(-1)).toEqual([10, 22]);
   });
 });
 

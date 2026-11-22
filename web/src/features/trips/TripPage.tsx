@@ -63,6 +63,8 @@ export function TripPage(props: { vehicleId: string }) {
   const [selected, setSelected] = useState<Selection>(null);
 
   const [focusDay, setFocusDay] = useState<string | null>(null);
+  // The point under the pointer on the elevation and battery charts, shown on the map.
+  const [hoverAt, setHoverAt] = useState<[number, number] | null>(null);
 
   if (error && !trip && !isNotFound(error)) {
     return (
@@ -176,6 +178,7 @@ export function TripPage(props: { vehicleId: string }) {
               onSelect={setSelected}
               focusDay={focusDay}
               onFocusDay={setFocusDay}
+              hoverAt={hoverAt}
             />
           </section>
           <Panel title="Timeline" className="flex flex-col">
@@ -229,7 +232,13 @@ export function TripPage(props: { vehicleId: string }) {
         </div>
 
         {trip && (
-          <TripInsights trip={trip} routes={route} focusDay={focusDay} onFocusDay={setFocusDay} />
+          <TripInsights
+            trip={trip}
+            routes={route}
+            focusDay={focusDay}
+            onFocusDay={setFocusDay}
+            onHoverAt={setHoverAt}
+          />
         )}
       </div>
 
