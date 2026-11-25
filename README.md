@@ -15,7 +15,7 @@ Drives, charging, battery health, and live vehicle state, recorded in your own d
 a dashboard you can open from anywhere.
 
 [Features](#features) · [Screenshots](#screenshots) · [Quick start](#quick-start) ·
-[Configuration](#configuration) · [Contributing](#contributing)
+[Configuration](#configuration) · [API](docs/API.md) · [Contributing](#contributing)
 
 ## Why RivianMate
 
@@ -100,6 +100,15 @@ a dashboard you can open from anywhere.
 - Load them by pointing Grafana at the folder; see [docs/GRAFANA.md](docs/GRAFANA.md).
 - Tested with Grafana 13.2.4 only; other versions may work but have not been tried.
 
+### HTTP & Live Streaming API
+
+- JSON REST API and Server-Sent Events (SSE) streams under `/api/*` covering vehicle state, drives,
+  charging sessions, health metrics, trips, orders, and settings.
+- Supports scoped Bearer API keys (`read` or `write`) managed under **Settings → Security**, plus
+  session cookies.
+- See [docs/API.md](docs/API.md) for authentication setup, production reverse-proxy configuration,
+  and the full endpoint reference.
+
 ## Screenshots
 
 <p>
@@ -174,16 +183,17 @@ without requiring you to sign in again.
 RivianMate is configured using environment variables defined in the `.env` file. Docker Compose
 automatically loads these values when starting the application.
 
-| Variable            | Required    | Description                                                                                                                                                        |
-| ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `APP_SECRET`        | Yes         | Secret used to encrypt Rivian tokens and sign sessions. Generate with `openssl rand -hex 32`. Must remain consistent across restarts and updates.                  |
-| `POSTGRES_PASSWORD` | Recommended | Password for the bundled PostgreSQL database. Defaults to `rivianmate`.                                                                                            |
-| `APP_PORT`          | No          | Port used to access the web interface. Defaults to `4000`.                                                                                                         |
-| `APP_PASSWORD`      | No          | Preconfigures the application password on first startup, bypassing the password setup screen. Must be at least 12 characters and not a common password or pattern. |
-| `DATABASE_URL`      | No          | PostgreSQL connection string. Configured automatically by Docker Compose; override when using an external database.                                                |
-| `LOG_LEVEL`         | No          | How much to log: `error`, `warn`, `info` (default) or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                   |
-| `LOG_FORMAT`        | No          | `pretty` (default) for readable `docker logs` output, or `json` for one object per line to feed a log collector.                                                   |
-| `TZ`                | No          | Time zone for times mentioned in log messages, such as `America/Los_Angeles`. Defaults to `UTC`. Dates in the app always follow your browser.                      |
+| Variable            | Required    | Description                                                                                                                                                                                                      |
+| ------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_SECRET`        | Yes         | Secret used to encrypt Rivian tokens and sign sessions. Generate with `openssl rand -hex 32`. Must remain consistent across restarts and updates.                                                                |
+| `POSTGRES_PASSWORD` | Recommended | Password for the bundled PostgreSQL database. Defaults to `rivianmate`.                                                                                                                                          |
+| `APP_PORT`          | No          | Port used to access the web interface. Defaults to `4000`.                                                                                                                                                       |
+| `APP_PASSWORD`      | No          | Preconfigures the application password on first startup, bypassing the password setup screen. Must be at least 12 characters and not a common password or pattern.                                               |
+| `TRUST_PROXY`       | No          | Enable when running behind a reverse proxy (`1`, `true`, `loopback`, or comma-separated IPs/CIDRs) so login throttling uses the real client IP and session cookies set `Secure` over HTTPS. Defaults to `false`. |
+| `DATABASE_URL`      | No          | PostgreSQL connection string. Configured automatically by Docker Compose; override when using an external database.                                                                                              |
+| `LOG_LEVEL`         | No          | How much to log: `error`, `warn`, `info` (default) or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                                                                 |
+| `LOG_FORMAT`        | No          | `pretty` (default) for readable `docker logs` output, or `json` for one object per line to feed a log collector.                                                                                                 |
+| `TZ`                | No          | Time zone for times mentioned in log messages, such as `America/Los_Angeles`. Defaults to `UTC`. Dates in the app always follow your browser.                                                                    |
 
 Additional preferences are configured directly in the web interface under **Settings**, including:
 
