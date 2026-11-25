@@ -1,10 +1,14 @@
 import type {
+  ApiKeyDto,
+  ApiKeyScope,
   BatteryHealthDto,
   BatteryWindowDto,
   ChargeSpanDto,
   ChargingCurvePointDto,
   ChargingSessionDto,
   ConnectResponse,
+  CreateApiKeyInput,
+  CreatedApiKeyDto,
   ChargingCoverageDto,
   DriveCoverageDto,
   DriveDetailDto,
@@ -31,6 +35,7 @@ import type {
   PhantomDrainDto,
   PluggedInDto,
   SchedulesDto,
+  SessionInfoResponse,
   StateSpanDto,
   StatusResponse,
   TirePressurePointDto,
@@ -62,6 +67,11 @@ import type {
 } from '@server/api-types';
 
 export type {
+  ApiKeyDto,
+  ApiKeyScope,
+  CreateApiKeyInput,
+  CreatedApiKeyDto,
+  SessionInfoResponse,
   TripActivityKind,
   TripActivityRef,
   TripAssignmentDto,
@@ -171,6 +181,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  apiKeys: () => request<ApiKeyDto[]>('/api/api-keys'),
+  createApiKey: (input: CreateApiKeyInput) =>
+    request<CreatedApiKeyDto>('/api/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  revokeApiKey: (id: number) => request<void>(`/api/api-keys/${id}`, { method: 'DELETE' }),
 
   rivianConnect: (email: string, password: string) =>
     request<ConnectResponse>('/api/rivian/connect', {

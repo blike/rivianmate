@@ -54,7 +54,7 @@ const sections = [
   {
     id: 'security',
     label: 'Security',
-    description: 'Your app password and this browser’s session.',
+    description: 'App password, API keys and this browser’s session.',
     icon: <LockIcon />,
   },
   {

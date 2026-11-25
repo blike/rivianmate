@@ -6,12 +6,14 @@ import Fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
+  type FastifyServerOptions,
   LogController,
 } from 'fastify';
 import { existsSync } from 'node:fs';
 import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
-import { authRoutes, isAuthed } from './routes/auth.js';
+import { apiKeyRoutes } from './routes/api-keys.js';
+import { authRoutes, authenticate } from './routes/auth.js';
 import { chargingRoutes } from './routes/charging.js';
 import { historyRoutes } from './routes/history.js';
 import { importRoutes } from './routes/imports.js';
@@ -27,9 +29,26 @@ import { vehicleRoutes } from './routes/vehicles.js';
 import { orderRoutes } from './routes/orders.js';
 
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
+/** Security-sensitive endpoints that require a browser session cookie rather than an API key. */
+const SESSION_ONLY_ROUTES = new Set([
+  '/api/api-keys',
+  '/api/api-keys/:id',
+  '/api/auth/change-password',
+  '/api/auth/logout',
+  '/api/rivian/connect',
+  '/api/rivian/otp',
+  '/api/rivian/disconnect',
+]);
+const READ_METHODS = new Set(['GET', 'HEAD']);
 const ASSET_PATH_PATTERN = /\/[^/]+\.[^/]+$/;
 /** Requests slower than this are worth seeing at the default log level. */
 const SLOW_REQUEST_MS = 1000;
+
+function requiresSession(method: string, route: string): boolean {
+  if (SESSION_ONLY_ROUTES.has(route)) return true;
+  if (route === '/api/settings/teslamate' && !READ_METHODS.has(method)) return true;
+  return false;
+}
 
 /**
  * The UI polls constantly, so a line per request buries everything else: only
@@ -55,14 +74,21 @@ class QuietRequestLog extends LogController {
 }
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
-  const app = Fastify({
+  const trustProxyConfig = ctx.config.TRUST_PROXY ?? false;
+  const trustProxy: FastifyServerOptions['trustProxy'] =
+    typeof trustProxyConfig === 'number'
+      ? (_address, hop) => hop < trustProxyConfig
+      : trustProxyConfig;
+  const options: FastifyServerOptions = {
     // Typed as Fastify's logger so routes keep the default instance type.
     loggerInstance: ctx.log.child({ component: 'http' }) as FastifyBaseLogger,
     logController: new QuietRequestLog(),
     // Live streams never finish on their own; without this, close() waits on
     // an open browser tab until Docker gives up and kills the process.
     forceCloseConnections: true,
-  });
+    trustProxy,
+  };
+  const app = Fastify(options);
 
   // History listings run to megabytes of JSON over a long period. Live
   // streams write to the raw response, so they go out uncompressed.
@@ -74,8 +100,17 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   app.addHook('preHandler', async (request, reply) => {
     const route = request.routeOptions.url ?? '';
     if (!route.startsWith('/api/') || PUBLIC_PATHS.has(route)) return;
-    if (!isAuthed(ctx, request)) {
+    const auth = await authenticate(ctx, request);
+    if (!auth) {
       return reply.code(401).send({ error: 'Not authenticated' });
+    }
+    if (auth.method === 'api_key') {
+      if (requiresSession(request.method, route)) {
+        return reply.code(403).send({ error: 'This endpoint requires a browser session' });
+      }
+      if (auth.scope === 'read' && !READ_METHODS.has(request.method)) {
+        return reply.code(403).send({ error: 'API key has read-only access' });
+      }
     }
   });
 
@@ -91,6 +126,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await authRoutes(app, ctx);
+  await apiKeyRoutes(app, ctx);
   await rivianRoutes(app, ctx);
   await vehicleRoutes(app, ctx);
   await orderRoutes(app, ctx);

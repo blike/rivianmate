@@ -33,6 +33,26 @@ export const appSettings = pgTable('app_settings', {
   value: text('value').notNull(),
 });
 
+/**
+ * Long-lived bearer keys for programmatic API access. Only the SHA-256 hash
+ * is stored; the secret itself is shown once on creation.
+ */
+export const apiKeys = pgTable('api_keys', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  /** First 12 characters of the key (e.g. "rmk_ab12cd34"), to tell keys apart. */
+  prefix: text('prefix').notNull(),
+  /** SHA-256 hex digest of the full key. */
+  keyHash: text('key_hash').notNull().unique(),
+  /** "read" allows GET/HEAD only; "write" also allows non-security mutations. */
+  scope: text('scope', { enum: ['read', 'write'] })
+    .notNull()
+    .default('read'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+});
+
 export const rivianAccount = pgTable('rivian_account', {
   id: integer('id').primaryKey().default(1),
   email: text('email').notNull(),

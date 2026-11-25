@@ -7,6 +7,7 @@ import type { RivianApi } from './rivian/client.js';
 import type { RivianGovernor } from './rivian/governor.js';
 import type { RivianTokens } from './rivian/types.js';
 import type { PlaceSearch } from './services/drive-places.js';
+import type { ApiKeyStore } from './services/api-keys.js';
 import type { Imports } from './services/imports/imports.js';
 import type { LiveBus } from './services/live-bus.js';
 import type { LoginThrottle } from './services/login-throttle.js';
@@ -38,6 +39,8 @@ export interface AppContext {
   crypto: TokenCrypto;
   /** Limits password guesses. */
   loginThrottle: LoginThrottle;
+  /** Long-lived bearer API keys for programmatic clients. */
+  apiKeys: ApiKeyStore;
   tokenStore: TokenStore;
   bus: LiveBus;
   monitor: VehicleMonitor;

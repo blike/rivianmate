@@ -19,6 +19,7 @@ import { DriveWeather, openMeteoTemperatures } from './services/drive-weather.js
 import { Imports } from './services/imports/imports.js';
 import { LiveBus } from './services/live-bus.js';
 import { NotificationService } from './services/notifications.js';
+import { ApiKeyStore } from './services/api-keys.js';
 import { LoginThrottle } from './services/login-throttle.js';
 import { TokenStore } from './services/token-store.js';
 import { VehicleMonitor } from './services/vehicle-monitor.js';
@@ -119,6 +120,7 @@ async function main(): Promise<void> {
     db,
     crypto,
     loginThrottle: new LoginThrottle(),
+    apiKeys: new ApiKeyStore(db, logger.child({ component: 'auth' })),
     tokenStore,
     bus,
     monitor,

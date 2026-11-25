@@ -16,6 +16,7 @@ const SECRET_KEYS = [
   'password',
   'email',
   'token',
+  'apiKey',
   'userSessionToken',
   'accessToken',
   'refreshToken',
@@ -25,6 +26,7 @@ const SECRET_KEYS = [
 ];
 const REDACT = [
   'req.headers.cookie',
+  'req.headers.authorization',
   ...SECRET_KEYS.flatMap((key) => [key, `*.${key}`, `*.*.${key}`]),
 ];
 
