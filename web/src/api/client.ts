@@ -38,12 +38,15 @@ import type {
   SessionInfoResponse,
   StateSpanDto,
   StatusResponse,
+  SummaryUnitsMode,
   TirePressurePointDto,
   TireRotationDto,
   LookupSettings,
   UnitPreferences,
   VehicleDto,
   VehicleInsightsDto,
+  VehicleSummaryDto,
+  VehicleSummaryStatus,
   VersionResponse,
   VehicleState,
   WallboxDto,
@@ -110,9 +113,12 @@ export type {
   HistoryPoint,
   LocationPointDto,
   StatusResponse,
+  SummaryUnitsMode,
   VehicleDto,
   VehicleInsightsDto,
   VehicleState,
+  VehicleSummaryDto,
+  VehicleSummaryStatus,
   WallboxDto,
 };
 
@@ -251,6 +257,8 @@ export const api = {
   vehicles: () => request<VehicleDto[]>('/api/vehicles'),
   orders: () => request<OrdersDto>('/api/orders'),
   vehicleState: (id: string) => request<VehicleState>(`/api/vehicles/${id}/state`),
+  vehicleSummary: (id: string, units: SummaryUnitsMode = 'user') =>
+    request<VehicleSummaryDto>(`/api/vehicles/${id}/summary?units=${units}`),
   history: (id: string, metric: HistoryMetric, from: Date, to: Date, bucket: string) =>
     request<HistoryPoint[]>(
       `/api/vehicles/${id}/history?metric=${metric}&from=${from.toISOString()}&to=${to.toISOString()}&bucket=${bucket}`,

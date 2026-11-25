@@ -226,6 +226,39 @@ const headers = { Authorization: `Bearer ${process.env.RIVIANMATE_API_KEY}` };
 const vehicles = await fetch(`${BASE_URL}/api/vehicles`, { headers }).then((r) => r.json());
 ```
 
+#### Get Homepage (`customapi` Widget)
+
+Use `GET /api/vehicles/:id/summary` with a **Read-only** API key for a single-request dashboard
+widget with automatic unit conversion (including `°C → °F` and meters → miles):
+
+```yaml
+widget:
+  type: customapi
+  url: https://rivianmate.example.com/api/vehicles/<vehicleId>/summary?units=user
+  refreshInterval: 30000
+  headers:
+    Authorization: Bearer rmk_your_readonly_key
+  mappings:
+    - field: batteryLevel
+      label: Battery
+      format: percent
+    - field: range
+      label: Range
+      format: number
+      suffix: ' mi'
+    - field: odometer
+      label: Odometer
+      format: number
+      suffix: ' mi'
+    - field: statusLabel
+      label: Status
+      format: text
+    - field: cabinTemp
+      label: Cabin
+      format: number
+      suffix: ' °F'
+```
+
 #### curl (Cookie Jar — Needed for Session-Only Endpoints)
 
 ```sh
@@ -341,9 +374,10 @@ rivianmate.example.com {
 
 ### Polling, SSE & Impact on Rivian
 
-- **Calling RivianMate's read endpoints never polls Rivian's cloud.** Vehicle state, drives,
-  charging sessions, history, health, and orders are served from RivianMate's in-memory state and
-  PostgreSQL database.
+- **Calling RivianMate's read endpoints never polls Rivian's cloud and never wakes your vehicle.**
+  Vehicle state, summaries, drives, charging sessions, history, health, and orders are served
+  strictly from RivianMate's in-memory state cache and local PostgreSQL database. RivianMate itself
+  only subscribes passively to Rivian's cloud stream and never sends wake or vehicle commands.
 - **Prefer SSE (`/api/vehicles/:id/live`)** over polling `/api/vehicles/:id/state` when building
   live dashboards or automations—it pushes updates immediately with minimal overhead.
 - **Response compression:** JSON responses are automatically compressed (`gzip`/`br`/`deflate`) when
@@ -367,21 +401,22 @@ rivianmate.example.com {
 
 ### Units
 
-The API always stores and returns **canonical SI/metric values** regardless of the user's display
-preferences in `/api/settings/units`:
+All standard endpoints store and return **canonical SI/metric values** regardless of the user's
+display preferences in `/api/settings/units` (except `GET /api/vehicles/:id/summary`, which converts
+values to `user`, `imperial`, or `metric` units):
 
-| Measurement          | API Unit                                                                                                               |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Distance & range     | Kilometers (`km`) — except `vehicleMileage` in raw `VehicleState`, which Rivian reports in **meters** (`m`)            |
-| Speed                | Kilometers per hour (`km/h`) — except `gnssSpeed` / `navLocation.speedMps` in raw `VehicleState`, which are in **m/s** |
-| Elevation / altitude | Meters (`m`)                                                                                                           |
-| Temperature          | Degrees Celsius (`°C`)                                                                                                 |
-| Tire pressure        | Bar (`bar`)                                                                                                            |
-| Energy & capacity    | Kilowatt-hours (`kWh`)                                                                                                 |
-| Power                | Kilowatts (`kW`)                                                                                                       |
-| Duration             | Seconds (`s`) or minutes (`min`), indicated by field name                                                              |
-| Timestamps           | ISO 8601 UTC strings (`2026-11-24T19:15:00.000Z`)                                                                      |
-| Calendar dates       | `YYYY-MM-DD` interpreted in the request's IANA `timeZone` / `tz`                                                       |
+| Measurement          | API Unit                                                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Distance & range     | Kilometers (`km`) — except `vehicleMileage` in raw `VehicleState` and `/history?metric=mileage`, which Rivian reports in **meters** (`m`). Use `GET /api/vehicles/:id/summary` for automatic unit conversion. |
+| Speed                | Kilometers per hour (`km/h`) — except `gnssSpeed` / `navLocation.speedMps` in raw `VehicleState`, which are in **m/s**                                                                                        |
+| Elevation / altitude | Meters (`m`)                                                                                                                                                                                                  |
+| Temperature          | Degrees Celsius (`°C`)                                                                                                                                                                                        |
+| Tire pressure        | Bar (`bar`)                                                                                                                                                                                                   |
+| Energy & capacity    | Kilowatt-hours (`kWh`)                                                                                                                                                                                        |
+| Power                | Kilowatts (`kW`)                                                                                                                                                                                              |
+| Duration             | Seconds (`s`) or minutes (`min`), indicated by field name                                                                                                                                                     |
+| Timestamps           | ISO 8601 UTC strings (`2026-11-24T19:15:00.000Z`)                                                                                                                                                             |
+| Calendar dates       | `YYYY-MM-DD` interpreted in the request's IANA `timeZone` / `tz`                                                                                                                                              |
 
 ### Pagination & List Windows
 
@@ -617,7 +652,8 @@ URL-encode `:id` if it contains special characters.
 | ------ | -------------------------------- | ---------------------------------------------------------------------------- |
 | `GET`  | `/api/vehicles`                  | List all Rivian and TeslaMate vehicles                                       |
 | `GET`  | `/api/vehicles/:id/render/:view` | Proxy and cache vehicle render image (`three-quarter` or `overhead`)         |
-| `GET`  | `/api/vehicles/:id/state`        | Latest merged `VehicleState` telemetry snapshot                              |
+| `GET`  | `/api/vehicles/:id/state`        | Latest merged raw `VehicleState` telemetry snapshot                          |
+| `GET`  | `/api/vehicles/:id/summary`      | Flat, unit-converted vehicle snapshot for widgets & integrations             |
 | `GET`  | `/api/vehicles/:id/live`         | **SSE stream** of live `state` and `charging` updates                        |
 | `GET`  | `/api/vehicles/:id/plugged-in`   | Timestamp when the vehicle was plugged in (if currently plugged in)          |
 | `GET`  | `/api/vehicles/:id/schedules`    | Vehicle charging schedules and departure/preconditioning schedules           |
@@ -667,6 +703,69 @@ Key properties include `powerState`, `gearStatus`, `driveMode`, `batteryLevel`, 
 `tirePressureFrontLeft`/`FrontRight`/`RearLeft`/`RearRight` (bar), door/window/closure lock and
 closed states, `otaCurrentVersion`, `otaAvailableVersion`, and `otaStatus`.
 
+- **Errors:** `404` (`No state yet`) if no telemetry has been received yet.
+
+#### `GET /api/vehicles/:id/summary`
+
+Flat, unit-converted vehicle snapshot tailored for dashboard widgets (such as Get Homepage
+`customapi`), Home Assistant REST sensors, and scripts. Works for both Rivian and TeslaMate
+vehicles.
+
+- **Query params:**
+  - `units`: `user` (default — follows **Settings → General → Units**), `imperial` (`mi`, `mph`,
+    `°F`, `psi`, `ft`), or `metric` (`km`, `km/h`, `°C`, `bar`, `m`).
+- **Response (`200`):** `VehicleSummaryDto`:
+  ```json
+  {
+    "id": "01-123456789",
+    "vin": "7PDSGABA...",
+    "name": "Blue",
+    "make": "Rivian",
+    "model": "R1S",
+    "modelYear": 2025,
+    "source": "rivian",
+    "status": "parked",
+    "statusLabel": "Parked",
+    "online": true,
+    "lastSync": "2026-11-24T20:24:53.464Z",
+    "batteryLevel": 78.5,
+    "batteryLimit": 80,
+    "batteryCapacityKwh": 135.2,
+    "batteryTemp": 60.8,
+    "range": 241.7,
+    "odometer": 321.9,
+    "speed": 0,
+    "altitude": 820,
+    "gear": "park",
+    "driveMode": "everyday",
+    "powerState": "ready",
+    "pluggedIn": false,
+    "charging": false,
+    "chargerState": "charging_ready",
+    "timeToEndOfChargeMin": null,
+    "chargingPowerKw": null,
+    "cabinTemp": 68,
+    "targetTemp": 70.7,
+    "tirePressures": {
+      "frontLeft": 48,
+      "frontRight": 48,
+      "rearLeft": 48,
+      "rearRight": 47.1
+    },
+    "locked": true,
+    "openClosures": [],
+    "softwareVersion": "2026.10.01",
+    "updateAvailable": null,
+    "location": { "lat": 40.5142, "lon": -88.9906, "ts": "2026-11-24T20:24:53.464Z" },
+    "units": {
+      "distance": "mi",
+      "speed": "mph",
+      "temperature": "F",
+      "pressure": "psi",
+      "elevation": "ft"
+    }
+  }
+  ```
 - **Errors:** `404` (`No state yet`) if no telemetry has been received yet.
 
 #### `GET /api/vehicles/:id/plugged-in`

@@ -102,10 +102,13 @@ a dashboard you can open from anywhere.
 
 ### HTTP & Live Streaming API
 
-- JSON REST API and Server-Sent Events (SSE) streams under `/api/*` covering vehicle state, drives,
-  charging sessions, health metrics, trips, orders, and settings.
+- JSON REST API and Server-Sent Events (SSE) streams under `/api/*` covering vehicle state, a flat
+  unit-converted vehicle summary for dashboard widgets (such as Homepage and Home Assistant),
+  drives, charging sessions, health metrics, trips, orders, and settings.
 - Supports scoped Bearer API keys (`read` or `write`) managed under **Settings → Security**, plus
   session cookies.
+- All read endpoints are served from RivianMate's local cache and database without polling Rivian or
+  waking the vehicle.
 - See [docs/API.md](docs/API.md) for authentication setup, production reverse-proxy configuration,
   and the full endpoint reference.
 

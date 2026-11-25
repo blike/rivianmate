@@ -35,6 +35,20 @@ describe('API authentication and authorization', () => {
         [readKey]: { id: 1, scope: 'read' },
         [writeKey]: { id: 2, scope: 'write' },
       }),
+      monitor: {
+        getVehicles: () => [
+          { id: 'v1', vin: '7PDS1', name: 'Blue', make: 'Rivian', model: 'R1S', modelYear: 2025 },
+        ],
+        getState: (id: string) =>
+          id === 'v1'
+            ? {
+                batteryLevel: { timeStamp: '2026-11-24T20:00:00Z', value: 80 },
+                vehicleMileage: { timeStamp: '2026-11-24T20:00:00Z', value: 518000 },
+                cabinClimateInteriorTemperature: { timeStamp: '2026-11-24T20:00:00Z', value: 20 },
+              }
+            : undefined,
+      },
+      bus: { latestChargingSession: () => null },
     } as unknown as AppContext;
     app = await buildApp(ctx);
   });
@@ -77,6 +91,26 @@ describe('API authentication and authorization', () => {
     });
     expect(cookieSession.statusCode).toBe(200);
     expect(cookieSession.json()).toEqual({ authed: true, method: 'session' });
+
+    const summary = await app.inject({
+      url: '/api/vehicles/v1/summary?units=imperial',
+      headers: { authorization: `Bearer ${readKey}` },
+    });
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json()).toMatchObject({
+      id: 'v1',
+      name: 'Blue',
+      batteryLevel: 80,
+      odometer: 321.9,
+      cabinTemp: 68,
+      units: { distance: 'mi', temperature: 'F' },
+    });
+
+    const missingSummary = await app.inject({
+      url: '/api/vehicles/unknown/summary',
+      headers: { authorization: `Bearer ${readKey}` },
+    });
+    expect(missingSummary.statusCode).toBe(404);
   });
 
   it('rejects an invalid Authorization header without falling back to a session cookie', async () => {
