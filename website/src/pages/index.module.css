@@ -1,0 +1,280 @@
+/* Landing page. Tokens come from src/css/custom.css. */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  /* Clear of the lamps' tops and the bar, so the lights read above the title. */
+  padding: 13rem 0 0;
+  text-align: center;
+  border-bottom: 1px solid var(--hairline);
+  background:
+    radial-gradient(60% 50% at 50% 0%, rgb(245 197 24 / 0.07), transparent 70%), var(--surface-0);
+}
+
+/* The icon's motif as a Rivian front end (the Headlights component), behind the title. */
+.headlights {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  width: min(1200px, 150vw);
+  height: auto;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0.42;
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+.heroTitle {
+  position: relative;
+  margin: 0 auto;
+  max-width: 15ch;
+  font-size: clamp(2.4rem, 6vw, 4.25rem);
+  font-weight: 650;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  color: var(--text-primary);
+}
+.heroTitle span {
+  color: var(--text-muted);
+}
+
+.heroLede {
+  position: relative;
+  margin: 1.5rem auto 0;
+  max-width: 38rem;
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 2.25rem;
+}
+
+.shots {
+  position: relative;
+  max-width: 68rem;
+  margin: 4rem auto 0;
+  padding: 0 1rem;
+}
+.shots figure {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 30px 80px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(255 255 240 / 0.04);
+}
+.shots img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shotDesktop {
+  border-radius: 1rem 1rem 0 0;
+  border-bottom: 0 !important;
+}
+.shotMobile {
+  position: absolute;
+  right: -0.5rem;
+  bottom: -1px;
+  width: 22%;
+  border-radius: 1.5rem 1.5rem 0 0;
+  border-bottom: 0 !important;
+  border-width: 4px !important;
+  border-color: var(--surface-3) !important;
+}
+
+.section {
+  padding: 5rem 0 0;
+}
+main > .section:last-child {
+  padding-bottom: 6rem;
+}
+
+.sectionTitle {
+  margin: 0.5rem 0 0.75rem;
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.sectionLede {
+  max-width: 36rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.principles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.principles > div {
+  padding: 1.75rem 1.5rem 1.5rem 0;
+}
+.principles > div + div {
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--hairline);
+}
+.principles h3 {
+  margin-bottom: 0.35rem;
+  font-size: 1.05rem;
+}
+.principles p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 2rem;
+}
+.feature {
+  padding: 1.4rem 1.4rem 1.2rem;
+}
+.feature h3 {
+  margin: 0.4rem 0 0.4rem;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+.feature p:last-child {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.quickstart {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 3rem;
+  align-items: center;
+}
+
+.terminal {
+  overflow: hidden;
+}
+.terminalBar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.terminalBar span {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--surface-3);
+}
+.terminalBar em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--ifm-font-family-monospace);
+}
+.terminal pre {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.8rem;
+  line-height: 1.75;
+  color: var(--text-primary);
+  white-space: pre;
+  overflow-x: auto;
+}
+.terminal code {
+  background: transparent;
+  padding: 0;
+}
+.c {
+  color: var(--text-muted);
+}
+
+.integrationGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+.integration {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.25rem 1.25rem 1.1rem;
+}
+.integration strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.integration span {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.integration em {
+  position: absolute;
+  top: 1.15rem;
+  right: 1.2rem;
+  font-style: normal;
+  color: var(--text-muted);
+  transition:
+    transform 150ms,
+    color 150ms;
+}
+.integration:hover em {
+  transform: translateX(3px);
+  color: var(--accent);
+}
+
+.showcaseNote {
+  margin-top: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 996px) {
+  .featureGrid,
+  .integrationGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .quickstart {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding-top: 8.5rem;
+  }
+  .headlights {
+    top: 1.5rem;
+    width: 190vw;
+    opacity: 0.32;
+  }
+  .featureGrid,
+  .integrationGrid,
+  .principles {
+    grid-template-columns: 1fr;
+  }
+  .principles > div + div {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .shotMobile {
+    width: 30%;
+    right: 0.5rem;
+  }
+}

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <title>RivianMate</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22221f"/>
+      <stop offset="1" stop-color="#0e0e0d"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff3c4" stroke-width="5" opacity=".5" filter="url(#glow)">
+    <rect x="15" y="31" width="20" height="38" rx="10"/>
+    <rect x="65" y="31" width="20" height="38" rx="10"/>
+  </g>
+  <g fill="none" stroke="#f7f4ea" stroke-width="4.5">
+    <rect x="15" y="31" width="20" height="38" rx="10"/>
+    <rect x="65" y="31" width="20" height="38" rx="10"/>
+  </g>
+  <line x1="40" y1="50" x2="60" y2="50" stroke="#f5c518" stroke-width="4.5" stroke-linecap="round"/>
+</svg>

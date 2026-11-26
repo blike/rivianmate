@@ -7,3 +7,5 @@ coverage/
 .vscode/
 .turbo/
 .vite/
+website/build/
+website/.docusaurus/
