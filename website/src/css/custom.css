@@ -1,0 +1,737 @@
+/*
+ * RivianMate docs theme.
+ *
+ * The same tokens as the app (web/src/index.css): warm near-blacks, hairlines
+ * rather than boxes, one yellow accent, Archivo at one width. Infima's variables
+ * are pointed at those tokens, then the pieces that would still read as stock
+ * Docusaurus (navbar, sidebar, cards, admonitions, code) are restyled.
+ */
+@import '@fontsource-variable/archivo/wght.css';
+
+:root,
+[data-theme='dark'] {
+  --surface-0: #0e0e0d;
+  --surface-1: #161615;
+  --surface-2: #20201e;
+  --surface-3: #2a2a27;
+  --border: #2e2e2a;
+  --hairline: rgb(255 255 240 / 0.07);
+  --text-primary: #f4f3ee;
+  --text-secondary: #bebdb2;
+  --text-muted: #87867c;
+  --series-1: #3987e5;
+  --series-2: #199e70;
+  --series-3: #a77de8;
+  --series-4: #e6a23c;
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --status-cold: #7cc9f0;
+  --accent: #f5c518;
+  --on-accent: #1a1a19;
+
+  /* Infima, pointed at the tokens above. */
+  --ifm-color-primary: var(--accent);
+  --ifm-color-primary-dark: #e6b70c;
+  --ifm-color-primary-darker: #d9ad0b;
+  --ifm-color-primary-darkest: #b38f09;
+  --ifm-color-primary-light: #f6cb35;
+  --ifm-color-primary-lighter: #f7ce44;
+  --ifm-color-primary-lightest: #f9d96e;
+  --ifm-background-color: var(--surface-0);
+  --ifm-background-surface-color: var(--surface-0);
+  --ifm-font-color-base: var(--text-secondary);
+  --ifm-heading-color: var(--text-primary);
+  --ifm-color-content: var(--text-secondary);
+  --ifm-color-content-secondary: var(--text-muted);
+  --ifm-color-emphasis-100: var(--surface-1);
+  --ifm-color-emphasis-200: var(--surface-2);
+  --ifm-color-emphasis-300: var(--border);
+  --ifm-hr-background-color: var(--hairline);
+  --ifm-toc-border-color: var(--hairline);
+  --ifm-table-border-color: var(--hairline);
+  --ifm-table-stripe-background: transparent;
+  --ifm-table-head-background: transparent;
+  --ifm-link-color: var(--accent);
+  --ifm-link-hover-color: var(--text-primary);
+  --ifm-link-hover-decoration: none;
+
+  --ifm-font-family-base:
+    'Archivo Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-font-family-monospace: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.7;
+  --ifm-heading-font-weight: 600;
+  --ifm-font-weight-bold: 600;
+  --ifm-h1-font-size: 2.25rem;
+  --ifm-h2-font-size: 1.5rem;
+  --ifm-h3-font-size: 1.125rem;
+
+  --ifm-navbar-background-color: color-mix(in srgb, var(--surface-0) 82%, transparent);
+  --ifm-navbar-height: 4rem;
+  --ifm-navbar-shadow: none;
+  --ifm-navbar-link-color: var(--text-secondary);
+  --ifm-navbar-link-hover-color: var(--text-primary);
+  --ifm-dropdown-background-color: var(--surface-1);
+
+  --ifm-menu-color: var(--text-secondary);
+  --ifm-menu-color-active: var(--text-primary);
+  --ifm-menu-color-background-active: var(--surface-2);
+  --ifm-menu-color-background-hover: var(--surface-1);
+
+  --ifm-footer-background-color: var(--surface-0);
+  --ifm-footer-link-color: var(--text-secondary);
+  --ifm-footer-link-hover-color: var(--text-primary);
+  --ifm-footer-title-color: var(--text-muted);
+  --ifm-footer-color: var(--text-muted);
+
+  --ifm-code-background: var(--surface-2);
+  --ifm-code-font-size: 88%;
+  --ifm-code-border-radius: 0.375rem;
+  --ifm-pre-background: var(--surface-1);
+  --ifm-pre-padding: 1rem 1.125rem;
+
+  --ifm-card-background-color: var(--surface-1);
+  --ifm-global-radius: 0.75rem;
+  --ifm-global-shadow-lw: none;
+  --ifm-global-shadow-md: 0 12px 32px rgb(0 0 0 / 0.4);
+
+  --docusaurus-highlighted-code-line-bg: rgb(245 197 24 / 0.08);
+  --docusaurus-collapse-button-bg: transparent;
+  --docusaurus-collapse-button-bg-hover: var(--surface-2);
+}
+
+html {
+  background: var(--surface-0);
+  color-scheme: dark;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgb(245 197 24 / 0.28);
+  color: var(--text-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Shared pieces, named as in the app ---- */
+
+/* Small capitals: section and figure labels. */
+.eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rm-card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 240 / 0.025);
+}
+
+a.rm-card {
+  color: inherit;
+  transition: border-color 150ms;
+}
+a.rm-card:hover {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+}
+
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.375rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
+  transition:
+    filter 150ms,
+    background-color 150ms;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn-primary:hover {
+  color: var(--on-accent);
+  filter: brightness(1.05);
+}
+.btn-secondary {
+  border: 1px solid color-mix(in srgb, var(--border) 60%, var(--text-muted));
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.btn-secondary:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-2) 75%, var(--text-muted));
+}
+
+/* ---- Navbar: the app's wordmark, hairline underneath, glass over content ---- */
+
+.navbar {
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+}
+/*
+ * The glass sits on a layer behind the bar, not the bar itself: a
+ * backdrop-filter on .navbar would trap the fixed mobile menu inside it,
+ * squashing it to the bar's height.
+ */
+.navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ifm-navbar-background-color);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.navbar__brand {
+  margin-right: 1.75rem;
+}
+
+.navbar__title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+/* "Rivian" in white, "Mate" in the accent, as in the app's sidebar (src/theme/Logo). */
+.rm-wordmark-accent {
+  color: var(--accent);
+}
+
+.navbar__logo {
+  height: 1.75rem;
+  margin-right: 0.6rem;
+}
+
+.navbar__link {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+/* No external-link arrow on navbar items such as Releases. */
+.navbar [class*='iconExternalLink'] {
+  display: none;
+}
+
+.navbar__link--active {
+  color: var(--text-primary);
+}
+
+.header-github-link::before {
+  content: '';
+  display: flex;
+  width: 22px;
+  height: 22px;
+  background-color: var(--text-secondary);
+  mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E")
+    no-repeat center / contain;
+  transition: background-color 150ms;
+}
+.header-github-link:hover::before {
+  background-color: var(--text-primary);
+}
+
+.navbar-sidebar,
+.navbar-sidebar__brand {
+  background: var(--surface-0);
+}
+
+/* Search (local index, @easyops-cn/docusaurus-search-local), in the app's field and card styles. */
+:root,
+[data-theme='dark'] {
+  --search-local-modal-background: var(--surface-1);
+  --search-local-modal-shadow: 0 16px 40px rgb(0 0 0 / 0.5), inset 0 0 0 1px var(--hairline);
+  --search-local-hit-background: var(--surface-2);
+  --search-local-hit-color: var(--text-secondary);
+  --search-local-hit-active-color: var(--on-accent);
+  --search-local-hit-shadow: none;
+  --search-local-highlight-color: var(--accent);
+  --search-local-muted-color: var(--text-muted);
+  --search-local-input-active-border-color: var(--accent);
+}
+
+.navbar__search-input {
+  background-color: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: border-color 150ms;
+}
+/* The ⌘ K hint: matching keycaps, same box and glyph size, in the surface colors. */
+[class*='searchHintContainer'] {
+  gap: 3px;
+}
+[class*='searchHintContainer'] kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--surface-2);
+  box-shadow: inset 0 -1px 0 var(--surface-3);
+  color: var(--text-muted);
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.navbar__search-input::placeholder {
+  color: var(--text-muted);
+}
+.navbar__search-input:focus {
+  border-color: var(--text-muted);
+}
+
+/* ---- Sidebar: like the app's left nav, with the accent bar on the current page ---- */
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--hairline) !important;
+}
+
+.menu {
+  padding: 1.25rem 0.75rem 2rem !important;
+  font-size: 0.9rem;
+}
+
+.menu__link,
+.menu__caret {
+  border-radius: 0.5rem;
+}
+
+.menu__link {
+  position: relative;
+  padding: 0.375rem 0.75rem;
+  font-weight: 450;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 550;
+}
+.menu__link--active:not(.menu__link--sublist)::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+/* Category headings read as the app's eyebrow labels. */
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link--sublist {
+  margin-top: 0.85rem;
+  font-size: 0.6875rem;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: transparent;
+}
+.theme-doc-sidebar-item-category-level-1
+  > .menu__list-item-collapsible
+  > .menu__link--sublist:hover {
+  color: var(--text-primary);
+}
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible:hover {
+  background: transparent;
+}
+.theme-doc-sidebar-item-category-level-1 > .menu__list {
+  margin-top: 0.15rem;
+  padding-left: 0;
+}
+.menu__link--sublist-caret::after {
+  background-size: 1.1rem;
+  opacity: 0.5;
+}
+
+/* ---- Doc content ---- */
+
+.theme-doc-markdown h1 {
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 1.25rem;
+}
+
+.theme-doc-markdown h2 {
+  letter-spacing: -0.015em;
+  margin-top: 2.75rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.theme-doc-markdown h3 {
+  margin-top: 2rem;
+}
+
+.theme-doc-markdown > header + p,
+.theme-doc-markdown > h1 + p {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+}
+
+.markdown strong {
+  color: var(--text-primary);
+}
+
+.markdown a:not(.rm-card):not(.btn-primary):not(.btn-secondary) {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 150ms;
+}
+.markdown a:not(.rm-card):not(.btn-primary):not(.btn-secondary):hover {
+  text-decoration-color: currentColor;
+}
+
+/* Inline code: a quiet chip, no box border. */
+:not(pre) > code {
+  border: 0;
+  color: var(--text-primary);
+  padding: 0.12rem 0.38rem;
+}
+
+/* Code blocks: a card, with the file title as an eyebrow. */
+.theme-code-block {
+  border: 1px solid var(--hairline);
+  border-radius: 0.75rem !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 240 / 0.025);
+}
+.theme-code-block pre,
+.theme-code-block [class*='codeBlockContent'] {
+  background: var(--surface-1) !important;
+}
+[class*='codeBlockTitle'] {
+  background: var(--surface-1) !important;
+  border-bottom: 1px solid var(--hairline) !important;
+  font-size: 0.6875rem !important;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.clean-btn[class*='copyButton'],
+.clean-btn[class*='wordWrapButton'] {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+}
+
+/* Tables: hairline rows, no zebra, eyebrow header. */
+.markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+.markdown table thead tr {
+  border-bottom: 1px solid var(--border);
+}
+.markdown table th {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.markdown table th,
+.markdown table td {
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.7rem 1rem;
+  vertical-align: top;
+}
+.markdown table thead th {
+  background: var(--surface-1);
+}
+.markdown table thead th:first-child {
+  border-top-left-radius: 0.5rem;
+}
+.markdown table thead th:last-child {
+  border-top-right-radius: 0.5rem;
+}
+.markdown table tr {
+  background: transparent;
+  border: 0;
+}
+
+/* Admonitions: a card with a colored edge, the status colors from the app. */
+.theme-admonition {
+  --rm-tone: var(--series-1);
+  background: color-mix(in srgb, var(--rm-tone) 6%, var(--surface-1));
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--rm-tone);
+  border-radius: 0.75rem;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+.theme-admonition [class*='admonitionHeading'] {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--rm-tone);
+}
+.theme-admonition [class*='admonitionIcon'] svg {
+  fill: var(--rm-tone);
+  stroke: none;
+}
+.theme-admonition a {
+  color: var(--text-primary);
+}
+.alert--success {
+  --rm-tone: var(--status-good);
+}
+.alert--info {
+  --rm-tone: var(--series-1);
+}
+.alert--warning {
+  --rm-tone: var(--status-warning);
+}
+.alert--danger {
+  --rm-tone: var(--status-critical);
+}
+.alert--secondary {
+  --rm-tone: var(--text-muted);
+}
+
+/* Tabs: a segmented control, as in the app. */
+.tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 0.625rem;
+}
+.tabs__item {
+  padding: 0.3rem 0.85rem;
+  border: 0 !important;
+  border-radius: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.tabs__item:hover {
+  background: var(--surface-2);
+}
+.tabs__item--active {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+/* Breadcrumbs, pager and TOC */
+.breadcrumbs__link {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  background: transparent !important;
+}
+.breadcrumbs__item--active .breadcrumbs__link {
+  color: var(--text-secondary);
+}
+
+.pagination-nav__link {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+  transition: border-color 150ms;
+}
+.pagination-nav__link:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+}
+.pagination-nav__sublabel {
+  font-size: 0.6875rem;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pagination-nav__label {
+  color: var(--text-primary);
+  font-weight: 550;
+}
+
+.table-of-contents {
+  font-size: 0.8125rem;
+}
+.table-of-contents__link {
+  color: var(--text-muted);
+}
+.table-of-contents__link:hover,
+.table-of-contents__link--active {
+  color: var(--text-primary);
+}
+.table-of-contents__link--active {
+  font-weight: 550;
+}
+
+.theme-edit-this-page {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Category index cards */
+.theme-doc-card-container .card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+}
+
+/* ---- Footer: one quiet line on the page background ---- */
+
+.footer {
+  --ifm-footer-background-color: var(--surface-0);
+  background: var(--surface-0);
+  border-top: 1px solid var(--hairline);
+  padding: 1.5rem 1rem;
+}
+.footer__bottom {
+  margin: 0;
+}
+.footer__copyright {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.4rem 1.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.footer__copyright a {
+  color: var(--text-secondary);
+}
+.footer__copyright a:hover {
+  color: var(--text-primary);
+}
+
+/* ---- Small screens ---- */
+
+@media (max-width: 996px) {
+  .theme-doc-markdown h1 {
+    font-size: 1.85rem;
+  }
+}
+
+/* ---- Search results page (/search) and highlighted terms ---- */
+
+/* Matches, in the results and on the page a result opens: a warm tint, not a yellow block. */
+mark {
+  background: rgb(245 197 24 / 0.16);
+  color: var(--text-primary);
+  border-radius: 0.2rem;
+  box-shadow: inset 0 -2px 0 rgb(245 197 24 / 0.55);
+  padding: 0 0.1em;
+}
+
+.container:has(> .row [class*='searchQueryInput']) {
+  max-width: 52rem;
+  padding-top: 1.5rem;
+  padding-bottom: 4rem;
+}
+.container:has(> .row [class*='searchQueryInput']) > h1 {
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+  margin-bottom: 1.25rem;
+}
+/* The count, as an eyebrow label above the list. */
+.container:has(> .row [class*='searchQueryInput']) > p {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The query box: the app's text field. */
+[class*='searchQueryInput'] {
+  padding: 0.7rem 0.9rem 0.7rem 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface-1)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2387867c' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E")
+    no-repeat 0.85rem center / 1rem;
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 150ms;
+}
+[class*='searchQueryInput']:focus {
+  border-color: var(--text-muted);
+}
+
+/* Each result: a card that warms on hover, like the app's linked cards. */
+article[class*='searchResultItem'] {
+  position: relative;
+  margin-bottom: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 240 / 0.025);
+  transition: border-color 150ms;
+}
+article[class*='searchResultItem']:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+}
+article[class*='searchResultItem'] > h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+/* The whole card is the link. */
+article[class*='searchResultItem'] > h2 > a {
+  color: var(--text-primary);
+}
+article[class*='searchResultItem'] > h2 > a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+[class*='searchResultItemPath'] {
+  margin: 0.3rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+[class*='searchResultItemSummary'] {
+  margin: 0.5rem 0 0;
+  font-style: normal;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}

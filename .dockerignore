@@ -10,3 +10,6 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Documentation site: built and deployed separately (.github/workflows/docs.yml).
+website/

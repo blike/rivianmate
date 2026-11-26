@@ -3,6 +3,10 @@ name: Build and Push to Docker Hub
 on:
   push:
     branches: [main]
+    # The docs site is built and deployed by docs.yml, never into the image.
+    paths-ignore:
+      - 'website/**'
+      - '.github/workflows/docs.yml'
 
 permissions:
   contents: read
