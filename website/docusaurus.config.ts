@@ -17,6 +17,7 @@ const config: Config = {
   organizationName: 'blike',
   projectName: 'rivianmate',
   trailingSlash: false,
+  baseUrlIssueBanner: false,
 
   onBrokenLinks: 'throw',
   markdown: { hooks: { onBrokenMarkdownLinks: 'throw' } },
