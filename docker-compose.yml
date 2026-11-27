@@ -11,6 +11,7 @@ services:
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET to at least 32 random characters}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-pretty}
+      TRUST_PROXY: ${TRUST_PROXY:-}
       TZ: ${TZ:-UTC}
     ports:
       - '${APP_PORT:-4000}:4000'

@@ -93,3 +93,51 @@ services:
     ports: !override
       - '127.0.0.1:4000:4000'
 ```
+
+## Trusting your reverse proxy
+
+By default, RivianMate ignores `X-Forwarded-For` and `X-Forwarded-Proto` headers so clients reaching
+port 4000 directly cannot spoof them. When running behind a reverse proxy, set `TRUST_PROXY` in
+`.env` to the proxy's IP address or CIDR subnet (comma-separated for multiple):
+
+- Login rate limiting tracks each visitor's real IP instead of the proxy's IP.
+- The `rivianmate_session` cookie automatically sets the `Secure` flag over HTTPS while remaining
+  usable over plain HTTP on localhost/LAN.
+
+Connections that bypass the proxy are still judged by their real IP. Only `false`/unset or explicit
+IPs/CIDRs are accepted—`true` and hop counts fail at startup.
+
+### Proxy in a Docker container (Traefik, Caddy, nginx)
+
+Trust the proxy container's static IP or the dedicated Docker network subnet shared by the proxy and
+RivianMate (check with `docker network inspect <network>`):
+
+```ini title=".env"
+TRUST_PROXY=172.18.0.0/16
+```
+
+### Proxy on the Docker host (Caddy, nginx, Tailscale Serve)
+
+A proxy running directly on the host reaches the container through the Docker bridge gateway IP
+(check with `docker network inspect <network>` for the `Gateway` address):
+
+```ini title=".env"
+TRUST_PROXY=172.18.0.1
+```
+
+If RivianMate runs directly on the host without Docker, use `TRUST_PROXY=127.0.0.1,::1`.
+
+### Proxy on another machine
+
+Trust only that machine's single LAN IP address:
+
+```ini title=".env"
+TRUST_PROXY=192.168.1.10
+```
+
+:::warning Don't trust your whole LAN subnet
+
+Never set `TRUST_PROXY` to a whole LAN range like `192.168.1.0/24`. Any device on that network could
+then send a fake `X-Forwarded-For` header directly to port 4000 and bypass login rate limiting.
+
+:::

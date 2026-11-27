@@ -119,19 +119,19 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       .returning();
     if (!created.length) return reply.code(409).send({ error: 'Already set up' });
     await holdLookupsForChoice(ctx, 'setup');
-    issueSession(ctx, reply);
+    issueSession(ctx, request, reply);
     return { ok: true };
   });
 
   app.post('/api/auth/login', async (request, reply) => {
     const body = credentialsSchema.parse(request.body);
     if (!(await checkPassword(ctx, request, reply, body.password))) return reply;
-    issueSession(ctx, reply);
+    issueSession(ctx, request, reply);
     return { ok: true };
   });
 
-  app.post('/api/auth/logout', async (_request, reply) => {
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+  app.post('/api/auth/logout', async (request, reply) => {
+    reply.clearCookie(SESSION_COOKIE, cookieOptions(request));
     return { ok: true };
   });
 
@@ -152,11 +152,19 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
   });
 }
 
-function issueSession(ctx: AppContext, reply: FastifyReply): void {
-  reply.setCookie(SESSION_COOKIE, ctx.crypto.createSession(SESSION_TTL_MS), {
+function cookieOptions(request: FastifyRequest) {
+  return {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'lax' as const,
+    // Set automatically over direct HTTPS or behind a trusted reverse proxy.
+    secure: request.protocol === 'https',
+  };
+}
+
+function issueSession(ctx: AppContext, request: FastifyRequest, reply: FastifyReply): void {
+  reply.setCookie(SESSION_COOKIE, ctx.crypto.createSession(SESSION_TTL_MS), {
+    ...cookieOptions(request),
     maxAge: SESSION_TTL_MS / 1000,
   });
 }
