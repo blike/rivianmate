@@ -16,6 +16,7 @@ import { DEFAULT_UNITS, unitFormatter } from '../lib/units';
 import {
   ApiError,
   api,
+  type CreateApiKeyInput,
   type DriveDetailDto,
   type DriverDto,
   type TeslaMateSettingsDto,
@@ -728,5 +729,25 @@ export function useRemoveTripActivity(vehicleId: string, tripId: number) {
   return useMutation({
     mutationFn: (v: TripActivityRef) => api.removeTripActivity(vehicleId, tripId, v.kind, v.id),
     onSuccess: invalidate,
+  });
+}
+
+export function useApiKeys() {
+  return useQuery({ queryKey: ['apiKeys'], queryFn: api.apiKeys });
+}
+
+export function useCreateApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateApiKeyInput) => api.createApiKey(input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apiKeys'] }),
+  });
+}
+
+export function useRevokeApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.revokeApiKey(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apiKeys'] }),
   });
 }

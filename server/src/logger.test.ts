@@ -34,8 +34,19 @@ describe('logger', () => {
 
   it('redacts credentials and coordinates', () => {
     const { log, lines } = capture('json');
-    log.info({ user: { email: 'a@b.c', password: 'hunter2' }, at: { latitude: 47.6 } }, 'x');
-    expect(lines[0]).not.toMatch(/a@b\.c|hunter2|47\.6/);
+    log.info(
+      {
+        user: { email: 'a@b.c', password: 'hunter2', apiKey: 'rmk_supersecret' },
+        at: { latitude: 47.6 },
+        req: {
+          headers: { authorization: 'Bearer rmk_headersecret', cookie: 'rivianmate_session=abc' },
+        },
+      },
+      'x',
+    );
+    expect(lines[0]).not.toMatch(
+      /a@b\.c|hunter2|47\.6|rmk_supersecret|rmk_headersecret|rivianmate_session=abc/,
+    );
   });
 
   it('redacts at the top level and two objects deep', () => {

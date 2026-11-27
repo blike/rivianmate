@@ -13,6 +13,8 @@ const SESSION_TTL_MS = 30 * 24 * 3600_000;
 
 const PASSWORD_KEY = 'app_password_hash';
 
+export type AuthPrincipal = { method: 'session' } | { method: 'api_key'; keyId: number };
+
 export async function getPasswordHash(ctx: AppContext): Promise<string | null> {
   const rows = await ctx.db.select().from(appSettings).where(eq(appSettings.key, PASSWORD_KEY));
   return rows[0]?.value ?? null;
@@ -33,6 +35,24 @@ const changeSchema = z.object({
   currentPassword: z.string().max(MAX_INPUT_LENGTH),
   newPassword: z.string().max(MAX_INPUT_LENGTH),
 });
+
+/**
+ * Authenticates a request via `Authorization: Bearer <key>` or the session cookie.
+ * When an Authorization header is present, it is evaluated exclusively (no silent fallback to cookie).
+ */
+export async function authenticate(
+  ctx: AppContext,
+  request: FastifyRequest,
+): Promise<AuthPrincipal | null> {
+  const header = request.headers.authorization;
+  if (typeof header === 'string') {
+    const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
+    if (!match) return null;
+    const key = await ctx.apiKeys.verify(match[1]!);
+    return key ? { method: 'api_key', keyId: key.id } : null;
+  }
+  return ctx.crypto.verifySession(request.cookies[SESSION_COOKIE]) ? { method: 'session' } : null;
+}
 
 /** Whether the request carries a live session cookie. */
 export function isAuthed(ctx: AppContext, request: FastifyRequest): boolean {

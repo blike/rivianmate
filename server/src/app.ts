@@ -11,7 +11,8 @@ import Fastify, {
 import { existsSync } from 'node:fs';
 import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
-import { authRoutes, isAuthed } from './routes/auth.js';
+import { apiKeyRoutes } from './routes/api-keys.js';
+import { authRoutes, authenticate } from './routes/auth.js';
 import { chargingRoutes } from './routes/charging.js';
 import { historyRoutes } from './routes/history.js';
 import { importRoutes } from './routes/imports.js';
@@ -26,7 +27,15 @@ import { tripRoutes } from './routes/trips.js';
 import { vehicleRoutes } from './routes/vehicles.js';
 import { orderRoutes } from './routes/orders.js';
 
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /** Opt this route into read-only Bearer API key authentication. */
+    apiKey?: boolean;
+  }
+}
+
 const PUBLIC_PATHS = new Set(['/api/status', '/api/setup', '/api/auth/login']);
+const READ_METHODS = new Set(['GET', 'HEAD']);
 const ASSET_PATH_PATTERN = /\/[^/]+\.[^/]+$/;
 /** Requests slower than this are worth seeing at the default log level. */
 const SLOW_REQUEST_MS = 1000;
@@ -74,8 +83,14 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   app.addHook('preHandler', async (request, reply) => {
     const route = request.routeOptions.url ?? '';
     if (!route.startsWith('/api/') || PUBLIC_PATHS.has(route)) return;
-    if (!isAuthed(ctx, request)) {
+    const auth = await authenticate(ctx, request);
+    if (!auth) {
       return reply.code(401).send({ error: 'Not authenticated' });
+    }
+    if (auth.method === 'api_key') {
+      if (!request.routeOptions.config.apiKey || !READ_METHODS.has(request.method)) {
+        return reply.code(403).send({ error: 'This endpoint requires a browser session' });
+      }
     }
   });
 
@@ -91,6 +106,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await authRoutes(app, ctx);
+  await apiKeyRoutes(app, ctx);
   await rivianRoutes(app, ctx);
   await vehicleRoutes(app, ctx);
   await orderRoutes(app, ctx);

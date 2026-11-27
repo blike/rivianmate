@@ -15,7 +15,7 @@ Drives, charging, battery health, and live vehicle state, recorded in your own d
 a dashboard you can open from anywhere.
 
 [Features](#features) · [Screenshots](#screenshots) · [Quick start](#quick-start) ·
-[Configuration](#configuration) · [Contributing](#contributing)
+[Configuration](#configuration) · [API](docs/API.md) · [Contributing](#contributing)
 
 ## Why RivianMate
 
@@ -99,6 +99,14 @@ a dashboard you can open from anywhere.
 - A vehicle picker on every dashboard for accounts with more than one vehicle.
 - Load them by pointing Grafana at the folder; see [docs/GRAFANA.md](docs/GRAFANA.md).
 - Tested with Grafana 13.2.4 only; other versions may work but have not been tried.
+
+### Public HTTP API
+
+- Read-only JSON endpoints (`GET /api/vehicles` and `GET /api/vehicles/:id/summary`) returning a
+  flat, unit-converted vehicle snapshot for dashboard widgets (such as Homepage) and scripts.
+- Authenticated with revocable read-only Bearer API keys managed under **Settings → Security**.
+- Served from RivianMate's local cache and database without polling Rivian or waking the vehicle.
+- See [docs/API.md](docs/API.md) for key setup, response schemas, and a Homepage widget example.
 
 ## Screenshots
 

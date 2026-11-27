@@ -3,6 +3,7 @@ import { passwordProblem } from '@server/password-policy';
 import { ApiError, api } from '../../api/client';
 import { TextField } from '../../components/AuthCard';
 import { PasswordHint } from '../../components/PasswordHint';
+import { ApiKeysPanel } from './ApiKeysPanel';
 import { SettingRow, SettingsGroup } from './SettingsControls';
 
 export function SecuritySection() {
@@ -72,6 +73,8 @@ export function SecuritySection() {
           </div>
         </form>
       </SettingsGroup>
+
+      <ApiKeysPanel />
 
       <SettingsGroup title="Session">
         <SettingRow label="Sign out" description="Signs this browser out. Tracking keeps running.">

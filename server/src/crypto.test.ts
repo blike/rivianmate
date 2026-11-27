@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { TokenCrypto, hashPassword, verifyPassword } from './crypto.js';
+import {
+  API_KEY_PREFIX,
+  TokenCrypto,
+  generateApiKey,
+  hashApiKey,
+  hashPassword,
+  verifyPassword,
+} from './crypto.js';
 
 const SECRET = 'a'.repeat(32);
 
@@ -41,5 +48,18 @@ describe('password hashing', () => {
     expect(await verifyPassword('hunter22', stored)).toBe(true);
     expect(await verifyPassword('hunter23', stored)).toBe(false);
     expect(await verifyPassword('hunter22', 'malformed')).toBe(false);
+  });
+});
+
+describe('API keys', () => {
+  it('generates prefixed random keys with matching SHA-256 hashes', () => {
+    const a = generateApiKey();
+    const b = generateApiKey();
+    expect(a.key.startsWith(API_KEY_PREFIX)).toBe(true);
+    expect(a.prefix).toBe(a.key.slice(0, 12));
+    expect(a.hash).toBe(hashApiKey(a.key));
+    expect(a.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.key).not.toBe(b.key);
+    expect(a.hash).not.toBe(b.hash);
   });
 });

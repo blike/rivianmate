@@ -92,6 +92,27 @@ export interface StatusResponse {
   signInStartsSetup: boolean;
 }
 
+export interface ApiKeyDto {
+  id: number;
+  name: string;
+  /** Leading characters of the key (e.g. "rmk_ab12cd34"), so keys can be told apart. */
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+}
+
+/** Returned once when a key is created; subsequent listings omit `key`. */
+export interface CreatedApiKeyDto extends ApiKeyDto {
+  key: string;
+}
+
+export interface CreateApiKeyInput {
+  name: string;
+  /** Optional ISO 8601 expiry timestamp; null or omitted for no expiry. */
+  expiresAt?: string | null;
+}
+
 export interface VersionResponse {
   /** Package version, e.g. "0.3.0". */
   version: string | null;
@@ -110,6 +131,77 @@ export interface VehicleDto {
   renders: VehicleView[];
   /** Where its data comes from: Rivian directly, or a TeslaMate database (read-only). */
   source: 'rivian' | 'teslamate';
+}
+
+export type SummaryUnitsMode = 'user' | 'imperial' | 'metric';
+
+export type VehicleSummaryStatus = 'driving' | 'charging' | 'plugged' | 'parked' | 'asleep';
+
+/**
+ * Flat, unit-converted vehicle snapshot for dashboards and integrations
+ * (e.g. Homepage customapi, Home Assistant, scripts).
+ */
+export interface VehicleSummaryDto {
+  id: string;
+  vin: string;
+  name: string | null;
+  make: string | null;
+  model: string | null;
+  modelYear: number | null;
+  source: 'rivian' | 'teslamate';
+  status: VehicleSummaryStatus;
+  statusLabel: string;
+  online: boolean | null;
+  lastSync: string | null;
+  batteryLevel: number | null;
+  batteryLimit: number | null;
+  /** Reported usable pack capacity (kWh). */
+  batteryCapacityKwh: number | null;
+  /** Average battery pack cell temperature in `units.temperature` (°F or °C). */
+  batteryTemp: number | null;
+  /** Estimated remaining range in `units.distance` (mi or km). */
+  range: number | null;
+  /** Odometer in `units.distance` (mi or km). */
+  odometer: number | null;
+  /** Current speed in `units.speed` (mph or km/h). */
+  speed: number | null;
+  /** Current altitude in `units.elevation` (ft or m). */
+  altitude: number | null;
+  gear: string | null;
+  driveMode: string | null;
+  powerState: string | null;
+  pluggedIn: boolean;
+  charging: boolean;
+  chargerState: string | null;
+  /** Minutes remaining to the charge limit while charging; null otherwise. */
+  timeToEndOfChargeMin: number | null;
+  /** Live charging power (kW) while actively charging; null otherwise. */
+  chargingPowerKw: number | null;
+  /** Cabin interior temperature in `units.temperature` (°F or °C). */
+  cabinTemp: number | null;
+  /** Driver climate setpoint in `units.temperature` (°F or °C). */
+  targetTemp: number | null;
+  /** Tire pressures in `units.pressure` (psi or bar). */
+  tirePressures: {
+    frontLeft: number | null;
+    frontRight: number | null;
+    rearLeft: number | null;
+    rearRight: number | null;
+  };
+  /** True when all lockable closures are locked; false if any is unlocked; null if unreported. */
+  locked: boolean | null;
+  /** Labels of any open doors, gates, or windows (empty when all closed). */
+  openClosures: string[];
+  softwareVersion: string | null;
+  updateAvailable: string | null;
+  location: { lat: number; lon: number; ts: string } | null;
+  units: {
+    distance: 'mi' | 'km';
+    speed: 'mph' | 'km/h';
+    temperature: 'F' | 'C';
+    pressure: 'psi' | 'bar';
+    elevation: 'ft' | 'm';
+  };
 }
 
 export type { ChargingSettings, SavedLocation } from './services/locations.js';

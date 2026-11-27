@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   createHmac,
   randomBytes,
   scrypt,
@@ -82,4 +83,23 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const expected = Buffer.from(hashB64, 'base64');
   const actual = await scryptAsync(password, Buffer.from(saltB64, 'base64'), KEY_LEN);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+export const API_KEY_PREFIX = 'rmk_';
+const API_KEY_BYTES = 32;
+const API_KEY_DISPLAY_LEN = 12;
+
+/** Generates a random API key ("rmk_<base64url>"), its display prefix, and its SHA-256 hex digest. */
+export function generateApiKey(): { key: string; prefix: string; hash: string } {
+  const key = `${API_KEY_PREFIX}${randomBytes(API_KEY_BYTES).toString('base64url')}`;
+  return {
+    key,
+    prefix: key.slice(0, API_KEY_DISPLAY_LEN),
+    hash: hashApiKey(key),
+  };
+}
+
+/** SHA-256 hex digest of an API key (keys carry 256 bits of random entropy). */
+export function hashApiKey(key: string): string {
+  return createHash('sha256').update(key).digest('hex');
 }
