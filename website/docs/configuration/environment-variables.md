@@ -12,16 +12,17 @@ RivianMate is configured with environment variables, set in the `.env` file next
 docker compose up -d
 ```
 
-| Variable            | Required    | Default        | Description                                                                                                                                        |
-| ------------------- | ----------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_SECRET`        | Yes         |                | At least 32 random characters. Encrypts Rivian tokens and signs sessions. Generate with `openssl rand -hex 32`. Must stay the same across updates. |
-| `POSTGRES_PASSWORD` | Recommended | `rivianmate`   | Password for the bundled PostgreSQL database.                                                                                                      |
-| `APP_PORT`          | No          | `4000`         | Host port for the web interface.                                                                                                                   |
-| `APP_PASSWORD`      | No          |                | Sets the RivianMate password on first startup, skipping that setup step. At least 12 characters, and not a common password or pattern.             |
-| `DATABASE_URL`      | No          | set by Compose | PostgreSQL connection string. Override it to use your own PostgreSQL server.                                                                       |
-| `LOG_LEVEL`         | No          | `info`         | `error`, `warn`, `info` or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                              |
-| `LOG_FORMAT`        | No          | `pretty`       | `pretty` for readable `docker logs`, or `json` for one object per line, for log collectors.                                                        |
-| `TZ`                | No          | `UTC`          | Time zone for times in log messages, such as `America/Los_Angeles`. Dates in the app always follow your browser.                                   |
+| Variable            | Required    | Default        | Description                                                                                                                                                                                                                           |
+| ------------------- | ----------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_SECRET`        | Yes         |                | At least 32 random characters. Encrypts Rivian tokens and signs sessions. Generate with `openssl rand -hex 32`. Must stay the same across updates.                                                                                    |
+| `POSTGRES_PASSWORD` | Recommended | `rivianmate`   | Password for the bundled PostgreSQL database.                                                                                                                                                                                         |
+| `APP_PORT`          | No          | `4000`         | Host port for the web interface.                                                                                                                                                                                                      |
+| `APP_PASSWORD`      | No          |                | Sets the RivianMate password on first startup, skipping that setup step. At least 12 characters, and not a common password or pattern.                                                                                                |
+| `TRUST_PROXY`       | No          | `false`        | Comma-separated IP(s) or CIDR(s) of a trusted reverse proxy so login throttling uses each client's IP and session cookies set `Secure` over HTTPS. See [Remote access](../installation/reverse-proxy.md#trusting-your-reverse-proxy). |
+| `DATABASE_URL`      | No          | set by Compose | PostgreSQL connection string. Override it to use your own PostgreSQL server.                                                                                                                                                          |
+| `LOG_LEVEL`         | No          | `info`         | `error`, `warn`, `info` or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                                                                                                                 |
+| `LOG_FORMAT`        | No          | `pretty`       | `pretty` for readable `docker logs`, or `json` for one object per line, for log collectors.                                                                                                                                           |
+| `TZ`                | No          | `UTC`          | Time zone for times in log messages, such as `America/Los_Angeles`. Dates in the app always follow your browser.                                                                                                                      |
 
 ## Development only
 

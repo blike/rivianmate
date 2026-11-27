@@ -62,6 +62,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     // Live streams never finish on their own; without this, close() waits on
     // an open browser tab until Docker gives up and kills the process.
     forceCloseConnections: true,
+    trustProxy: ctx.config.TRUST_PROXY ?? false,
   });
 
   // History listings run to megabytes of JSON over a long period. Live

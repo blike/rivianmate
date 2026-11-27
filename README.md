@@ -174,16 +174,17 @@ without requiring you to sign in again.
 RivianMate is configured using environment variables defined in the `.env` file. Docker Compose
 automatically loads these values when starting the application.
 
-| Variable            | Required    | Description                                                                                                                                                        |
-| ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `APP_SECRET`        | Yes         | Secret used to encrypt Rivian tokens and sign sessions. Generate with `openssl rand -hex 32`. Must remain consistent across restarts and updates.                  |
-| `POSTGRES_PASSWORD` | Recommended | Password for the bundled PostgreSQL database. Defaults to `rivianmate`.                                                                                            |
-| `APP_PORT`          | No          | Port used to access the web interface. Defaults to `4000`.                                                                                                         |
-| `APP_PASSWORD`      | No          | Preconfigures the application password on first startup, bypassing the password setup screen. Must be at least 12 characters and not a common password or pattern. |
-| `DATABASE_URL`      | No          | PostgreSQL connection string. Configured automatically by Docker Compose; override when using an external database.                                                |
-| `LOG_LEVEL`         | No          | How much to log: `error`, `warn`, `info` (default) or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                   |
-| `LOG_FORMAT`        | No          | `pretty` (default) for readable `docker logs` output, or `json` for one object per line to feed a log collector.                                                   |
-| `TZ`                | No          | Time zone for times mentioned in log messages, such as `America/Los_Angeles`. Defaults to `UTC`. Dates in the app always follow your browser.                      |
+| Variable            | Required    | Description                                                                                                                                                                            |
+| ------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_SECRET`        | Yes         | Secret used to encrypt Rivian tokens and sign sessions. Generate with `openssl rand -hex 32`. Must remain consistent across restarts and updates.                                      |
+| `POSTGRES_PASSWORD` | Recommended | Password for the bundled PostgreSQL database. Defaults to `rivianmate`.                                                                                                                |
+| `APP_PORT`          | No          | Port used to access the web interface. Defaults to `4000`.                                                                                                                             |
+| `APP_PASSWORD`      | No          | Preconfigures the application password on first startup, bypassing the password setup screen. Must be at least 12 characters and not a common password or pattern.                     |
+| `TRUST_PROXY`       | No          | Comma-separated IP(s) or CIDR(s) of your reverse proxy so login throttling uses the real client IP and session cookies set `Secure` over HTTPS. Defaults to `false` (headers ignored). |
+| `DATABASE_URL`      | No          | PostgreSQL connection string. Configured automatically by Docker Compose; override when using an external database.                                                                    |
+| `LOG_LEVEL`         | No          | How much to log: `error`, `warn`, `info` (default) or `debug`. `debug` adds every HTTP request and routine live-stream renewals.                                                       |
+| `LOG_FORMAT`        | No          | `pretty` (default) for readable `docker logs` output, or `json` for one object per line to feed a log collector.                                                                       |
+| `TZ`                | No          | Time zone for times mentioned in log messages, such as `America/Los_Angeles`. Defaults to `UTC`. Dates in the app always follow your browser.                                          |
 
 Additional preferences are configured directly in the web interface under **Settings**, including:
 
