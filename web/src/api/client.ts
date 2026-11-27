@@ -1,6 +1,5 @@
 import type {
   ApiKeyDto,
-  ApiKeyScope,
   BatteryHealthDto,
   BatteryWindowDto,
   ChargeSpanDto,
@@ -35,7 +34,6 @@ import type {
   PhantomDrainDto,
   PluggedInDto,
   SchedulesDto,
-  SessionInfoResponse,
   StateSpanDto,
   StatusResponse,
   SummaryUnitsMode,
@@ -71,10 +69,8 @@ import type {
 
 export type {
   ApiKeyDto,
-  ApiKeyScope,
   CreateApiKeyInput,
   CreatedApiKeyDto,
-  SessionInfoResponse,
   TripActivityKind,
   TripActivityRef,
   TripAssignmentDto,

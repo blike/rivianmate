@@ -41,7 +41,7 @@ const summaryQuery = z.object({
 });
 
 export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
-  app.get('/api/vehicles', async (): Promise<VehicleDto[]> => {
+  app.get('/api/vehicles', { config: { apiKey: true } }, async (): Promise<VehicleDto[]> => {
     const rows = await ctx.db.select().from(vehicles);
     const fromMonitor = ctx.monitor.getVehicles();
     const images = new Map(rows.map((r) => [r.id, r.images]));
@@ -81,15 +81,16 @@ export async function vehicleRoutes(app: FastifyInstance, ctx: AppContext): Prom
 
   app.get<{ Params: { id: string } }>(
     '/api/vehicles/:id/summary',
+    { config: { apiKey: true } },
     async (request, reply): Promise<VehicleSummaryDto | void> => {
       const { units } = summaryQuery.parse(request.query);
       const id = request.params.id;
       const state = vehicleState(ctx, id);
       if (!state) return reply.code(404).send({ error: 'No state yet' });
       const meta = await vehicleMeta(ctx, id);
-      const userUnits = units === 'user' && ctx.db ? await getUnitPreferences(ctx) : DEFAULT_UNITS;
+      const userUnits = units === 'user' ? await getUnitPreferences(ctx) : DEFAULT_UNITS;
       const prefs = resolveSummaryUnits(units, userUnits);
-      const liveCharging = ctx.bus?.latestChargingSession(id) ?? null;
+      const liveCharging = ctx.bus.latestChargingSession(id);
       return buildVehicleSummary(meta, state, prefs, liveCharging);
     },
   );
@@ -202,9 +203,7 @@ async function vehicleMeta(ctx: AppContext, vehicleId: string): Promise<SummaryV
       source: 'rivian',
     };
   }
-  const row = ctx.db
-    ? (await ctx.db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1))[0]
-    : undefined;
+  const [row] = await ctx.db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
   return {
     id: vehicleId,
     vin: row?.vin ?? '',

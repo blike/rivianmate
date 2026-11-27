@@ -51,7 +51,7 @@ describe.skipIf(!url)('auth with Postgres', () => {
     await handle.sql`TRUNCATE app_settings, api_keys RESTART IDENTITY`;
     await app?.close();
     const ctx = {
-      config: { MOCK_RIVIAN: false, TRUST_PROXY: false },
+      config: { MOCK_RIVIAN: false },
       log: silentLogger,
       db: handle.db,
       crypto: new TokenCrypto('a'.repeat(32)),
@@ -60,8 +60,8 @@ describe.skipIf(!url)('auth with Postgres', () => {
       tokenStore: {
         summary: async () => ({ email: 'owner@example.com', authState: 'ok' }),
       },
-      monitor: { isRunning: true, setLookups: () => {} },
-      teslamate: { configured: false },
+      monitor: { isRunning: true, setLookups: () => {}, getVehicles: () => [] },
+      teslamate: { configured: false, getVehicles: () => [] },
     } as unknown as AppContext;
     app = await buildApp(ctx);
   });
@@ -97,18 +97,17 @@ describe.skipIf(!url)('auth with Postgres', () => {
     expect(Number(held.headers['retry-after'])).toBeGreaterThan(0);
   });
 
-  it('creates, authenticates, scopes, and revokes API keys', async () => {
+  it('creates, authenticates, restricts, and revokes API keys', async () => {
     const cookie = cookieOf(await post('/api/setup', { password: PASSWORD }));
-    const createRes = await post(
-      '/api/api-keys',
-      { name: 'Home Assistant', scope: 'read' },
-      cookie,
-    );
+    const createRes = await post('/api/api-keys', { name: 'Homepage' }, cookie);
     expect(createRes.statusCode).toBe(201);
     const created = createRes.json();
     expect(created.key).toMatch(/^rmk_/);
     expect(created.prefix).toBe(created.key.slice(0, 12));
-    expect(created.scope).toBe('read');
+
+    // Write scope is rejected.
+    const writeKeyRes = await post('/api/api-keys', { name: 'Write key', scope: 'write' }, cookie);
+    expect(writeKeyRes.statusCode).toBe(400);
 
     // Listing never includes the secret key again.
     const listed = (
@@ -117,13 +116,20 @@ describe.skipIf(!url)('auth with Postgres', () => {
     expect(listed).toHaveLength(1);
     expect(listed[0].key).toBeUndefined();
 
-    // Bearer key authenticates reads and exposes Rivian status, but blocks writes and key management.
+    // Bearer key authenticates allowlisted endpoints, does not leak session status, and blocks internal routes.
+    const vehiclesRes = await app.inject({
+      url: '/api/vehicles',
+      headers: { authorization: `Bearer ${created.key}` },
+    });
+    expect(vehiclesRes.statusCode).toBe(200);
+    expect(vehiclesRes.json()).toEqual([]);
+
     const statusRes = await app.inject({
       url: '/api/status',
       headers: { authorization: `Bearer ${created.key}` },
     });
-    expect(statusRes.json().authed).toBe(true);
-    expect(statusRes.json().rivianEmail).toBe('owner@example.com');
+    expect(statusRes.json().authed).toBe(false);
+    expect(statusRes.json().rivianEmail).toBeNull();
 
     const writeBlocked = await app.inject({
       method: 'PUT',
@@ -148,7 +154,7 @@ describe.skipIf(!url)('auth with Postgres', () => {
     expect(del.statusCode).toBe(204);
 
     const afterRevoke = await app.inject({
-      url: '/api/auth/session',
+      url: '/api/vehicles',
       headers: { authorization: `Bearer ${created.key}` },
     });
     expect(afterRevoke.statusCode).toBe(401);

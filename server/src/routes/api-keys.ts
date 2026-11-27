@@ -6,7 +6,7 @@ import { ApiKeyLimitError } from '../services/api-keys.js';
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(60),
-  scope: z.enum(['read', 'write']).default('read'),
+  scope: z.literal('read').optional(),
   expiresAt: z.iso.datetime({ offset: true }).nullable().optional(),
 });
 
@@ -24,7 +24,6 @@ export async function apiKeyRoutes(app: FastifyInstance, ctx: AppContext): Promi
     try {
       const created = await ctx.apiKeys.create({
         name: body.name,
-        scope: body.scope,
         expiresAt,
       });
       return reply.code(201).send(created);

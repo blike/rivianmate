@@ -15,13 +15,12 @@ const render = (keys: ApiKeyDto[]) => {
 };
 
 describe('ApiKeysPanel', () => {
-  it('lists each key with its prefix, scope, usage, and expiry badge', () => {
+  it('lists each key with its prefix, usage, and expiry badge', () => {
     const html = render([
       {
         id: 1,
-        name: 'Home Assistant',
+        name: 'Homepage',
         prefix: 'rmk_abcdef12',
-        scope: 'read',
         createdAt: '2026-11-01T12:00:00.000Z',
         lastUsedAt: null,
         expiresAt: null,
@@ -30,19 +29,17 @@ describe('ApiKeysPanel', () => {
         id: 2,
         name: 'Old script',
         prefix: 'rmk_99999999',
-        scope: 'write',
         createdAt: '2026-01-01T12:00:00.000Z',
         lastUsedAt: '2026-06-01T12:00:00.000Z',
         expiresAt: '2020-01-01T00:00:00.000Z',
       },
     ]);
-    expect(html).toContain('Home Assistant');
+    expect(html).toContain('Homepage');
     expect(html).toContain('rmk_abcdef12…');
-    expect(html).toContain('Read-only');
     expect(html).toContain('Never used');
     expect(html).toContain('Old script');
-    expect(html).toContain('Read &amp; write');
     expect(html).toContain('Expired');
+    expect(html).not.toContain('Read &amp; write');
   });
 
   it('invites creating a key when there are none', () => {

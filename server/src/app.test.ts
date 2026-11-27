@@ -1,15 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import type { ApiKeyScope } from './api-types.js';
 import { buildApp } from './app.js';
 import type { AppContext } from './context.js';
-import { TokenCrypto, hashPassword } from './crypto.js';
+import { TokenCrypto } from './crypto.js';
 import { silentLogger } from './logger.js';
-import { LoginThrottle } from './services/login-throttle.js';
 
-const PASSWORD = 'correct horse battery staple';
-
-function mockApiKeys(keys: Record<string, { id: number; scope: ApiKeyScope }>) {
+function mockApiKeys(keys: Record<string, { id: number }>) {
   return {
     list: async () => [],
     create: async () => {
@@ -22,18 +18,21 @@ function mockApiKeys(keys: Record<string, { id: number; scope: ApiKeyScope }>) {
 
 describe('API authentication and authorization', () => {
   const crypto = new TokenCrypto('a'.repeat(32));
-  const readKey = 'rmk_readkey_test_1234567890';
-  const writeKey = 'rmk_writekey_test_1234567890';
+  const apiKey = 'rmk_readkey_test_1234567890';
   let app: FastifyInstance;
 
   beforeAll(async () => {
     const ctx = {
-      config: { MOCK_RIVIAN: false, TRUST_PROXY: false },
+      config: { MOCK_RIVIAN: false },
       log: silentLogger,
+      db: {
+        select: () => ({
+          from: async () => [],
+        }),
+      },
       crypto,
       apiKeys: mockApiKeys({
-        [readKey]: { id: 1, scope: 'read' },
-        [writeKey]: { id: 2, scope: 'write' },
+        [apiKey]: { id: 1 },
       }),
       monitor: {
         getVehicles: () => [
@@ -48,6 +47,7 @@ describe('API authentication and authorization', () => {
               }
             : undefined,
       },
+      teslamate: { getVehicles: () => [] },
       bus: { latestChargingSession: () => null },
     } as unknown as AppContext;
     app = await buildApp(ctx);
@@ -71,30 +71,28 @@ describe('API authentication and authorization', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('accepts a valid Bearer API key on read endpoints and reports its scope on /api/auth/session', async () => {
-    const version = await app.inject({
-      url: '/api/version',
-      headers: { authorization: `Bearer ${readKey}` },
+  it('accepts a valid Bearer API key on allowlisted public endpoints', async () => {
+    const vehicles = await app.inject({
+      url: '/api/vehicles',
+      headers: { authorization: `Bearer ${apiKey}` },
     });
-    expect(version.statusCode).toBe(200);
-
-    const session = await app.inject({
-      url: '/api/auth/session',
-      headers: { authorization: `Bearer ${readKey}` },
-    });
-    expect(session.statusCode).toBe(200);
-    expect(session.json()).toEqual({ authed: true, method: 'api_key', scope: 'read' });
-
-    const cookieSession = await app.inject({
-      url: '/api/auth/session',
-      cookies: { rivianmate_session: crypto.createSession(60_000) },
-    });
-    expect(cookieSession.statusCode).toBe(200);
-    expect(cookieSession.json()).toEqual({ authed: true, method: 'session' });
+    expect(vehicles.statusCode).toBe(200);
+    expect(vehicles.json()).toEqual([
+      {
+        id: 'v1',
+        vin: '7PDS1',
+        name: 'Blue',
+        make: 'Rivian',
+        model: 'R1S',
+        modelYear: 2025,
+        renders: [],
+        source: 'rivian',
+      },
+    ]);
 
     const summary = await app.inject({
       url: '/api/vehicles/v1/summary?units=imperial',
-      headers: { authorization: `Bearer ${readKey}` },
+      headers: { authorization: `Bearer ${apiKey}` },
     });
     expect(summary.statusCode).toBe(200);
     expect(summary.json()).toMatchObject({
@@ -108,55 +106,61 @@ describe('API authentication and authorization', () => {
 
     const missingSummary = await app.inject({
       url: '/api/vehicles/unknown/summary',
-      headers: { authorization: `Bearer ${readKey}` },
+      headers: { authorization: `Bearer ${apiKey}` },
     });
     expect(missingSummary.statusCode).toBe(404);
   });
 
+  it('still accepts session cookies on internal routes', async () => {
+    const cookieSession = await app.inject({
+      url: '/api/auth/session',
+      cookies: { rivianmate_session: crypto.createSession(60_000) },
+    });
+    expect(cookieSession.statusCode).toBe(200);
+    expect(cookieSession.json()).toEqual({ authed: true });
+  });
+
   it('rejects an invalid Authorization header without falling back to a session cookie', async () => {
     const res = await app.inject({
-      url: '/api/version',
+      url: '/api/vehicles',
       headers: { authorization: 'Bearer rmk_invalid' },
       cookies: { rivianmate_session: crypto.createSession(60_000) },
     });
     expect(res.statusCode).toBe(401);
 
     const malformed = await app.inject({
-      url: '/api/version',
+      url: '/api/vehicles',
       headers: { authorization: 'Basic dXNlcjpwYXNz' },
       cookies: { rivianmate_session: crypto.createSession(60_000) },
     });
     expect(malformed.statusCode).toBe(401);
   });
 
-  it('blocks read-only API keys from mutating endpoints', async () => {
+  it('rejects write scope requests when creating API keys', async () => {
     const res = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/units',
-      headers: { authorization: `Bearer ${readKey}` },
-      payload: { distance: 'km', temperature: 'C' },
-    });
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error).toBe('API key has read-only access');
-  });
-
-  it('allows write API keys onto non-security mutating endpoints', async () => {
-    // Validation fails with 400 inside the handler, proving preHandler allowed the request through.
-    const res = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/units',
-      headers: { authorization: `Bearer ${writeKey}` },
-      payload: { distance: 'invalid' },
+      method: 'POST',
+      url: '/api/api-keys',
+      cookies: { rivianmate_session: crypto.createSession(60_000) },
+      payload: { name: 'Bad key', scope: 'write' },
     });
     expect(res.statusCode).toBe(400);
   });
 
-  it('blocks both read and write API keys from session-only security endpoints', async () => {
+  it('blocks API keys from all non-allowlisted endpoints', async () => {
     const cases: { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; url: string }[] = [
+      { method: 'GET', url: '/api/vehicles/v1/state' },
+      { method: 'GET', url: '/%61pi/vehicles/v1/state' },
+      { method: 'GET', url: '/api/vehicles/v1/drives' },
+      { method: 'GET', url: '/api/locations' },
+      { method: 'GET', url: '/api/settings/notifications' },
+      { method: 'GET', url: '/api/logs/stream' },
+      { method: 'GET', url: '/api/version' },
+      { method: 'GET', url: '/api/auth/session' },
       { method: 'GET', url: '/api/api-keys' },
       { method: 'GET', url: '/%61pi/api-keys' },
       { method: 'POST', url: '/api/api-keys' },
       { method: 'DELETE', url: '/api/api-keys/1' },
+      { method: 'PUT', url: '/api/settings/units' },
       { method: 'POST', url: '/api/auth/change-password' },
       { method: 'POST', url: '/api/auth/logout' },
       { method: 'POST', url: '/api/rivian/connect' },
@@ -165,130 +169,14 @@ describe('API authentication and authorization', () => {
       { method: 'PUT', url: '/api/settings/teslamate' },
       { method: 'DELETE', url: '/api/settings/teslamate' },
     ];
-    for (const key of [readKey, writeKey]) {
-      for (const c of cases) {
-        const res = await app.inject({
-          method: c.method,
-          url: c.url,
-          headers: { authorization: `Bearer ${key}` },
-        });
-        expect(res.statusCode, `${c.method} ${c.url}`).toBe(403);
-        expect(res.json().error).toBe('This endpoint requires a browser session');
-      }
-    }
-  });
-});
-
-describe('TRUST_PROXY and Secure session cookies', () => {
-  const crypto = new TokenCrypto('a'.repeat(32));
-
-  async function createLoginApp(trustProxy: boolean | number) {
-    const hash = await hashPassword(PASSWORD);
-    const db = {
-      select: () => ({
-        from: () => ({
-          where: async () => [{ key: 'app_password_hash', value: hash }],
-        }),
-      }),
-    };
-    const ctx = {
-      config: { MOCK_RIVIAN: false, TRUST_PROXY: trustProxy },
-      log: silentLogger,
-      db,
-      crypto,
-      loginThrottle: new LoginThrottle(Date.now, 2),
-    } as unknown as AppContext;
-    return buildApp(ctx);
-  }
-
-  it('ignores X-Forwarded-Proto and X-Forwarded-For when TRUST_PROXY is false', async () => {
-    const app = await createLoginApp(false);
-    try {
-      const ok = await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-proto': 'https', 'x-forwarded-for': '203.0.113.10' },
-        payload: { password: PASSWORD },
+    for (const c of cases) {
+      const res = await app.inject({
+        method: c.method,
+        url: c.url,
+        headers: { authorization: `Bearer ${apiKey}` },
       });
-      expect(ok.statusCode).toBe(200);
-      const cookie = ok.cookies.find((c) => c.name === 'rivianmate_session');
-      expect(cookie?.secure).toBeFalsy();
-
-      // Different X-Forwarded-For values still share the same throttle bucket when untrusted.
-      await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-for': '203.0.113.1' },
-        payload: { password: 'wrong' },
-      });
-      await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-for': '203.0.113.2' },
-        payload: { password: 'wrong' },
-      });
-      const throttled = await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-for': '203.0.113.3' },
-        payload: { password: PASSWORD },
-      });
-      expect(throttled.statusCode).toBe(429);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('sets Secure cookie over proxied HTTPS and throttles per client IP when TRUST_PROXY is enabled', async () => {
-    const app = await createLoginApp(1);
-    try {
-      const httpsLogin = await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-proto': 'https', 'x-forwarded-for': '203.0.113.10' },
-        payload: { password: PASSWORD },
-      });
-      expect(httpsLogin.statusCode).toBe(200);
-      const httpsCookie = httpsLogin.cookies.find((c) => c.name === 'rivianmate_session');
-      expect(httpsCookie?.secure).toBe(true);
-      expect(httpsCookie?.httpOnly).toBe(true);
-      expect(httpsCookie?.sameSite).toBe('Lax');
-
-      // Plain HTTP still omits Secure so local access keeps working.
-      const httpLogin = await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-proto': 'http', 'x-forwarded-for': '203.0.113.11' },
-        payload: { password: PASSWORD },
-      });
-      expect(httpLogin.cookies.find((c) => c.name === 'rivianmate_session')?.secure).toBeFalsy();
-
-      // Exhausting login attempts from one client IP does not throttle a different client IP.
-      for (let i = 0; i < 2; i++) {
-        await app.inject({
-          method: 'POST',
-          url: '/api/auth/login',
-          headers: { 'x-forwarded-for': '203.0.113.20' },
-          payload: { password: 'wrong' },
-        });
-      }
-      const blocked = await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-for': '203.0.113.20' },
-        payload: { password: PASSWORD },
-      });
-      expect(blocked.statusCode).toBe(429);
-
-      const otherClient = await app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'x-forwarded-for': '203.0.113.21' },
-        payload: { password: PASSWORD },
-      });
-      expect(otherClient.statusCode).toBe(200);
-    } finally {
-      await app.close();
+      expect(res.statusCode, `${c.method} ${c.url}`).toBe(403);
+      expect(res.json().error).toBe('This endpoint requires a browser session');
     }
   });
 });

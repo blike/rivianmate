@@ -44,8 +44,8 @@ export const apiKeys = pgTable('api_keys', {
   prefix: text('prefix').notNull(),
   /** SHA-256 hex digest of the full key. */
   keyHash: text('key_hash').notNull().unique(),
-  /** "read" allows GET/HEAD only; "write" also allows non-security mutations. */
-  scope: text('scope', { enum: ['read', 'write'] })
+  /** Reserved for future scopes; all keys are currently read-only. */
+  scope: text('scope', { enum: ['read'] })
     .notNull()
     .default('read'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

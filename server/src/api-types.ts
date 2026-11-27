@@ -92,20 +92,11 @@ export interface StatusResponse {
   signInStartsSetup: boolean;
 }
 
-export type ApiKeyScope = 'read' | 'write';
-
-export interface SessionInfoResponse {
-  authed: boolean;
-  method?: 'session' | 'api_key';
-  scope?: ApiKeyScope;
-}
-
 export interface ApiKeyDto {
   id: number;
   name: string;
   /** Leading characters of the key (e.g. "rmk_ab12cd34"), so keys can be told apart. */
   prefix: string;
-  scope: ApiKeyScope;
   createdAt: string;
   lastUsedAt: string | null;
   expiresAt: string | null;
@@ -118,7 +109,6 @@ export interface CreatedApiKeyDto extends ApiKeyDto {
 
 export interface CreateApiKeyInput {
   name: string;
-  scope?: ApiKeyScope;
   /** Optional ISO 8601 expiry timestamp; null or omitted for no expiry. */
   expiresAt?: string | null;
 }

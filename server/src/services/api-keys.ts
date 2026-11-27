@@ -1,5 +1,5 @@
 import { count, desc, eq } from 'drizzle-orm';
-import type { ApiKeyDto, ApiKeyScope, CreatedApiKeyDto } from '../api-types.js';
+import type { ApiKeyDto, CreatedApiKeyDto } from '../api-types.js';
 import { API_KEY_PREFIX, generateApiKey, hashApiKey } from '../crypto.js';
 import type { Db } from '../db/client.js';
 import { apiKeys } from '../db/schema.js';
@@ -18,7 +18,6 @@ export class ApiKeyLimitError extends Error {
 
 export interface VerifiedApiKey {
   id: number;
-  scope: ApiKeyScope;
 }
 
 function toDto(row: typeof apiKeys.$inferSelect): ApiKeyDto {
@@ -26,7 +25,6 @@ function toDto(row: typeof apiKeys.$inferSelect): ApiKeyDto {
     id: row.id,
     name: row.name,
     prefix: row.prefix,
-    scope: row.scope,
     createdAt: row.createdAt.toISOString(),
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
     expiresAt: row.expiresAt?.toISOString() ?? null,
@@ -48,11 +46,7 @@ export class ApiKeyStore {
     return rows.map(toDto);
   }
 
-  async create(input: {
-    name: string;
-    scope: ApiKeyScope;
-    expiresAt: Date | null;
-  }): Promise<CreatedApiKeyDto> {
+  async create(input: { name: string; expiresAt: Date | null }): Promise<CreatedApiKeyDto> {
     const [counts] = await this.db.select({ total: count() }).from(apiKeys);
     if ((counts?.total ?? 0) >= MAX_API_KEYS) throw new ApiKeyLimitError();
 
@@ -63,7 +57,7 @@ export class ApiKeyStore {
         name: input.name,
         prefix: generated.prefix,
         keyHash: generated.hash,
-        scope: input.scope,
+        scope: 'read',
         expiresAt: input.expiresAt,
       })
       .returning();
@@ -101,6 +95,6 @@ export class ApiKeyStore {
         });
     }
 
-    return { id: row.id, scope: row.scope };
+    return { id: row.id };
   }
 }

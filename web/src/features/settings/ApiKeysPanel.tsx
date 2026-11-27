@@ -1,15 +1,9 @@
 import { useState } from 'react';
-import {
-  ApiError,
-  type ApiKeyDto,
-  type ApiKeyScope,
-  type CreatedApiKeyDto,
-} from '../../api/client';
+import { ApiError, type ApiKeyDto, type CreatedApiKeyDto } from '../../api/client';
 import { useApiKeys, useCreateApiKey, useRevokeApiKey } from '../../api/hooks';
 import { TextField } from '../../components/AuthCard';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Skeleton } from '../../components/LoadingState';
-import { Segmented } from '../../components/Segmented';
 import { Select } from '../../components/Select';
 import { dateTime, longDate } from '../../lib/format';
 import { SettingRow, SettingsGroup } from './SettingsControls';
@@ -21,15 +15,6 @@ const EXPIRY_OPTIONS: readonly { value: ExpiryChoice; label: string }[] = [
   { value: '30d', label: '30 days' },
   { value: '90d', label: '90 days' },
   { value: '1y', label: '1 year' },
-];
-
-const SCOPE_OPTIONS: readonly { value: ApiKeyScope; label: string; title: string }[] = [
-  { value: 'read', label: 'Read-only', title: 'GET endpoints and live streams only' },
-  {
-    value: 'write',
-    label: 'Read & write',
-    title: 'Read endpoints plus trips, locations, costs, settings and imports',
-  },
 ];
 
 function expiryDate(choice: ExpiryChoice): string | null {
@@ -44,7 +29,6 @@ function isExpired(key: ApiKeyDto, now: number): boolean {
 function keyMeta(key: ApiKeyDto, now: number): string {
   const parts = [
     `${key.prefix}…`,
-    key.scope === 'write' ? 'Read & write' : 'Read-only',
     `Created ${longDate(key.createdAt)}`,
     key.lastUsedAt ? `Last used ${dateTime(key.lastUsedAt)}` : 'Never used',
   ];
@@ -62,7 +46,6 @@ export function ApiKeysPanel() {
   const [now] = useState(() => Date.now());
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
-  const [scope, setScope] = useState<ApiKeyScope>('read');
   const [expiry, setExpiry] = useState<ExpiryChoice>('never');
   const [created, setCreated] = useState<CreatedApiKeyDto | null>(null);
   const [copied, setCopied] = useState(false);
@@ -72,13 +55,12 @@ export function ApiKeysPanel() {
     const trimmed = name.trim();
     if (!trimmed) return;
     createKey.mutate(
-      { name: trimmed, scope, expiresAt: expiryDate(expiry) },
+      { name: trimmed, expiresAt: expiryDate(expiry) },
       {
         onSuccess: (result) => {
           setCreated(result);
           setCopied(false);
           setName('');
-          setScope('read');
           setExpiry('never');
           setAdding(false);
         },
@@ -116,7 +98,7 @@ export function ApiKeysPanel() {
         }
         note={
           !isPending &&
-          'Send a key in the Authorization header as Bearer <key>. Keys cannot change the app password, connect or disconnect Rivian, or manage other keys.'
+          'Read-only keys authenticate GET /api/vehicles and GET /api/vehicles/:id/summary via the Authorization: Bearer <key> header.'
         }
       >
         {created && (
@@ -159,23 +141,9 @@ export function ApiKeysPanel() {
               label="Name"
               value={name}
               onChange={setName}
-              placeholder="Home Assistant"
+              placeholder="Homepage"
               autoFocus
             />
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium">Access</div>
-                <div className="text-xs text-(--text-muted)">
-                  Read-only covers telemetry, history and live streams.
-                </div>
-              </div>
-              <Segmented
-                label="API key access"
-                value={scope}
-                options={SCOPE_OPTIONS}
-                onChange={setScope}
-              />
-            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-medium">Expires</div>

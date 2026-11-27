@@ -1,28 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Parses TRUST_PROXY into Fastify's `trustProxy` value:
- * - unset / "false" / "0" -> false (ignore forwarding headers)
- * - "true" -> true (trust all proxies)
- * - integer ("1", "2") -> number of trusted proxy hops
- * - IP / CIDR / keyword ("loopback", "127.0.0.1,172.16.0.0/12") -> string or string[]
- */
-export function parseTrustProxy(value: string | undefined): boolean | number | string | string[] {
-  if (!value) return false;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === 'false' || trimmed === '0') return false;
-  if (trimmed === 'true') return true;
-  if (/^\d+$/.test(trimmed)) return Number(trimmed);
-  if (trimmed.includes(',')) {
-    const parts = trimmed
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    return parts.length > 0 ? parts : false;
-  }
-  return trimmed;
-}
-
 const envSchema = z.object({
   DATABASE_URL: z.string().default('postgres://rivianmate:rivianmate@localhost:5432/rivianmate'),
   APP_SECRET: z.string().min(32, 'APP_SECRET must be at least 32 characters'),
@@ -34,8 +11,6 @@ const envSchema = z.object({
   /** With MOCK_RIVIAN, a demo scene to start in (see MockScene). */
   MOCK_SCENE: z.enum(['drive-home', 'awaiting-delivery']).optional(),
   APP_PASSWORD: z.string().optional(),
-  /** Reverse proxy trust setting for X-Forwarded-For / X-Forwarded-Proto. */
-  TRUST_PROXY: z.string().optional().transform(parseTrustProxy),
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   /** pretty: readable lines for `docker logs`; json: one object per line for log collectors. */

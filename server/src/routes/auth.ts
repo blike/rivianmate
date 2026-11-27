@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { ApiKeyScope, SessionInfoResponse, StatusResponse } from '../api-types.js';
+import type { StatusResponse } from '../api-types.js';
 import type { AppContext } from '../context.js';
 import { hashPassword, verifyPassword } from '../crypto.js';
 import { appSettings } from '../db/schema.js';
@@ -13,8 +13,7 @@ const SESSION_TTL_MS = 30 * 24 * 3600_000;
 
 const PASSWORD_KEY = 'app_password_hash';
 
-export type AuthPrincipal =
-  { method: 'session' } | { method: 'api_key'; keyId: number; scope: ApiKeyScope };
+export type AuthPrincipal = { method: 'session' } | { method: 'api_key'; keyId: number };
 
 export async function getPasswordHash(ctx: AppContext): Promise<string | null> {
   const rows = await ctx.db.select().from(appSettings).where(eq(appSettings.key, PASSWORD_KEY));
@@ -48,9 +47,9 @@ export async function authenticate(
   const header = request.headers.authorization;
   if (typeof header === 'string') {
     const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
-    if (!match || !ctx.apiKeys) return null;
+    if (!match) return null;
     const key = await ctx.apiKeys.verify(match[1]!);
-    return key ? { method: 'api_key', keyId: key.id, scope: key.scope } : null;
+    return key ? { method: 'api_key', keyId: key.id } : null;
   }
   return ctx.crypto.verifySession(request.cookies[SESSION_COOKIE]) ? { method: 'session' } : null;
 }
@@ -107,7 +106,7 @@ export async function seedAppPassword(ctx: AppContext, password: string): Promis
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   app.get('/api/status', async (request): Promise<StatusResponse> => {
-    const authed = (await authenticate(ctx, request)) !== null;
+    const authed = isAuthed(ctx, request);
     // The account is only described to someone signed in.
     const account = authed ? await ctx.tokenStore.summary() : null;
     // Read before sign-in too, so signing in can show as the first step of setup.
@@ -140,19 +139,19 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       .returning();
     if (!created.length) return reply.code(409).send({ error: 'Already set up' });
     await holdLookupsForChoice(ctx, 'setup');
-    issueSession(ctx, request, reply);
+    issueSession(ctx, reply);
     return { ok: true };
   });
 
   app.post('/api/auth/login', async (request, reply) => {
     const body = credentialsSchema.parse(request.body);
     if (!(await checkPassword(ctx, request, reply, body.password))) return reply;
-    issueSession(ctx, request, reply);
+    issueSession(ctx, reply);
     return { ok: true };
   });
 
-  app.post('/api/auth/logout', async (request, reply) => {
-    reply.clearCookie(SESSION_COOKIE, cookieOptions(request));
+  app.post('/api/auth/logout', async (_request, reply) => {
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
   });
 
@@ -168,28 +167,16 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     return { ok: true };
   });
 
-  app.get('/api/auth/session', async (request): Promise<SessionInfoResponse> => {
-    const auth = await authenticate(ctx, request);
-    if (!auth) return { authed: false };
-    return auth.method === 'api_key'
-      ? { authed: true, method: 'api_key', scope: auth.scope }
-      : { authed: true, method: 'session' };
+  app.get('/api/auth/session', async (request) => {
+    return { authed: isAuthed(ctx, request) };
   });
 }
 
-function cookieOptions(request: FastifyRequest) {
-  return {
+function issueSession(ctx: AppContext, reply: FastifyReply): void {
+  reply.setCookie(SESSION_COOKIE, ctx.crypto.createSession(SESSION_TTL_MS), {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax' as const,
-    // Set automatically over direct HTTPS or behind a reverse proxy with TRUST_PROXY enabled.
-    secure: request.protocol === 'https',
-  };
-}
-
-function issueSession(ctx: AppContext, request: FastifyRequest, reply: FastifyReply): void {
-  reply.setCookie(SESSION_COOKIE, ctx.crypto.createSession(SESSION_TTL_MS), {
-    ...cookieOptions(request),
+    sameSite: 'lax',
     maxAge: SESSION_TTL_MS / 1000,
   });
 }

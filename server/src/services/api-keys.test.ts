@@ -8,7 +8,7 @@ interface StoredRow {
   name: string;
   prefix: string;
   keyHash: string;
-  scope: 'read' | 'write';
+  scope: 'read';
   createdAt: Date;
   lastUsedAt: Date | null;
   expiresAt: Date | null;
@@ -94,24 +94,24 @@ describe('ApiKeyStore', () => {
 
     const created = await store.create({
       name: 'Home Assistant',
-      scope: 'read',
       expiresAt: new Date('2026-11-25T12:00:00.000Z'),
     });
     expect(created.key.startsWith('rmk_')).toBe(true);
     expect(rows[0]!.keyHash).toBe(hashApiKey(created.key));
+    expect(rows[0]!.scope).toBe('read');
 
     // First verify touches lastUsedAt.
-    expect(await store.verify(created.key)).toEqual({ id: created.id, scope: 'read' });
+    expect(await store.verify(created.key)).toEqual({ id: created.id });
     expect(updates).toHaveLength(1);
 
     // Within 60s, lastUsedAt is not written again.
     now = new Date('2026-11-24T12:00:30.000Z');
-    expect(await store.verify(created.key)).toEqual({ id: created.id, scope: 'read' });
+    expect(await store.verify(created.key)).toEqual({ id: created.id });
     expect(updates).toHaveLength(1);
 
     // After 60s, lastUsedAt updates again.
     now = new Date('2026-11-24T12:01:05.000Z');
-    expect(await store.verify(created.key)).toEqual({ id: created.id, scope: 'read' });
+    expect(await store.verify(created.key)).toEqual({ id: created.id });
     expect(updates).toHaveLength(2);
 
     // Past expiresAt, verification fails.
@@ -132,8 +132,8 @@ describe('ApiKeyStore', () => {
     }));
     const { db } = fakeDb(full);
     const store = new ApiKeyStore(db);
-    await expect(
-      store.create({ name: 'One too many', scope: 'read', expiresAt: null }),
-    ).rejects.toThrow(ApiKeyLimitError);
+    await expect(store.create({ name: 'One too many', expiresAt: null })).rejects.toThrow(
+      ApiKeyLimitError,
+    );
   });
 });
